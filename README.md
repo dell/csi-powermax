@@ -1,6 +1,6 @@
 # csi-powermax
-CSI Driver for Dell EMC PowerMax
 
 Coming soon… CSI Driver for PowerMax
 ![CSI Driver PowerMax](/csipowermax.png)
 Format: ![Alt Text](url)
+Kubernetes Container Storage Interface (CSI) is rapidly growing in popularity as the de-facto standard for container-storage interface. With the upcoming CSI driver for PowerMax you can easily deploy and manage Containerized applications on Kubernetes clusters with PowerMax storage. Stay tuned!
