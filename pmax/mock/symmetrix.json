@@ -1,0 +1,11 @@
+{
+  "symmetrixId": "000197900046",
+  "device_count": 1045,
+  "ucode": "5978.221.221",
+  "model": "PowerMax_2000",
+  "local": true,
+  "all_flash": true,
+  "disk_count": 8,
+  "cache_size_mb": 203776,
+  "data_encryption": "Disabled"
+}

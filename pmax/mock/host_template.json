@@ -1,0 +1,18 @@
+{
+    "hostId": "__HOST_ID__",
+    "num_of_masking_views": 1,
+    "num_of_initiators": 1,
+    "num_of_host_groups": 0,
+    "port_flags_override": false,
+    "consistent_lun": false,
+    "enabled_flags": "",
+    "disabled_flags": "",
+    "type": "iSCSI",
+    "initiator": [
+        "10000000c9f3b094"
+    ],
+    "maskingview": [
+        "__MV_ID__"
+    ],
+    "num_of_powerpath_hosts": 0
+}
