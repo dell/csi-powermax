@@ -1,0 +1,12 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ required "Must provide a storage class name." .Values.storageClass.name}}-xfs
+  annotations:
+provisioner: csi-powermax
+reclaimPolicy: {{ required "Must provide a storage class reclaim policy." .Values.storageClass.reclaimPolicy }}
+parameters:
+  FsType: xfs
+  SYMID: {{ required "Must provide a default storage class Symmetrix ID (SYMID)." .Values.storageClass.symmetrixID | toJson }}
+  SRP: {{ required "Must provide a default storage class Service Resource Pool (SRP)." .Values.storageClass.storageResourcePool }}
+  ServiceLevel: {{ required "Must default provide a storage class Service Level (ServiceLevel)." .Values.storageClass.serviceLevel }}
