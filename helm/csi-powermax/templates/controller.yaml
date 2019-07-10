@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-controller
+  namespace: {{ .Release.Namespace }}
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-controller
+rules:
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "delete", "update"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["volumeattachments"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["csi.storage.k8s.io"]
+    resources: ["csinodeinfos"]
+    verbs: ["get", "list", "watch"]
+# below for snapshotter
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["create", "list", "watch", "delete"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-controller
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-controller
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ .Release.Name }}-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: StatefulSet
+apiVersion: apps/v1beta1
+metadata:
+  name: {{ .Release.Name }}-controller
+  namespace: {{ .Release.Namespace }}
+spec:
+  serviceName: {{ .Release.Name }}-controller
+  replicas: {{ required "Must provide the number of controller instances to create." .Values.controllerCount }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-controller
+    spec:
+      serviceAccount: {{ .Release.Name }}-controller
+      containers:
+        - name: attacher
+          image: {{ required "Must provide the CSI attacher container image." .Values.images.attacher }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--v=5"
+            - "--timeout=120s"
+          env:
+            - name: ADDRESS
+              value: /var/run/csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/csi
+        - name: provisioner
+          image: {{ required "Must provide the CSI provisioner container image." .Values.images.provisioner }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--provisioner=csi-powermax"
+            - "--volume-name-prefix={{ required "Must provide a Volume Name Prefix." .Values.volumeNamePrefix }}"
+            - "--volume-name-uuid-length=10"
+            - "--connection-timeout=300s"
+            - "--v=5"
+          env:
+            - name: ADDRESS
+              value: /var/run/csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/csi
+        - name: driver
+          image: {{ required "Must provide the PowerMax driver container image." .Values.images.driver }}
+          imagePullPolicy: Always
+          command: [ "/csi-powermax" ]
+          env:
+            - name: CSI_ENDPOINT
+              value: /var/run/csi/csi.sock
+            - name: X_CSI_MODE
+              value: controller
+            - name: X_CSI_DEBUG
+              value: "true"
+            - name: X_CSI_POWERMAX_ENDPOINT
+              value: {{ required "Must provide a Unisphere HTTPS endpoint." .Values.unisphere }}
+            - name: X_CSI_POWERMAX_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-creds
+                  key: username
+            - name: X_CSI_POWERMAX_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-creds
+                  key: password
+            - name: X_CSI_POWERMAX_DEBUG
+              value: {{ .Values.powerMaxDebug | default "false" | lower | quote }}
+            - name: X_CSI_POWERMAX_INSECURE
+              value: {{ .Values.powerMaxInsecure | default "true" | lower | quote }}
+            - name: X_CSI_POWERMAX_PORTGROUPS
+              value:  {{ required "Must provide list of Port Groups." .Values.portGroups | toJson }}
+            - name: X_CSI_K8S_CLUSTER_PREFIX
+              value:  {{ required "Must provide a Cluster Prefix." .Values.clusterPrefix }}
+            - name: X_CSI_POWERMAX_ARRAYS
+              value:  {{ .Values.arrayWhitelist | default "" | toJson }}
+            - name: X_CSI_GRPC_MAX_THREADS
+              value: {{ .Values.grpcMaxThreads | default "4" | toJson }}
+            - name: SSL_CERT_DIR
+              value: /certs
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/csi
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+      volumes:
+        - name: socket-dir
+          emptyDir:
+        - name: certs
+          secret:
+              secretName: {{ .Release.Name }}-certs
