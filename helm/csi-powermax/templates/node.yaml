@@ -1,0 +1,184 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-node
+  namespace: {{ .Release.Namespace }}
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-node
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["create", "delete", "get", "list", "watch", "update"]
+  - apiGroups: [""]
+    resources: ["persistentvolumesclaims"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["volumeattachments"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["volumeattachments"]
+    verbs: ["get", "list", "watch", "update"]
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-node
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-node
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ .Release.Name }}-node
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: DaemonSet
+apiVersion: apps/v1beta2
+metadata:
+  name: {{ .Release.Name }}-node
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-node
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-node
+    spec:
+      serviceAccount: {{ .Release.Name }}-node
+      hostNetwork: true
+      containers:  
+        - name: driver
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN"]
+            allowPrivilegeEscalation: true
+          image: {{ required "Must provide the PowerMax driver container image." .Values.images.driver }}
+          imagePullPolicy: Always
+          command: [ "/csi-powermax" ]
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///var/lib/kubelet/plugins/powermax.emc.dell.com/csi_sock
+            - name: X_CSI_MODE
+              value: node
+            - name: X_CSI_DEBUG
+              value: "true"
+            - name: X_CSI_PRIVATE_MOUNT_DIR
+              value: "/var/lib/kubelet/plugins/powermax.emc.dell.com/disks"
+            - name: X_CSI_POWERMAX_ENDPOINT
+              value: {{ required "Must provide a Unisphere HTTPS endpoint." .Values.unisphere }}
+            - name: X_CSI_POWERMAX_DEBUG
+              value: {{ .Values.powerMaxDebug | default "false" | lower | quote }}
+            - name: X_CSI_POWERMAX_INSECURE
+              value: {{ .Values.powerMaxInsecure | default "true" | lower | quote }}
+            - name: X_CSI_K8S_CLUSTER_PREFIX
+              value:  {{ required "Must provide a Cluster Prefix." .Values.clusterPrefix }}
+            - name: X_CSI_POWERMAX_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-creds
+                  key: username
+            - name: X_CSI_POWERMAX_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-creds
+                  key: password
+            - name: X_CSI_POWERMAX_NODENAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+            - name: X_CSI_POWERMAX_ARRAYS
+              value:  {{ .Values.arrayWhitelist | default "" | toJson }}
+            - name: X_CSI_ISCSI_CHROOT
+              value: {{ .Values.ISCSIChroot | default "/noderoot" }}
+            - name: X_CSI_GRPC_MAX_THREADS
+              value: {{ .Values.grpcMaxThreads | default "4" | toJson }}
+            - name: SSL_CERT_DIR
+              value: /certs
+          volumeMounts:
+            - name: driver-path
+              mountPath: /var/lib/kubelet/plugins/powermax.emc.dell.com
+            - name: volumedevices-path
+              mountPath: /var/lib/kubelet/plugins/kubernetes.io/csi/volumeDevices
+            - name: pods-path
+              mountPath: /var/lib/kubelet/pods
+              mountPropagation: "Bidirectional"
+            - name: dev
+              mountPath: /dev
+            - name: sys
+              mountPath: /sys
+            - name: noderoot
+              mountPath: {{ .Values.ISCSIChroot | default "/noderoot" }}
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+        - name: registrar
+          image: {{ required "Must provide the CSI node registrar container image." .Values.images.registrar }}
+          args:
+            - "--v=5"
+            - "--csi-address=$(ADDRESS)"
+            #- --mode=node-register
+            #- --driver-requires-attachment=true
+            #- --pod-info-mount-version=v1
+            - --kubelet-registration-path=/var/lib/kubelet/plugins/powermax.emc.dell.com/csi_sock
+          env:
+            - name: ADDRESS
+              value: /csi/csi_sock
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: registration-dir
+              mountPath: /registration
+            - name: driver-path
+              mountPath: /csi
+      volumes:
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: DirectoryOrCreate
+        - name: driver-path
+          hostPath:
+            path: /var/lib/kubelet/plugins/powermax.emc.dell.com
+            type: DirectoryOrCreate
+        - name: volumedevices-path
+          hostPath:
+            path: /var/lib/kubelet/plugins/kubernetes.io/csi/volumeDevices
+            type: DirectoryOrCreate
+        - name: pods-path
+          hostPath:
+            path: /var/lib/kubelet/pods
+            type: Directory
+        - name: dev
+          hostPath:
+            path: /dev
+            type: Directory
+        - name: sys
+          hostPath:
+            path: /sys
+            type: Directory
+        - name: noderoot
+          hostPath:
+            path: /
+            type: Directory
+        - name: certs
+          secret:
+              secretName: {{ .Release.Name }}-certs

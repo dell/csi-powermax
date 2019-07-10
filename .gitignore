@@ -5,7 +5,7 @@ service/c.out
 test/integration/c.linux.out
 
 # binaries and temporary files
-csi-powermax
+./csi-powermax
 semver.mk
 
 
