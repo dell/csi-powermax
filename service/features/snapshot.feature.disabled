@@ -1,0 +1,196 @@
+Feature: PowerMax CSI interface
+    As a consumer of the CSI interface
+    I want to test snapshot interfaces
+    So that they are known to work
+
+    Scenario: Snapshot a single block volume	
+       Given a PowerMax service	
+       When I call Probe	
+       And I call CreateVolume "vol1"	
+       And a valid CreateVolumeResponse is returned	
+       And I call CreateSnapshot With ""	
+       Then a valid CreateSnapshotResponse is returned	
+ 
+    Scenario: Idempotent test of snapshot a single block volume	
+       Given a PowerMax service	
+       When I call Probe	
+       And I call CreateVolume "vol1"	
+       And a valid CreateVolumeResponse is returned	
+       And I call CreateSnapshot With "snapshot-a5d67905-14e9-11e9-ab1c-005056264ad3"	
+       And no error was received	
+       And I call CreateSnapshot With "snapshot-a5d67905-14e9-11e9-ab1c-005056264ad3"	
+       Then a valid CreateSnapshotResponse is returned	
+       And no error was received	
+ 
+    Scenario: Snapshot a single block volume but receive error	
+       Given a PowerMax service	
+       When I call Probe	
+       And I induce error "CreateSnapshotError"	
+       And I call CreateVolume "vol1"	
+       And a valid CreateVolumeResponse is returned	
+       And I call CreateSnapshot With ""	
+       Then the error contains "Failed to create snapshot"	
+ 
+    Scenario: Call snapshot create with invalid volume	
+       Given a PowerMax service	
+       And an invalid volume	
+       When I call Probe	
+       And I call CreateSnapshot With "snap1"	
+       Then the error contains "volume not found"	
+ 
+    Scenario: Call snapshot create with no volume	
+       Given a PowerMax service	
+       And no volume	
+       When I call Probe	
+       And I call CreateSnapshot With "snap1"	
+       Then the error contains "volume ID to be snapped is required"	
+ 
+    Scenario: Call snapshot with no probe	
+       Given a PowerMax service	
+       And an invalid volume	
+       When I invalidate the Probe cache	
+       And I call CreateSnapshot With "snap1"	
+       Then the error contains "Controller Service has not been probed"	
+ 
+    Scenario: Snapshot a block volume consistency group	
+       Given a PowerMax service	
+       When I call Probe	
+       And I call CreateVolume "vol1"	
+       And a valid CreateVolumeResponse is returned	
+       And I call CreateVolume "vol2"	
+       And a valid CreateVolumeResponse is returned	
+       And I call CreateVolume "vol3"	
+       And a valid CreateVolumeResponse is returned	
+       And I call CreateSnapshot With "snap1"	
+       Then a valid CreateSnapshotResponse is returned	
+ 
+    Scenario: Delete a snapshot	
+       Given a PowerMax service	
+       And a valid snapshot	
+       When I call Probe	
+       And I call DeleteSnapshot	
+       Then no error was received	
+ 
+    Scenario: Idempotent delete a snapshot	
+       Given a PowerMax service	
+       And a valid snapshot	
+       When I call Probe	
+       And I call DeleteSnapshot	
+       Then no error was received	
+       And I call DeleteSnapshot	
+       Then no error was received	
+ 
+    Scenario: Delete a snapshot with no probe	
+       Given a PowerMax service	
+       And a valid snapshot	
+       When I invalidate the Probe cache	
+       And I call DeleteSnapshot	
+       Then the error contains "Controller Service has not been probed"	
+ 
+    Scenario: Delete a snapshot with invalid volume	
+       Given a PowerMax service	
+       And an invalid volume	
+       When I call Probe	
+       And I call DeleteSnapshot	
+       Then the error contains "volume not found"	
+ 
+    Scenario: Delete a snapshot with no volume	
+       Given a PowerMax service	
+       And no volume	
+       When I call Probe	
+       And I call DeleteSnapshot	
+       Then the error contains "snapshot ID to be deleted is required"	
+ 
+    Scenario: Delete snapshot that is mapped to an SDC	
+       Given a PowerMax service	
+       And a valid snapshot	
+       And the volume is already mapped to an SDC	
+       When I call Probe	
+       And I call DeleteSnapshot	
+       Then the error contains "snapshot is in use by the following SDC"	
+ 
+    Scenario: Delete snapshot with induced remove volume error	
+       Given a PowerMax service	
+       And a valid snapshot	
+       And I induce error "RemoveVolumeError"	
+       When I call Probe	
+       And I call DeleteSnapshot	
+       Then the error contains "error removing snapshot"	
+ 
+    Scenario: Delete snapshot consistency group	
+       Given a PowerMax service	
+       And a valid snapshot consistency group	
+       When I call Probe	
+       And I call DeleteSnapshot	
+       Then no error was received	
+       And I call DeleteSnapshot	
+       Then no error was received	
+ 
+    Scenario: Delete snapshot consistency group with mapped volumes	
+       Given a PowerMax service	
+       And a valid snapshot consistency group	
+       When I call Probe	
+       And I call PublishVolume with "single-writer"	
+       And a valid PublishVolumeResponse is returned	
+       And I call DeleteSnapshot	
+       Then the error contains "One or more consistency group volumes are exposed and may be in use"	
+ 
+    Scenario: Delete snapshot consistency with induced remove volume error	
+       Given a PowerMax service	
+       And a valid snapshot consistency group	
+       And I induce error "RemoveVolumeError"	
+       When I call Probe	
+       And I call DeleteSnapshot	
+       Then the error contains "error removing snapshot"	
+ 
+    Scenario: Create a volume from a snapshot	
+       Given a PowerMax service	
+       And a valid snapshot	
+       When I call Probe	
+       And I call Create Volume from Snapshot	
+       Then a valid CreateVolumeResponse is returned	
+       And no error was received	
+ 
+    Scenario: Create a volume from a snapshot with wrong capacity	
+       Given a PowerMax service	
+       And a valid snapshot	
+       And the wrong capacity	
+       When I call Probe	
+       And I call Create Volume from Snapshot	
+       Then the error contains "incompatible size"	
+ 
+    Scenario: Create a volume from a snapshot with wrong storage pool	
+       Given a PowerMax service	
+       And a valid snapshot	
+       And the wrong storage pool	
+       When I call Probe	
+       And I call Create Volume from Snapshot	
+       Then the error contains "different than the requested storage pool"	
+ 
+    Scenario: Create a volume from a snapshot with induced volume not found	
+       Given a PowerMax service	
+       And a valid snapshot	
+       And I induce error "GetVolByIDError"	
+       When I call Probe	
+       And I call Create Volume from Snapshot	
+       Then the error contains "Snapshot not found"	
+ 
+    Scenario: Create a volume from a snapshot with induced create snapshot error	
+       Given a PowerMax service	
+       And a valid snapshot	
+       And I induce error "CreateSnapshotError"	
+       When I call Probe	
+       And I call Create Volume from Snapshot	
+       Then the error contains "Failed to create snapshot"	
+ 
+    Scenario: Idempotent create a volume from a snapshot	
+       Given a PowerMax service	
+       And a valid snapshot	
+       When I call Probe	
+       And I call Create Volume from Snapshot	
+       And a valid CreateVolumeResponse is returned	
+       And no error was received	
+       Then I call Create Volume from Snapshot	
+       And no error was received	
+       And a valid CreateVolumeResponse is returned	
+ 

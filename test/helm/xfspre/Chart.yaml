@@ -1,0 +1,9 @@
+name: xfspre
+version: 0.0.1
+appVersion: 2.6.0
+description: |
+  Tests PowerMax CSI deployments.
+keywords:
+- csi-powermax
+- storage
+engine: gotpl

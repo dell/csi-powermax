@@ -1,0 +1,4 @@
+InitiatorName=iqn.1993-08.org.debian:01:a86ee7364819
+
+# This next initiator has some extra spaces for readability
+ InitiatorName = iqn.1993-08.org.debian:01:a86eeef2c837

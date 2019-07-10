@@ -1,0 +1,23 @@
+{
+  "volumeId": "__VOLUME_ID__",
+  "type": "TDEV",
+  "emulation": "FBA",
+  "ssid": "FFFFFFFF",
+  "allocated_percent": 0,
+  "cap_gb": 1,
+  "cap_mb": 1026,
+  "cap_cyl": __CAPACITY_CYL__,
+  "status": "Ready",
+  "reserved": false,
+  "pinned": false,
+  "volume_identifier": "__VOLUME_IDENTIFIER__",
+  "wwn": "60000970000197900046533030324538",
+  "encapsulated": false,
+  "num_of_storage_groups": __NUMBER_OF_STORAGE_GROUPS__,
+  "num_of_front_end_paths": __NUMBER_OF_FRONT_END_PATHS__,
+  "storageGroupId": __STORAGE_GROUP_IDS__,
+  "snapvx_source": false,
+  "snapvx_target": false,
+  "has_effective_wwn": false,
+  "effective_wwn": "60000970000197900046533030324538"
+}
