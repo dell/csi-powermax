@@ -648,6 +648,11 @@ func (s *service) ControllerPublishVolume(
 		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
 		// Check if the volume is already mapped to some host
 		if vol.NumberOfFrontEndPaths > 0 {
+			// make sure we go at least one masking view
+			if len(maskingViewIDs) == 0 {
+				// this is an error, we should have gotten at least one MV
+				return nil, status.Error(codes.Internal, "No masking views found for volume")
+			}
 			if len(maskingViewIDs) > 1 {
 				log.Error("Volume already part of multiple Masking views")
 				return nil, status.Error(codes.Internal, "Volume already part of multiple Masking views")
