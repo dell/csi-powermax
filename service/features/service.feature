@@ -523,3 +523,13 @@ Feature: PowerMax CSI interface
       | "InvalidVolumeID"          | "cannot be found"                  |
       | "DifferentVolumeID"        | "Failed to validate combination"   |
       | "GetVolumeError"           | "failure checking volume"          |
+
+@v1.0.0
+    Scenario Outline: Test validateStoragePoolID function
+      Given a PowerMax service
+      And I call validateStoragePoolID <numberOfTimes> in parallel
+      Then no error was received
+
+       Examples:
+       | numberOfTimes               |
+       | 2000                        |

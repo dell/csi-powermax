@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # HTTP endpoint of Unisphere
-export X_CSI_POWERMAX_ENDPOINT="https://10.247.73.217:8443"
+export X_CSI_POWERMAX_ENDPOINT="https://0.0.0.1:8443"
 
 # EnvUser is the name of the enviroment variable used to set the
 # username when authenticating to Unisphere
@@ -47,6 +47,6 @@ export X_CSI_REP_LOGGING="true"
 
 # Variables for the integration test code.
 export CSI_ENDPOINT=`pwd`/unix_sock
-export SYMID="000197900046"
+export SYMID="000000000001"
 export SRPID="SRP_1"
 export SERVICELEVEL="Bronze"

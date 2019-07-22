@@ -361,12 +361,14 @@ func (s *service) validateStoragePoolID(symmetrixID string, storagePoolID string
 	if storagePoolID == "" {
 		return fmt.Errorf("A valid SRP parameter is required")
 	}
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
 
 	cache := getPmaxCache(symmetrixID)
 
 	if !cache.knownStoragePools[storagePoolID].IsZero() {
 		storagePoolTimeStamp := cache.knownStoragePools[storagePoolID]
-		if time.Now().Sub(storagePoolTimeStamp) < StoragePoolCacheDuration {
+		if time.Now().Sub(storagePoolTimeStamp) < s.storagePoolCacheDuration {
 			// We have a valid cache entry.
 			return nil
 		}
@@ -383,6 +385,11 @@ func (s *service) validateStoragePoolID(symmetrixID string, storagePoolID string
 		}
 	}
 	return status.Errorf(codes.InvalidArgument, "Storage Pool %s not found", storagePoolID)
+}
+
+// Only used for testing
+func (s *service) setStoragePoolCacheDuration(duration time.Duration) {
+	s.storagePoolCacheDuration = duration
 }
 
 func truncateString(str string, maxLength int) string {
