@@ -90,7 +90,10 @@ type service struct {
 	privDir           string
 	loggedInArrays    map[string]bool
 	mutex             sync.Mutex
+	cacheMutex        sync.Mutex
 	nodeIsInitialized bool
+	// Timeout for storage pool cache
+	storagePoolCacheDuration time.Duration
 }
 
 // New returns a new Service.
@@ -133,6 +136,7 @@ func (s *service) BeforeServe(
 	})
 
 	s.pmaxTimeoutSeconds = defaultPmaxTimeout
+	s.storagePoolCacheDuration = StoragePoolCacheDuration
 
 	// Get the SP's operating mode.
 	s.mode = csictx.Getenv(ctx, gocsi.EnvVarMode)

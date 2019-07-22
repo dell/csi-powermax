@@ -2286,6 +2286,14 @@ func (f *feature) theResultHasPorts(expected string) error {
 	return nil
 }
 
+func (f *feature) iCallValidateStoragePoolIDInParallel(numberOfWorkers int) error {
+	f.service.setStoragePoolCacheDuration(1 * time.Microsecond)
+	for i := 0; i < numberOfWorkers; i++ {
+		go f.service.validateStoragePoolID(mock.DefaultSymmetrixID, mock.DefaultStoragePool)
+	}
+	return nil
+}
+
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -2407,4 +2415,5 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^(\d+) arrays are logged in$`, f.arraysAreLoggedIn)
 	s.Step(`^I call GetTargetsForMaskingView$`, f.iCallGetTargetsForMaskingView)
 	s.Step(`^the result has "([^"]*)" ports$`, f.theResultHasPorts)
+	s.Step(`^I call validateStoragePoolID (\d+) in parallel$`, f.iCallValidateStoragePoolIDInParallel)
 }

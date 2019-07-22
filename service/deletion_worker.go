@@ -158,11 +158,10 @@ func (s *service) startDeletionWorker() error {
 		delWorker = new(deletionWorker)
 		delWorker.MinPollingInterval = 1 * time.Second
 		delWorker.PollingInterval = 3 * time.Second
+		delWorker.Queue = make(deletionWorkerQueue, 0)
+		delWorker.CompletedRequests = make(deletionWorkerQueue, 0)
 		go deletionWorkerWorkerThread(delWorker, s)
 	}
-	delWorker.Queue = make(deletionWorkerQueue, 0)
-	delWorker.CompletedRequests = make(deletionWorkerQueue, 0)
-
 	// Rebuild the queues of volumes to be deleted by searching for volumes
 	// with the _DELCSI prefix.
 	if s.adminClient == nil {
