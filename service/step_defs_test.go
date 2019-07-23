@@ -236,6 +236,7 @@ func (f *feature) aPowerMaxService() error {
 
 	// Get or reuse the cached service
 	f.getService()
+	f.service.storagePoolCacheDuration = 4 * time.Hour
 
 	// create the mock iscsi client
 	f.service.iscsiClient = goiscsi.NewMockISCSI(map[string]string{})
@@ -261,6 +262,8 @@ func (f *feature) aPowerMaxService() error {
 	// Make sure the deletion worker is started.
 	f.service.startDeletionWorker()
 	f.checkGoRoutines("end aPowerMaxService")
+	delWorker.Queue = make(deletionWorkerQueue, 0)
+	delWorker.CompletedRequests = make(deletionWorkerQueue, 0)
 	return nil
 }
 
@@ -2012,7 +2015,7 @@ func (f *feature) deletionWorkerProcessesWhichResultsIn(volumeName, errormsg str
 		// Look for the volumeName in the CompletedRequests
 		for _, req := range delWorker.CompletedRequests {
 			fmt.Printf("CompletedRequest: %#v\n", req)
-			if req.volumeName == volumeName {
+			if req != nil && req.volumeName == volumeName {
 				// Found the volume
 				if errormsg == "none" {
 					if req.err == nil {
