@@ -38,7 +38,8 @@ func TestGoDog(t *testing.T) {
 	}, godog.Options{
 		Format: "pretty",
 		Paths:  []string{"features"},
-		Tags:   "v1.0.0",
+		Tags:   "v1.0.0, v1.1.0",
+		//Tags:   "wip",
 	})
 	fmt.Printf("godog finished\n")
 	if testStatus != 0 {

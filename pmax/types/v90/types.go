@@ -181,6 +181,13 @@ type PortGroup struct {
 	MaskingView        []string  `json:"maskingview"`
 }
 
+// CreatePortGroupParams - Input params for creating port groups
+type CreatePortGroupParams struct {
+	PortGroupID      string    `json:"portGroupId"`
+	SymmetrixPortKey []PortKey `json:"symmetrixPortKey"`
+	ExecutionOption  string    `json:"executionOption"`
+}
+
 // InitiatorList : list of initiators
 type InitiatorList struct {
 	InitiatorIDs []string `json:"initiatorId"`
@@ -240,6 +247,7 @@ type SymmetrixPortType struct {
 	ISCSITarget bool     `json:"iscsi_target,omitempty"`
 	IPAddresses []string `json:"ip_addresses,omitempty"`
 	Identifier  string   `json:"identifier,omitempty"`
+	Type        string   `json:"type,omitempty"`
 }
 
 // Port is a minimal represation of a Symmetrix Port for iSCSI target purpose

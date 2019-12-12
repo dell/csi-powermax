@@ -9,4 +9,4 @@ rm -rf /dev/disk/csi-powermax/*
 rm -rf datadir*
 echo ENDPOINT $X_CSI_POWERMAX_ENDPOINT
 
-go test -v -coverprofile=c.linux.out -timeout 120m -coverpkg=../../service *test.go 
+go test -v -coverprofile=c.linux.out -timeout 60m -coverpkg=../../service *test.go 

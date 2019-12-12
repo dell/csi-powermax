@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -11,7 +10,10 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	pmax "github.com/dell/csi-powermax/pmax"
 	mock "github.com/dell/csi-powermax/pmax/mock"
@@ -43,18 +45,35 @@ const (
 	volume2                    = "CSIXX-Int409498632-000197900046-00502"
 	volume0                    = "CSI-notfound-000197900046-00500"
 	nodePublishBlockDevice     = "sdc"
+	altPublishBlockDevice      = "sdd"
+	nodePublishMultipathDevice = "dm-0"
+	nodePublishDeviceDir       = "test/dev"
 	nodePublishBlockDevicePath = "test/dev/sdc"
+	nodePublishMultipathPath   = "test/dev/dm-0"
+	altPublishBlockDevicePath  = "test/dev/sdd"
 	nodePublishSymlinkDir      = "test/dev/disk/by-id"
+	nodePublishPathSymlinkDir  = "test/dev/disk/by-path"
 	nodePublishPrivateDir      = "test/tmp"
 	nodePublishWWN             = "60000970000197900046533030324538"
+	nodePublishAltWWN          = "60000970000197900046533030324539"
 	nodePublishLUNID           = "3"
 	iSCSIEtcDir                = "test/etc/iscsi"
 	iSCSIEtcFile               = "initiatorname.iscsi"
 	goodSnapID                 = "444-444"
 	altSnapID                  = "555-555"
 	defaultStorageGroup        = "DefaultStorageGroup"
-	defaultInitiator           = "iqn.1993-08.org.debian:01:5ae293b352a2"
+	defaultIscsiInitiator      = "iqn.1993-08.org.debian:01:5ae293b352a2"
+	defaultFcInitiator         = "0x10000090fa6603b7"
+	defaultFcInitiatorWWN      = "10000090fa6603b7"
+	defaultFcStoragePortWWN    = "5000000000000001"
+	portalIP                   = "1.2.3.4"
+	altPortalIP                = "1.2.3.5"
+	defaultFCDirPort           = "FA-1D:4"
+	defaultISCSIDirPort1       = "SE1-E:6"
+	defaultISCSIDirPort2       = "SE2-E:4"
 )
+
+var allBlockDevices = [2]string{nodePublishBlockDevicePath, altPublishBlockDevicePath}
 
 type feature struct {
 	nGoRoutines int
@@ -64,6 +83,7 @@ type feature struct {
 	err         error // return from the preceeding call
 	// replace this with the Unispher client
 	adminClient                          pmax.Pmax
+	symmetrixID                          string
 	system                               *interface{}
 	getPluginInfoResponse                *csi.GetPluginInfoResponse
 	getPluginCapabilitiesResponse        *csi.GetPluginCapabilitiesResponse
@@ -87,6 +107,7 @@ type feature struct {
 	listSnapshotsRequest                 *csi.ListSnapshotsRequest
 	listSnapshotsResponse                *csi.ListSnapshotsResponse
 	getVolumeByIDResponse                *GetVolumeByIDResponse
+	response                             string
 	listedVolumeIDs                      map[string]bool
 	listVolumesNextTokenCache            string
 	noNodeID                             bool
@@ -105,10 +126,13 @@ type feature struct {
 	mvID                                 string
 	hostID                               string
 	volumeID                             string
-	IQNs                                 []string
+	initiators                           []string
+	ninitiators                          int
 	host                                 *types.Host
 	allowedArrays                        []string
 	iscsiTargets                         []goiscsi.ISCSITarget
+	lastUnmounted                        bool
+	errType                              string
 }
 
 var inducedErrors struct {
@@ -144,9 +168,10 @@ func (f *feature) aPowerMaxService() error {
 		fmt.Printf("time for last op: %v\n", dur)
 	}
 	f.lastTime = now
-	devDiskByIDPrefix = "test/dev/disk/by-id/wwn-0x"
+	gofsutil.GOFSWWNPath = "test/dev/disk/by-id/wwn-0x"
 	nodePublishSleepTime = 5 * time.Millisecond
 	removeDeviceSleepTime = 5 * time.Millisecond
+	targetMountRecheckSleepTime = 30 * time.Millisecond
 	maxBlockDevicesPerWWN = 3
 	f.checkGoRoutines("start aPowerMaxService")
 	// Save off the admin client and the system
@@ -158,7 +183,9 @@ func (f *feature) aPowerMaxService() error {
 	if pmaxCache != nil {
 		pmaxCache = make(map[string]*pmaxCachedInformation)
 	}
+	nodeCache = sync.Map{}
 	f.err = nil
+	f.symmetrixID = mock.DefaultSymmetrixID
 	f.getPluginInfoResponse = nil
 	f.getPluginCapabilitiesResponse = nil
 	f.probeResponse = nil
@@ -195,6 +222,8 @@ func (f *feature) aPowerMaxService() error {
 	f.sgID = ""
 	f.mvID = ""
 	f.hostID = ""
+	f.initiators = make([]string, 0)
+	f.ninitiators = 0
 	f.volumeNameToID = make(map[string]string)
 	f.snapshotIndex = 0
 	f.allowedArrays = []string{}
@@ -227,9 +256,15 @@ func (f *feature) aPowerMaxService() error {
 	gofsutil.GOFSMock.InduceFormatError = false
 	gofsutil.GOFSMock.InduceGetDiskFormatError = false
 	gofsutil.GOFSMock.InduceWWNToDevicePathError = false
+	gofsutil.GOFSMock.InduceTargetIPLUNToDeviceError = false
 	gofsutil.GOFSMock.InduceRemoveBlockDeviceError = false
+	gofsutil.GOFSMock.InduceMultipathCommandError = false
+	gofsutil.GOFSMock.InduceRescanError = false
 	gofsutil.GOFSMock.InduceGetDiskFormatType = ""
 	gofsutil.GOFSMockMounts = gofsutil.GOFSMockMounts[:0]
+	gofsutil.GOFSMockWWNToDevice = make(map[string]string)
+	gofsutil.GOFSMockTargetIPLUNToDevice = make(map[string]string)
+	gofsutil.GOFSRescanCallback = nil
 
 	// configure variables in the driver
 	getMappedVolMaxRetry = 1
@@ -237,6 +272,7 @@ func (f *feature) aPowerMaxService() error {
 	// Get or reuse the cached service
 	f.getService()
 	f.service.storagePoolCacheDuration = 4 * time.Hour
+	f.service.SetPmaxTimeoutSeconds(3)
 
 	// create the mock iscsi client
 	f.service.iscsiClient = goiscsi.NewMockISCSI(map[string]string{})
@@ -260,10 +296,11 @@ func (f *feature) aPowerMaxService() error {
 	}
 
 	// Make sure the deletion worker is started.
-	f.service.startDeletionWorker()
+	f.service.startDeletionWorker(false)
 	f.checkGoRoutines("end aPowerMaxService")
 	delWorker.Queue = make(deletionWorkerQueue, 0)
 	delWorker.CompletedRequests = make(deletionWorkerQueue, 0)
+	f.errType = ""
 	return nil
 }
 
@@ -287,11 +324,15 @@ func (f *feature) getService() *service {
 	opts.NodeName = "Node1"
 	opts.Insecure = true
 	opts.DisableCerts = true
+	opts.EnableBlock = true
 	opts.PortGroups = []string{"portgroup1", "portgroup2"}
+	mock.AddPortGroup("portgroup1", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+	mock.AddPortGroup("portgroup2", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 	opts.AllowedArrays = []string{}
 	opts.EnableSnapshotCGDelete = true
 	opts.EnableListVolumesSnapshots = true
 	opts.ClusterPrefix = "TST"
+	opts.NonDefaultRetries = true
 	opts.Lsmod = `
 Module                  Size  Used by
 vsock_diag             12610  0
@@ -301,6 +342,11 @@ ip6t_rpfilter          12595  1
 	svc.opts = opts
 	f.service = svc
 	return svc
+}
+
+func (f *feature) aPostELMSRArray() error {
+	f.symmetrixID = mock.PostELMSRSymmetrixID
+	return nil
 }
 
 // GetPluginInfo
@@ -418,10 +464,10 @@ func (f *feature) thereIsANodeProbeLsmodError() error {
 	return nil
 }
 
-func getTypicalCreateVolumeRequest() *csi.CreateVolumeRequest {
+func (f *feature) getTypicalCreateVolumeRequest() *csi.CreateVolumeRequest {
 	req := new(csi.CreateVolumeRequest)
 	params := make(map[string]string)
-	params[SymmetrixIDParam] = mock.DefaultSymmetrixID
+	params[SymmetrixIDParam] = f.symmetrixID
 	params[ServiceLevelParam] = mock.DefaultServiceLevel
 	params[StoragePoolParam] = mock.DefaultStoragePool
 	if inducedErrors.invalidSymID {
@@ -456,7 +502,7 @@ func (f *feature) iSpecifyCreateVolumeMountRequest(fstype string) error {
 	req := new(csi.CreateVolumeRequest)
 	params := make(map[string]string)
 	params["storagepool"] = "viki_pool_HDD_20181031"
-	params[SymmetrixIDParam] = mock.DefaultSymmetrixID
+	params[SymmetrixIDParam] = f.symmetrixID
 	params[ServiceLevelParam] = mock.DefaultServiceLevel
 	params[StoragePoolParam] = mock.DefaultStoragePool
 	req.Parameters = params
@@ -485,7 +531,7 @@ func (f *feature) iCallCreateVolume(name string) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 	if f.createVolumeRequest == nil {
-		req := getTypicalCreateVolumeRequest()
+		req := f.getTypicalCreateVolumeRequest()
 		f.createVolumeRequest = req
 	}
 	req := f.createVolumeRequest
@@ -536,7 +582,7 @@ func (f *feature) aValidCreateVolumeResponseIsReturned() error {
 func (f *feature) iSpecifyAccessibilityRequirements() error {
 	req := new(csi.CreateVolumeRequest)
 	params := make(map[string]string)
-	params[SymmetrixIDParam] = mock.DefaultSymmetrixID
+	params[SymmetrixIDParam] = f.symmetrixID
 	params[ServiceLevelParam] = mock.DefaultServiceLevel
 	params[StoragePoolParam] = mock.DefaultStoragePool
 	req.Parameters = params
@@ -550,7 +596,7 @@ func (f *feature) iSpecifyAccessibilityRequirements() error {
 }
 
 func (f *feature) iSpecifyVolumeContentSource() error {
-	req := getTypicalCreateVolumeRequest()
+	req := f.getTypicalCreateVolumeRequest()
 	req.Name = "volume_content_source"
 	req.VolumeContentSource = new(csi.VolumeContentSource)
 	req.VolumeContentSource.Type = &csi.VolumeContentSource_Volume{Volume: &csi.VolumeContentSource_VolumeSource{}}
@@ -561,7 +607,7 @@ func (f *feature) iSpecifyVolumeContentSource() error {
 func (f *feature) iSpecifyMULTINODEWRITER() error {
 	req := new(csi.CreateVolumeRequest)
 	params := make(map[string]string)
-	params[SymmetrixIDParam] = mock.DefaultSymmetrixID
+	params[SymmetrixIDParam] = f.symmetrixID
 	params[ServiceLevelParam] = mock.DefaultServiceLevel
 	params[StoragePoolParam] = mock.DefaultStoragePool
 	req.Parameters = params
@@ -585,7 +631,7 @@ func (f *feature) iSpecifyMULTINODEWRITER() error {
 }
 
 func (f *feature) iSpecifyABadCapacity() error {
-	req := getTypicalCreateVolumeRequest()
+	req := f.getTypicalCreateVolumeRequest()
 	capacityRange := new(csi.CapacityRange)
 	capacityRange.RequiredBytes = -8 * 1024 * 1024 * 1024
 	req.CapacityRange = capacityRange
@@ -595,7 +641,7 @@ func (f *feature) iSpecifyABadCapacity() error {
 }
 
 func (f *feature) iSpecifyAApplicationPrefix() error {
-	req := getTypicalCreateVolumeRequest()
+	req := f.getTypicalCreateVolumeRequest()
 	params := req.GetParameters()
 	params["ApplicationPrefix"] = "UNI"
 	req.Parameters = params
@@ -604,7 +650,7 @@ func (f *feature) iSpecifyAApplicationPrefix() error {
 }
 
 func (f *feature) iSpecifyAStorageGroup() error {
-	req := getTypicalCreateVolumeRequest()
+	req := f.getTypicalCreateVolumeRequest()
 	params := req.GetParameters()
 	params["StorageGroup"] = "UnitTestSG"
 	req.Parameters = params
@@ -613,7 +659,7 @@ func (f *feature) iSpecifyAStorageGroup() error {
 }
 
 func (f *feature) iSpecifyNoStoragePool() error {
-	req := getTypicalCreateVolumeRequest()
+	req := f.getTypicalCreateVolumeRequest()
 	req.Parameters = nil
 	req.Name = "no storage pool"
 	f.createVolumeRequest = req
@@ -623,7 +669,7 @@ func (f *feature) iSpecifyNoStoragePool() error {
 func (f *feature) iCallCreateVolumeSize(name string, size int64) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
-	req := getTypicalCreateVolumeRequest()
+	req := f.getTypicalCreateVolumeRequest()
 	capacityRange := new(csi.CapacityRange)
 	capacityRange.RequiredBytes = size * 1024 * 1024
 	req.CapacityRange = capacityRange
@@ -644,7 +690,7 @@ func (f *feature) iCallCreateVolumeSize(name string, size int64) error {
 
 func (f *feature) iChangeTheStoragePool(storagePoolName string) error {
 	params := make(map[string]string)
-	params[SymmetrixIDParam] = mock.DefaultSymmetrixID
+	params[SymmetrixIDParam] = f.symmetrixID
 	params[ServiceLevelParam] = "Diamond"
 	params[StoragePoolParam] = mock.DefaultStoragePool
 	f.createVolumeRequest.Parameters = params
@@ -653,6 +699,7 @@ func (f *feature) iChangeTheStoragePool(storagePoolName string) error {
 
 func (f *feature) iInduceError(errtype string) error {
 	log.Printf("set induce error %s\n", errtype)
+	f.errType = errtype
 	switch errtype {
 	case "InvalidSymID":
 		inducedErrors.invalidSymID = true
@@ -672,6 +719,8 @@ func (f *feature) iInduceError(errtype string) error {
 		mock.InducedErrors.UpdateVolumeError = true
 	case "DeleteVolumeError":
 		mock.InducedErrors.DeleteVolumeError = true
+	case "DeviceInSGError":
+		mock.InducedErrors.DeviceInSGError = true
 	case "GetJobError":
 		mock.InducedErrors.GetJobError = true
 	case "JobFailedError":
@@ -710,6 +759,10 @@ func (f *feature) iInduceError(errtype string) error {
 		mock.InducedErrors.GetDirectorError = true
 	case "ResetAfterFirstError":
 		mock.InducedErrors.ResetAfterFirstError = true
+	case "GetInitiatorError":
+		mock.InducedErrors.GetInitiatorError = true
+	case "GetInitiatorByIDError":
+		mock.InducedErrors.GetInitiatorByIDError = true
 	case "NoSymlinkForNodePublish":
 		cmd := exec.Command("rm", "-rf", nodePublishSymlinkDir)
 		_, err := cmd.CombinedOutput()
@@ -745,6 +798,7 @@ func (f *feature) iInduceError(errtype string) error {
 		f.nodePublishVolumeRequest.VolumeCapability.AccessType = nil
 	case "NodePublishNoTargetPath":
 		f.nodePublishVolumeRequest.TargetPath = ""
+		f.nodePublishVolumeRequest.StagingTargetPath = ""
 	case "NodePublishBlockTargetNotFile":
 		f.nodePublishVolumeRequest.TargetPath = datadir
 	case "NodePublishFileTargetNotDir":
@@ -767,16 +821,59 @@ func (f *feature) iInduceError(errtype string) error {
 		gofsutil.GOFSMock.InduceFormatError = true
 	case "GOFSWWNToDevicePathError":
 		gofsutil.GOFSMock.InduceWWNToDevicePathError = true
-	case "GOFSRmoveBlockDeviceError":
+	case "GOFSTargetIPLUNToDeviceError":
+		gofsutil.GOFSMock.InduceTargetIPLUNToDeviceError = true
+	case "GOFSRemoveBlockDeviceError":
 		gofsutil.GOFSMock.InduceRemoveBlockDeviceError = true
+	case "GOFSMultipathCommandError":
+		gofsutil.GOFSMock.InduceMultipathCommandError = true
 	case "GOISCSIDiscoveryError":
 		goiscsi.GOISCSIMock.InduceDiscoveryError = true
 	case "GOISCSIRescanError":
 		goiscsi.GOISCSIMock.InduceRescanError = true
 	case "NodeUnpublishNoTargetPath":
 		f.nodePublishVolumeRequest.TargetPath = ""
+		f.nodePublishVolumeRequest.StagingTargetPath = ""
 	case "NodeUnpublishBadVolume":
 		f.nodePublishVolumeRequest.VolumeId = volume0
+	case "NodePublishRequestReadOnly":
+		f.nodePublishVolumeRequest.Readonly = true
+	case "PrivMountAlreadyMounted":
+		mkdir(nodePublishPrivateDir + "/" + volume1)
+		mnt := gofsutil.Info{
+			Device: nodePublishSymlinkDir + "/wwn-0x" + nodePublishWWN,
+			Path:   nodePublishPrivateDir + "/" + volume1,
+			Source: nodePublishSymlinkDir + "/wwn-0x" + nodePublishWWN,
+		}
+		gofsutil.GOFSMockMounts = append(gofsutil.GOFSMockMounts, mnt)
+		fmt.Printf("GOFSMockMounts: %#v\n", gofsutil.GOFSMockMounts)
+	case "PrivMountByDifferentDev":
+		mkdir(nodePublishPrivateDir + "/" + volume1)
+		mnt := gofsutil.Info{
+			Device: altPublishBlockDevicePath,
+			Path:   nodePublishPrivateDir + "/" + volume1,
+			Source: altPublishBlockDevicePath,
+		}
+		gofsutil.GOFSMockMounts = append(gofsutil.GOFSMockMounts, mnt)
+		fmt.Printf("GOFSMockMounts: %#v\n", gofsutil.GOFSMockMounts)
+	case "PrivMountByDifferentDir":
+		mkdir(datadir + "/" + "xxx")
+		mnt := gofsutil.Info{
+			Device: nodePublishSymlinkDir + "/wwn-0x" + nodePublishWWN,
+			Path:   datadir + "/" + "xxx",
+			Source: nodePublishSymlinkDir + "/wwn-0x" + nodePublishWWN,
+		}
+		gofsutil.GOFSMockMounts = append(gofsutil.GOFSMockMounts, mnt)
+		fmt.Printf("GOFSMockMounts: %#v\n", gofsutil.GOFSMockMounts)
+	case "MountTargetAlreadyMounted":
+		mkdir(datadir)
+		mnt := gofsutil.Info{
+			Device: nodePublishSymlinkDir + "/wwn-0x" + nodePublishWWN,
+			Path:   datadir,
+			Source: nodePublishSymlinkDir + "/wwn-0x" + nodePublishWWN,
+		}
+		gofsutil.GOFSMockMounts = append(gofsutil.GOFSMockMounts, mnt)
+		fmt.Printf("GOFSMockMounts: %#v\n", gofsutil.GOFSMockMounts)
 	case "BadVolumeIdentifier":
 		inducedErrors.badVolumeIdentifier = true
 	case "InvalidVolumeID":
@@ -793,6 +890,9 @@ func (f *feature) iInduceError(errtype string) error {
 		inducedErrors.noNodeName = true
 	case "NoIQNs":
 		inducedErrors.noIQNs = true
+	case "RescanError":
+		gofsutil.GOFSMock.InduceRescanError = true
+		inducedErrors.rescanError = true
 	case "none":
 		return nil
 	default:
@@ -902,60 +1002,162 @@ func (f *feature) getControllerDeleteVolumeRequest(accessType string) *csi.Delet
 	req := new(csi.DeleteVolumeRequest)
 	if !inducedErrors.noVolumeID {
 		if inducedErrors.invalidVolumeID {
-			req.VolumeId = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, mock.DefaultSymmetrixID, "99999")
+			req.VolumeId = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, "99999")
 		} else {
 			if f.volumeID != "" {
 				req.VolumeId = f.volumeID
 			} else {
-				req.VolumeId = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, mock.DefaultSymmetrixID, goodVolumeID)
+				req.VolumeId = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, goodVolumeID)
 			}
 		}
 	}
 	return req
 }
 
+func (f *feature) iHaveANodeWithInitiatorsWithMaskingView(nodeID, initList string) error {
+	f.service.opts.NodeName = nodeID
+	transportProtocol := f.service.opts.TransportProtocol
+	if transportProtocol == "FC" {
+		f.hostID, f.sgID, f.mvID = f.service.GetFCHostSGAndMVIDFromNodeID(nodeID)
+		initiator := defaultFcInitiatorWWN + nodeID + initList
+		initiators := []string{initiator}
+		initID := defaultFCDirPort + ":" + initiator
+		mock.AddInitiator(initID, initiator, "Fibre", []string{defaultFCDirPort}, "")
+		mock.AddHost(f.hostID, "Fibre", initiators)
+		mock.AddStorageGroup(f.sgID, "", "")
+		portGroupID := ""
+		if f.selectedPortGroup != "" {
+			portGroupID = f.selectedPortGroup
+		} else {
+			portGroupID = "fc_ports"
+		}
+		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
+	} else {
+		f.hostID, f.sgID, f.mvID = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+		initiator := defaultIscsiInitiator + nodeID + initList
+		initiators := []string{initiator}
+		initID := defaultISCSIDirPort1 + ":" + initiator
+		mock.AddInitiator(initID, initiator, "GigE", []string{defaultISCSIDirPort1}, "")
+		mock.AddHost(f.hostID, "iSCSI", initiators)
+		mock.AddStorageGroup(f.sgID, "", "")
+		portGroupID := ""
+		if f.selectedPortGroup != "" {
+			portGroupID = f.selectedPortGroup
+		} else {
+			portGroupID = "iscsi_ports"
+		}
+		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
+	}
+	return nil
+}
 func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 	f.service.opts.NodeName = nodeID
-	f.hostID, f.sgID, f.mvID = f.service.GetHostSGAndMVIDFromNodeID(nodeID)
-	initiators := []string{"iqn.1993-08.org.debian:01:5ae293b352a5"}
-	mock.AddHost(f.hostID, "ISCSI", initiators)
-	mock.AddStorageGroup(f.sgID, "", "")
-	portGroupID := ""
-	if f.selectedPortGroup != "" {
-		portGroupID = f.selectedPortGroup
+	transportProtocol := f.service.opts.TransportProtocol
+	if transportProtocol == "FC" {
+		f.hostID, f.sgID, f.mvID = f.service.GetFCHostSGAndMVIDFromNodeID(nodeID)
+		initiator := defaultFcInitiatorWWN
+		initiators := []string{initiator}
+		initID := defaultFCDirPort + ":" + initiator
+		mock.AddInitiator(initID, initiator, "Fibre", []string{defaultFCDirPort}, "")
+		mock.AddHost(f.hostID, "Fibre", initiators)
+		mock.AddStorageGroup(f.sgID, "", "")
+		portGroupID := ""
+		if f.selectedPortGroup != "" {
+			portGroupID = f.selectedPortGroup
+		} else {
+			portGroupID = "fc_ports"
+		}
+		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	} else {
-		portGroupID = "iscsi_ports"
+		f.hostID, f.sgID, f.mvID = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+		initiator := defaultIscsiInitiator
+		initiators := []string{initiator}
+		initID := defaultISCSIDirPort1 + ":" + initiator
+		mock.AddInitiator(initID, initiator, "GigE", []string{defaultISCSIDirPort1}, "")
+		mock.AddHost(f.hostID, "iSCSI", initiators)
+		mock.AddStorageGroup(f.sgID, "", "")
+		portGroupID := ""
+		if f.selectedPortGroup != "" {
+			portGroupID = f.selectedPortGroup
+		} else {
+			portGroupID = "iscsi_ports"
+		}
+		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	}
-	mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	return nil
 }
 
 func (f *feature) iHaveANodeWithHost(nodeID string) error {
-	f.hostID, _, _ = f.service.GetHostSGAndMVIDFromNodeID(nodeID)
-	initiators := []string{"iqn.1993-08.org.debian:01:5ae293b352a5"}
-	mock.AddHost(f.hostID, "ISCSI", initiators)
+	transportProtocol := f.service.opts.TransportProtocol
+	if transportProtocol == "FC" {
+		f.hostID, _, _ = f.service.GetFCHostSGAndMVIDFromNodeID(nodeID)
+		initiator := defaultFcInitiatorWWN
+		initiators := []string{initiator}
+		initID := defaultFCDirPort + ":" + initiator
+		mock.AddInitiator(initID, initiator, "Fibre", []string{defaultFCDirPort}, "")
+		mock.AddHost(f.hostID, "Fibre", initiators)
+	} else {
+		f.hostID, _, _ = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+		initiator := defaultIscsiInitiator
+		initiators := []string{initiator}
+		initID := defaultISCSIDirPort1 + ":" + initiator
+		mock.AddInitiator(initID, initiator, "GigE", []string{defaultISCSIDirPort1}, "")
+		mock.AddHost(f.hostID, "iSCSI", initiators)
+	}
 	return nil
 }
 
 func (f *feature) iHaveANodeWithStorageGroup(nodeID string) error {
-	_, f.sgID, _ = f.service.GetHostSGAndMVIDFromNodeID(nodeID)
+	_, f.sgID, _ = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
 	mock.AddStorageGroup(f.sgID, "", "")
 	return nil
 }
 
 func (f *feature) iHaveANodeWithAFastManagedMaskingView(nodeID string) error {
-	f.hostID, _, f.mvID = f.service.GetHostSGAndMVIDFromNodeID(nodeID)
+	f.hostID, _, f.mvID = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
 	f.sgID = nodeID + "-Diamond-SRP_1-SG"
-	initiators := []string{"iqn.1993-08.org.debian:01:5ae293b352a5"}
-	mock.AddHost(f.hostID, "ISCSI", initiators)
+	initiator := defaultIscsiInitiator
+	initiators := []string{initiator}
+	initID := defaultISCSIDirPort1 + ":" + initiator
+	mock.AddInitiator(initID, initiator, "GigE", []string{defaultISCSIDirPort1}, "")
+	mock.AddHost(f.hostID, "iSCSI", initiators)
 	mock.AddStorageGroup(f.sgID, "SRP_1", "Diamond")
 	mock.AddMaskingView(f.mvID, f.sgID, f.hostID, f.selectedPortGroup)
 	return nil
 }
 
 func (f *feature) iHaveANodeWithFastManagedStorageGroup(nodeID string) error {
-	_, f.sgID, _ = f.service.GetHostSGAndMVIDFromNodeID(nodeID)
+	_, f.sgID, _ = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
 	mock.AddStorageGroup(f.sgID, "SRP_1", "Diamond")
+	return nil
+}
+
+func (f *feature) iHaveANodeWithHostWithInitiatorMappedToMultiplePorts(nodeID string) error {
+	f.hostID, _, _ = f.service.GetFCHostSGAndMVIDFromNodeID(nodeID)
+	initiator := defaultFcInitiatorWWN
+	initiators := []string{initiator}
+	initID1 := "FA-1D:4" + ":" + initiator
+	initID2 := "FA-1D:5" + ":" + initiator
+	initID3 := "FA-2D:1" + ":" + initiator
+	initID4 := "FA-3E:2" + ":" + initiator
+	initID5 := "FA-4D:5" + ":" + initiator
+	initID6 := "FA-4D:6" + ":" + initiator
+	initID7 := "FA-3D:3" + ":" + initiator
+	mock.AddInitiator(initID1, initiator, "Fibre", []string{"FA-1D:4"}, "")
+	mock.AddInitiator(initID2, initiator, "Fibre", []string{"FA-1D:5"}, "")
+	mock.AddInitiator(initID3, initiator, "Fibre", []string{"FA-2D:1"}, "")
+	mock.AddInitiator(initID4, initiator, "Fibre", []string{"FA-3E:2"}, "")
+	mock.AddInitiator(initID5, initiator, "Fibre", []string{"FA-4D:5"}, "")
+	mock.AddInitiator(initID6, initiator, "Fibre", []string{"FA-4D:6"}, "")
+	mock.AddInitiator(initID7, initiator, "Fibre", []string{"FA-3D:3"}, "")
+	mock.AddHost(f.hostID, "Fibre", initiators)
+	return nil
+}
+
+func (f *feature) iHaveAFCPortGroup(portGroupID string) error {
+	dirPort := defaultFCDirPort
+	tempPGID := "csi-" + f.service.getClusterPrefix() + "-" + portGroupID
+	mock.AddPortGroup(tempPGID, "Fibre", []string{dirPort})
 	return nil
 }
 
@@ -1002,7 +1204,7 @@ func (f *feature) aValidVolume() error {
 	sgList[0] = defaultStorageGroup
 	mock.AddStorageGroup(defaultStorageGroup, "SRP_1", "Optimized")
 	mock.AddOneVolumeToStorageGroup(devID, volumeIdentifier, defaultStorageGroup, 1)
-	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, mock.DefaultSymmetrixID, goodVolumeID)
+	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, goodVolumeID)
 	return nil
 }
 
@@ -1172,7 +1374,7 @@ func (f *feature) iCallGetCapacityWithStoragePool(srpID string) error {
 	req := getTypicalCapacityRequest(true)
 	parameters := make(map[string]string)
 	parameters[StoragePoolParam] = srpID
-	parameters[SymmetrixIDParam] = mock.DefaultSymmetrixID
+	parameters[SymmetrixIDParam] = f.symmetrixID
 	req.Parameters = parameters
 
 	fmt.Printf("Calling GetCapacity with %s and %s\n",
@@ -1364,7 +1566,7 @@ func (f *feature) iCallValidateVolumeCapabilitiesWithVoltypeAccessFstype(voltype
 	if inducedErrors.invalidVolumeID || f.volumeID == "" {
 		req.VolumeId = "000-000"
 	} else if inducedErrors.differentVolumeID {
-		req.VolumeId = f.service.createCSIVolumeID(f.service.getClusterPrefix(), altVolumeName, mock.DefaultSymmetrixID, goodVolumeID)
+		req.VolumeId = f.service.createCSIVolumeID(f.service.getClusterPrefix(), altVolumeName, f.symmetrixID, goodVolumeID)
 	} else {
 		req.VolumeId = f.volumeID
 	}
@@ -1496,16 +1698,24 @@ func (f *feature) aCapabilityWithVoltypeAccessFstype(voltype, access, fstype str
 	return nil
 }
 
-func (f *feature) aControllerPublishedVolume() error {
+func (f *feature) makeDevDirectories() error {
 	var err error
-	fmt.Printf("setting up dev directory, block device, and symlink\n")
-
-	// Make the directories; on Windows these show up in C:/dev/...
+	// Make the directories; on Windows these show up in test/dev/...
 	_, err = os.Stat(nodePublishSymlinkDir)
 	if err != nil {
 		err = os.MkdirAll(nodePublishSymlinkDir, 0777)
 		if err != nil {
 			fmt.Printf("by-id: " + err.Error())
+			return err
+		}
+	}
+
+	_, err = os.Stat(nodePublishPathSymlinkDir)
+	if err != nil {
+		err = os.MkdirAll(nodePublishPathSymlinkDir, 0777)
+		if err != nil {
+			fmt.Printf("by-path: " + err.Error())
+			return err
 		}
 	}
 
@@ -1514,25 +1724,37 @@ func (f *feature) aControllerPublishedVolume() error {
 	_, err = cmd.CombinedOutput()
 	if err != nil {
 		fmt.Printf("error removing private staging directory")
-	} else {
-		fmt.Printf("removed private staging directory")
+		return err
 	}
+	fmt.Printf("removed private staging directory\n")
 
 	// Remake the private staging directory
 	err = os.MkdirAll(nodePublishPrivateDir, 0777)
 	if err != nil {
 		fmt.Printf("error creating private staging directory: " + err.Error())
+		return err
 	}
 	f.service.privDir = nodePublishPrivateDir
+	return nil
+}
 
-	// Make the block device
-	_, err = os.Stat(nodePublishBlockDevicePath)
-	if err != nil {
-		fmt.Printf("stat error: %s\n", err.Error())
-		cmd := exec.Command("mknod", nodePublishBlockDevicePath, "b", "0", "0")
-		_, err := cmd.CombinedOutput()
+func (f *feature) aControllerPublishedVolume() error {
+	var err error
+	fmt.Printf("setting up dev directory, block device, and symlink\n")
+
+	// Make the directories; on Windows these show up in test/dev/...
+	f.makeDevDirectories()
+
+	// Make the block device and alternate
+	for _, dev := range allBlockDevices {
+		_, err = os.Stat(dev)
 		if err != nil {
-			fmt.Printf("error creating device node\n")
+			fmt.Printf("stat error: %s\n", err.Error())
+			cmd := exec.Command("mknod", dev, "b", "0", "0")
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				fmt.Printf("A error creating device node: %s\n", string(output))
+			}
 		}
 	}
 
@@ -1541,14 +1763,16 @@ func (f *feature) aControllerPublishedVolume() error {
 	_, err = os.Stat(nodePublishSymlinkDir + "/" + symlinkString)
 	if err != nil {
 		cmdstring := fmt.Sprintf("cd %s; ln -s ../../%s %s", nodePublishSymlinkDir, nodePublishBlockDevice, symlinkString)
-		cmd = exec.Command("sh", "-c", cmdstring)
+		cmd := exec.Command("sh", "-c", cmdstring)
 		output, err := cmd.CombinedOutput()
 		fmt.Printf("symlink output: %s\n", output)
 		if err != nil {
 			fmt.Printf("link: " + err.Error())
 		}
 	}
-	devDiskByIDPrefix = "test/dev/disk/by-id/wwn-0x"
+
+	// Make the gofsutil entry
+	gofsutil.GOFSMockWWNToDevice[symlinkString] = nodePublishBlockDevicePath
 
 	// Set the callback function
 	gofsutil.GOFSRescanCallback = rescanCallback
@@ -1580,9 +1804,47 @@ func (f *feature) aControllerPublishedVolume() error {
 	return nil
 }
 
+func (f *feature) aControllerPublishedMultipathVolume() error {
+	err := f.aControllerPublishedVolume()
+	if err != nil {
+		return err
+	}
+	// Make the block device and alternate
+	_, err = os.Stat(nodePublishMultipathPath)
+	if err != nil {
+		fmt.Printf("stat error: %s\n", err.Error())
+		cmd := exec.Command("mknod", nodePublishMultipathPath, "b", "0", "7")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			fmt.Printf("B error creating device node: %s\n", string(output))
+		}
+	}
+
+	// Make the symlink
+	symlinkString := fmt.Sprintf("dm-uuid-mpath-3%s", nodePublishWWN)
+	_, err = os.Stat(nodePublishSymlinkDir + "/" + symlinkString)
+	if err != nil {
+		cmdstring := fmt.Sprintf("cd %s; ln -s ../../%s %s", nodePublishSymlinkDir, nodePublishMultipathDevice, symlinkString)
+		cmd := exec.Command("sh", "-c", cmdstring)
+		output, err := cmd.CombinedOutput()
+		fmt.Printf("symlink output: %s\n", output)
+		if err != nil {
+			fmt.Printf("link: " + err.Error())
+		}
+	}
+	// Make the gofsutil entry
+	gofsutil.GOFSWWNPath = "test/dev/disk/by-id/dm-uuid-mpath-3"
+	gofsutil.MultipathDevDiskByIDPrefix = "test/dev/disk/by-id/dm-uuid-mpath-3"
+	gofsutil.GOFSMockWWNToDevice[symlinkString] = nodePublishMultipathPath
+	return nil
+}
+
 func rescanCallback(scanstring string) {
 	if gofsutil.GOFSMockWWNToDevice == nil {
 		gofsutil.GOFSMockWWNToDevice = make(map[string]string)
+	}
+	if inducedErrors.rescanError {
+		return
 	}
 	switch scanstring {
 	case "3":
@@ -1606,6 +1868,13 @@ func (f *feature) getNodePublishVolumeRequest() error {
 	req.PublishContext = make(map[string]string)
 	req.PublishContext[PublishContextDeviceWWN] = nodePublishWWN
 	req.PublishContext[PublishContextLUNAddress] = nodePublishLUNID
+	var portIDs string
+	if f.service.opts.TransportProtocol == FcTransportProtocol {
+		portIDs = fmt.Sprintf("%s,", defaultFcInitiator)
+	} else {
+		portIDs = fmt.Sprintf("%s,", defaultIscsiInitiator)
+	}
+	req.PublishContext[PortIdentifiers] = portIDs
 	block := f.capability.GetBlock()
 	if block != nil {
 		req.TargetPath = datafile
@@ -1614,6 +1883,7 @@ func (f *feature) getNodePublishVolumeRequest() error {
 	if mount != nil {
 		req.TargetPath = datadir
 	}
+	req.StagingTargetPath = nodePublishPrivateDir
 	req.VolumeContext = make(map[string]string)
 	req.VolumeContext["VolumeId"] = req.VolumeId
 	f.nodePublishVolumeRequest = req
@@ -1770,10 +2040,36 @@ func (f *feature) iCallBeforeServeWithAnInvalidClusterPrefix() error {
 }
 
 func (f *feature) iCallNodeStageVolume() error {
+	//	_ = f.getNodePublishVolumeRequest()
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 	req := new(csi.NodeStageVolumeRequest)
+	req.VolumeId = f.nodePublishVolumeRequest.VolumeId
+	req.PublishContext = f.nodePublishVolumeRequest.PublishContext
+	req.StagingTargetPath = f.nodePublishVolumeRequest.StagingTargetPath
+	req.VolumeCapability = f.nodePublishVolumeRequest.VolumeCapability
+	req.VolumeContext = f.nodePublishVolumeRequest.VolumeContext
+	if inducedErrors.badVolumeIdentifier {
+		req.VolumeId = "bad volume identifier"
+	}
+	fmt.Printf("calling NodeStageVolume %#v\n", req)
 	_, f.err = f.service.NodeStageVolume(ctx, req)
+	return nil
+}
+
+func (f *feature) iCallControllerExpandVolume() error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := new(csi.ControllerExpandVolumeRequest)
+	_, f.err = f.service.ControllerExpandVolume(ctx, req)
+	return nil
+}
+
+func (f *feature) iCallNodeExpandVolume() error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := new(csi.NodeExpandVolumeRequest)
+	_, f.err = f.service.NodeExpandVolume(ctx, req)
 	return nil
 }
 
@@ -1781,6 +2077,9 @@ func (f *feature) iCallNodeUnstageVolume() error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 	req := new(csi.NodeUnstageVolumeRequest)
+	req.VolumeId = f.nodePublishVolumeRequest.VolumeId
+	req.StagingTargetPath = f.nodePublishVolumeRequest.StagingTargetPath
+	log.Printf("iCallNodeUnstageVolume %s %s", req.VolumeId, req.StagingTargetPath)
 	_, f.err = f.service.NodeUnstageVolume(ctx, req)
 	return nil
 }
@@ -1798,9 +2097,9 @@ func (f *feature) aValidNodeGetCapabilitiesResponseIsReturned() error {
 		return f.err
 	}
 	if len(f.nodeGetCapabilitiesResponse.Capabilities) > 0 {
-		return errors.New("expected NodeGetCapabilities to return no capabilities")
+		return nil
 	}
-	return nil
+	return errors.New("expected NodeGetCapabilities to return some capabilities")
 }
 
 func (f *feature) iCallCreateSnapshotWith(snapName string) error {
@@ -1871,7 +2170,7 @@ func (f *feature) aValidSnapshotConsistencyGroup() error {
 func (f *feature) iCallCreateVolumeFromSnapshot() error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
-	req := getTypicalCreateVolumeRequest()
+	req := f.getTypicalCreateVolumeRequest()
 	req.Name = "volumeFromSnap"
 	if f.wrongCapacity {
 		req.CapacityRange.RequiredBytes = 64 * 1024 * 1024 * 1024
@@ -1971,6 +2270,7 @@ func (f *feature) theTotalSnapshotsListedIs(arg1 string) error {
 }
 
 func (f *feature) iInvalidateTheProbeCache() error {
+	f.service.waitGroup.Wait()
 	f.service.adminClient = nil
 	f.service.system = nil
 	return nil
@@ -1994,12 +2294,19 @@ func (f *feature) iQueueForDeletion(volumeName string) error {
 	} else {
 		return fmt.Errorf("Could not find devID for volume %s", volumeName)
 	}
+	// Fetch the uCode version details
+	isPostElmSR, err := f.service.isPostElmSR(arrayID)
+	if err != nil {
+		log.Error("Failed to get symmetrix uCode version details")
+		return fmt.Errorf("Failed to fetch uCode version details")
+	}
 	//volumeSize := mock.Data.VolumeIDToVolume[devID].CapacityGB
 	req := &deletionWorkerRequest{
 		symmetrixID:           arrayID,
 		volumeID:              devID,
 		volumeName:            "csi-" + f.service.opts.ClusterPrefix + "-" + volumeName,
 		volumeSizeInCylinders: int64(volumeSize),
+		skipDeallocate:        isPostElmSR,
 	}
 	delWorker.requestDeletion(req)
 	return nil
@@ -2043,15 +2350,22 @@ func (f *feature) existingVolumesToBeDeleted(nvols int) error {
 	for i := 0; i < nvols; i++ {
 		id := fmt.Sprintf("0000%d", i)
 		mock.AddOneVolumeToStorageGroup(id, volDeleteKey+"-"+f.service.getClusterPrefix()+id, defaultStorageGroup, 8)
-		resourceLink := fmt.Sprintf("sloprovisioning/system/%s/volume/%s", mock.DefaultSymmetrixID, id)
+		resourceLink := fmt.Sprintf("sloprovisioning/system/%s/volume/%s", f.symmetrixID, id)
 		job := mock.NewMockJob("job"+id, types.JobStatusRunning, types.JobStatusRunning, resourceLink)
 		job.Job.Status = types.JobStatusRunning
 	}
 	return nil
 }
 
+func (f *feature) iRepopulateTheDeletionQueues() error {
+	// Add a goroutine to the wait group as populateDeletionQueuesThread calls a "Done" on the waitgroup
+	f.service.waitGroup.Add(1)
+	f.err = f.service.runPopulateDeletionQueuesThread()
+	return nil
+}
+
 func (f *feature) iRestartTheDeletionWorker() error {
-	f.err = f.service.startDeletionWorker()
+	f.err = f.service.startDeletionWorker(false)
 	return nil
 }
 
@@ -2059,10 +2373,13 @@ func (f *feature) volumesAreBeingProcessedForDeletion(nVols int) error {
 	if f.err != nil {
 		return nil
 	}
+	// Wait for the goroutine which populates the deletion queue
+	f.service.waitGroup.Wait()
 	// Count the number of volumes in the delWorker queue
 	cnt := 0
 	for i := 0; i < len(delWorker.Queue); i++ {
-		if delWorker.Queue[i].symmetrixID == mock.DefaultSymmetrixID {
+		fmt.Printf("%s\n", delWorker.Queue[i].symmetrixID)
+		if delWorker.Queue[i].symmetrixID == f.symmetrixID {
 			cnt++
 		}
 	}
@@ -2090,9 +2407,9 @@ func (f *feature) aValidPortGroupIsReturned() error {
 	return nil
 }
 
-func (f *feature) iInvokeCreateOrUpdateHost(hostName string) error {
+func (f *feature) iInvokeCreateOrUpdateIscsiHost(hostName string) error {
 	f.service.SetPmaxTimeoutSeconds(3)
-	symID := mock.DefaultSymmetrixID
+	symID := f.symmetrixID
 	if inducedErrors.noSymID {
 		symID = ""
 	}
@@ -2106,34 +2423,81 @@ func (f *feature) iInvokeCreateOrUpdateHost(hostName string) error {
 		hostID = ""
 	}
 	fmt.Println("hostID: " + hostID)
-	initiators := []string{defaultInitiator}
+	initiator := defaultIscsiInitiator + hostName
+	initiators := []string{initiator}
+	initID := defaultISCSIDirPort1 + ":" + initiator
+	mock.AddInitiator(initID, initiator, "GigE", []string{defaultISCSIDirPort1}, "")
 	if inducedErrors.noIQNs {
 		initiators = initiators[:0]
 	}
-	f.host, f.err = f.service.createOrUpdateHost(symID, hostID, initiators)
-	f.IQNs = f.host.Initiators
+	f.host, f.err = f.service.createOrUpdateIscsiHost(symID, hostID, initiators)
+	f.initiators = f.host.Initiators
+	return nil
+}
+
+func (f *feature) iInvokeCreateOrUpdateFCHost(hostName string) error {
+	f.service.SetPmaxTimeoutSeconds(3)
+	symID := f.symmetrixID
+	if inducedErrors.noSymID {
+		symID = ""
+	}
+	fmt.Println("Hostname: " + hostName)
+	fmt.Println("f.hostID: " + f.hostID)
+	hostID := hostName
+	if hostName == "" {
+		hostID = f.hostID
+	}
+	if inducedErrors.noNodeName {
+		hostID = ""
+	}
+	fmt.Println("hostID: " + hostID)
+	initiator := defaultFcInitiator + hostName
+	initiators := []string{initiator}
+	initiatorWWN := defaultFcInitiatorWWN + hostName
+	initID := defaultFCDirPort + ":" + initiatorWWN
+	mock.AddInitiator(initID, initiatorWWN, "Fibre", []string{defaultFCDirPort}, "")
+	if inducedErrors.noIQNs {
+		initiators = initiators[:0]
+	}
+	f.host, f.err = f.service.createOrUpdateFCHost(symID, hostID, initiators)
+	if f.host != nil {
+		f.initiators = f.host.Initiators
+	}
 	return nil
 }
 
 func (f *feature) initiatorsAreFound(expected int) error {
-	if expected != len(f.IQNs) {
-		return fmt.Errorf("Expected %d initiators but found %d", expected, len(f.IQNs))
+	if expected != len(f.initiators) {
+		return fmt.Errorf("Expected %d initiators but found %d", expected, len(f.initiators))
 	}
 	return nil
 }
 
 func (f *feature) iInvokeNodeHostSetupWithAService(mode string) error {
-	initiators := []string{defaultInitiator}
+	iscsiInitiators := []string{defaultIscsiInitiator}
+	fcInitiators := []string{defaultFcInitiator}
+	symmetrixIDs := []string{f.symmetrixID}
 	f.service.mode = mode
 	f.service.SetPmaxTimeoutSeconds(30)
-	f.err = f.service.nodeHostSetup(initiators, true)
+	f.err = f.service.nodeHostSetup(fcInitiators, iscsiInitiators, symmetrixIDs)
 	return nil
 }
 
 func (f *feature) theErrorClearsAfterSeconds(seconds int64) error {
 	go func(seconds int64) {
 		time.Sleep(time.Duration(seconds) * time.Second)
-		mock.InducedErrors.GetSymmetrixError = false
+		switch f.errType {
+		case "GetSymmetrixError":
+			mock.InducedErrors.GetSymmetrixError = false
+		case "DeviceInSGError":
+			mock.InducedErrors.DeviceInSGError = false
+		case "GetStorageGroupError":
+			mock.InducedErrors.GetStorageGroupError = false
+		case "UpdateStorageGroupError":
+			mock.InducedErrors.UpdateStorageGroupError = false
+		case "DeleteVolumeError":
+			mock.InducedErrors.DeleteVolumeError = false
+		}
 	}(seconds)
 	return nil
 }
@@ -2166,11 +2530,11 @@ func (f *feature) iCallGetVolumeByID() error {
 	var id string
 	if !inducedErrors.noVolumeID {
 		if inducedErrors.invalidVolumeID {
-			id = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, mock.DefaultSymmetrixID, "99999")
+			id = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, "99999")
 		} else if inducedErrors.differentVolumeID {
-			id = f.service.createCSIVolumeID(f.service.getClusterPrefix(), altVolumeName, mock.DefaultSymmetrixID, goodVolumeID)
+			id = f.service.createCSIVolumeID(f.service.getClusterPrefix(), altVolumeName, f.symmetrixID, goodVolumeID)
 		} else {
-			id = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, mock.DefaultSymmetrixID, goodVolumeID)
+			id = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, goodVolumeID)
 		}
 	}
 	sym, dev, vol, err := f.service.GetVolumeByID(id)
@@ -2192,8 +2556,8 @@ func (f *feature) aValidGetVolumeByIDResultIsReturnedIfNoError() error {
 	if f.getVolumeByIDResponse == nil {
 		return errors.New("Expected a GetVolumeByIDResult")
 	}
-	if f.getVolumeByIDResponse.sym != mock.DefaultSymmetrixID {
-		return fmt.Errorf("Expected sym %s but got %s", mock.DefaultSymmetrixID, f.getVolumeByIDResponse.sym)
+	if f.getVolumeByIDResponse.sym != f.symmetrixID {
+		return fmt.Errorf("Expected sym %s but got %s", f.symmetrixID, f.getVolumeByIDResponse.sym)
 	}
 	if f.getVolumeByIDResponse.dev != goodVolumeID {
 		return fmt.Errorf("Expected dev %s but got %s", goodVolumeID, f.getVolumeByIDResponse.dev)
@@ -2240,7 +2604,7 @@ func (f *feature) iHaveAVolumeWithInvalidVolumeIdentifier() error {
 	sgList[0] = defaultStorageGroup
 	mock.AddStorageGroup(defaultStorageGroup, "SRP_1", "Optimized")
 	mock.AddOneVolumeToStorageGroup(devID, volumeIdentifier, defaultStorageGroup, 1)
-	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, mock.DefaultSymmetrixID, goodVolumeID)
+	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, goodVolumeID)
 	return nil
 }
 
@@ -2265,16 +2629,16 @@ func (f *feature) arraysAreLoggedIn(count int) error {
 func (f *feature) iCallGetTargetsForMaskingView() error {
 	// First we have to read the masking view
 	fmt.Printf("f.mvID %s\n", f.mvID)
-	symID := mock.DefaultSymmetrixID
+	symID := f.symmetrixID
 	if inducedErrors.noSymID {
 		symID = ""
 	}
 	var view *types.MaskingView
-	view, f.err = f.service.adminClient.GetMaskingViewByID(mock.DefaultSymmetrixID, f.mvID)
+	view, f.err = f.service.adminClient.GetMaskingViewByID(f.symmetrixID, f.mvID)
 	if view == nil {
 		f.err = fmt.Errorf("view is nil")
 	}
-	f.iscsiTargets, f.err = f.service.getTargetsForMaskingView(symID, view)
+	f.iscsiTargets, f.err = f.service.getIscsiTargetsForMaskingView(symID, view)
 	return nil
 }
 
@@ -2290,9 +2654,189 @@ func (f *feature) theResultHasPorts(expected string) error {
 }
 
 func (f *feature) iCallValidateStoragePoolIDInParallel(numberOfWorkers int) error {
-	f.service.setStoragePoolCacheDuration(1 * time.Microsecond)
+	f.service.setStoragePoolCacheDuration(1 * time.Millisecond)
 	for i := 0; i < numberOfWorkers; i++ {
-		go f.service.validateStoragePoolID(mock.DefaultSymmetrixID, mock.DefaultStoragePool)
+		go f.service.validateStoragePoolID(f.symmetrixID, mock.DefaultStoragePool)
+	}
+	return nil
+}
+
+func (f *feature) iCallGetPortIdentifierInParallel(numberOfWorkers int) error {
+	f.service.setStoragePoolCacheDuration(1 * time.Millisecond)
+	dirPortKeys := make([]string, 0)
+	dirPortKeys = append(dirPortKeys, "FA-1D:4")
+	dirPortKeys = append(dirPortKeys, "SE-1E:24")
+	dirPortKeys = append(dirPortKeys, "SE-2E:01")
+	dirPortKeys = append(dirPortKeys, "FA-2B:55")
+	index := 0
+	for i := 0; i < numberOfWorkers; i++ {
+		if index == 4 {
+			index = 0
+		}
+		go f.service.GetPortIdentifier(f.symmetrixID, dirPortKeys[index])
+		index++
+	}
+	return nil
+}
+
+func (f *feature) aDevicePathLun(device, lun string) error {
+	key := "ip-" + portalIP + ":-lun-" + lun
+	value := nodePublishDeviceDir + "/" + device
+	gofsutil.GOFSMockTargetIPLUNToDevice[key] = value
+	gofsutil.GOFSMockWWNToDevice[nodePublishWWN] = value
+	log.Printf("aDevicePath wwn %s dev %s", nodePublishWWN, value)
+	return nil
+}
+func (f *feature) deviceIsMounted(device string) error {
+	entry := gofsutil.Info{
+		Device: nodePublishDeviceDir + "/" + device,
+		Path:   "/tmp/xx",
+	}
+	gofsutil.GOFSMockMounts = append(gofsutil.GOFSMockMounts, entry)
+	return nil
+}
+
+func (f *feature) thereAreRemainingDeviceEntriesForLun(number int, lun string) error {
+	if len(gofsutil.GOFSMockWWNToDevice) != number {
+		return fmt.Errorf("Expected %d device entries got %d", number, len(gofsutil.GOFSMockWWNToDevice))
+	}
+	return nil
+}
+
+func (f *feature) aNodeRootWithMultipathConfigFile() error {
+	os.MkdirAll("test/noderoot/etc", 0777)
+	os.MkdirAll("test/root/etc", 0777)
+	_, err := exec.Command("touch", "test/noderoot/etc/multipath.conf").CombinedOutput()
+	return err
+}
+
+func (f *feature) iCallCopyMultipathConfigFileWithRoot(testRoot string) error {
+	f.err = copyMultipathConfigFile("test/noderoot", testRoot)
+	return nil
+}
+
+func (f *feature) aPrivateMount(path string) error {
+	if path == "none" {
+		return nil
+	}
+	info := gofsutil.Info{
+		Device: "test/dev/sda",
+		Path:   path,
+	}
+	gofsutil.GOFSMockMounts = append(gofsutil.GOFSMockMounts, info)
+	return nil
+}
+
+func (f *feature) iCallUnmountPrivMount() error {
+	ctx := context.Background()
+	dev := Device{
+		RealDev: "test/dev/sda",
+	}
+	f.lastUnmounted, f.err = unmountPrivMount(ctx, &dev, "test/mnt1")
+	return nil
+}
+
+func (f *feature) lastUnmountedShouldBe(expected string) error {
+	switch expected {
+	case "true":
+		if f.lastUnmounted != true {
+			return errors.New("Expected lastUnmounted to be " + expected)
+		}
+	case "false":
+		if f.lastUnmounted != false {
+			return errors.New("Expected lastUnmounted to be " + expected)
+		}
+	}
+	return nil
+}
+
+func (f *feature) blockVolumesAreNotEnabled() error {
+	f.service.opts.EnableBlock = false
+	return nil
+}
+
+func (f *feature) iSetTransportProtocolTo(protocol string) error {
+	os.Setenv("X_CSI_TRANSPORT_PROTOCOL", protocol)
+	f.service.opts.TransportProtocol = protocol
+	return nil
+}
+
+func (f *feature) iHaveAPortCacheEntryForPort(portKey string) error {
+	if portKey == "" {
+		return nil
+	}
+	cache := getPmaxCache(f.symmetrixID)
+	dirPortKeys := make(map[string]string)
+	dirPortKeys[portKey] = defaultFcStoragePortWWN
+	pair := &Pair{
+		first:  dirPortKeys,
+		second: time.Now(),
+	}
+	cache.portIdentifiers = pair
+	return nil
+}
+
+func (f *feature) iCallGetPortIdenfierFor(portKey string) error {
+	f.response, f.err = f.service.GetPortIdentifier(f.symmetrixID, portKey)
+	return nil
+}
+
+func (f *feature) theResultIs(desired string) error {
+	if f.err != nil {
+		return nil
+	}
+	if f.response != desired {
+		return fmt.Errorf("Expect GetPortIdentifer to return %s but got %s", desired, f.response)
+	}
+	return nil
+}
+
+func (f *feature) aNonExistentPort(portName string) error {
+	mock.AddPort(portName, "", "")
+	return nil
+}
+
+func (f *feature) iHaveAPortIdentifierType(portName, identifier, portType string) error {
+	switch portType {
+	case "FibreChannel":
+		break
+	case "GigE":
+		break
+	case "":
+		break
+	default:
+		return fmt.Errorf("Unknown port type: %s", portType)
+	}
+	mock.AddPort(portName, identifier, portType)
+	return nil
+}
+
+func (f *feature) iHaveSysblockDevices(cnt int) error {
+	removeDeviceSleepTime = 1 * time.Millisecond
+	switch cnt {
+	case 1:
+		gofsutil.GOFSMockWWNToDevice[nodePublishWWN] = "/dev/sdm"
+	}
+	return nil
+}
+
+func (f *feature) iCallLinearScanToRemoveDevices() error {
+	f.err = linearScanToRemoveDevices("0", nodePublishWWN)
+	return nil
+}
+
+func (f *feature) iCallVerifyInitiatorsNotInADifferentHostForNode(nodeID string) error {
+	initiators := make([]string, 0)
+	initiators = append(initiators, defaultIscsiInitiator)
+	symID := f.symmetrixID
+	hostID, _, _ := f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+	f.ninitiators, f.err = f.service.verifyInitiatorsNotInADifferentHost(symID, initiators, hostID)
+	return nil
+}
+
+func (f *feature) validInitiatorsAreReturned(expected int) error {
+	if expected != f.ninitiators {
+		return fmt.Errorf("expected %d initiators but got %d", expected, f.ninitiators)
 	}
 	return nil
 }
@@ -2300,6 +2844,7 @@ func (f *feature) iCallValidateStoragePoolIDInParallel(numberOfWorkers int) erro
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
+	s.Step(`^a PostELMSR Array$`, f.aPostELMSRArray)
 	s.Step(`^I call GetPluginInfo$`, f.iCallGetPluginInfo)
 	s.Step(`^a valid GetPluginInfoResponse is returned$`, f.aValidGetPluginInfoResponseIsReturned)
 	s.Step(`^I call GetPluginCapabilities$`, f.iCallGetPluginCapabilities)
@@ -2357,6 +2902,7 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^an invalid ListVolumesResponse is returned$`, f.anInvalidListVolumesResponseIsReturned)
 	s.Step(`^a capability with voltype "([^"]*)" access "([^"]*)" fstype "([^"]*)"$`, f.aCapabilityWithVoltypeAccessFstype)
 	s.Step(`^a controller published volume$`, f.aControllerPublishedVolume)
+	s.Step(`^a controller published multipath volume$`, f.aControllerPublishedMultipathVolume)
 	s.Step(`^I call NodePublishVolume$`, f.iCallNodePublishVolume)
 	s.Step(`^get Node Publish Volume Request$`, f.getNodePublishVolumeRequest)
 	s.Step(`^I mark request read only$`, f.iMarkRequestReadOnly)
@@ -2392,16 +2938,20 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^deletion worker processes "([^"]*)" which results in "([^"]*)"$`, f.deletionWorkerProcessesWhichResultsIn)
 	s.Step(`^I request a PortGroup$`, f.iRequestAPortGroup)
 	s.Step(`^a valid PortGroup is returned$`, f.aValidPortGroupIsReturned)
-	s.Step(`^I invoke createOrUpdateHost "([^"]*)"$`, f.iInvokeCreateOrUpdateHost)
+	s.Step(`^I invoke createOrUpdateIscsiHost "([^"]*)"$`, f.iInvokeCreateOrUpdateIscsiHost)
 	s.Step(`^I invoke nodeHostSetup with a "([^"]*)" service$`, f.iInvokeNodeHostSetupWithAService)
 	s.Step(`^the error clears after (\d+) seconds$`, f.theErrorClearsAfterSeconds)
+	s.Step(`^I have a Node "([^"]*)" with initiators "([^"]*)" with MaskingView$`, f.iHaveANodeWithInitiatorsWithMaskingView)
 	s.Step(`^I have a Node "([^"]*)" with MaskingView$`, f.iHaveANodeWithMaskingView)
 	s.Step(`^I have a Node "([^"]*)" with Host$`, f.iHaveANodeWithHost)
 	s.Step(`^I have a Node "([^"]*)" with StorageGroup$`, f.iHaveANodeWithStorageGroup)
 	s.Step(`^I have a Node "([^"]*)" with a FastManagedMaskingView$`, f.iHaveANodeWithAFastManagedMaskingView)
 	s.Step(`^I have a Node "([^"]*)" with FastManagedStorageGroup$`, f.iHaveANodeWithFastManagedStorageGroup)
+	s.Step(`^I have a Node "([^"]*)" with Host with Initiator mapped to multiple ports$`, f.iHaveANodeWithHostWithInitiatorMappedToMultiplePorts)
+	s.Step(`^I have a FC PortGroup "([^"]*)"$`, f.iHaveAFCPortGroup)
 	s.Step(`^I add the Volume to "([^"]*)"$`, f.iAddTheVolumeTo)
 	s.Step(`^(\d+) existing volumes to be deleted$`, f.existingVolumesToBeDeleted)
+	s.Step(`^I repopulate the deletion queues$`, f.iRepopulateTheDeletionQueues)
 	s.Step(`^I restart the deletionWorker$`, f.iRestartTheDeletionWorker)
 	s.Step(`^(\d+) volumes are being processed for deletion$`, f.volumesAreBeingProcessedForDeletion)
 	s.Step(`^I change the target path$`, f.iChangeTheTargetPath)
@@ -2419,4 +2969,27 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call GetTargetsForMaskingView$`, f.iCallGetTargetsForMaskingView)
 	s.Step(`^the result has "([^"]*)" ports$`, f.theResultHasPorts)
 	s.Step(`^I call validateStoragePoolID (\d+) in parallel$`, f.iCallValidateStoragePoolIDInParallel)
+	s.Step(`^I call GetPortIdentifier (\d+) in parallel$`, f.iCallGetPortIdentifierInParallel)
+	s.Step(`^I call ControllerExpandVolume$`, f.iCallControllerExpandVolume)
+	s.Step(`^I call NodeExpandVolume$`, f.iCallNodeExpandVolume)
+	s.Step(`^a device path "([^"]*)" lun "([^"]*)"$`, f.aDevicePathLun)
+	s.Step(`^device "([^"]*)" is mounted$`, f.deviceIsMounted)
+	s.Step(`^there are (\d+) remaining device entries for lun "([^"]*)"$`, f.thereAreRemainingDeviceEntriesForLun)
+	s.Step(`^a nodeRoot with multipath config file$`, f.aNodeRootWithMultipathConfigFile)
+	s.Step(`^I call copyMultipathConfigFile with root "([^"]*)"$`, f.iCallCopyMultipathConfigFileWithRoot)
+	s.Step(`^a private mount "([^"]*)"$`, f.aPrivateMount)
+	s.Step(`^I call unmountPrivMount$`, f.iCallUnmountPrivMount)
+	s.Step(`^lastUnmounted should be "([^"]*)"$`, f.lastUnmountedShouldBe)
+	s.Step(`^block volumes are not enabled$`, f.blockVolumesAreNotEnabled)
+	s.Step(`^I set transport protocol to "([^"]*)"$`, f.iSetTransportProtocolTo)
+	s.Step(`^I invoke createOrUpdateFCHost "([^"]*)"$`, f.iInvokeCreateOrUpdateFCHost)
+	s.Step(`^I have a PortCache entry for port "([^"]*)"$`, f.iHaveAPortCacheEntryForPort)
+	s.Step(`^I call GetPortIdenfier for "([^"]*)"$`, f.iCallGetPortIdenfierFor)
+	s.Step(`^the result is "([^"]*)"$`, f.theResultIs)
+	s.Step(`^a non existent port "([^"]*)"$`, f.aNonExistentPort)
+	s.Step(`^I have a port "([^"]*)" identifier "([^"]*)" type "([^"]*)"$`, f.iHaveAPortIdentifierType)
+	s.Step(`^I have (\d+) sysblock deviceso$`, f.iHaveSysblockDevices)
+	s.Step(`^I call linearScanToRemoveDevices$`, f.iCallLinearScanToRemoveDevices)
+	s.Step(`^I call verifyInitiatorsNotInADifferentHost for node "([^"]*)"$`, f.iCallVerifyInitiatorsNotInADifferentHostForNode)
+	s.Step(`^(\d+) valid initiators are returned$`, f.validInitiatorsAreReturned)
 }

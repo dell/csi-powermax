@@ -19,17 +19,19 @@ import (
 
 // constants
 const (
-	APIVersion           = "90"
-	PREFIX               = "/univmax/restapi/" + APIVersion
-	PREFIXNOVERSION      = "/univmax/restapi"
-	defaultUsername      = "username"
-	defaultPassword      = "password"
-	Debug                = true
-	DefaultStorageGroup  = "CSI-Test-SG-1"
-	DefaultStorageGroup1 = "CSI-Test-SG-2"
-	DefaultSymmetrixID   = "000197900046"
-	DefaultStoragePool   = "SRP_1"
-	DefaultServiceLevel  = "Optimized"
+	APIVersion              = "90"
+	PREFIX                  = "/univmax/restapi/" + APIVersion
+	PREFIXNOVERSION         = "/univmax/restapi"
+	defaultUsername         = "username"
+	defaultPassword         = "password"
+	Debug                   = false
+	DefaultStorageGroup     = "CSI-Test-SG-1"
+	DefaultStorageGroup1    = "CSI-Test-SG-2"
+	DefaultSymmetrixID      = "000197900046"
+	PostELMSRSymmetrixID    = "000197900047"
+	DefaultStoragePool      = "SRP_1"
+	DefaultServiceLevel     = "Optimized"
+	DefaultFcStoragePortWWN = "5000000000000001"
 )
 
 // Data are internal tables the Mock Unisphere uses to provide functionality.
@@ -48,10 +50,13 @@ var Data struct {
 	StorageGroupIDToStorageGroup  map[string]*types.StorageGroup
 	StorageGroupIDToVolumes       map[string][]string
 	MaskingViewIDToMaskingView    map[string]*types.MaskingView
+	InitiatorIDToInitiator        map[string]*types.Initiator
 	HostIDToHost                  map[string]*types.Host
 	PortGroupIDToPortGroup        map[string]*types.PortGroup
+	PortIDToSymmetrixPortType     map[string]*types.SymmetrixPortType
 	VolumeIDToVolume              map[string]*types.Volume
 	JSONDir                       string
+	InitiatorHost                 string
 }
 
 // InducedErrors constants
@@ -64,6 +69,7 @@ var InducedErrors struct {
 	GetVolumeError                 bool
 	UpdateVolumeError              bool
 	DeleteVolumeError              bool
+	DeviceInSGError                bool
 	GetStorageGroupError           bool
 	InvalidResponse                bool
 	GetStoragePoolError            bool
@@ -80,6 +86,7 @@ var InducedErrors struct {
 	GetPortError                   bool
 	GetDirectorError               bool
 	GetInitiatorError              bool
+	GetInitiatorByIDError          bool
 	GetHostError                   bool
 	CreateHostError                bool
 	DeleteHostError                bool
@@ -121,6 +128,7 @@ func Reset() {
 	InducedErrors.GetVolumeError = false
 	InducedErrors.UpdateVolumeError = false
 	InducedErrors.DeleteVolumeError = false
+	InducedErrors.DeviceInSGError = false
 	InducedErrors.GetStorageGroupError = false
 	InducedErrors.InvalidResponse = false
 	InducedErrors.UpdateStorageGroupError = false
@@ -137,6 +145,7 @@ func Reset() {
 	InducedErrors.GetPortError = false
 	InducedErrors.GetDirectorError = false
 	InducedErrors.GetInitiatorError = false
+	InducedErrors.GetInitiatorByIDError = false
 	InducedErrors.GetHostError = false
 	InducedErrors.CreateHostError = false
 	InducedErrors.DeleteHostError = false
@@ -166,8 +175,10 @@ func Reset() {
 	Data.StorageGroupIDToNVolumes[DefaultStorageGroup] = 0
 	Data.StorageGroupIDToStorageGroup = make(map[string]*types.StorageGroup)
 	Data.MaskingViewIDToMaskingView = make(map[string]*types.MaskingView)
+	Data.InitiatorIDToInitiator = make(map[string]*types.Initiator)
 	Data.HostIDToHost = make(map[string]*types.Host)
 	Data.PortGroupIDToPortGroup = make(map[string]*types.PortGroup)
+	Data.PortIDToSymmetrixPortType = make(map[string]*types.SymmetrixPortType)
 	Data.VolumeIDToVolume = make(map[string]*types.Volume)
 	Data.StorageGroupIDToVolumes = make(map[string][]string)
 	initMockCache()
@@ -181,15 +192,52 @@ func initMockCache() {
 	AddStorageGroup("CSI-Test-SG-4", "SRP_2", "Optimized")
 	AddStorageGroup("CSI-Test-SG-5", "SRP_2", "None")
 	AddStorageGroup("CSI-Test-SG-6", "None", "None")
+	// ISCSI directors
+	iscsiDir1 := "SE-1E"
+	iscsidir1PortKey1 := iscsiDir1 + ":" + "4"
+	//iscsiDir2 := "SE-2E"
+	// FC directors
+	fcDir1 := "FA-1D"
+	fcDir2 := "FA-2D"
+	fcDir1PortKey1 := fcDir1 + ":" + "5"
+	fcDir2PortKey1 := fcDir2 + ":" + "1"
+	// Add Port groups
+	AddPortGroup("csi-pg", "Fibre", []string{fcDir1PortKey1, fcDir2PortKey1})
+	// Initialize initiators
 	// Initialize Hosts
-	initNode1 := make([]string, 0)
-	initNode1 = append(initNode1, "iqn.1993-08.org.centos:01:5ae577b352a0")
-	AddHost("CSI-Test-Node-1", "ISCSI", initNode1)
-	initNode2 := make([]string, 0)
-	initNode2 = append(initNode2, "iqn.1993-08.org.centos:01:5ae577b352a1")
-	initNode2 = append(initNode2, "iqn.1993-08.org.centos:01:5ae577b352a2")
-	AddHost("CSI-Test-Node-2", "ISCSI", initNode2)
+	initNode1List := make([]string, 0)
+	iqnNode1 := "iqn.1993-08.org.centos:01:5ae577b352a0"
+	initNode1 := iscsidir1PortKey1 + ":" + iqnNode1
+	initNode1List = append(initNode1List, iqnNode1)
+	AddInitiator(initNode1, iqnNode1, "GigE", []string{iscsidir1PortKey1}, "")
+	AddHost("CSI-Test-Node-1", "iSCSI", initNode1List)
+
+	initNode2List := make([]string, 0)
+	iqn1Node2 := "iqn.1993-08.org.centos:01:5ae577b352a1"
+	iqn2Node2 := "iqn.1993-08.org.centos:01:5ae577b352a2"
+	init1Node2 := iscsidir1PortKey1 + ":" + iqn1Node2
+	init2Node2 := iscsidir1PortKey1 + ":" + iqn2Node2
+	initNode2List = append(initNode2List, iqn1Node2)
+	initNode2List = append(initNode2List, iqn2Node2)
+	AddInitiator(init1Node2, iqn1Node2, "GigE", []string{iscsidir1PortKey1}, "")
+	AddInitiator(init2Node2, iqn2Node2, "GigE", []string{iscsidir1PortKey1}, "")
+	AddHost("CSI-Test-Node-2", "iSCSI", initNode2List)
 	AddMaskingView("CSI-Test-MV-1", "CSI-Test-SG-1", "CSI-Test-Node-1", "iscsi_ports")
+
+	initNode3List := make([]string, 0)
+	hba1Node3 := "20000090fa9278dd"
+	hba2Node3 := "20000090fa9278dc"
+	init1Node3 := fcDir1PortKey1 + ":" + hba1Node3
+	init2Node3 := fcDir2PortKey1 + ":" + hba1Node3
+	init3Node3 := fcDir1PortKey1 + ":" + hba2Node3
+	init4Node3 := fcDir2PortKey1 + ":" + hba2Node3
+	AddInitiator(init1Node3, hba1Node3, "Fibre", []string{fcDir1PortKey1}, "")
+	AddInitiator(init2Node3, hba1Node3, "Fibre", []string{fcDir2PortKey1}, "")
+	AddInitiator(init3Node3, hba2Node3, "Fibre", []string{fcDir1PortKey1}, "")
+	AddInitiator(init4Node3, hba2Node3, "Fibre", []string{fcDir2PortKey1}, "")
+	initNode3List = append(initNode3List, hba1Node3)
+	initNode3List = append(initNode3List, hba2Node3)
+	AddHost("CSI-Test-Node-3-FC", "Fibre", initNode3List)
 }
 
 var mockRouter http.Handler
@@ -198,7 +246,9 @@ var mockRouter http.Handler
 func GetHandler() http.Handler {
 	handler := http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			log.Printf("handler called: %s %s", r.Method, r.URL)
+			if Debug {
+				log.Printf("handler called: %s %s", r.Method, r.URL)
+			}
 			if InducedErrors.InvalidJSON {
 				w.Write([]byte(`this is not json`))
 			} else if InducedErrors.NoConnection {
@@ -242,7 +292,7 @@ func getRouter() http.Handler {
 	router.HandleFunc(PREFIX+"/system/symmetrix/{symid}/job", handleJob)
 	router.HandleFunc(PREFIX+"/system/symmetrix/{id}", handleSymmetrix)
 	router.HandleFunc(PREFIX+"/system/symmetrix", handleSymmetrix)
-	router.HandleFunc("/univmax/restapi/system/version", handleVersion)
+	router.HandleFunc(PREFIX+"/system/version", handleVersion)
 	router.HandleFunc("/", handleNotFound)
 	mockRouter = router
 	return router
@@ -281,11 +331,15 @@ func handleSymmetrix(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		returnJSONFile(Data.JSONDir, "symmetrixList.json", w, nil)
 	}
-	if id != "000197900046" {
+	if id != "000197900046" && id != "000197900047" {
 		writeError(w, "Symmetrix not found", http.StatusNotFound)
 		return
 	}
-	returnJSONFile(Data.JSONDir, "symmetrix.json", w, nil)
+	if id == "000197900046" {
+		returnJSONFile(Data.JSONDir, "symmetrix46.json", w, nil)
+	} else if id == "000197900047" {
+		returnJSONFile(Data.JSONDir, "symmetrix47.json", w, nil)
+	}
 }
 
 func handleStorageResourcePool(w http.ResponseWriter, r *http.Request) {
@@ -412,6 +466,10 @@ func handleVolume(w http.ResponseWriter, r *http.Request) {
 			writeError(w, "Error deleting Volume: induced error", http.StatusRequestTimeout)
 			return
 		}
+		if InducedErrors.DeviceInSGError {
+			writeError(w, "Error deleting Volume: induced error - device is a member of a storage group", http.StatusForbidden)
+			return
+		}
 		deleteVolume(volID)
 	}
 }
@@ -523,6 +581,7 @@ func returnJobByID(w http.ResponseWriter, jobID string) {
 	if job == nil {
 		// Not found
 		writeError(w, "Job not found: "+jobID, http.StatusNotFound)
+		return
 	}
 	if job.Job.Status == job.InitialState {
 		job.Job.Status = job.FinalState
@@ -985,6 +1044,70 @@ func AddNewVolume(volumeID, volumeIdentifier string, size int, storageGroupID st
 	return nil
 }
 
+func newInitiator(initiatorID string, initiatorName string, initiatorType string, dirPortKeys []types.PortKey, hostID string) {
+	//maskingViewIDs := []string{}
+	initiator := &types.Initiator{
+		InitiatorID:          initiatorName,
+		SymmetrixPortKey:     dirPortKeys,
+		InitiatorType:        initiatorType,
+		FCID:                 "0",
+		IPAddress:            "192.168.1.175",
+		HostID:               hostID,
+		HostGroupIDs:         []string{},
+		LoggedIn:             true,
+		OnFabric:             true,
+		FlagsInEffect:        "Common_Serial_Number(C), SCSI_3(SC3), SPC2_Protocol_Version(SPC2)",
+		NumberVols:           1,
+		NumberHostGroups:     0,
+		NumberMaskingViews:   0,
+		NumberPowerPathHosts: 0,
+	}
+	Data.InitiatorIDToInitiator[initiatorID] = initiator
+}
+
+// AddInitiator - Adds an initiator to the mock data cache
+func AddInitiator(initiatorID string, initiatorName string, initiatorType string, dirPortKeys []string, hostID string) (*types.Initiator, error) {
+	if _, ok := Data.InitiatorIDToInitiator[initiatorID]; ok {
+		return nil, errors.New("Error! Initiator already exists")
+	}
+	// if host id is supplied, check for existence of host
+	if hostID != "" {
+		if _, ok := Data.HostIDToHost[hostID]; !ok {
+			return nil, errors.New("Error! Host doesn't exist")
+		}
+	}
+	portKeys := make([]types.PortKey, 0)
+	for _, dirPortKey := range dirPortKeys {
+		dirPortDetails := strings.Split(dirPortKey, ":")
+		portKey := types.PortKey{
+			DirectorID: dirPortDetails[0],
+			PortID:     dirPortKey,
+		}
+		portKeys = append(portKeys, portKey)
+	}
+	newInitiator(initiatorID, initiatorName, initiatorType, portKeys, hostID)
+	return Data.InitiatorIDToInitiator[initiatorID], nil
+}
+
+func returnInitiator(w http.ResponseWriter, initiatorID string) {
+	if initiatorID != "" {
+		if init, ok := Data.InitiatorIDToInitiator[initiatorID]; ok {
+			writeJSON(w, init)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	} else {
+		initIDs := make([]string, 0)
+		for k := range Data.InitiatorIDToInitiator {
+			initIDs = append(initIDs, k)
+		}
+		initiatorIDList := &types.InitiatorList{
+			InitiatorIDs: initIDs,
+		}
+		writeJSON(w, initiatorIDList)
+	}
+}
+
 func newHost(hostID string, hostType string, initiatorIDs []string) {
 	maskingViewIDs := []string{}
 	host := &types.Host{
@@ -1009,7 +1132,37 @@ func AddHost(hostID string, hostType string, initiatorIDs []string) (*types.Host
 	if _, ok := Data.HostIDToHost[hostID]; ok {
 		return nil, errors.New("Error! Host already exists")
 	}
+	validInitiators := false
+	// Check if initiators exist
+	for _, initID := range initiatorIDs {
+		for _, v := range Data.InitiatorIDToInitiator {
+			if v.InitiatorID == initID {
+				if v.HostID == "" {
+					validInitiators = true
+					break
+				}
+			}
+		}
+		if !validInitiators {
+			break
+		}
+	}
+	if !validInitiators {
+		errormsg := "Error! Some initiators don't exist or are not valid"
+		fmt.Println(errormsg)
+		return nil, fmt.Errorf(errormsg)
+	}
 	newHost(hostID, hostType, initiatorIDs)
+	//Update the initiators
+	for _, initID := range initiatorIDs {
+		for k, v := range Data.InitiatorIDToInitiator {
+			if v.InitiatorID == initID {
+				Data.InitiatorIDToInitiator[k].HostID = hostID
+				break
+			}
+		}
+	}
+	fmt.Println(Data.HostIDToHost[hostID])
 	return Data.HostIDToHost[hostID], nil
 }
 
@@ -1024,6 +1177,56 @@ func removeHost(hostID string) error {
 	}
 	Data.HostIDToHost[hostID] = nil
 	return nil
+}
+
+func newPortGroup(portGroupID string, portGroupType string, portKeys []types.PortKey) {
+	portGroup := &types.PortGroup{
+		PortGroupID:        portGroupID,
+		SymmetrixPortKey:   portKeys,
+		NumberPorts:        int64(len(portKeys)),
+		NumberMaskingViews: 0,
+		PortGroupType:      portGroupType,
+	}
+	Data.PortGroupIDToPortGroup[portGroupID] = portGroup
+}
+
+// addPortGroup - Adds a port group to the mock data cache
+func addPortGroup(portGroupID string, portGroupType string, portKeys []types.PortKey) (*types.PortGroup, error) {
+	if _, ok := Data.PortGroupIDToPortGroup[portGroupID]; ok {
+		return nil, errors.New("Error! Port Group already exists")
+	}
+	newPortGroup(portGroupID, portGroupType, portKeys)
+	return Data.PortGroupIDToPortGroup[portGroupID], nil
+}
+
+// AddPortGroupFromCreateParams - Adds a storage group from create params
+func AddPortGroupFromCreateParams(createParams *types.CreatePortGroupParams) {
+	portGroupID := createParams.PortGroupID
+	portKeys := createParams.SymmetrixPortKey
+	addPortGroup(portGroupID, "Fibre", portKeys)
+}
+
+// AddPortGroup - Adds a port group to the mock data cache
+func AddPortGroup(portGroupID string, portGroupType string, portIdentifiers []string) (*types.PortGroup, error) {
+	portKeys := make([]types.PortKey, 0)
+	for _, dirPortKey := range portIdentifiers {
+		dirPortDetails := strings.Split(dirPortKey, ":")
+		if len(dirPortDetails) != 2 {
+			errormsg := fmt.Sprintf("Invalid dir port specified: %s", dirPortKey)
+			log.Error(errormsg)
+			return nil, fmt.Errorf(errormsg)
+		}
+		portKey := types.PortKey{
+			DirectorID: dirPortDetails[0],
+			PortID:     dirPortKey,
+		}
+		portKeys = append(portKeys, portKey)
+	}
+	if _, ok := Data.PortGroupIDToPortGroup[portGroupID]; ok {
+		return nil, errors.New("Error! Port Group already exists")
+	}
+	newPortGroup(portGroupID, portGroupType, portKeys)
+	return Data.PortGroupIDToPortGroup[portGroupID], nil
 }
 
 // AddStorageGroupFromCreateParams - Adds a storage group from create params
@@ -1262,22 +1465,21 @@ func handlePortGroup(w http.ResponseWriter, r *http.Request) {
 			writeError(w, "Error retrieving Port Group(s): induced error", http.StatusRequestTimeout)
 			return
 		}
-		// if we asked for a specific Port Group, return those details
-		if pgID != "" {
-			returnPortGroup(w, pgID)
-		}
-		// return a list of Port Groups
-		returnJSONFile(Data.JSONDir, "portGroupIDList.json", w, nil)
+		returnPortGroup(w, pgID)
 
+	case http.MethodPost:
+		decoder := json.NewDecoder(r.Body)
+		createPortGroupParams := &types.CreatePortGroupParams{}
+		err := decoder.Decode(createPortGroupParams)
+		if err != nil {
+			writeError(w, "InvalidJson", http.StatusBadRequest)
+			return
+		}
+		AddPortGroupFromCreateParams(createPortGroupParams)
+		returnPortGroup(w, createPortGroupParams.PortGroupID)
 	default:
 		writeError(w, "Invalid Method", http.StatusBadRequest)
 	}
-}
-
-func returnPortGroup(w http.ResponseWriter, pgID string) {
-	replacements := make(map[string]string)
-	replacements["__PORT_GROUP_ID__"] = pgID
-	returnJSONFile(Data.JSONDir, "port_group_template.json", w, replacements)
 }
 
 // /univmax/restapi/90/system/symmetrix/{symid}/director/{director}/port/{id}
@@ -1295,6 +1497,21 @@ func handlePort(w http.ResponseWriter, r *http.Request) {
 		}
 		// if we asked for a specific Port, return those details
 		if pID != "" {
+			// Specific ports can be modeleted
+			portName := dID + ":" + pID
+			if Data.PortIDToSymmetrixPortType[portName] != nil {
+				port := Data.PortIDToSymmetrixPortType[portName]
+				if port == nil || port.Type == "" {
+					writeError(w, "port not found", http.StatusNotFound)
+				} else {
+					symPort := &types.Port{
+						SymmetrixPort: *port,
+					}
+					encoder := json.NewEncoder(w)
+					encoder.Encode(symPort)
+				}
+				return
+			}
 			returnPort(w, dID, pID)
 		}
 		// return a list of Ports
@@ -1303,6 +1520,15 @@ func handlePort(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, "Invalid Method", http.StatusBadRequest)
 	}
+}
+
+// AddPort adds a port entry. Port type can either be "FibreChannel" or "GigE", or "" for a non existent port.
+func AddPort(id, identifier, portType string) {
+	port := &types.SymmetrixPortType{
+		Type:       portType,
+		Identifier: identifier,
+	}
+	Data.PortIDToSymmetrixPortType[id] = port
 }
 
 func returnPort(w http.ResponseWriter, dID, pID string) {
@@ -1365,22 +1591,17 @@ func handleInitiator(w http.ResponseWriter, r *http.Request) {
 			writeError(w, "Error retrieving Initiator(s): induced error", http.StatusRequestTimeout)
 			return
 		}
-		// if we asked for a specific Initiator, return those details
 		if initID != "" {
-			returnInitiator(w, initID)
+			if InducedErrors.GetInitiatorByIDError {
+				writeError(w, "Error retrieving Initiator By ID: induced error", http.StatusRequestTimeout)
+				return
+			}
 		}
-		// return a list of Port Groups
-		returnJSONFile(Data.JSONDir, "initiatorIDList.json", w, nil)
+		returnInitiator(w, initID)
 
 	default:
 		writeError(w, "Invalid Method", http.StatusBadRequest)
 	}
-}
-
-func returnInitiator(w http.ResponseWriter, initiatorID string) {
-	replacements := make(map[string]string)
-	replacements["__INITIATOR_ID__"] = initiatorID
-	returnJSONFile(Data.JSONDir, "initiator_template.json", w, replacements)
 }
 
 // /univmax/restapi/90/sloprovisioning/symmetrix/{symid}/host/{id}
@@ -1409,9 +1630,22 @@ func handleHost(w http.ResponseWriter, r *http.Request) {
 			writeError(w, "InvalidJson", http.StatusBadRequest)
 			return
 		}
-		initNode := make([]string, 0)
-		initNode = append(initNode, "iqn.1993-08.org.centos:01:5ae577b352a7")
-		AddHost(createHostParam.HostID, "ISCSI", initNode)
+		// Scan the initiators to see if there are any non iqn ones; then assume
+		// host type Fibre.
+		isFibre := false
+		for _, initiator := range createHostParam.InitiatorIDs {
+			if !strings.HasPrefix(initiator, "iqn.") {
+				isFibre = true
+			}
+		}
+		if isFibre {
+			// Might need to add the Port information here
+			AddHost(createHostParam.HostID, "Fibre", createHostParam.InitiatorIDs)
+		} else {
+			//initNode := make([]string, 0)
+			//initNode = append(initNode, "iqn.1993-08.org.centos:01:5ae577b352a7")
+			AddHost(createHostParam.HostID, "iSCSI", createHostParam.InitiatorIDs)
+		}
 		returnHost(w, createHostParam.HostID)
 
 	case http.MethodPut:
@@ -1457,6 +1691,26 @@ func returnHost(w http.ResponseWriter, hostID string) {
 			HostIDs: hostIDs,
 		}
 		writeJSON(w, hostIDList)
+	}
+}
+
+func returnPortGroup(w http.ResponseWriter, portGroupID string) {
+	if portGroupID != "" {
+		if pg, ok := Data.PortGroupIDToPortGroup[portGroupID]; ok {
+			fmt.Printf("\n%v\n", pg)
+			writeJSON(w, pg)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	} else {
+		portGroupIDs := make([]string, 0)
+		for k := range Data.PortGroupIDToPortGroup {
+			portGroupIDs = append(portGroupIDs, k)
+		}
+		portGroupList := &types.PortGroupList{
+			PortGroupIDs: portGroupIDs,
+		}
+		writeJSON(w, portGroupList)
 	}
 }
 

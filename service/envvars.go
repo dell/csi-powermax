@@ -15,8 +15,14 @@ const (
 
 	// EnvInsecure is the name of the enviroment variable used to specify
 	// that Unisphere's certificate chain and host name should not
-	// be verified
+	// be validated.
+	// This is deprecated- use X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION instead.
 	EnvInsecure = "X_CSI_POWERMAX_INSECURE"
+
+	// EnvSkipCertificateValidation is the name of the environment variable used
+	// to specify Unisphere's certificate chain and host name should not
+	// be validated.
+	EnvSkipCertificateValidation = "X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION"
 
 	// EnvNodeName is the name of the enviroment variable used to set the
 	// hostname where the node service is running
@@ -53,4 +59,12 @@ const (
 	// EnvGrpcMaxThreads is the configuration value of the maximum number of concurrent
 	// grpc requests. This value should be an integer string.
 	EnvGrpcMaxThreads = "X_CSI_GRPC_MAX_THREADS"
+
+	// EnvEnableBlock enables block capabilities support.
+	EnvEnableBlock = "X_CSI_ENABLE_BLOCK"
+
+	// EnvPreferredTransportProtocol enables you to be able to force the transport protocol.
+	// Valid values are "FC" or "ISCSI" or "". If "", will choose FC if both are available.
+	// This is mainly for testing.
+	EnvPreferredTransportProtocol = "X_CSI_TRANSPORT_PROTOCOL"
 )

@@ -64,9 +64,11 @@ type Opts struct {
 	Password                   string
 	SystemName                 string
 	NodeName                   string
+	TransportProtocol          string
 	Insecure                   bool
 	Thick                      bool
 	AutoProbe                  bool
+	EnableBlock                bool
 	PortGroups                 []string
 	ClusterPrefix              string
 	AllowedArrays              []string
@@ -75,6 +77,7 @@ type Opts struct {
 	EnableSnapshotCGDelete     bool   // when snapshot deleted, enable deleting of all snaps in the CG of the snapshot
 	EnableListVolumesSnapshots bool   // when listing volumes, include snapshots and volumes
 	GrpcMaxThreads             int    // Maximum threads configured in grpc
+	NonDefaultRetries          bool   // Indicates if non-default retry values to be used for deletion worker, only for unit testing
 }
 
 type service struct {
@@ -94,6 +97,8 @@ type service struct {
 	nodeIsInitialized bool
 	// Timeout for storage pool cache
 	storagePoolCacheDuration time.Duration
+	// only used for testing, indicates if the deletion worked finished populating queue
+	waitGroup sync.WaitGroup
 }
 
 // New returns a new Service.
@@ -117,9 +122,11 @@ func (s *service) BeforeServe(
 			"thickprovision": s.opts.Thick,
 			"privatedir":     s.privDir,
 			"autoprobe":      s.opts.AutoProbe,
+			"enableblock":    s.opts.EnableBlock,
 			"portgroups":     s.opts.PortGroups,
 			"clusterprefix":  s.opts.ClusterPrefix,
 			"arrays":         s.opts.AllowedArrays,
+			"transport":      s.opts.TransportProtocol,
 			"mode":           s.mode,
 		}
 
@@ -161,7 +168,7 @@ func (s *service) BeforeServe(
 	}
 	if portgroups, ok := csictx.LookupEnv(ctx, EnvPortGroups); ok {
 		tempList, err := s.parseCommaSeperatedList(portgroups)
-		if (err != nil) || (len(tempList) == 0) {
+		if err != nil {
 			return fmt.Errorf("Invalid value for %s", EnvPortGroups)
 		}
 		opts.PortGroups = tempList
@@ -171,6 +178,7 @@ func (s *service) BeforeServe(
 	} else {
 		opts.AllowedArrays = []string{}
 	}
+	opts.TransportProtocol = s.getTransportProtocolFromEnv()
 
 	opts.GrpcMaxThreads = 4
 	if maxThreads, ok := csictx.LookupEnv(ctx, EnvGrpcMaxThreads); ok {
@@ -212,10 +220,29 @@ func (s *service) BeforeServe(
 		}
 		return false
 	}
+	// isBoolEnvVar checks an environment variable to see if it is
+	// "true" or "false" or "TRUE" or "FALSE". If so, it returns true.
+	// If not, or if the environment variable is not set, returns false
+	isBoolEnvVar := func(n string) bool {
+		if v, ok := csictx.LookupEnv(ctx, n); ok {
+			v = strings.ToLower(v)
+			if v == "true" || v == "false" {
+				return true
+			}
+		}
+		return false
+	}
 
-	opts.Insecure = pb(EnvInsecure)
+	// If the deprecated X_CSI_POWERMAX_INSECURE variable is set, it
+	// overrides the newer X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION,
+	// which should be always set, defaulting to true.
+	opts.Insecure = pb(EnvSkipCertificateValidation)
+	if isBoolEnvVar(EnvInsecure) {
+		opts.Insecure = pb(EnvInsecure)
+	}
 	opts.Thick = pb(EnvThick)
 	opts.AutoProbe = pb(EnvAutoProbe)
+	opts.EnableBlock = pb(EnvEnableBlock)
 
 	s.opts = opts
 
@@ -255,12 +282,35 @@ func (s *service) BeforeServe(
 	// Start the deletion worker thread
 	log.Printf("s.mode: %s\n", s.mode)
 	if !strings.EqualFold(s.mode, "node") {
-		s.startDeletionWorker()
+		s.startDeletionWorker(!opts.NonDefaultRetries)
 		if delWorker == nil {
 			delWorker = new(deletionWorker)
 		}
 	}
 	return nil
+}
+
+func (s *service) getTransportProtocolFromEnv() string {
+	transportProtocol := ""
+	if tp, ok := csictx.LookupEnv(context.Background(), EnvPreferredTransportProtocol); ok {
+		tp = strings.ToUpper(tp)
+		switch tp {
+		case "FIBRE":
+			tp = "FC"
+			break
+		case "FC":
+			break
+		case "ISCSI":
+			break
+		case "":
+			break
+		default:
+			log.Errorf("Invalid transport protocol: %s, valid values FC or ISCSI", tp)
+			return ""
+		}
+		transportProtocol = tp
+	}
+	return transportProtocol
 }
 
 // get the amount of time to retry pmax calls
