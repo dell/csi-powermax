@@ -27,6 +27,9 @@ rules:
   - apiGroups: ["storage.k8s.io"]
     resources: ["volumeattachments"]
     verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["csinodes"]
+    verbs: ["get", "list", "watch", "update"]
   - apiGroups: ["csi.storage.k8s.io"]
     resources: ["csinodeinfos"]
     verbs: ["get", "list", "watch"]
@@ -52,13 +55,18 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 ---
 kind: StatefulSet
-apiVersion: apps/v1beta1
+apiVersion: apps/v1
 metadata:
   name: {{ .Release.Name }}-controller
   namespace: {{ .Release.Namespace }}
 spec:
   serviceName: {{ .Release.Name }}-controller
   replicas: {{ required "Must provide the number of controller instances to create." .Values.controllerCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-controller 
+  updateStrategy: 
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -82,10 +90,15 @@ spec:
           image: {{ required "Must provide the CSI provisioner container image." .Values.images.provisioner }}
           args:
             - "--csi-address=$(ADDRESS)"
-            - "--provisioner=csi-powermax"
             - "--volume-name-prefix={{ required "Must provide a Volume Name Prefix." .Values.volumeNamePrefix }}"
             - "--volume-name-uuid-length=10"
+            {{- if eq .Values.kubeversion  "v1.13" }}
             - "--connection-timeout=300s"
+            - "--provisioner=csi-powermax.dellemc.com"
+            {{- end}}
+            {{- if eq .Values.kubeversion  "v1.14" }}
+            - "--timeout=120s"
+            {{- end}}
             - "--v=5"
           env:
             - name: ADDRESS
@@ -96,7 +109,7 @@ spec:
         - name: driver
           image: {{ required "Must provide the PowerMax driver container image." .Values.images.driver }}
           imagePullPolicy: Always
-          command: [ "/csi-powermax" ]
+          command: [ "/csi-powermax.sh" ]
           env:
             - name: CSI_ENDPOINT
               value: /var/run/csi/csi.sock
@@ -118,8 +131,12 @@ spec:
                   key: password
             - name: X_CSI_POWERMAX_DEBUG
               value: {{ .Values.powerMaxDebug | default "false" | lower | quote }}
+            - name: X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION
+              value: {{ .Values.skipCertificateValidation | default "true" | lower | quote }}
             - name: X_CSI_POWERMAX_INSECURE
-              value: {{ .Values.powerMaxInsecure | default "true" | lower | quote }}
+              value: {{ .Values.powerMaxInsecure | default "none" | lower | quote }}
+            - name: X_CSI_ENABLE_BLOCK
+              value: {{ .Values.enableBlock | default "false" | lower | quote }}
             - name: X_CSI_POWERMAX_PORTGROUPS
               value:  {{ required "Must provide list of Port Groups." .Values.portGroups | toJson }}
             - name: X_CSI_K8S_CLUSTER_PREFIX
@@ -128,6 +145,8 @@ spec:
               value:  {{ .Values.arrayWhitelist | default "" | toJson }}
             - name: X_CSI_GRPC_MAX_THREADS
               value: {{ .Values.grpcMaxThreads | default "4" | toJson }}
+            - name: X_CSI_TRANSPORT_PROTOCOL
+              value: {{ .Values.transportProtocol | default "" }}
             - name: SSL_CERT_DIR
               value: /certs
           volumeMounts:

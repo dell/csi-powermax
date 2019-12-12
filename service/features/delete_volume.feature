@@ -13,6 +13,16 @@ Feature: PowerMax CSI interface
 	Then a valid DeleteVolumeResponse is returned
 
 @delete
+@v1.1.0
+    Scenario: Delete volume with valid CapacityRange capabilities BlockVolume, SINGLE_NODE_WRITER and null VolumeContentSource and a Post ELM SR array
+	Given a PowerMax service
+	And a PostELMSR Array
+	And a valid volume
+	When I call Probe
+	And I call DeleteVolume with "single-writer"
+	Then a valid DeleteVolumeResponse is returned
+
+@delete
 @v1.0.0
     Scenario: Delete volume with valid CapacityRange capabilities BlockVolume,  MULTI_NODE_READER_ONLY null VolumeContentSource.
 	Given a PowerMax service
@@ -82,7 +92,6 @@ Feature: PowerMax CSI interface
 	| "NoVolumeID"                 | "none"                                                           |
 	| "InvalidVolumeID"            | "none"                                                           |
 
-
 @delete
 @v1.0.0
     Scenario Outline: Restart deletion worker with volumes on the Queue
@@ -96,7 +105,18 @@ Feature: PowerMax CSI interface
 	Examples:
 	| num  | numrecvd |induced                                | errormsg                                     |
 	| 5    | 5        |"none"                                 | "none"                                       |
-	| 5    | 0        |"GetSymmetrixError"                    | "Could not retrieve SymmetrixID list"        |
-	| 5    | 0        |"GetVolumeIteratorError"               | "none"                                       |
-	| 5    | 0        |"GetVolumeError"                       | "none"                                       |
 
+@delete
+@v1.1.0
+    Scenario Outline: Re-run populateDeletionQueuesThread
+    Given a PowerMax service
+	And <num> existing volumes to be deleted
+	And I induce error <induced>
+	When I repopulate the deletion queues
+	Then the error contains <errormsg>
+
+	Examples:
+	| num  |induced                                | errormsg                                     |
+	| 5    |"GetSymmetrixError"                    | "Could not retrieve SymmetrixID list"        |
+	| 5    |"GetVolumeIteratorError"               | "none"                                       |
+	| 5    |"GetVolumeError"                       | "none"                                       |

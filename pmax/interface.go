@@ -101,6 +101,9 @@ type Pmax interface {
 	// host id and the port id and returns the masking view object
 	CreateMaskingView(symID string, maskingViewID string, storageGroupID string, hostOrhostGroupID string, isHost bool, portGroupID string) (*types.MaskingView, error)
 
+	// CreatePortGroup creates a port group given the Port Group id and a list of dir/port ids
+	CreatePortGroup(symID string, portGroupID string, dirPorts []types.PortKey) (*types.PortGroup, error)
+
 	// System
 	GetSymmetrixIDList() (*types.SymmetrixIDList, error)
 	GetSymmetrixByID(id string) (*types.Symmetrix, error)
@@ -114,7 +117,7 @@ type Pmax interface {
 	JobToString(job *types.Job) string
 
 	// GetPortGroupList returns a list of all the Port Group ids.
-	GetPortGroupList(symID string) (*types.PortGroupList, error)
+	GetPortGroupList(symID string, portGroupType string) (*types.PortGroupList, error)
 	// GetPortGroupByID returns a port group given the PortGroup id.
 	GetPortGroupByID(symID string, portGroupID string) (*types.PortGroup, error)
 

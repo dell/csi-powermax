@@ -5,6 +5,7 @@
 
 rm -f unix_sock
 . ../../env.sh
+export X_CSI_POWERMAX_RESPONSE_TIMES="true"
 echo ENDPOINT $X_CSI_POWERMAX_ENDPOINT
 echo "Starting the csi-powermax driver. You should wait until the node setup is complete before running tests."
 ../../csi-powermax

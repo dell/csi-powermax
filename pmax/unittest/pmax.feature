@@ -403,22 +403,23 @@ Feature: PMAX Client library
     Scenario Outline: Test GetHostList
       Given a valid connection
       And I have a whitelist of <whitelist>
-      And I have a Host <hostname>
+      And I have a FC Host <fchostname>
+      And I have a ISCSI Host <hostname>
       And I induce error <induced>
       When I call GetHostList
       Then the error message contains <errormsg>
       And I get a valid HostList if no error
 
       Examples:
-      | hostname     | induced                        | errormsg                                              | whitelist |
-      | "Test-Host"  | "none"                         | "none"                                                | ""        |
-      | "Test-Host"  | "GetHostError"                 | "induced error"                                       | ""        |
-      | "Test-Host"  | "none"                         | "ignored via a whitelist"                             | "ignored" |
+      | fchostname     | hostname     | induced                        | errormsg                                              | whitelist |
+      | "Test-Host-FC" | "Test-Host"  | "none"                         | "none"                                                | ""        |
+      | "Test-Host-FC" | "Test-Host"  | "GetHostError"                 | "induced error"                                       | ""        |
+      | "Test-Host-FC" | "Test-Host"  | "none"                         | "ignored via a whitelist"                             | "ignored" |
 
     Scenario Outline: Test GetHostByID
       Given a valid connection
       And I have a whitelist of <whitelist>
-      And I have a Host <hostname>
+      And I have a ISCSI Host <hostname>
       And I induce error <induced>
       When I call GetHostByID <hostname>
       Then the error message contains <errormsg>
@@ -519,7 +520,7 @@ Feature: PMAX Client library
     Scenario Outline: Test cases for CreateMaskingViewWithHost
       Given a valid connection
       And I have a whitelist of <whitelist>
-      And I have a Host <hostname>
+      And I have a ISCSI Host <hostname>
       And I have a PortGroup
       And I have a StorageGroup <sgname>
       And I induce error <induced>

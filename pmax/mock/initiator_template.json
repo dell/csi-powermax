@@ -6,7 +6,8 @@
             "portId": "6"
         }
     ],
-    "type": "Fibre",
+    "type": "GigE",
+    "host": "__INITIATOR_HOST__",
     "ip_address": "192.168.1.175",
     "logged_in": true,
     "on_fabric": true,

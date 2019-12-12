@@ -46,7 +46,7 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 ---
 kind: DaemonSet
-apiVersion: apps/v1beta2
+apiVersion: apps/v1
 metadata:
   name: {{ .Release.Name }}-node
   namespace: {{ .Release.Namespace }}
@@ -60,6 +60,7 @@ spec:
         app: {{ .Release.Name }}-node
     spec:
       serviceAccount: {{ .Release.Name }}-node
+      hostIPC: true
       hostNetwork: true
       containers:  
         - name: driver
@@ -70,7 +71,7 @@ spec:
             allowPrivilegeEscalation: true
           image: {{ required "Must provide the PowerMax driver container image." .Values.images.driver }}
           imagePullPolicy: Always
-          command: [ "/csi-powermax" ]
+          command: [ "/csi-powermax.sh" ]
           env:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/kubelet/plugins/powermax.emc.dell.com/csi_sock
@@ -84,8 +85,10 @@ spec:
               value: {{ required "Must provide a Unisphere HTTPS endpoint." .Values.unisphere }}
             - name: X_CSI_POWERMAX_DEBUG
               value: {{ .Values.powerMaxDebug | default "false" | lower | quote }}
+            - name: X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION
+              value: {{ .Values.skipCertificateValidation | default "true" | lower | quote }}
             - name: X_CSI_POWERMAX_INSECURE
-              value: {{ .Values.powerMaxInsecure | default "true" | lower | quote }}
+              value: {{ .Values.powerMaxInsecure | default "none" | lower | quote }}
             - name: X_CSI_K8S_CLUSTER_PREFIX
               value:  {{ required "Must provide a Cluster Prefix." .Values.clusterPrefix }}
             - name: X_CSI_POWERMAX_USER
@@ -109,6 +112,8 @@ spec:
               value: {{ .Values.ISCSIChroot | default "/noderoot" }}
             - name: X_CSI_GRPC_MAX_THREADS
               value: {{ .Values.grpcMaxThreads | default "4" | toJson }}
+            - name: X_CSI_TRANSPORT_PROTOCOL
+              value: {{ .Values.transportProtocol | default "" }}
             - name: SSL_CERT_DIR
               value: /certs
           volumeMounts:
@@ -116,6 +121,7 @@ spec:
               mountPath: /var/lib/kubelet/plugins/powermax.emc.dell.com
             - name: volumedevices-path
               mountPath: /var/lib/kubelet/plugins/kubernetes.io/csi/volumeDevices
+              mountPropagation: "Bidirectional"
             - name: pods-path
               mountPath: /var/lib/kubelet/pods
               mountPropagation: "Bidirectional"

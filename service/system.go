@@ -43,27 +43,27 @@ func addLock(identifier string) {
 }
 
 // AcquireLock - acquire a lock given an identifier string
-func AcquireLock(identifier string) {
-	log.Debug(fmt.Sprintf("Attempting to acquire lock for %s", identifier))
+func AcquireLock(identifier string, requestID string) {
+	log.Debug(fmt.Sprintf("Attempting to acquire lock: %s for: %s", identifier, requestID))
 	addLock(identifier)
 	lockChannel := locks.Load(identifier)
 	if lockChannel != nil {
 		_, ok := <-lockChannel
 		if !ok {
-			AcquireLock(identifier)
+			AcquireLock(identifier, requestID)
 		} else {
-			log.Debug(fmt.Sprintf("Acquired lock for %s", identifier))
+			log.Debug(fmt.Sprintf("Acquired lock lock: %s for: %s", identifier, requestID))
 		}
 	} else {
-		AcquireLock(identifier)
+		AcquireLock(identifier, requestID)
 	}
 }
 
 // ReleaseLock - release a lock given an identifier string
-func ReleaseLock(identifier string) {
+func ReleaseLock(identifier string, requestID string) {
 	lockChannel := locks.Load(identifier)
 	locks.Delete(identifier)
-	log.Debug(fmt.Sprintf("Released lock for %s", identifier))
+	log.Debug(fmt.Sprintf("Released lock: %s for: %s", identifier, requestID))
 	close(lockChannel)
 }
 

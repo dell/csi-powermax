@@ -6,6 +6,7 @@ RUN yum install -y \
     e2fsprogs \
     which \
     xfsprogs \
+    device-mapper-multipath \
     && \
     yum clean all \
     && \
@@ -16,4 +17,5 @@ RUN which mkfs.ext4
 RUN which mkfs.xfs
 
 COPY "csi-powermax" .
-ENTRYPOINT ["/csi-powermax"]
+COPY "csi-powermax.sh" .
+ENTRYPOINT ["/csi-powermax.sh"]

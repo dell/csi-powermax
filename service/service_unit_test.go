@@ -2,14 +2,13 @@ package service
 
 import (
 	"fmt"
+	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"os"
 	"strconv"
 	"testing"
 	"time"
-
-	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -32,7 +31,8 @@ func TestDeletionQueue(t *testing.T) {
 		req.volumeSizeInCylinders = int64(rand.Int31() / 100)
 		delWorker.requestDeletion(&req)
 		req2 := req
-		req2.volumeName = req.volumeName + "X"
+		req2.volumeID += fmt.Sprintf("%d", i)
+		req2.volumeName = req.volumeName + "XX"
 		delWorker.requestDeletion(&req2)
 	}
 	prev := int64(0)
@@ -49,9 +49,9 @@ func TestDeletionQueue(t *testing.T) {
 var counters = [60]int{}
 
 func incrementCounter(identifier string, num int) {
-	AcquireLock(identifier)
+	AcquireLock(identifier, identifier)
 	counters[num]++
-	ReleaseLock(identifier)
+	ReleaseLock(identifier, identifier)
 }
 
 func TestLocks(t *testing.T) {
@@ -192,7 +192,8 @@ func TestGetVolSize(t *testing.T) {
 		tt := tt
 		t.Run("", func(st *testing.T) {
 			st.Parallel()
-			num, err := validateVolSize(tt.cr)
+			s := &service{}
+			num, err := s.validateVolSize(tt.cr, "", "")
 			if tt.numOfCylinders == 0 {
 				// error is expected
 				assert.Error(st, err)
@@ -244,14 +245,27 @@ func TestStringSliceComparison(t *testing.T) {
 	valC := []string{"a", "b"}
 	valD := []string{"a", "b", "d"}
 
-	if !s.stringSlicesEqual(valA, valB) {
+	if !stringSlicesEqual(valA, valB) {
 		t.Error("Could not validate that reversed slices are equal")
 	}
-	if s.stringSlicesEqual(valA, valC) {
+	if stringSlicesEqual(valA, valC) {
 		t.Error("Could not validate that slices of different sizes are different")
 	}
-	if s.stringSlicesEqual(valA, valD) {
+	if stringSlicesEqual(valA, valD) {
 		t.Error("Could not validate that slices of different content are different")
+	}
+}
+
+func TestStringSliceRegexMatcher(t *testing.T) {
+	slice1 := []string{"aaa", "bbb", "abbba"}
+	matches := stringSliceRegexMatcher(slice1, ".*bbb.*")
+	if len(matches) != 2 {
+		t.Errorf("Expected 2 matches got %d: %s", len(matches), matches)
+	}
+	// Test using bad regex
+	matches = stringSliceRegexMatcher(slice1, "[a*")
+	if len(matches) != 0 {
+		t.Errorf("Expected 2 matches got %d: %s", len(matches), matches)
 	}
 }
 
@@ -301,5 +315,22 @@ func TestTruncateString(t *testing.T) {
 	truncatedString = truncateString(stringToBeTruncated, 11)
 	if truncatedString != "abcdeuvwxyz" {
 		t.Error("Truncated string doesn't match the expected string")
+	}
+}
+
+func TestFibreChannelSplitInitiatorID(t *testing.T) {
+	director, port, initiator, err := splitFibreChannelInitiatorID("FA-2A:6:0x1000000000000000")
+	if director != "FA-2A" {
+		t.Errorf("Expected director FA-2A got %s", director)
+	}
+	if port != "FA-2A:6" {
+		t.Errorf("Expected port FA-2A:6 got %s", port)
+	}
+	if initiator != "0x1000000000000000" {
+		t.Errorf("Expected initiator 0x1000000000000000 got %s", initiator)
+	}
+	_, _, _, err = splitFibreChannelInitiatorID("meaningless string")
+	if err == nil {
+		t.Errorf("Expected error but got none")
 	}
 }

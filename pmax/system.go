@@ -1,7 +1,6 @@
 package pmax
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -44,8 +43,10 @@ func (c *Client) checkResponse(resp *http.Response) error {
 // GetSymmetrixIDList returns a list of all the symmetrix systems known to the connected Unisphere instance.
 func (c *Client) GetSymmetrixIDList() (*types.SymmetrixIDList, error) {
 
+	ctx, cancel := GetTimeoutContext()
+	defer cancel()
 	resp, err := c.api.DoAndGetResponseBody(
-		context.Background(), http.MethodGet, GetSymmetrixIDListURL, c.getDefaultHeaders(), nil)
+		ctx, http.MethodGet, GetSymmetrixIDListURL, c.getDefaultHeaders(), nil)
 	if err != nil {
 		log.Error("GetSymmetrixIDList failed: " + err.Error())
 		return nil, err
@@ -79,8 +80,10 @@ func (c *Client) GetSymmetrixByID(id string) (*types.Symmetrix, error) {
 		return nil, err
 	}
 	url := GetSymmetrixIDListURL + "/" + id
+	ctx, cancel := GetTimeoutContext()
+	defer cancel()
 	resp, err := c.api.DoAndGetResponseBody(
-		context.Background(), http.MethodGet, url, c.getDefaultHeaders(), nil)
+		ctx, http.MethodGet, url, c.getDefaultHeaders(), nil)
 	if err != nil {
 		log.Error("GetSymmetrixIDList failed: " + err.Error())
 		return nil, err
@@ -109,7 +112,9 @@ func (c *Client) GetJobIDList(symID string, statusQuery string) ([]string, error
 		url = url + "?status=" + statusQuery
 	}
 	jobIDList := &types.JobIDList{}
-	err := c.api.Get(context.Background(), url, c.getDefaultHeaders(), jobIDList)
+	ctx, cancel := GetTimeoutContext()
+	defer cancel()
+	err := c.api.Get(ctx, url, c.getDefaultHeaders(), jobIDList)
 	if err != nil {
 		log.Error("GetJobIDList failed: " + err.Error())
 		return nil, err
@@ -122,11 +127,13 @@ func (c *Client) GetJobByID(symID string, jobID string) (*types.Job, error) {
 	if _, err := c.IsAllowedArray(symID); err != nil {
 		return nil, err
 	}
+	ctx, cancel := GetTimeoutContext()
+	defer cancel()
 	maxRetry := 6
 	for i := 0; i < maxRetry; i++ {
 		url := GetSymmetrixIDListURL + "/" + symID + "/" + "job" + "/" + jobID
 		job := &types.Job{}
-		err := c.api.Get(context.Background(), url, c.getDefaultHeaders(), job)
+		err := c.api.Get(ctx, url, c.getDefaultHeaders(), job)
 		if err != nil {
 			if strings.Contains(err.Error(), "Cannot find role for user") {
 				log.Debug(fmt.Sprintf("Retrying GetJobs: %s", err.Error()))
@@ -187,7 +194,9 @@ func (c *Client) GetDirectorIDList(symID string) (*types.DirectorIDList, error) 
 	}
 	directorList := &types.DirectorIDList{}
 	URL := GetSymmetrixIDListURL + "/" + symID + "/director"
-	err := c.api.Get(context.Background(), URL, c.getDefaultHeaders(), directorList)
+	ctx, cancel := GetTimeoutContext()
+	defer cancel()
+	err := c.api.Get(ctx, URL, c.getDefaultHeaders(), directorList)
 	if err != nil {
 		log.Error("GetDirectorIDList failed: " + err.Error())
 		return nil, err
@@ -206,7 +215,9 @@ func (c *Client) GetPortList(symID string, directorID string, query string) (*ty
 	if query != "" {
 		URL = URL + "?" + query
 	}
-	err := c.api.Get(context.Background(), URL, c.getDefaultHeaders(), portList)
+	ctx, cancel := GetTimeoutContext()
+	defer cancel()
+	err := c.api.Get(ctx, URL, c.getDefaultHeaders(), portList)
 	if err != nil {
 		log.Error("GetPortList failed: " + err.Error())
 		return nil, err
@@ -222,7 +233,9 @@ func (c *Client) GetPort(symID string, directorID string, portID string) (*types
 	}
 	port := &types.Port{}
 	URL := GetSymmetrixIDListURL + "/" + symID + "/director/" + directorID + "/port/" + portID
-	err := c.api.Get(context.Background(), URL, c.getDefaultHeaders(), port)
+	ctx, cancel := GetTimeoutContext()
+	defer cancel()
+	err := c.api.Get(ctx, URL, c.getDefaultHeaders(), port)
 	if err != nil {
 		log.Error("GetPort failed: " + err.Error())
 		return nil, err

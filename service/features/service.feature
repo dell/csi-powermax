@@ -32,14 +32,12 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Create volume good scenario
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       Then a valid CreateVolumeResponse is returned
 
 @v1.0.0
      Scenario: Idempotent create volume with duplicate volume name
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume2"
       And I call CreateVolume "volume2"
       Then a valid CreateVolumeResponse is returned
@@ -47,7 +45,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Idempotent create volume with different sizes
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolumeSize "volume3" "50"
       And I call CreateVolumeSize "volume3" "55"
       Then the error contains "different size than requested"
@@ -56,7 +53,6 @@ Feature: PowerMax CSI interface
      Scenario: Create volume with invalid arrays in the whitelist
       Given a PowerMax service
       And a provided array whitelist of "badone, badtwo"
-      When I call Probe
       And I call CreateVolumeSize "volume1" "10"
       Then the error contains "ignored via a whitelist"
 
@@ -70,7 +66,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario Outline: Create volume with induced errors
       Given a PowerMax service
-      When I call Probe
       And I induce error <induced>
       And I call CreateVolumeSize "volume3" "50"
       Then the error contains <errormsg>
@@ -87,10 +82,10 @@ Feature: PowerMax CSI interface
      | "InvalidStoragePool"                | "Storage Pool invalid not found"                   |
      | "InvalidServiceLevel"               | "An invalid Service Level parameter was specified" |
 
+@delete
 @v1.0.0
      Scenario Outline: Delete volume worker scenarios
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolumeSize "volume7" "50"
       And I induce error <induced>
       And I queue "volume7" for deletion
@@ -102,13 +97,66 @@ Feature: PowerMax CSI interface
      | "GetVolumeError"                    | "Error retrieving Volume: induced error"           |
      | "GetJobError"                       | "Error getting Job(s): induced error"              |
      | "JobFailedError"                    | "Job Failed"                                       |
+     | "GetStorageGroupError"              | "Error retrieving Storage Group(s): induced error" |
      | "UpdateStorageGroupError"           | "Error updating Storage Group: induced error"      |
      | "DeleteVolumeError"                 | "Error deleting Volume: induced error"             |
+
+@delete
+@v1.1.0
+     Scenario Outline: Delete volume worker scenarios for post ELM SR arrays
+      Given a PowerMax service
+      And a PostELMSR Array
+      And I call CreateVolumeSize "volume7" "50"
+      And I induce error <induced>
+      And I queue "volume7" for deletion
+      Then deletion worker processes "volume7" which results in <errormsg>
+
+     Examples:
+     | induced                             | errormsg                                                                       |
+     | "none"                              | "none"                                                                         |
+     | "GetVolumeError"                    | "Error retrieving Volume: induced error"                                       |
+     | "GetStorageGroupError"              | "Error retrieving Storage Group(s): induced error"                             |
+     | "UpdateStorageGroupError"           | "Error updating Storage Group: induced error"                                  |
+     | "DeleteVolumeError"                 | "Error deleting Volume: induced error"                                         |
+     | "DeviceInSGError"                   | "Error deleting Volume: induced error - device is a member of a storage group" |
+
+@delete
+@v1.1.0
+     Scenario Outline: Delete volume worker scenarios for post ELM SR arrays
+      Given a PowerMax service
+      And a PostELMSR Array
+      And I call CreateVolumeSize "volume7" "50"
+      And I induce error <induced>
+      And the error clears after <numberOfSeconds> seconds
+      And I queue "volume7" for deletion
+      Then deletion worker processes "volume7" which results in <errormsg>
+
+     Examples:
+     | induced                             | numberOfSeconds   | errormsg                                                                       |
+     | "GetStorageGroupError"              | 3                 | "none"                                                                         |
+     | "GetStorageGroupError"              | 10                | "Error retrieving Storage Group(s): induced error"                             |
+     | "UpdateStorageGroupError"           | 3                 | "none"                                                                         |
+     | "DeleteVolumeError"                 | 5                 | "none"                                                                         |
+     | "DeleteVolumeError"                 | 18                | "Error deleting Volume: induced error"                                         |
+     | "DeviceInSGError"                   | 5                 | "none"                                                                         |
+     | "DeviceInSGError"                   | 15                | "Error deleting Volume: induced error - device is a member of a storage group" |
+
+@delete
+@v1.0.0
+   Scenario: Deletion worker receives volume in masking view
+     Given a PowerMax service
+     And I call CreateVolume "volume1"
+     When I request a PortGroup
+     And a valid CreateVolumeResponse is returned
+     And I have a Node "node1" with MaskingView
+     And I call PublishVolume with "single-writer" to "node1"
+     And no error was received
+     Then I queue "volume1" for deletion
+     And deletion worker processes "volume1" which results in "has masking views so cannot remove volume"
 
 @v1.0.0
      Scenario: Delete worker multiple volumes
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolumeSize "volume8" "50"
       And I call CreateVolumeSize "volume9" "60"
       And I call CreateVolumeSize "volume10" "70"
@@ -119,10 +167,17 @@ Feature: PowerMax CSI interface
       And deletion worker processes "volume9" which results in "none"
       And deletion worker processes "volume10" which results in "none"
 
+@v1.1.0
+     Scenario: Delete worker same volume
+      Given a PowerMax service
+      And I call CreateVolumeSize "volume8" "50"
+      And I queue "volume8" for deletion
+      And I queue "volume8" for deletion
+      Then deletion worker processes "volume8" which results in "none"
+
 @v1.0.0
      Scenario Outline: Idempotent create volume with induced errors
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolumeSize "volume3" "50"
       And I induce error <induced>
       And I induce error <second_induced>
@@ -140,7 +195,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Create volume with application prefix
       Given a PowerMax service
-      When I call Probe
       And I specify a ApplicationPrefix
       And I call CreateVolume "volume1" 
       Then a valid CreateVolumeResponse is returned
@@ -149,7 +203,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Create volume with storage group
       Given a PowerMax service
-      When I call Probe
       And I specify a StorageGroup
       And I call CreateVolume "volume1" 
       Then a valid CreateVolumeResponse is returned
@@ -157,7 +210,6 @@ Feature: PowerMax CSI interface
 @notyet
      Scenario: Idempotent create volume with different storage pool
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume4" 
       And I change the StoragePool "other_storage_pool"
       And I call CreateVolume "volume4" 
@@ -166,7 +218,6 @@ Feature: PowerMax CSI interface
 @notyet
      Scenario: Idempotent create volume with bad storage pool
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume4" 
       And I change the StoragePool "no_storage_pool"
       And I call CreateVolume "volume4" 
@@ -175,7 +226,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Create volume with Accessibility Requirements
       Given a PowerMax service
-      When I call Probe
       And I specify AccessibilityRequirements
       And I call CreateVolume "accessibility"
       Then the error contains "Volume AccessibilityRequirements is not supported"
@@ -183,7 +233,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Create volume with VolumeContentSource
       Given a PowerMax service
-      When I call Probe
       And I specify VolumeContentSource
       And I call CreateVolume "volumecontentsource"
       Then the error contains "Volume VolumeContentSource is not supported"
@@ -191,7 +240,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Create volume with AccessMode_MULTINODE_WRITER
       Given a PowerMax service
-      When I call Probe
       And I specify MULTINODEWRITER
       And I call CreateVolume "multi-writer"
       Then a valid CreateVolumeResponse is returned
@@ -199,21 +247,18 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Attempt create volume with no name
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume ""
       Then the error contains "Name cannot be empty"
 
 @v1.0.0
      Scenario: Attempt create volume with long name
      Given a PowerMax service
-     When I call Probe
      And I call CreateVolume "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
      Then a valid CreateVolumeResponse is returned
 
 @v1.0.0
      Scenario: Idempotent create volume with duplicate long volume name
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
       And I call CreateVolume "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
       Then a valid CreateVolumeResponse is returned
@@ -221,7 +266,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Create volume with bad capacity
       Given a PowerMax service
-      When I call Probe
       And I specify a BadCapacity
       And I call CreateVolume "bad capacity"
       Then the error contains "bad capacity"
@@ -242,7 +286,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Call GetCapacity with valid Storage Pool Name
       Given a PowerMax service
-      When I call Probe
       And I call GetCapacity with storage pool "SRP_1"
       Then a valid GetCapacityResponse is returned
 
@@ -256,7 +299,6 @@ Feature: PowerMax CSI interface
 @v1.0.0	
      Scenario: Call GetCapacity with invalid Storage Pool name
       Given a PowerMax service
-      When I call Probe
       And I call GetCapacity with storage pool "xxx"
       Then the error contains "Storage Pool xxx not found"
 
@@ -264,14 +306,12 @@ Feature: PowerMax CSI interface
      Scenario: Call GetCapacity with invalid arrays in the whitelist
       Given a PowerMax service
       And a provided array whitelist of "badone, badtwo"
-      When I call Probe
       And I call GetCapacity with storage pool "SRP_1"
       Then the error contains "ignored via a whitelist"
 
 @v1.0.0
      Scenario: Call GetCapacity with induced error retrieving capacity
       Given a PowerMax service
-      When I call Probe
       # First call populates the cache
       And I call GetCapacity with storage pool "SRP_1"
       And I induce error "GetStoragePoolError"
@@ -281,21 +321,18 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Call GetCapacity without specifying Symmetrix ID
       Given a PowerMax service
-      When I call Probe
       And I call GetCapacity without Symmetrix ID
       Then the error contains "A SYMID parameter is required"
 
 @v1.0.0
      Scenario: Call GetCapacity without specifying Parameters
       Given a PowerMax service
-      When I call Probe
       And I call GetCapacity without Parameters
       Then the error contains "Required StoragePool and SymID in parameters"
 
 @v1.0.0
      Scenario: Call GetCapacity with invalid capabilities
       Given a PowerMax service
-      When I call Probe
       And I call GetCapacity with Invalid capabilities
       Then the error contains "access mode cannot be UNKNOWN"
 
@@ -308,7 +345,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario Outline: Calls to validate volume capabilities
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       And a valid CreateVolumeResponse is returned
       And I call ValidateVolumeCapabilities with voltype <voltype> access <access> fstype <fstype> pool <pool> level <level>
@@ -332,7 +368,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario Outline: Call validate volume capabilities with non-existent volume
       Given a PowerMax service
-      When I call Probe
       And I induce error <induced>
       And I call CreateVolume "volume1"
       And I call ValidateVolumeCapabilities with voltype <voltype> access <access> fstype <fstype> pool <pool> level <level>
@@ -357,7 +392,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Call validate volume capabilities with invalid volume identifier
       Given a PowerMax service
-      When I call Probe
       And I have a volume with invalid volume identifier
       And I call ValidateVolumeCapabilities with voltype "block" access "single-writer" fstype "ext4" pool "SRP_1" level "Optimized"
       Then the error contains "Failed to validate combination of Volume Name and Volume ID"
@@ -366,8 +400,8 @@ Feature: PowerMax CSI interface
      Scenario: Test BeforeServe
       Given a PowerMax service
       When I call BeforeServe
-      # Get different error message on Windows vs. Linux
-      Then the error contains "cannot find the path specified@@none"
+      # On windows there are no initiators, but on Linux there are iscsi in /etc/iscsi/initiatorname.iscsi
+      Then the error contains "No FC or iSCSI initiators were found@@none"
 
 @v1.0.0
      Scenario: Test BeforeServe
@@ -380,18 +414,6 @@ Feature: PowerMax CSI interface
       Given a PowerMax service
       When I call BeforeServe with an invalid ClusterPrefix
       Then the error contains "exceeds maximum length"
-
-@v1.0.0
-     Scenario: Call NodeStageVolume, should get unimplemented
-      Given a PowerMax service
-      When I call NodeStageVolume
-      Then the error contains "Unimplemented"
-
-@v1.0.0
-     Scenario: Call NodeUnstageVolume, should get unimplemented
-      Given a PowerMax service
-      When I call NodeUnstageVolume
-      Then the error contains "Unimplemented"
 
 @v1.0.0
      Scenario: Call NodeGetVolumeStats, should get unimplemented
@@ -436,11 +458,11 @@ Feature: PowerMax CSI interface
       And no error was received
 
 @v1.0.0
-    Scenario Outline: Validate createOrUpdateHost
+    Scenario Outline: Validate createOrUpdateIscsiHost
       Given a PowerMax service
       And I induce error <induced1>
       And I induce error <induced2>
-      When I invoke createOrUpdateHost <hostname>
+      When I invoke createOrUpdateIscsiHost <hostname>
       Then the error contains <errormsg>
       And <count> initiators are found
 
@@ -448,25 +470,51 @@ Feature: PowerMax CSI interface
       | hostname           | induced1             | induced2              | errormsg                         | count |
       | "testhost"         |"NoArray"             | "none"                | "No array specified"             | 0     |
       | "testhost"         |"NoNodeName"          | "none"                | "No nodeName specified"          | 0     |
-      | "testhost"         |"NoIQNs"              | "none"                | "No initiators specified"        | 0     |
+      | "testhost"         |"NoIQNs"              | "none"                | "No IQNs specified"              | 0     |
       | "testhost"         |"GetHostError"        | "CreateHostError"     | "Unable to create Host"          | 0     |
       | "testhost"         |"none"                | "none"                | "none"                           | 1     |
-      | "CSI-Test-Node-1"  |"UpdateHostError"     | "none"                | "Unable to update Host"          | 0     |
+      | "CSI-Test-Node-1"  |"UpdateHostError"     | "none"                | "Unable to update Host"          | 1     |
       | "CSI-Test-Node-1"  |"UpdateHostError"     | "ResetAfterFirstError"| "none"                           | 1     |
       | "CSI-Test-Node-1"  |"GetHostError"        | "none"                | "none"                           | 1     |
 
-@v1.0.0
+@v1.1.0
+    Scenario Outline: Validate createOrUpdateFCHost
+      Given a PowerMax service
+      And I induce error <induced1>
+      And I induce error <induced2>
+      When I invoke createOrUpdateFCHost <hostname>
+      Then the error contains <errormsg>
+      And <count> initiators are found
+
+      Examples:
+      | hostname           | induced1             | induced2              | errormsg                         | count |
+      | "testhost"         |"NoArray"             | "none"                | "No array specified"             | 0     |
+      | "testhost"         |"NoNodeName"          | "none"                | "No nodeName specified"          | 0     |
+      | "testhost"         |"NoIQNs"              | "none"                | "No port WWNs specified"         | 0     |
+      | "testhost"         |"GetHostError"        | "CreateHostError"     | "Unable to create Host"          | 0     |
+      | "testhost"         |"none"                | "none"                | "none"                           | 1     |
+      | "CSI-Test-Node-2"  |"GetInitiatorError"   | "none"                | "Error retrieving Initiator(s)"  | 0     |
+      | "CSI-Test-Node-2"  |"UpdateHostError"     | "none"                | "Unable to update Host"          | 2     |
+      | "CSI-Test-Node-2"  |"UpdateHostError"     | "ResetAfterFirstError"| "none"                           | 2     |
+      | "CSI-Test-Node-2"  |"GetHostError"        | "none"                | "none"                           | 2     |
+
+@v1.1.0
     Scenario Outline: Validate nodeHostSetup
       Given a PowerMax service
+      And I set transport protocol to <transport>
       And I have a Node "Node1" with MaskingView
       And I induce error <induced>
       When I invoke nodeHostSetup with a <mode> service
       Then the error contains <errormsg>
 
       Examples:
-      | induced              | errormsg                         | mode              | 
-      | "none"               | "none"                           | "node"            |
-      | "GetSymmetrixError"  | "timed out"                      | "node"            |
+      | transport     | induced              | errormsg                         | mode              | 
+      | "ISCSI"       | "none"               | "none"                           | "node"            |
+      | "FC"          | "none"               | "none"                           | "node"            |
+      | "ISCSI"       | "GetInitiatorError"  | "Error retrieving Initiator(s)"  | "node"            |
+      | "ISCSI"       | "none"               | "none"                           | "node"            |
+      | "FC"          | "GetInitiatorError"  | "Error retrieving Initiator(s)"  | "node"            |
+      | "FC"          | "none"               | "none"                           | "node"            |
 
 @v1.0.0
     Scenario: Validate nodeHostSetup with temporary failure
@@ -490,7 +538,7 @@ Feature: PowerMax CSI interface
       | "GetSymmetrixError"    | "Unable to retrieve Array List"                  | 0     |
       | "GetDirectorError"     | "Error retrieving Director"                      | 0     |
       | "GOISCSIDiscoveryError"| "Unable to perform iSCSI discovery and login"    | 0     |
-      | "none"                 | "none"                                           | 2     |
+      | "none"                 | "none"                                           | 3     |
 
 @v1.0.0
     Scenario Outline: Validate Array Whitelists
@@ -528,6 +576,35 @@ Feature: PowerMax CSI interface
     Scenario Outline: Test validateStoragePoolID function
       Given a PowerMax service
       And I call validateStoragePoolID <numberOfTimes> in parallel
+      Then no error was received
+
+       Examples:
+       | numberOfTimes               |
+       | 2000                        |
+
+@v1.1.0
+     Scenario: Call ControllerExpandVolume, should get unimplemented
+      Given a PowerMax service
+      When I call ControllerExpandVolume
+      Then the error contains "Unimplemented"
+
+@v1.1.0
+     Scenario: Call NodeExpandVolume, should get unimplemented
+      Given a PowerMax service
+      When I call NodeExpandVolume
+      Then the error contains "Unimplemented"
+
+@v1.1.0
+    Scenario: Create a block volume and block not enabled
+      Given a PowerMax service
+      And block volumes are not enabled
+      And I call CreateVolume "volume1"
+      Then the error contains "Block Volume Capability is not supported"
+
+@v1.1.0
+    Scenario Outline: Test GetPortIdentifier function
+      Given a PowerMax service
+      And I call GetPortIdentifier <numberOfTimes> in parallel
       Then no error was received
 
        Examples:
