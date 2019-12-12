@@ -7,7 +7,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume with single writer
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -16,10 +15,43 @@ Feature: PowerMax CSI interface
       Then a valid PublishVolumeResponse is returned
 
 @controllerPublish
+@v1.1.0
+     Scenario: Publish volume with single writer for FC when PG is present
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      And a valid CreateVolumeResponse is returned
+      And I set transport protocol to "FC"
+      And I have a Node "node1" with Host
+      And I have a FC PortGroup "PG1"
+      And I call PublishVolume with "single-writer" to "node1"
+      Then a valid PublishVolumeResponse is returned
+
+@controllerPublish
+@v1.1.0
+     Scenario: Publish volume with single writer for FC when PG is not present
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      And a valid CreateVolumeResponse is returned
+      And I set transport protocol to "FC"
+      And I have a Node "node1" with Host
+      And I call PublishVolume with "single-writer" to "node1"
+      Then a valid PublishVolumeResponse is returned
+
+@controllerPublish
+@v1.1.0
+     Scenario: Publish volume with single writer for FC when PG is not present and initiator is mapped to lot of dir/ports
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      And a valid CreateVolumeResponse is returned
+      And I set transport protocol to "FC"
+      And I have a Node "node1" with Host with Initiator mapped to multiple ports
+      And I call PublishVolume with "single-writer" to "node1"
+      Then a valid PublishVolumeResponse is returned
+
+@controllerPublish
 @v1.0.0
      Scenario: Publish volume with single writer with an invalid volume
       Given a PowerMax service
-      When I call Probe
       And I have a Node "node1" with MaskingView
       And I call PublishVolume with "single-writer" to "node1"
       Then the error contains "malformed"
@@ -28,7 +60,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario Outline: Publish volume with masking view and induced errors
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -46,10 +77,10 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario Outline: Publish volume with no masking view and induced errors
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
+      And I set transport protocol to "FC"
       And I have a Node "node1" with Host
       And I induce error <induced>
       And I call PublishVolume with "single-writer" to "node1"
@@ -66,7 +97,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume with single-writer to a Node with conflicting MV
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -79,7 +109,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume with single writer with conflicting SG
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -93,7 +122,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume with single writer with conflicting SG but no MV
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -106,15 +134,14 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume to a Node which is already published to multiple nodes
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
-      And I have a Node "node1" with MaskingView
+      And I have a Node "node1" with initiators "initlist1" with MaskingView
       And I add the Volume to "node1"
-      And I have a Node "node2" with MaskingView
+      And I have a Node "node2" with initiators "initlist2" with MaskingView
       And I add the Volume to "node1"
-      And I have a Node "node3" with MaskingView
+      And I have a Node "node3" with initiators "initlist3" with MaskingView
       When I call PublishVolume with "single-writer" to "node3"
       Then the error contains "Volume already part of multiple Masking views"
 
@@ -122,12 +149,11 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume with single writer to multiple Nodes
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
-      And I have a Node "node1" with MaskingView
-      And I have a Node "node2" with MaskingView
+      And I have a Node "node1" with initiators "initlist1" with MaskingView
+      And I have a Node "node2" with initiators "initlist1" with MaskingView
       And I call PublishVolume with "single-writer" to "node1"
       Then a valid PublishVolumeResponse is returned
       And I call PublishVolume with "single-writer" to "node2"
@@ -137,7 +163,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume with single writer without masking view
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -149,18 +174,16 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume with single writer without host
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
       And I call PublishVolume with "single-writer" to "node1"
-      Then the error contains "Failed to fetch host details from the array"
+      Then the error contains "Failed to fetch host"
 
 @controllerPublish
 @v1.0.0
      Scenario: Publish volume with single writer without masking view
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -173,7 +196,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume with single writer with PortGroupError
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       And a valid CreateVolumeResponse is returned
       And I have a Node "node1" with Host
@@ -181,13 +203,12 @@ Feature: PowerMax CSI interface
       And I induce error "PortGroupError"
       When I request a PortGroup
       And I call PublishVolume with "single-writer" to "node1"
-      Then the error contains "Failed to get port group"
+      Then the error contains "No port groups have been supplied"
 
 @controllerPublish
 @v1.0.0
      Scenario: Idempotent publish volume with single writer
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -201,7 +222,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Idempotent publish volume with multiple writer
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -215,12 +235,11 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume with multiple writer to different nodes
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
-      And I have a Node "node1" with MaskingView
-      And I have a Node "node2" with MaskingView
+      And I have a Node "node1" with initiators "initlist1" with MaskingView
+      And I have a Node "node2" with initiators "initlist2" with MaskingView
       And I call PublishVolume with "multiple-writer" to "node1"
       Then a valid PublishVolumeResponse is returned
       And I call PublishVolume with "multiple-writer" to "node2"
@@ -230,7 +249,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume with multiple writer to same node
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -244,7 +262,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume to a Node with conflicting MV
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -257,7 +274,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Publish volume with an invalid volumeID
       Given a PowerMax service
-      When I call Probe
       And I call PublishVolume with "single-writer" to "node1"
       Then the error contains "not formed correctly"
 
@@ -266,7 +282,6 @@ Feature: PowerMax CSI interface
      Scenario: Publish volume no volumeID specified
       Given a PowerMax service
       And no volume
-      When I call Probe
       And I call PublishVolume with "single-writer" to "Node"
       Then the error contains "volume ID is required"
 
@@ -276,7 +291,6 @@ Feature: PowerMax CSI interface
       Given a PowerMax service
       And a valid volume
       And no node
-      When I call Probe
       And I call PublishVolume with "single-writer" to "node1"
       Then the error contains "node ID is required"
 
@@ -286,7 +300,6 @@ Feature: PowerMax CSI interface
       Given a PowerMax service
       And a valid volume
       And no volume capability
-      When I call Probe
       And I call PublishVolume with "single-writer" to "node1"
       Then the error contains "volume capability is required"
 
@@ -296,7 +309,6 @@ Feature: PowerMax CSI interface
       Given a PowerMax service
       And a valid volume
       And no access mode
-      When I call Probe
       And I call PublishVolume with "single-writer" to "node1"
       Then the error contains "access mode is required"
 
@@ -314,7 +326,6 @@ Feature: PowerMax CSI interface
      Scenario: Publish volume with AccessMode UNKNOWN
       Given a PowerMax service
       And a valid volume
-      When I call Probe
       And I call PublishVolume with "unknown" to "node1"
       Then the error contains "access mode cannot be UNKNOWN"
 
@@ -322,7 +333,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Unpublish volume
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -337,7 +347,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Idempotent Unpublish volume
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -355,7 +364,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: UnpublishVolume when volume is not present in MaskingView
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -372,7 +380,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario Outline: Unpublish volume with induced errors
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -405,7 +412,6 @@ Feature: PowerMax CSI interface
      Scenario: Unpublish volume with no volume id
       Given a PowerMax service
       And a valid volume
-      When I call Probe
       And no volume
       And I call UnpublishVolume from "node1"
       Then the error contains "Volume ID is required"
@@ -422,7 +428,6 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Unpublish volume with no node id
       Given a PowerMax service
-      When I call Probe
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
@@ -431,4 +436,23 @@ Feature: PowerMax CSI interface
       And no error was received
       And I call UnpublishVolume from ""
       Then the error contains "Node ID is required"
+
+@controllerPublish
+@v1.1.0
+    Scenario Outline: Call GetPortIdentifier with various scenarios
+      Given a PowerMax service
+      And I have a PortCache entry for port <incache>
+      And I have a port "FA-1D:5" identifier "5000000000000002" type "FibreChannel"
+      And I have a port "FA-1D:100" identifier "" type ""
+      And I induce error <induced>
+      When I call GetPortIdenfier for <desired>
+      Then the result is <result>
+      And the error contains <errormsg>
+
+      Examples:
+      | incache          | desired               | induced               | result               | errormsg                                              |
+      | "FA-1D:4"        | "FA-1D:4"             | "none"                | "5000000000000001"   | "none"                                                |
+      | "FA-1D:4"        | "FA-1D:100"           | "none"                | ""                   | "port not found"                                      |
+      | "FA-1D:4"        | "FA-1D:5"             | "none"                | "0x5000000000000002" | "none"                                                |
+      | ""               | "FA-1D:5"             | "none"                | "0x5000000000000002" | "none"                                                |
 

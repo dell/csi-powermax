@@ -5,13 +5,13 @@ integrationfiles=	inttest/pmax_integration_test.go
 unitfiles=		unit_test.go unit_steps_test.go
 
 # These variables should be set for your Unisphere installation
-Endpoint="https://10.247.73.133:8443"
+Endpoint="https://127.0.0.1:8443"
 Username=			# Leave blank for the default username
 Password=			# Leave blank for the default password
 DefaultStorageGroup="CSI-Integration-Test"
 DefaultStoragePool="SRP_1"
 VolumePrefix="XX"		# Use a two letter initial sequence to identify your files
-SymmetrixID="000197900046"
+SymmetrixID="000000000001"
 
 all: unit-test int-test check
 

@@ -18,10 +18,13 @@ const (
 	testInitiator          = "SE-1E:000:iqn.1993-08.org.debian:01:5ae293b352a2"
 	testInitiatorIQN       = "iqn.1993-08.org.debian:01:5ae293b352a2"
 	testUpdateInitiatorIQN = "iqn.1993-08.org.debian:01:5ae293b352a3"
+	testUpdateInitiator    = "SE-1E:000:iqn.1993-08.org.debian:01:5ae293b352a3"
 	testHost               = "l2se0042_iscsi_ig"
 	testHostGroup          = "l2se0042_43_iscsi_ig"
 	testSG                 = "l2se0042_sg"
 	mvID                   = "12se0042_mv"
+	testFCInitiatorWWN     = "10000090fa66060a"
+	testFCInitiator        = "FA-1D:4:10000090fa66060a"
 )
 
 type uMV struct {
@@ -106,6 +109,7 @@ func (c *unitContext) iInduceError(errorType string) error {
 	mock.InducedErrors.GetVolumeError = false
 	mock.InducedErrors.UpdateVolumeError = false
 	mock.InducedErrors.DeleteVolumeError = false
+	mock.InducedErrors.DeviceInSGError = false
 	mock.InducedErrors.GetStorageGroupError = false
 	mock.InducedErrors.InvalidResponse = false
 	mock.InducedErrors.UpdateStorageGroupError = false
@@ -150,6 +154,8 @@ func (c *unitContext) iInduceError(errorType string) error {
 		mock.InducedErrors.UpdateVolumeError = true
 	case "DeleteVolumeError":
 		mock.InducedErrors.DeleteVolumeError = true
+	case "DeviceInSGError":
+		mock.InducedErrors.DeviceInSGError = true
 	case "GetStorageGroupError":
 		mock.InducedErrors.GetStorageGroupError = true
 	case "InvalidResponse":
@@ -556,7 +562,8 @@ func (c *unitContext) iHaveAMaskingView(maskingViewID string) error {
 		portGroupID:    pgID,
 	}
 	initiators := []string{testInitiatorIQN}
-	mock.AddHost(hostID, "ISCSI", initiators)
+	mock.AddInitiator(testInitiator, testInitiatorIQN, "GigE", []string{"SE-1E:000"}, "")
+	mock.AddHost(hostID, "iSCSI", initiators)
 	mock.AddStorageGroup(sgID, "SRP_1", "Diamond")
 	mock.AddMaskingView(maskingViewID, sgID, hostID, pgID)
 	c.uMaskingView = localMaskingView
@@ -624,11 +631,12 @@ func (c *unitContext) iCallDeleteMaskingView() error {
 }
 
 func (c *unitContext) iHaveAPortGroup() error {
+	mock.AddPortGroup(testPortGroup, "ISCSI", []string{"SE-1E:000"})
 	return nil
 }
 
 func (c *unitContext) iCallGetPortGroupList() error {
-	c.portGroupList, c.err = c.client.GetPortGroupList(symID)
+	c.portGroupList, c.err = c.client.GetPortGroupList(symID, "")
 	return nil
 }
 
@@ -659,10 +667,19 @@ func (c *unitContext) iGetAValidPortGroupIfNoError() error {
 	return nil
 }
 
-func (c *unitContext) iHaveAHost(hostName string) error {
+func (c *unitContext) iHaveAISCSIHost(hostName string) error {
 	initiators := []string{testInitiatorIQN}
+	mock.AddInitiator(testInitiator, testInitiatorIQN, "GigE", []string{"SE-1E:000"}, "")
 	c.hostID = hostName
-	c.host, c.err = mock.AddHost(c.hostID, "ISCSI", initiators)
+	c.host, c.err = mock.AddHost(c.hostID, "iSCSI", initiators)
+	return nil
+}
+
+func (c *unitContext) iHaveAFCHost(hostName string) error {
+	initiators := []string{testFCInitiatorWWN}
+	mock.AddInitiator(testFCInitiator, testFCInitiatorWWN, "Fibre", []string{"FA-1D:4"}, "")
+	c.hostID = hostName
+	c.host, c.err = mock.AddHost(c.hostID, "Fibre", initiators)
 	return nil
 }
 
@@ -678,6 +695,7 @@ func (c *unitContext) iGetAValidHostListIfNoError() error {
 	if c.hostList == nil || len(c.hostList.HostIDs) == 0 {
 		return fmt.Errorf("Expected item in HostList but got none")
 	}
+	fmt.Println(c.hostList)
 	return nil
 }
 
@@ -701,6 +719,7 @@ func (c *unitContext) iCallCreateHost(hostName string) error {
 	initiatorList := make([]string, 1)
 	c.hostID = hostName
 	initiatorList[0] = testInitiatorIQN
+	mock.AddInitiator(testInitiator, testInitiatorIQN, "GigE", []string{"SE-1E:000"}, "")
 	c.host, c.err = c.client.CreateHost(symID, hostName, initiatorList, nil)
 	return nil
 }
@@ -708,6 +727,7 @@ func (c *unitContext) iCallCreateHost(hostName string) error {
 func (c *unitContext) iCallUpdateHost() error {
 	initiatorList := make([]string, 1)
 	initiatorList[0] = testUpdateInitiatorIQN
+	mock.AddInitiator(testUpdateInitiator, testUpdateInitiatorIQN, "GigE", []string{"SE-1E:000"}, "")
 	c.host, c.err = c.client.UpdateHostInitiators(symID, c.host, initiatorList)
 	return nil
 }
@@ -742,6 +762,7 @@ func (c *unitContext) iGetAValidInitiatorListIfNoError() error {
 }
 
 func (c *unitContext) iCallGetInitiatorByID() error {
+	mock.AddInitiator(testInitiator, testInitiatorIQN, "GigE", []string{"SE-1E:000"}, "")
 	c.initiator, c.err = c.client.GetInitiatorByID(symID, testInitiator)
 	return nil
 }
@@ -751,7 +772,7 @@ func (c *unitContext) iGetAValidInitiatorIfNoError() error {
 		return nil
 	}
 
-	if c.initiator.InitiatorID != testInitiator {
+	if c.initiator.InitiatorID != testInitiatorIQN {
 		return fmt.Errorf("Expected to get initiator %s, but received %s",
 			c.initiator.InitiatorID, testInitiator)
 	}
@@ -794,7 +815,8 @@ func (c *unitContext) iHaveAHostGroup(hostGroupID string) error {
 	// Create a host instead of host group
 	c.hostGroupID = hostGroupID
 	initiators := []string{testInitiatorIQN}
-	mock.AddHost(hostGroupID, "ISCSI", initiators)
+	mock.AddInitiator(testInitiator, testInitiatorIQN, "GigE", []string{"SE-1E:000"}, "")
+	mock.AddHost(hostGroupID, "iSCSI", initiators)
 	return nil
 }
 
@@ -981,7 +1003,8 @@ func UnitTestContext(s *godog.Suite) {
 	s.Step(`^I call GetPortGroupByID$`, c.iCallGetPortGroupByID)
 	s.Step(`^I get a valid PortGroup if no error$`, c.iGetAValidPortGroupIfNoError)
 	// Host
-	s.Step(`^I have a Host "([^"]*)"$`, c.iHaveAHost)
+	s.Step(`^I have a FC Host "([^"]*)"$`, c.iHaveAFCHost)
+	s.Step(`^I have a ISCSI Host "([^"]*)"$`, c.iHaveAISCSIHost)
 	s.Step(`^I call GetHostList$`, c.iCallGetHostList)
 	s.Step(`^I get a valid HostList if no error$`, c.iGetAValidHostListIfNoError)
 	s.Step(`^I call GetHostByID "([^"]*)"$`, c.iCallGetHostByID)

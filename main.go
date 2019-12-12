@@ -38,9 +38,9 @@ const usage = `    X_CSI_POWERMAX_ENDPOINT
 
         The default value is empty.
 
-    X_CSI_POWERMAX_INSECURE
+    X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION
         Specifies that the Unisphere's hostname and certificate chain
-	should not be verified.
+	should not be validated.
 
         The default value is false.
 

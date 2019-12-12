@@ -96,6 +96,7 @@ func (f *feature) aPowermaxService() error {
 	return nil
 }
 
+// A size of zero causes no capacity range to be specified.
 func (f *feature) aBasicBlockVolumeRequest(name string, size int64) error {
 	req := new(csi.CreateVolumeRequest)
 	params := make(map[string]string)
@@ -107,9 +108,11 @@ func (f *feature) aBasicBlockVolumeRequest(name string, size int64) error {
 	req.Parameters = params
 	now := time.Now()
 	req.Name = fmt.Sprintf("Int%d", now.Nanosecond())
-	capacityRange := new(csi.CapacityRange)
-	capacityRange.RequiredBytes = size * 1024 * 1024
-	req.CapacityRange = capacityRange
+	if size > 0 {
+		capacityRange := new(csi.CapacityRange)
+		capacityRange.RequiredBytes = size * 1024 * 1024
+		req.CapacityRange = capacityRange
+	}
 	capability := new(csi.VolumeCapability)
 	block := new(csi.VolumeCapability_BlockVolume)
 	blockType := new(csi.VolumeCapability_Block)
@@ -152,7 +155,7 @@ func (f *feature) iCallCreateVolume() error {
 	client := csi.NewControllerClient(grpcClient)
 	f.createVolumeResponse, err = client.CreateVolume(ctx, f.createVolumeRequest)
 	if err != nil {
-		fmt.Printf("CreateVolume %s:\n", err.Error())
+		fmt.Printf("CreateVolume error %s:\n", err.Error())
 		f.addError(err)
 	} else {
 		fmt.Printf("CreateVolume %s (%s) %s\n", f.createVolumeResponse.GetVolume().VolumeContext["Name"],
@@ -289,68 +292,67 @@ func (f *feature) getMountVolumeRequest(name string) *csi.CreateVolumeRequest {
 	f.createVolumeRequest = req
 	return req
 }
-func (f *feature) aVolumeRequestFileSystem(name,fstype,access,voltype string) error {
-        req := f.getVolumeRequestFileSystem(name,fstype,access,voltype)
-        f.createVolumeRequest = req
-        return nil
+func (f *feature) aVolumeRequestFileSystem(name, fstype, access, voltype string) error {
+	req := f.getVolumeRequestFileSystem(name, fstype, access, voltype)
+	f.createVolumeRequest = req
+	return nil
 }
-func (f *feature) getVolumeRequestFileSystem(name,fstype,access,voltype string) *csi.CreateVolumeRequest {
-        req := new(csi.CreateVolumeRequest)
-        params := make(map[string]string)
-        params[service.SymmetrixIDParam] = f.symID
-        params[service.ServiceLevelParam] = f.serviceLevel
-        params[service.StoragePoolParam] = f.srpID
-        switch voltype {
-        case "block":
-              params["thickprovisioning"] = "false"
-              params[service.ApplicationPrefixParam] = "INT"
-        }
-        req.Parameters = params
-        now := time.Now()
-        req.Name = fmt.Sprintf("Int%d", now.Nanosecond())
-        capacityRange := new(csi.CapacityRange)
-        capacityRange.RequiredBytes = 100 * 1024 * 1024
-        req.CapacityRange = capacityRange
-        capability := new(csi.VolumeCapability)
-        switch voltype {
-        case "mount":
-              mountVolume := new(csi.VolumeCapability_MountVolume)
-              switch fstype {
-              case "xfs": 
-                   mountVolume.FsType = "xfs"
-              case "ext4":
-                   mountVolume.FsType = "ext4"
-              }
-              mountVolume.MountFlags = make([]string, 0)
-              mount := new(csi.VolumeCapability_Mount)
-              mount.Mount = mountVolume
-              capability.AccessType = mount
-        case "block":
-              block := new(csi.VolumeCapability_BlockVolume)
-              blockType := new(csi.VolumeCapability_Block)
-              blockType.Block = block
-              capability.AccessType = blockType
-        }
-        accessMode := new(csi.VolumeCapability_AccessMode)
-        switch access {
-        case "single-writer":
-                accessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER
-        case "multi-writer":
-                accessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER
-        case "multi-reader":
-                accessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY
-        case "multi-node-single-writer":
-                accessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER
-        }
-        capability.AccessMode = accessMode
-        f.capability = capability
-        capabilities := make([]*csi.VolumeCapability, 0)
-        capabilities = append(capabilities, capability)
-        req.VolumeCapabilities = capabilities
-        f.createVolumeRequest = req
-        return req
+func (f *feature) getVolumeRequestFileSystem(name, fstype, access, voltype string) *csi.CreateVolumeRequest {
+	req := new(csi.CreateVolumeRequest)
+	params := make(map[string]string)
+	params[service.SymmetrixIDParam] = f.symID
+	params[service.ServiceLevelParam] = f.serviceLevel
+	params[service.StoragePoolParam] = f.srpID
+	switch voltype {
+	case "block":
+		params["thickprovisioning"] = "false"
+		params[service.ApplicationPrefixParam] = "INT"
+	}
+	req.Parameters = params
+	now := time.Now()
+	req.Name = fmt.Sprintf("Int%d", now.Nanosecond())
+	capacityRange := new(csi.CapacityRange)
+	capacityRange.RequiredBytes = 100 * 1024 * 1024
+	req.CapacityRange = capacityRange
+	capability := new(csi.VolumeCapability)
+	switch voltype {
+	case "mount":
+		mountVolume := new(csi.VolumeCapability_MountVolume)
+		switch fstype {
+		case "xfs":
+			mountVolume.FsType = "xfs"
+		case "ext4":
+			mountVolume.FsType = "ext4"
+		}
+		mountVolume.MountFlags = make([]string, 0)
+		mount := new(csi.VolumeCapability_Mount)
+		mount.Mount = mountVolume
+		capability.AccessType = mount
+	case "block":
+		block := new(csi.VolumeCapability_BlockVolume)
+		blockType := new(csi.VolumeCapability_Block)
+		blockType.Block = block
+		capability.AccessType = blockType
+	}
+	accessMode := new(csi.VolumeCapability_AccessMode)
+	switch access {
+	case "single-writer":
+		accessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER
+	case "multi-writer":
+		accessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER
+	case "multi-reader":
+		accessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY
+	case "multi-node-single-writer":
+		accessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER
+	}
+	capability.AccessMode = accessMode
+	f.capability = capability
+	capabilities := make([]*csi.VolumeCapability, 0)
+	capabilities = append(capabilities, capability)
+	req.VolumeCapabilities = capabilities
+	f.createVolumeRequest = req
+	return req
 }
-
 
 func (f *feature) getControllerPublishVolumeRequest() *csi.ControllerPublishVolumeRequest {
 	req := new(csi.ControllerPublishVolumeRequest)
@@ -494,6 +496,40 @@ func (f *feature) getNodePublishVolumeRequest() *csi.NodePublishVolumeRequest {
 	return req
 }
 
+func (f *feature) whenICallNodeStageVolume(arg1 string) error {
+	pub := f.nodePublishVolumeRequest
+	if pub == nil {
+		pub = f.getNodePublishVolumeRequest()
+	}
+	req := &csi.NodeStageVolumeRequest{}
+	req.VolumeId = f.volID
+	req.PublishContext = pub.PublishContext
+	req.StagingTargetPath = pub.TargetPath
+	req.VolumeCapability = f.capability
+	fmt.Printf("calling NodeStageVolume vol %s staging path %s\n", f.volID, f.nodePublishVolumeRequest.TargetPath)
+	client := csi.NewNodeClient(grpcClient)
+	ctx := context.Background()
+	_, err := client.NodeStageVolume(ctx, req)
+	return err
+}
+
+func (f *feature) nodeStageVolume(id string, path string) error {
+	pub := f.nodePublishVolumeRequest
+	if pub == nil {
+		pub = f.getNodePublishVolumeRequest()
+	}
+	req := &csi.NodeStageVolumeRequest{}
+	req.VolumeId = id
+	req.PublishContext = f.publishVolumeContextMap[id]
+	req.StagingTargetPath = path
+	req.VolumeCapability = f.capability
+	fmt.Printf("calling NodeStageVolume vol %s staging path %s\n", req.VolumeId, req.StagingTargetPath)
+	client := csi.NewNodeClient(grpcClient)
+	ctx := context.Background()
+	_, err := client.NodeStageVolume(ctx, req)
+	return err
+}
+
 func (f *feature) whenICallNodePublishVolume(arg1 string) error {
 	err := f.nodePublishVolume(f.volID, "")
 	if err != nil {
@@ -503,6 +539,7 @@ func (f *feature) whenICallNodePublishVolume(arg1 string) error {
 		fmt.Printf("NodePublishVolume completed successfully\n")
 	}
 	time.Sleep(ShortSleepTime)
+	time.Sleep(30 * time.Second)
 	return nil
 }
 
@@ -526,6 +563,28 @@ func (f *feature) nodePublishVolume(id string, path string) error {
 	ctx := context.Background()
 	client := csi.NewNodeClient(grpcClient)
 	_, err := client.NodePublishVolume(ctx, req)
+	return err
+}
+
+func (f *feature) whenICallNodeUnstageVolume(arg1 string) error {
+	req := &csi.NodeUnstageVolumeRequest{}
+	req.VolumeId = f.volID
+	req.StagingTargetPath = f.nodePublishVolumeRequest.TargetPath
+	fmt.Printf("calling NodeUnstageVolume vol %s targetpath %s\n", f.volID, f.nodePublishVolumeRequest.TargetPath)
+	client := csi.NewNodeClient(grpcClient)
+	ctx := context.Background()
+	_, err := client.NodeUnstageVolume(ctx, req)
+	return err
+}
+
+func (f *feature) nodeUnstageVolume(id string, path string) error {
+	req := &csi.NodeUnstageVolumeRequest{}
+	req.VolumeId = id
+	req.StagingTargetPath = path
+	fmt.Printf("calling NodeUnstageVolume vol %s targetpath %s\n", id, path)
+	client := csi.NewNodeClient(grpcClient)
+	ctx := context.Background()
+	_, err := client.NodeUnstageVolume(ctx, req)
 	return err
 }
 
@@ -837,6 +896,19 @@ func (f *feature) iPublishVolumesInParallel(nVols int) error {
 	}
 
 	// Wait for responses
+	nerrors, err := f.waitOnParallelResponses("Controller publish", nVols, f.volIDList, done, errchan)
+	if err != nil {
+		return err
+	}
+
+	t1 := time.Now()
+	fmt.Printf("Controller publish volume time for %d volumes %d errors: %v %v\n", nVols, nerrors, t1.Sub(t0).Seconds(), t1.Sub(t0).Seconds()/float64(nVols))
+	time.Sleep(4 * SleepTime)
+	return nil
+}
+
+// waitOnParallelResponses waits on the responses from threads and returns the number of errors and/or and error
+func (f *feature) waitOnParallelResponses(method string, nVols int, volIDList []string, done chan bool, errchan chan error) (int, error) {
 	nerrors := 0
 	for i := 0; i < nVols; i++ {
 		if f.volIDList[i] == "" {
@@ -844,18 +916,58 @@ func (f *feature) iPublishVolumesInParallel(nVols int) error {
 		}
 		finished := <-done
 		if !finished {
-			return errors.New("premature completion")
+			return nerrors, errors.New("premature completion")
 		}
 		err := <-errchan
 		if err != nil {
-			fmt.Printf("controller publish received error: %s\n", err.Error())
+			fmt.Printf("%s received error: %s\n", method, err.Error())
 			f.addError(err)
 			nerrors++
 		}
 	}
+	return nerrors, nil
+}
+
+func (f *feature) iNodeStageVolumesInParallel(nVols int) error {
+	nvols := len(f.volIDList)
+	// make a staging directory for each
+	for i := 0; i < nVols; i++ {
+		dataDirName := fmt.Sprintf("/tmp/stagedir%d", i)
+		fmt.Printf("Creating %s\n", dataDirName)
+		var fileMode os.FileMode
+		fileMode = 0777
+		err := os.Mkdir(dataDirName, fileMode)
+		if err != nil && !os.IsExist(err) {
+			fmt.Printf("%s: %s\n", dataDirName, err)
+		}
+	}
+	done := make(chan bool, nvols)
+	errchan := make(chan error, nvols)
+
+	// Send requests
+	t0 := time.Now()
+	for i := 0; i < nVols; i++ {
+		id := f.volIDList[i]
+		if id == "" {
+			continue
+		}
+		dataDirName := fmt.Sprintf("/tmp/stagedir%d", i)
+		go func(id string, dataDirName string, done chan bool, errchan chan error) {
+			err := f.nodeStageVolume(id, dataDirName)
+			done <- true
+			errchan <- err
+		}(id, dataDirName, done, errchan)
+	}
+
+	// Wait for responses
+	nerrors, err := f.waitOnParallelResponses("Node stage", nVols, f.volIDList, done, errchan)
+	if err != nil {
+		return err
+	}
+
 	t1 := time.Now()
-	fmt.Printf("Controller publish volume time for %d volumes %d errors: %v %v\n", nVols, nerrors, t1.Sub(t0).Seconds(), t1.Sub(t0).Seconds()/float64(nVols))
-	time.Sleep(4 * SleepTime)
+	fmt.Printf("Node stage volume time for %d volumes %d errors: %v %v\n", nVols, nerrors, t1.Sub(t0).Seconds(), t1.Sub(t0).Seconds()/float64(nVols))
+	time.Sleep(2 * SleepTime)
 	return nil
 }
 
@@ -891,22 +1003,11 @@ func (f *feature) iNodePublishVolumesInParallel(nVols int) error {
 	}
 
 	// Wait for responses
-	nerrors := 0
-	for i := 0; i < nVols; i++ {
-		if f.volIDList[i] == "" {
-			continue
-		}
-		finished := <-done
-		if !finished {
-			return errors.New("premature completion")
-		}
-		err := <-errchan
-		if err != nil {
-			fmt.Printf("node publish received error: %s\n", err.Error())
-			f.addError(err)
-			nerrors++
-		}
+	nerrors, err := f.waitOnParallelResponses("Node publish", nVols, f.volIDList, done, errchan)
+	if err != nil {
+		return err
 	}
+
 	t1 := time.Now()
 	fmt.Printf("Node publish volume time for %d volumes %d errors: %v %v\n", nVols, nerrors, t1.Sub(t0).Seconds(), t1.Sub(t0).Seconds()/float64(nVols))
 	time.Sleep(2 * SleepTime)
@@ -934,24 +1035,45 @@ func (f *feature) iNodeUnpublishVolumesInParallel(nVols int) error {
 	}
 
 	// Wait for responses
-	nerrors := 0
-	for i := 0; i < nVols; i++ {
-		if f.volIDList[i] == "" {
-			continue
-		}
-		finished := <-done
-		if !finished {
-			return errors.New("premature completion")
-		}
-		err := <-errchan
-		if err != nil {
-			fmt.Printf("node unpublish received error: %s\n", err.Error())
-			f.addError(err)
-			nerrors++
-		}
+	nerrors, err := f.waitOnParallelResponses("Node unpublish", nVols, f.volIDList, done, errchan)
+	if err != nil {
+		return err
 	}
+
 	t1 := time.Now()
 	fmt.Printf("Node unpublish volume time for %d volumes %d errors: %v %v\n", nVols, nerrors, t1.Sub(t0).Seconds(), t1.Sub(t0).Seconds()/float64(nVols))
+	time.Sleep(SleepTime)
+	return nil
+}
+
+func (f *feature) iNodeUnstageVolumesInParallel(nVols int) error {
+	nvols := len(f.volIDList)
+	done := make(chan bool, nvols)
+	errchan := make(chan error, nvols)
+
+	// Send requests
+	t0 := time.Now()
+	for i := 0; i < nVols; i++ {
+		id := f.volIDList[i]
+		if id == "" {
+			continue
+		}
+		dataDirName := fmt.Sprintf("/tmp/stagedir%d", i)
+		go func(id string, dataDirName string, done chan bool, errchan chan error) {
+			err := f.nodeUnstageVolume(id, dataDirName)
+			done <- true
+			errchan <- err
+		}(id, dataDirName, done, errchan)
+	}
+
+	// Wait for responses
+	nerrors, err := f.waitOnParallelResponses("Node unstage", nVols, f.volIDList, done, errchan)
+	if err != nil {
+		return err
+	}
+
+	t1 := time.Now()
+	fmt.Printf("Node unstage volume time for %d volumes %d errors: %v %v\n", nVols, nerrors, t1.Sub(t0).Seconds(), t1.Sub(t0).Seconds()/float64(nVols))
 	time.Sleep(SleepTime)
 	return nil
 }
@@ -975,23 +1097,12 @@ func (f *feature) iUnpublishVolumesInParallel(nVols int) error {
 		}(id, done, errchan)
 	}
 
-	// Wait for resonse
-	nerrors := 0
-	for i := 0; i < nVols; i++ {
-		if f.volIDList[i] == "" {
-			continue
-		}
-		finished := <-done
-		if !finished {
-			return errors.New("premature completion")
-		}
-		err := <-errchan
-		if err != nil {
-			fmt.Printf("controller unpublish received error: %s\n", err.Error())
-			f.addError(err)
-			nerrors++
-		}
+	// Wait for responses
+	nerrors, err := f.waitOnParallelResponses("Controller unpublish", nVols, f.volIDList, done, errchan)
+	if err != nil {
+		return err
 	}
+
 	t1 := time.Now()
 	fmt.Printf("Controller unpublish volume time for %d volumes %d errors: %v %v\n", nVols, nerrors, t1.Sub(t0).Seconds(), t1.Sub(t0).Seconds()/float64(nVols))
 	time.Sleep(SleepTime)
@@ -1017,22 +1128,10 @@ func (f *feature) whenIDeleteVolumesInParallel(nVols int) error {
 		}(f.volIDList[i], done, errchan)
 	}
 
-	// Wait on complete
-	nerrors := 0
-	for i := 0; i < nVols; i++ {
-		var finished bool
-		var err error
-		name := fmt.Sprintf("scale%d", i)
-		finished = <-done
-		if !finished {
-			return errors.New("premature completion")
-		}
-		err = <-errchan
-		if err != nil {
-			fmt.Printf("delete volume received error %s: %s\n", name, err.Error())
-			f.addError(err)
-			nerrors++
-		}
+	// Wait for responses
+	nerrors, err := f.waitOnParallelResponses("Delete volume", nVols, f.volIDList, done, errchan)
+	if err != nil {
+		return err
 	}
 	t1 := time.Now()
 	fmt.Printf("Delete volume time for %d volumes %d errors: %v %v\n", nVols, nerrors, t1.Sub(t0).Seconds(), t1.Sub(t0).Seconds()/float64(nVols))
@@ -1143,6 +1242,20 @@ func (f *feature) anIdempotentTest() error {
 	return nil
 }
 
+func (f *feature) theVolumeSizeIs(expectedVolSize string) error {
+	if len(f.errs) > 0 {
+		return nil
+	}
+	if f.createVolumeResponse == nil {
+		return fmt.Errorf("expected CreateVolume response but there was none")
+	}
+	capGB := f.createVolumeResponse.GetVolume().VolumeContext["CapacityGB"]
+	if capGB != expectedVolSize {
+		return fmt.Errorf("Expected %s GB but got %s", expectedVolSize, capGB)
+	}
+	return nil
+}
+
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a Powermax service$`, f.aPowermaxService)
@@ -1190,5 +1303,10 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call GetCapacity$`, f.iCallGetCapacity)
 	s.Step(`^a valid GetCapacityResponse is returned$`, f.aValidGetCapacityResponseIsReturned)
 	s.Step(`^an idempotent test$`, f.anIdempotentTest)
-        s.Step(`^a volume request with file system "([^"]*)" fstype "([^"]*)" access "([^"]*)" voltype "([^"]*)"$`, f.aVolumeRequestFileSystem)
+	s.Step(`^a volume request with file system "([^"]*)" fstype "([^"]*)" access "([^"]*)" voltype "([^"]*)"$`, f.aVolumeRequestFileSystem)
+	s.Step(`^when I call NodeStageVolume "([^"]*)"$`, f.whenICallNodeStageVolume)
+	s.Step(`^when I call NodeUnstageVolume "([^"]*)"$`, f.whenICallNodeUnstageVolume)
+	s.Step(`^I node stage (\d+) volumes in parallel$`, f.iNodeStageVolumesInParallel)
+	s.Step(`^I node unstage (\d+) volumes in parallel$`, f.iNodeUnstageVolumesInParallel)
+	s.Step(`^the volume size is "([^"]*)"$`, f.theVolumeSizeIs)
 }

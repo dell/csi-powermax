@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/context"
@@ -32,29 +33,39 @@ const (
 	MinVolumeSizeBytes = 51118080
 	// MaxVolumeSizeBytes - This is the maximum volume size in bytes. This is equal to
 	// the minimum number of bytes required to create a 1 TB volume on Powermax arrays
-	MaxVolumeSizeBytes       = 1099512545280
-	removeModeOnlyMe         = "ONLY_ME"
-	errNoMultiMap            = "volume not enabled for mapping to multiple hosts"
-	errUnknownAccessType     = "unknown access type is not Block or Mount"
-	errUnknownAccessMode     = "access mode cannot be UNKNOWN"
-	errNoMultiNodeWriter     = "multi-node with writer(s) only supported for block access type"
-	TRUE                     = "TRUE"
-	FALSE                    = "FALSE"
-	StoragePoolCacheDuration = 4 * time.Hour
-	MaxVolIdentifierLength   = 64
-	MaxClusterPrefixLength   = 3
-	NumOfVolIDAttributes     = 4
-	CSIPrefix                = "csi"
-	DeletionPrefix           = "_DEL"
-	SymmetricIDLength        = 12
-	DeviceIDLength           = 5
-	CsiHostPrefix            = "csi-node-"
-	CsiMVPrefix              = "csi-mv-"
-	CsiNoSrpSGPrefix         = "csi-no-srp-sg-"
-	CsiVolumePrefix          = "csi-"
-	PublishContextDeviceWWN  = "DEVICE_WWN"
-	PublishContextLUNAddress = "LUN_ADDRESS"
-	cannotBeFound            = "cannot be found" // error message from pmax when volume not found
+	MaxVolumeSizeBytes              = 1099512545280
+	removeModeOnlyMe                = "ONLY_ME"
+	errNoMultiMap                   = "volume not enabled for mapping to multiple hosts"
+	errUnknownAccessType            = "unknown access type is not Block or Mount"
+	errUnknownAccessMode            = "access mode cannot be UNKNOWN"
+	errNoMultiNodeWriter            = "multi-node with writer(s) only supported for block access type"
+	TRUE                            = "TRUE"
+	FALSE                           = "FALSE"
+	StoragePoolCacheDuration        = 4 * time.Hour
+	MaxVolIdentifierLength          = 64
+	MaxPortGroupIdentifierLength    = 64
+	MaxClusterPrefixLength          = 3
+	NumOfVolIDAttributes            = 4
+	CSIPrefix                       = "csi"
+	DeletionPrefix                  = "_DEL"
+	SymmetricIDLength               = 12
+	DeviceIDLength                  = 5
+	CsiHostPrefix                   = "csi-node-"
+	CsiMVPrefix                     = "csi-mv-"
+	CsiNoSrpSGPrefix                = "csi-no-srp-sg-"
+	CsiVolumePrefix                 = "csi-"
+	PublishContextDeviceWWN         = "DEVICE_WWN"
+	PublishContextLUNAddress        = "LUN_ADDRESS"
+	PortIdentifiers                 = "PORT_IDENTIFIERS"
+	FCSuffix                        = "-FC"
+	PGSuffix                        = "PG"
+	notFound                        = "not found"       // error message from s.GetVolumeByID when volume not found
+	cannotBeFound                   = "cannot be found" // error message from pmax when volume not found
+	ignoredViaAWhitelist            = "ignored via a whitelist"
+	failedToValidateVolumeNameAndID = "Failed to validate combination of Volume Name and Volume ID"
+	errDeviceInStorageGrp           = "device is a member of a storage group"
+	IscsiTransportProtocol          = "ISCSI"
+	FcTransportProtocol             = "FC"
 )
 
 // Keys for parameters to CreateVolume
@@ -66,17 +77,33 @@ const (
 	StorageGroupParam      = "StorageGroup"
 	ThickVolumesParam      = "ThickVolumes" // "true" or "false" or "" (defaults thin)
 	ApplicationPrefixParam = "ApplicationPrefix"
+	CapacityGB             = "CapacityGB"
+	uCode5978              = 5978
+	uCodeELMSR             = 221
 )
+
+//Pair - structure which holds a pair
+type Pair struct {
+	first, second interface{}
+}
+
+var nodeCache sync.Map
 
 // Information cached about a pmax
 type pmaxCachedInformation struct {
 	// Existence of a StoragePool discovered at indicated time
 	knownStoragePools map[string]time.Time
+	// Pair of a map containing dirPortKey to portIdentifier mapping
+	// and a timestamp indicating when this map was created
+	portIdentifiers *Pair
+	uCodeVersion    *Pair
 }
 
 // Initializes a pmaxCachedInformation type
 func (p *pmaxCachedInformation) initialize() {
 	p.knownStoragePools = make(map[string]time.Time)
+	p.portIdentifiers = nil
+	p.uCodeVersion = nil
 }
 
 func getPmaxCache(symID string) *pmaxCachedInformation {
@@ -98,6 +125,72 @@ var (
 	// A map of the symmetrixID to the pmaxCachedInformation structure for that pmax
 	pmaxCache map[string]*pmaxCachedInformation
 )
+
+func (s *service) GetPortIdentifier(symID string, dirPortKey string) (string, error) {
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+	portIdentifier := ""
+	cache := getPmaxCache(symID)
+	cacheExpired := false
+	if cache.portIdentifiers != nil {
+		portTimeStamp := cache.portIdentifiers.second.(time.Time)
+		if time.Now().Sub(portTimeStamp) < s.storagePoolCacheDuration {
+			// We have a valid cache entry
+			dirPortKeys := cache.portIdentifiers.first.(map[string]string)
+			portIdentifier, ok := dirPortKeys[dirPortKey]
+			if ok {
+				log.Debug("Cache hit for :" + dirPortKey)
+				return portIdentifier, nil
+			}
+		} else {
+			cacheExpired = true
+		}
+	}
+	// Example dirPortKeys: FA-1D:4 (FC), SE-1E:24 (ISCSI)
+	dirPortDetails := strings.Split(dirPortKey, ":")
+	dirID := dirPortDetails[0]
+	portNumber := dirPortDetails[1]
+	// Fetch the port details
+	port, err := s.adminClient.GetPort(symID, dirID, portNumber)
+	if err != nil {
+		log.Errorf("Couldn't get port details for %s. Error: %s", dirPortKey, err.Error())
+		return "", err
+	}
+	log.Debugf("Symmetrix ID: %s, DirPortKey: %s, Port type: %s",
+		symID, dirPortKey, port.SymmetrixPort.Type)
+	if strings.Contains(port.SymmetrixPort.Type, "FibreChannel") {
+		// Add "0x" to the FC Port WWN as that is used by gofsutils to differentiate between FC and ISCSI
+		portIdentifier = "0x"
+	}
+	portIdentifier += port.SymmetrixPort.Identifier
+	if cache.portIdentifiers != nil {
+		if cacheExpired {
+			// Invalidate all the values in cache for this symmetrix
+			log.Debug("Cache expired. Rebuilding port identifier cache with entry for : " + dirPortKey)
+			dirPortKeys := make(map[string]string)
+			dirPortKeys[dirPortKey] = portIdentifier
+			cache.portIdentifiers = &Pair{
+				first:  dirPortKeys,
+				second: time.Now(),
+			}
+		} else {
+			// We are adding a new port identifier to the cache
+			log.Debug("Adding value to port identifier cache for :" + dirPortKey)
+			dirPortKeys := cache.portIdentifiers.first.(map[string]string)
+			dirPortKeys[dirPortKey] = portIdentifier
+		}
+	} else {
+		// Build the cache
+		dirPortKeys := make(map[string]string)
+		dirPortKeys[dirPortKey] = portIdentifier
+		cache.portIdentifiers = &Pair{
+			first:  dirPortKeys,
+			second: time.Now(),
+		}
+		log.Debug("Port identifier cache created with entry for :" + dirPortKey)
+	}
+	return portIdentifier, nil
+}
 
 func (s *service) CreateVolume(
 	ctx context.Context,
@@ -170,9 +263,18 @@ func (s *service) CreateVolume(
 		return nil, status.Error(codes.InvalidArgument, "Volume VolumeContentSource is not supported")
 	}
 
+	// Validate volume capabilities
+	vcs := req.GetVolumeCapabilities()
+	if vcs != nil {
+		isBlock := accTypeIsBlock(vcs)
+		if isBlock && !s.opts.EnableBlock {
+			return nil, status.Error(codes.InvalidArgument, "Block Volume Capability is not supported")
+		}
+	}
+
 	// Get the required capacity
 	cr := req.GetCapacityRange()
-	requiredCylinders, err := validateVolSize(cr)
+	requiredCylinders, err := s.validateVolSize(cr, symmetrixID, storagePoolID)
 	if err != nil {
 		return nil, err
 	}
@@ -271,6 +373,7 @@ func (s *service) CreateVolume(
 			attributes := map[string]string{
 				ServiceLevelParam: serviceLevel,
 				StoragePoolParam:  storagePoolID,
+				CapacityGB:        fmt.Sprintf("%.2f", vol.CapacityGB),
 				//Format the time output
 				"CreationTime": time.Now().Format("20060102150405"),
 			}
@@ -298,6 +401,7 @@ func (s *service) CreateVolume(
 	attributes := map[string]string{
 		ServiceLevelParam: serviceLevel,
 		StoragePoolParam:  storagePoolID,
+		CapacityGB:        fmt.Sprintf("%.2f", vol.CapacityGB),
 		//Format the time output
 		"CreationTime": time.Now().Format("20060102150405"),
 	}
@@ -312,45 +416,74 @@ func (s *service) CreateVolume(
 // validateVolSize uses the CapacityRange range params to determine what size
 // volume to create, and returns an error if volume size would be greater than
 // the given limit. Returned size is in number of cylinders
-func validateVolSize(cr *csi.CapacityRange) (int, error) {
+func (s *service) validateVolSize(cr *csi.CapacityRange, symmetrixID, storagePoolID string) (int, error) {
 
-	minSize := cr.GetRequiredBytes()
-	maxSize := cr.GetLimitBytes()
+	var minSizeBytes, maxSizeBytes int64
+	minSizeBytes = cr.GetRequiredBytes()
+	maxSizeBytes = cr.GetLimitBytes()
 
-	if minSize < 0 || maxSize < 0 {
+	if minSizeBytes < 0 || maxSizeBytes < 0 {
 		return 0, status.Errorf(
 			codes.OutOfRange,
-			"bad capacity: volume size bytes %d and limit size bytes: %d must not be negative", minSize, maxSize)
+			"bad capacity: requested volume size bytes %d and limit size bytes: %d must not be negative", minSizeBytes, maxSizeBytes)
 	}
 
-	if minSize == 0 {
-		minSize = DefaultVolumeSizeBytes
+	if minSizeBytes == 0 {
+		minSizeBytes = DefaultVolumeSizeBytes
 	}
-	if maxSize == 0 {
-		maxSize = MaxVolumeSizeBytes
+
+	var maxAvailBytes int64 = MaxVolumeSizeBytes
+	if symmetrixID != "" && storagePoolID != "" {
+		// Normal path
+		srpCap, err := s.getStoragePoolCapacities(symmetrixID, storagePoolID)
+		if err != nil {
+			return 0, err
+		}
+		totalSrpCapInGB := srpCap.UsableTotInTB * 1024.0
+		usedSrpCapInGB := srpCap.UsableUsedInTB * 1024.0
+		remainingCapInGB := totalSrpCapInGB - usedSrpCapInGB
+		// maxAvailBytes is the remaining capacity in bytes
+		maxAvailBytes = int64(remainingCapInGB) * 1024 * 1024 * 1024
+		log.Printf("totalSrcCapInGB %f usedSrpCapInGB %f remainingCapInGB %f maxAvailBytes %d",
+			totalSrpCapInGB, usedSrpCapInGB, remainingCapInGB, maxAvailBytes)
 	}
-	if maxSize < minSize {
+
+	if maxSizeBytes == 0 {
+		maxSizeBytes = maxAvailBytes
+	}
+
+	if maxSizeBytes > maxAvailBytes {
 		return 0, status.Errorf(
 			codes.OutOfRange,
-			"bad capacity: max size bytes %d can't be less than minimum size bytes %d", maxSize, minSize)
+			"bad capacity: requested maximum size (%d bytes) is greater than the maximum available capacity (%d bytes)", maxSizeBytes, maxAvailBytes)
 	}
-	if minSize < MinVolumeSizeBytes {
+	if minSizeBytes > maxAvailBytes {
 		return 0, status.Errorf(
 			codes.OutOfRange,
-			"bad capacity: min size bytes %d can't be less than minimum volume size bytes %d", minSize, MinVolumeSizeBytes)
+			"bad capacity: requested minimum size (%d bytes) is greater than the maximum available capacity (%d bytes)", minSizeBytes, maxAvailBytes)
 	}
-	minNumberOfCylinders := int(minSize / cylinderSizeInBytes)
+	if minSizeBytes < MinVolumeSizeBytes {
+		return 0, status.Errorf(
+			codes.OutOfRange,
+			"bad capacity: requested minimum size (%d bytes) is less than the minimum volume size (%d bytes)", minSizeBytes, MinVolumeSizeBytes)
+	}
+	if maxSizeBytes < minSizeBytes {
+		return 0, status.Errorf(
+			codes.OutOfRange,
+			"bad capacity: requested maximum size (%d bytes) is less than the requested minimum size (%d bytes)", maxSizeBytes, minSizeBytes)
+	}
+	minNumberOfCylinders := int(minSizeBytes / cylinderSizeInBytes)
 	var numOfCylinders int
-	if minSize%cylinderSizeInBytes > 0 {
+	if minSizeBytes%cylinderSizeInBytes > 0 {
 		numOfCylinders = minNumberOfCylinders + 1
 	} else {
 		numOfCylinders = minNumberOfCylinders
 	}
 	sizeInBytes := int64(numOfCylinders * cylinderSizeInBytes)
-	if sizeInBytes > maxSize {
+	if sizeInBytes > maxSizeBytes {
 		return 0, status.Errorf(
 			codes.OutOfRange,
-			"bad capacity: size in bytes %d exceeds limit size bytes %d", sizeInBytes, maxSize)
+			"bad capacity: size in bytes %d exceeds limit size bytes %d", sizeInBytes, maxSizeBytes)
 	}
 	return numOfCylinders, nil
 }
@@ -387,6 +520,51 @@ func (s *service) validateStoragePoolID(symmetrixID string, storagePoolID string
 	return status.Errorf(codes.InvalidArgument, "Storage Pool %s not found", storagePoolID)
 }
 
+// isPostElmSR - checks if the array is running ucode higher than the
+// ELM SR ucode version. ELM SR is the release name for uCode version - 5978.221.221
+func (s *service) isPostElmSR(symmetrixID string) (bool, error) {
+	cacheMiss := false
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+	cache := getPmaxCache(symmetrixID)
+	uCodeVersion := ""
+	if cache.uCodeVersion != nil {
+		uCodeTimeStamp := cache.uCodeVersion.second.(time.Time)
+		if time.Now().Sub(uCodeTimeStamp) < s.storagePoolCacheDuration {
+			// We have a valid cache entry
+			uCodeVersion = cache.uCodeVersion.first.(string)
+		}
+	}
+	// If entry not found in cache
+	if uCodeVersion == "" {
+		cacheMiss = true
+		symmetrix, err := s.adminClient.GetSymmetrixByID(symmetrixID)
+		if err != nil {
+			return false, err
+		}
+		uCodeVersion = symmetrix.Ucode
+		// Update the cache
+		cache.uCodeVersion = &Pair{
+			first:  uCodeVersion,
+			second: time.Now(),
+		}
+	}
+	var majorVersion, minorVersion, patchversion int
+	_, err := fmt.Sscanf(uCodeVersion, "%d.%d.%d", &majorVersion, &minorVersion, &patchversion)
+	if err != nil {
+		log.Errorf("Failed to parse the uCode version string: %s", uCodeVersion)
+		return false, err
+	}
+	if cacheMiss {
+		log.Infof("Cache miss: Ucode details for %s - Major version: %d, Minor version: %d, Patch: %d",
+			symmetrixID, majorVersion, minorVersion, patchversion)
+	}
+	if majorVersion >= uCode5978 && minorVersion > uCodeELMSR {
+		return true, nil
+	}
+	return false, nil
+}
+
 // Only used for testing
 func (s *service) setStoragePoolCacheDuration(duration time.Duration) {
 	s.storagePoolCacheDuration = duration
@@ -404,6 +582,21 @@ func truncateString(str string, maxLength int) string {
 		truncatedString = str[0:maxLength/2] + str[newLength:]
 	}
 	return truncatedString
+}
+
+func splitFibreChannelInitiatorID(initiatorID string) (string, string, string, error) {
+	initElements := strings.Split(initiatorID, ":")
+	initiator := ""
+	dir := ""
+	dirPort := ""
+	if len(initElements) == 3 {
+		dir = initElements[0]
+		dirPort = initElements[0] + ":" + initElements[1]
+		initiator = initElements[2]
+	} else {
+		return "", "", "", fmt.Errorf("Failed to parse the initiator ID - %s", initiatorID)
+	}
+	return dir, dirPort, initiator, nil
 }
 
 // Create a CSI VolumeId from component parts.
@@ -485,7 +678,7 @@ func (s *service) DeleteVolume(
 	vol, err := s.adminClient.GetVolumeByID(symID, devID)
 	fmt.Printf("vol: %#v, error: %#v\n", vol, err)
 	if err != nil {
-		if strings.Contains(err.Error(), cannotBeFound) {
+		if strings.Contains(err.Error(), cannotBeFound) || strings.Contains(err.Error(), ignoredViaAWhitelist) {
 			// The volume is already deleted
 			log.Info(fmt.Sprintf("DeleteVolume: Could not find volume: %s/%s so assume it's already deleted", symID, devID))
 			return &csi.DeleteVolumeResponse{}, nil
@@ -514,6 +707,12 @@ func (s *service) DeleteVolume(
 			return nil, status.Errorf(codes.Internal, "Volume is in use")
 		}
 	}
+	// Fetch the uCode version details
+	isPostElmSR, err := s.isPostElmSR(symID)
+	if err != nil {
+		log.Error("Failed to get symmetrix uCode version details")
+		return nil, status.Errorf(codes.Internal, "Failed to fetch uCode version details")
+	}
 	// Rename the volume before delete
 	// If the name length goes beyond 64 characters, Unisphere can truncate
 	// from the end. The objective is to retrieve volumes marked for deletion from
@@ -534,8 +733,9 @@ func (s *service) DeleteVolume(
 	delReq.volumeName = vol.VolumeIdentifier
 	delReq.symmetrixID = symID
 	delReq.volumeSizeInCylinders = int64(vol.CapacityCYL)
+	delReq.skipDeallocate = isPostElmSR
 	delWorker.requestDeletion(&delReq)
-	log.Printf("Request dispatched to delete worker thread for %s/%s", vol.VolumeID, vol.SSID)
+	log.Printf("Request dispatched to delete worker thread for %s/%s", vol.VolumeID, symID)
 
 	return &csi.DeleteVolumeResponse{}, nil
 }
@@ -612,11 +812,43 @@ func (s *service) ControllerPublishVolume(
 		"CSIRequestID": reqID,
 	}
 	log.WithFields(fields).Info("Executing ControllerPublishVolume with following fields")
+	isISCSI := false
+	// Check if node ID is present in cache
+	nodeInCache := false
+	cacheID := symID + ":" + nodeID
+	tempHostID, ok := nodeCache.Load(cacheID)
+	if ok {
+		log.Debugf("REQ ID: %s Loaded nodeID: %s, hostID: %s from node cache\n",
+			reqID, nodeID, tempHostID.(string))
+		nodeInCache = true
+		if !strings.Contains(tempHostID.(string), "-FC") {
+			isISCSI = true
+		}
+	} else {
+		log.Debugf("REQ ID: %s nodeID: %s not present in node cache\n", reqID, nodeID)
+		isISCSI, err = s.IsNodeISCSI(symID, nodeID)
+		if err != nil {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+	}
+	hostID, tgtStorageGroupID, tgtMaskingViewID := s.GetHostSGAndMVIDFromNodeID(nodeID, isISCSI)
+	if !nodeInCache {
+		// Update the map
+		val, ok := nodeCache.LoadOrStore(cacheID, hostID)
+		if !ok {
+			log.Debugf("REQ ID: %s Added nodeID: %s, hostID: %s to node cache\n", reqID, nodeID, hostID)
+		} else {
+			log.Debugf("REQ ID: %s Some other goroutine added hostID: %s for node: %s to node cache\n",
+				reqID, val.(string), nodeID)
+			if hostID != val.(string) {
+				log.Warningf("REQ ID: %s Mismatch between calculated value: %s and latest value: %s from node cache\n",
+					reqID, val.(string), hostID)
+			}
+		}
+	}
 
-	// Get the hostid, sgid && mvid using node id
-	hostID, tgtStorageGroupID, tgtMaskingViewID := s.GetHostSGAndMVIDFromNodeID(nodeID)
-	AcquireLock(tgtStorageGroupID)
-	defer ReleaseLock(tgtStorageGroupID)
+	AcquireLock(tgtStorageGroupID, reqID)
+	defer ReleaseLock(tgtStorageGroupID, reqID)
 
 	publishContext := map[string]string{
 		PublishContextDeviceWWN: vol.WWN,
@@ -655,7 +887,7 @@ func (s *service) ControllerPublishVolume(
 		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
 		// Check if the volume is already mapped to some host
 		if vol.NumberOfFrontEndPaths > 0 {
-			// make sure we go at least one masking view
+			// make sure we got at least one masking view
 			if len(maskingViewIDs) == 0 {
 				// this is an error, we should have gotten at least one MV
 				return nil, status.Error(codes.Internal, "No masking views found for volume")
@@ -668,7 +900,7 @@ func (s *service) ControllerPublishVolume(
 				// Do a double check for the SG as well
 				if volumeAlreadyInSG {
 					log.Debug("volume already mapped")
-					s.addLUNIDToPublishContext(publishContext, symID, tgtMaskingViewID, devID)
+					s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID)
 					return &csi.ControllerPublishVolumeResponse{
 						PublishContext: publishContext,
 					}, nil
@@ -696,7 +928,7 @@ func (s *service) ControllerPublishVolume(
 			tgtMaskingView.StorageGroupID == tgtStorageGroupID {
 			if volumeInMaskingView {
 				log.Debug("volume already mapped")
-				s.addLUNIDToPublishContext(publishContext, symID, tgtMaskingViewID, devID)
+				s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID)
 				return &csi.ControllerPublishVolumeResponse{
 					PublishContext: publishContext,
 				}, nil
@@ -715,18 +947,31 @@ func (s *service) ControllerPublishVolume(
 			return nil, status.Error(codes.Internal, errormsg)
 		}
 	} else {
-		// We should create the Masking view and SG (if required)
-		//Fetch the host from the array
-		_, err := s.adminClient.GetHostByID(symID, hostID)
+		// We need to create a Masking view
+		// First fetch the host details
+		host, err := s.adminClient.GetHostByID(symID, hostID)
+		retry := false
 		if err != nil {
-			log.Error(fmt.Sprintf("ControllerPublishVolume: Failed to get host - %s", hostID))
-			return nil, status.Error(codes.NotFound, "Failed to fetch host details from the array")
+			// Retry once more after a gap of 2 seconds
+			retry = true
+			time.Sleep(2 * time.Second)
 		}
-		// Fetch a port group
-		portGroupID, err := s.SelectPortGroup()
+		if retry {
+			host, err = s.adminClient.GetHostByID(symID, hostID)
+		}
 		if err != nil {
-			log.Error("Failed to get port group")
-			return nil, status.Error(codes.Internal, "Failed to get port group")
+			errormsg := fmt.Sprintf(
+				"ControllerPublishVolume: Failed to fetch host details for host %s on %s with error - %s", hostID, symID, err.Error())
+			log.Error(errormsg)
+			return nil, status.Error(codes.NotFound, errormsg)
+		}
+		//Fetch or create a port Group
+		portGroupID, err := s.SelectOrCreatePortGroup(symID, host)
+		if err != nil {
+			errormsg := fmt.Sprintf(
+				"ControllerPublishVolume: Failed to select/create PG for host %s on %s with error - %s", hostID, symID, err.Error())
+			log.Error(errormsg)
+			return nil, status.Error(codes.Internal, errormsg)
 		}
 		if !volumeAlreadyInSG {
 			// First check if our storage group exists
@@ -758,15 +1003,16 @@ func (s *service) ControllerPublishVolume(
 			return nil, status.Error(codes.Internal, "Failed to create masking view")
 		}
 	}
-	s.addLUNIDToPublishContext(publishContext, symID, tgtMaskingViewID, devID)
+	s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID)
 
 	return &csi.ControllerPublishVolumeResponse{
 		PublishContext: publishContext}, nil
 }
 
-// Adds the LUN_ADDRESS to the PublishContext by looking at MaskingView connections
-func (s *service) addLUNIDToPublishContext(publishContext map[string]string, symID, tgtMaskingViewID, deviceID string) {
+// Adds the LUN_ADDRESS and SCSI target information to the PublishContext by looking at MaskingView connections
+func (s *service) updatePublishContext(publishContext map[string]string, symID, tgtMaskingViewID, deviceID string) {
 	// We ignore errors here; adding the HostLunAddress to the context is optional (could be multiple.)
+	// Adding target information is also optional as NodePublish may succeed without target information
 	var connections []*types.MaskingViewConnection
 	var err error
 	connections, err = s.adminClient.GetMaskingViewConnections(symID, tgtMaskingViewID, deviceID)
@@ -775,6 +1021,7 @@ func (s *service) addLUNIDToPublishContext(publishContext map[string]string, sym
 		return
 	}
 	lunid := ""
+	dirPorts := make([]string, 0)
 	for _, conn := range connections {
 		if deviceID != conn.VolumeID {
 			log.Debug("MV Connection: VolumeID != deviceID")
@@ -782,17 +1029,97 @@ func (s *service) addLUNIDToPublishContext(publishContext map[string]string, sym
 		}
 		if lunid == "" {
 			lunid = conn.HostLUNAddress
+			dirPorts = appendIfMissing(dirPorts, conn.DirectorPort)
+
 		} else if lunid != conn.HostLUNAddress {
 			log.Printf("MV Connection: Multiple HostLUNAddress values")
 			return
+		} else {
+			// Add each port per entry for the volume in masking view connections
+			dirPorts = appendIfMissing(dirPorts, conn.DirectorPort)
 		}
+	}
+	portIdentifiers := ""
+	for _, dirPortKey := range dirPorts {
+		portIdentifier, err := s.GetPortIdentifier(symID, dirPortKey)
+		if err != nil {
+			continue
+		}
+		portIdentifiers += portIdentifier + ","
+	}
+	if portIdentifiers == "" {
+		log.Errorf("Failed to fetch port details for all director ports which are part of masking view: %s", tgtMaskingViewID)
+	} else {
+		log.Debugf("Port identifiers in publish context: %s", portIdentifiers)
+		publishContext[PortIdentifiers] = portIdentifiers
 	}
 	publishContext[PublishContextLUNAddress] = lunid
 }
 
+// IsNodeISCSI - Takes a sym id, node id as input and based on the transport protocol setting
+// and the existence of the host on array, it returns a bool to indicate if the Host
+// on array is ISCSI or not
+func (s *service) IsNodeISCSI(symID, nodeID string) (bool, error) {
+	fcHostID, _, fcMaskingViewID := s.GetFCHostSGAndMVIDFromNodeID(nodeID)
+	iSCSIHostID, _, iSCSIMaskingViewID := s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+	if s.opts.TransportProtocol == FcTransportProtocol || s.opts.TransportProtocol == "" {
+		log.Debug("Preferred transport protocol is set to FC")
+		_, fcmverr := s.adminClient.GetMaskingViewByID(symID, fcMaskingViewID)
+		if fcmverr == nil {
+			return false, nil
+		}
+		// Check if ISCSI MV exists
+		_, iscsimverr := s.adminClient.GetMaskingViewByID(symID, iSCSIMaskingViewID)
+		if iscsimverr == nil {
+			return true, nil
+		}
+		// Check if FC Host exists
+		fcHost, fcHostErr := s.adminClient.GetHostByID(symID, fcHostID)
+		if fcHostErr == nil {
+			if fcHost.HostType == "Fibre" {
+				return false, nil
+			}
+		}
+		// Check if ISCSI Host exists
+		iscsiHost, iscsiHostErr := s.adminClient.GetHostByID(symID, iSCSIHostID)
+		if iscsiHostErr == nil {
+			if iscsiHost.HostType == "iSCSI" {
+				return true, nil
+			}
+		}
+	} else if s.opts.TransportProtocol == IscsiTransportProtocol {
+		log.Debug("Preferred transport protocol is set to ISCSI")
+		// Check if ISCSI MV exists
+		_, iscsimverr := s.adminClient.GetMaskingViewByID(symID, iSCSIMaskingViewID)
+		if iscsimverr == nil {
+			return true, nil
+		}
+		// Check if FC MV exists
+		_, fcmverr := s.adminClient.GetMaskingViewByID(symID, fcMaskingViewID)
+		if fcmverr == nil {
+			return false, nil
+		}
+		// Check if ISCSI Host exists
+		iscsiHost, iscsiHostErr := s.adminClient.GetHostByID(symID, iSCSIHostID)
+		if iscsiHostErr == nil {
+			if iscsiHost.HostType == "iSCSI" {
+				return true, nil
+			}
+		}
+		// Check if FC Host exists
+		fcHost, fcHostErr := s.adminClient.GetHostByID(symID, fcHostID)
+		if fcHostErr == nil {
+			if fcHost.HostType == "Fibre" {
+				return false, nil
+			}
+		}
+	}
+	return false, fmt.Errorf("Failed to fetch host id from array for node: %s", nodeID)
+}
+
 // GetVolumeByID - Takes a CSI volume ID and checks for its existence on array
 // along with matching with the volume identifier. Returns back the volume name
-// on array, device ID, symID
+// on array, device ID, volume structure
 func (s *service) GetVolumeByID(volID string) (string, string, *types.Volume, error) {
 	// parse the volume and get the array serial and volume ID
 	volName, symID, devID, err := s.parseCSIVolumeID(volID)
@@ -814,7 +1141,7 @@ func (s *service) GetVolumeByID(volID string) (string, string, *types.Volume, er
 	}
 	if volName != vol.VolumeIdentifier {
 		return "", "", nil, status.Errorf(codes.FailedPrecondition,
-			"Failed to validate combination of Volume Name and Volume ID")
+			failedToValidateVolumeNameAndID)
 	}
 	return symID, devID, vol, nil
 }
@@ -840,24 +1167,29 @@ func (s *service) GetMaskingViewAndSGDetails(symID string, sgIDs []string) ([]st
 	return maskingViewIDs, storageGroups, nil
 }
 
-// AppendIfMissing - Appends a string to a slice if not already present
-// in slice
-func appendIfMissing(slice []string, str string) []string {
-	for _, ele := range slice {
-		if ele == str {
-			return slice
-		}
+// GetHostSGAndMVIDFromNodeID - Gets the Host ID, SG ID, MV ID given a node ID and
+// a boolean which indicates if node is FC or ISCSI
+func (s *service) GetHostSGAndMVIDFromNodeID(nodeID string, isISCSI bool) (string, string, string) {
+	if isISCSI {
+		return s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
 	}
-	return append(slice, str)
+	return s.GetFCHostSGAndMVIDFromNodeID(nodeID)
 }
 
-// GetHostSGAndMVIDFromNodeID - Forms HostID, StorageGroupID, MaskingViewID
+// GetISCSIHostSGAndMVIDFromNodeID - Forms HostID, StorageGroupID, MaskingViewID
 // using the NodeID and returns them
-func (s *service) GetHostSGAndMVIDFromNodeID(nodeID string) (string, string, string) {
+func (s *service) GetISCSIHostSGAndMVIDFromNodeID(nodeID string) (string, string, string) {
 	hostID := CsiHostPrefix + s.getClusterPrefix() + "-" + nodeID
 	storageGroupID := CsiNoSrpSGPrefix + s.getClusterPrefix() + "-" + nodeID
 	maskingViewID := CsiMVPrefix + s.getClusterPrefix() + "-" + nodeID
 	return hostID, storageGroupID, maskingViewID
+}
+
+// GetFCHostSGAndMVIDFromNodeID - Forms fibrechannel HostID, StorageGroupID, MaskingViewID
+// These are the same as iSCSI except for "_FC" is added as a suffix.
+func (s *service) GetFCHostSGAndMVIDFromNodeID(nodeID string) (string, string, string) {
+	hostID, storageGroupID, maskingViewID := s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+	return hostID + FCSuffix, storageGroupID + FCSuffix, maskingViewID + FCSuffix
 }
 
 func (s *service) ControllerUnpublishVolume(
@@ -893,6 +1225,10 @@ func (s *service) ControllerUnpublishVolume(
 	//Fetch the volume details from array
 	symID, devID, vol, err := s.GetVolumeByID(volID)
 	if err != nil {
+		// CSI sanity test will call this idempotently and expects pass
+		if strings.Contains(err.Error(), notFound) || strings.Contains(err.Error(), failedToValidateVolumeNameAndID) {
+			return &csi.ControllerUnpublishVolumeResponse{}, nil
+		}
 		log.Error("GetVolumeByID Error: " + err.Error())
 		return nil, err
 	}
@@ -906,17 +1242,20 @@ func (s *service) ControllerUnpublishVolume(
 	}
 	log.WithFields(fields).Info("Executing ControllerUnpublishVolume with following fields")
 
-	// Get the hostid, sgid && mvid using node id
-	_, tgtStorageGroupID, tgtMaskingViewID := s.GetHostSGAndMVIDFromNodeID(nodeID)
-	AcquireLock(tgtStorageGroupID)
-	defer ReleaseLock(tgtStorageGroupID)
-
+	// Determine if the volume is in a FC or ISCSI MV
+	_, tgtFCStorageGroupID, tgtFCMaskingViewID := s.GetFCHostSGAndMVIDFromNodeID(nodeID)
+	_, tgtISCSIStorageGroupID, tgtISCSIMaskingViewID := s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+	isISCSI := false
 	// Check if volume is part of the Storage group
 	currentSGIDs := vol.StorageGroupIDList
 	volumeInStorageGroup := false
 	for _, storageGroupID := range currentSGIDs {
-		if storageGroupID == tgtStorageGroupID {
+		if storageGroupID == tgtFCStorageGroupID {
 			volumeInStorageGroup = true
+			break
+		} else if storageGroupID == tgtISCSIStorageGroupID {
+			volumeInStorageGroup = true
+			isISCSI = true
 			break
 		}
 	}
@@ -925,6 +1264,16 @@ func (s *service) ControllerUnpublishVolume(
 		log.Debug("volume already unpublished")
 		return &csi.ControllerUnpublishVolumeResponse{}, nil
 	}
+	var tgtStorageGroupID, tgtMaskingViewID string
+	if !isISCSI {
+		tgtStorageGroupID = tgtFCStorageGroupID
+		tgtMaskingViewID = tgtFCMaskingViewID
+	} else {
+		tgtStorageGroupID = tgtISCSIStorageGroupID
+		tgtMaskingViewID = tgtISCSIMaskingViewID
+	}
+	AcquireLock(tgtStorageGroupID, reqID)
+	defer ReleaseLock(tgtStorageGroupID, reqID)
 
 	tempStorageGroupList := []string{tgtStorageGroupID}
 	maskingViewIDs, storageGroups, err := s.GetMaskingViewAndSGDetails(symID, tempStorageGroupList)
@@ -1235,20 +1584,31 @@ func (s *service) GetCapacity(
 	}
 	log.WithFields(fields).Info("Executing ValidateVolumeCapabilities with following fields")
 
-	// Get storage pool info
-	srp, err := s.adminClient.GetStoragePool(symmetrixID, storagePoolID)
+	// Get storage pool capacities
+	srpCap, err := s.getStoragePoolCapacities(symmetrixID, storagePoolID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Could not retrieve StoragePool %s. Error(%s)", storagePoolID, err.Error())
 	}
 
-	totalSrpCapInGB := srp.SrpCap.UsableTotInTB * 1024
-	usedSrpCapInGB := srp.SrpCap.UsableUsedInTB * 1024
+	totalSrpCapInGB := srpCap.UsableTotInTB * 1024
+	usedSrpCapInGB := srpCap.UsableUsedInTB * 1024
 	remainingCapInGB := totalSrpCapInGB - usedSrpCapInGB
 	remainingCapInBytes := remainingCapInGB * 1024 * 1024 * 1024
 
 	return &csi.GetCapacityResponse{
 		AvailableCapacity: int64(remainingCapInBytes),
 	}, nil
+}
+
+// Return the storage pool capacities of types.SrpCap
+func (s *service) getStoragePoolCapacities(symmetrixID, storagePoolID string) (*types.SrpCap, error) {
+	// Get storage pool info
+	srp, err := s.adminClient.GetStoragePool(symmetrixID, storagePoolID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "Could not retrieve StoragePool %s. Error(%s)", storagePoolID, err.Error())
+	}
+	log.Printf("StoragePoolCapacities: %#v", srp.SrpCap)
+	return srp.SrpCap, nil
 }
 
 func (s *service) ControllerGetCapabilities(
@@ -1335,6 +1695,7 @@ func (s *service) requireProbe(ctx context.Context) error {
 	return nil
 }
 
+// SelectPortGroup - Selects a Port Group randomly from the list of supplied port groups
 func (s *service) SelectPortGroup() (string, error) {
 	if len(s.opts.PortGroups) == 0 {
 		return "", fmt.Errorf("No port groups have been supplied")
@@ -1344,6 +1705,108 @@ func (s *service) SelectPortGroup() (string, error) {
 	n := rand.Int() % len(s.opts.PortGroups)
 	pg := s.opts.PortGroups[n]
 	return pg, nil
+}
+
+// SelectOrCreatePortGroup - Selects or Creates a PG given a symId and host
+// and the host type
+func (s *service) SelectOrCreatePortGroup(symID string, host *types.Host) (string, error) {
+	if host == nil {
+		return "", fmt.Errorf("SelectOrCreatePortGroup: host can't be nil")
+	}
+	if host.HostType == "Fibre" {
+		return s.SelectOrCreateFCPGForHost(symID, host)
+	}
+	return s.SelectPortGroup()
+}
+
+// SelectOrCreateFCPGForHost - Selects or creates a Fibre Channel PG given a symid and host
+func (s *service) SelectOrCreateFCPGForHost(symID string, host *types.Host) (string, error) {
+	if host == nil {
+		return "", fmt.Errorf("SelectOrCreateFCPGForHost: host can't be nil")
+	}
+	validPortGroupID := ""
+	hostID := host.HostID
+	var portListFromHost []string
+	var isValidHost bool
+	if host.HostType == "Fibre" {
+		for _, initiator := range host.Initiators {
+			initList, err := s.adminClient.GetInitiatorList(symID, initiator, false, false)
+			if err != nil {
+				log.Errorf("Failed to get details for initiator - %s", initiator)
+				continue
+			} else {
+				for _, initiatorID := range initList.InitiatorIDs {
+					_, dirPort, _, err := splitFibreChannelInitiatorID(initiatorID)
+					if err != nil {
+						continue
+					}
+					portListFromHost = appendIfMissing(portListFromHost, dirPort)
+					isValidHost = true
+				}
+			}
+		}
+	}
+	if !isValidHost {
+		return "", fmt.Errorf("Failed to find a valid initiator for hostID %s from %s", hostID, symID)
+	}
+	fcPortGroupList, err := s.adminClient.GetPortGroupList(symID, "fibre")
+	if err != nil {
+		return "", fmt.Errorf("Failed to fetch Fibre channel port groups for array: %s", symID)
+	}
+	filteredPGList := make([]string, 0)
+	for _, portGroupID := range fcPortGroupList.PortGroupIDs {
+		pgPrefix := "csi-" + s.opts.ClusterPrefix
+		if strings.Contains(portGroupID, pgPrefix) {
+			filteredPGList = append(filteredPGList, portGroupID)
+		}
+	}
+	for _, portGroupID := range filteredPGList {
+		portGroup, err := s.adminClient.GetPortGroupByID(symID, portGroupID)
+		if err != nil {
+			log.Error("Failed to fetch port group details")
+			continue
+		} else {
+			var portList []string
+			if portGroup.PortGroupType == "Fibre" {
+				for _, portKey := range portGroup.SymmetrixPortKey {
+					portList = append(portList, portKey.PortID)
+				}
+				if stringSlicesEqual(portList, portListFromHost) {
+					validPortGroupID = portGroupID
+					log.Debug(fmt.Sprintf("Found valid port group %s on the array %s",
+						portGroupID, symID))
+					break
+				}
+			}
+		}
+	}
+	if validPortGroupID == "" {
+		log.Warning("No port group found on the array. Attempting to create one")
+		// Create a PG
+		dirNames := ""
+		portKeys := make([]types.PortKey, 0)
+		for _, dirPortKey := range portListFromHost {
+			dirPortDetails := strings.Split(dirPortKey, ":")
+			portKey := types.PortKey{
+				DirectorID: dirPortDetails[0],
+				PortID:     dirPortDetails[1],
+			}
+			portKeys = append(portKeys, portKey)
+			dirNames += dirPortDetails[0] + "-" + dirPortDetails[1] + "-"
+		}
+		constComponentLength := len(CSIPrefix) + len(s.opts.ClusterPrefix) + len(PGSuffix) + 2 //for the "-"
+		MaxDirNameLength := MaxPortGroupIdentifierLength - constComponentLength
+		if len(dirNames) > MaxDirNameLength {
+			dirNames = truncateString(dirNames, MaxDirNameLength)
+		}
+		portGroupName := CSIPrefix + "-" + s.opts.ClusterPrefix + "-" + dirNames + PGSuffix
+		_, err = s.adminClient.CreatePortGroup(symID, portGroupName, portKeys)
+		if err != nil {
+			return "", fmt.Errorf("Failed to create PortGroup. Error - %s", err.Error())
+		}
+		validPortGroupID = portGroupName
+	}
+	return validPortGroupID, nil
 }
 
 // CreateSnapshot creates a snapshot.
@@ -1380,4 +1843,8 @@ func mergeStringMaps(base map[string]string, additional map[string]string) map[s
 		}
 	}
 	return result
+}
+
+func (s *service) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
 }

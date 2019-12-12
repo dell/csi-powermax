@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+    name: powermaxtest
+    namespace: {{ .Values.namespace }}
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+    name: powermaxtest
+    namespace: {{ .Values.namespace }}
+spec:
+    selector:
+        matchLabels:
+          app: powermaxtest
+    template:
+      metadata:
+        labels:
+          app: powermaxtest
+      spec:
+        serviceAccount: powermaxtest
+        hostNetwork: true
+        containers:
+          - name: test
+            image: docker.io/centos:latest
+            command: [ "/bin/sleep", "3600" ]
+            volumeDevices:
+              - devicePath: "/dev/data0"
+                name: pvol0
+    volumeClaimTemplates:
+    - metadata:
+        name: pvol0
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        volumeMode: Block
+        storageClassName: powermax
+        resources:
+          requests:
+            storage: 8Ti

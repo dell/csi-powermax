@@ -50,3 +50,8 @@ export CSI_ENDPOINT=`pwd`/unix_sock
 export SYMID="000000000001"
 export SRPID="SRP_1"
 export SERVICELEVEL="Bronze"
+export X_CSI_ENABLE_BLOCK="true"
+# EnvPreferredTransportProtocol enables you to be able to force the transport protocol.
+# Valid values are "FC" or "ISCSI" or "". If "", will choose FC if both are available.
+# This is mainly for testing.
+export X_CSI_TRANSPORT_PROTOCOL=""

@@ -24,13 +24,14 @@ type Client struct {
 }
 
 var (
-	errNilReponse   = errors.New("nil response from API")
-	errBodyRead     = errors.New("error reading body")
-	errNoLink       = errors.New("Error: problem finding link")
-	debug, _        = strconv.ParseBool(os.Getenv("X_CSI_POWERMAX_DEBUG"))
-	accHeader       string
-	conHeader       string
-	applicationType string
+	errNilReponse    = errors.New("nil response from API")
+	errBodyRead      = errors.New("error reading body")
+	errNoLink        = errors.New("Error: problem finding link")
+	debug, _         = strconv.ParseBool(os.Getenv("X_CSI_POWERMAX_DEBUG"))
+	accHeader        string
+	conHeader        string
+	applicationType  string
+	logResponseTimes bool
 )
 
 // Authenticate and get API version
@@ -48,7 +49,7 @@ func (c *Client) Authenticate(configConnect *ConfigConnect) error {
 	headers["Authorization"] = "Basic " + basicAuthString
 
 	resp, err := c.api.DoAndGetResponseBody(
-		context.Background(), http.MethodGet, "univmax/restapi/system/version", headers, nil)
+		context.Background(), http.MethodGet, "univmax/restapi/"+APIVersion+"/system/version", headers, nil)
 	if err != nil {
 		doLog(log.WithError(err).Error, "")
 		return err
@@ -115,13 +116,15 @@ func NewClientWithArgs(
 	insecure,
 	useCerts bool) (client Pmax, err error) {
 
+	logResponseTimes, _ = strconv.ParseBool(os.Getenv("X_CSI_POWERMAX_RESPONSE_TIMES"))
 	fields := map[string]interface{}{
-		"endpoint":        endpoint,
-		"applicationName": applicationName,
-		"insecure":        insecure,
-		"useCerts":        useCerts,
-		"version":         version,
-		"debug":           debug,
+		"endpoint":         endpoint,
+		"applicationName":  applicationName,
+		"insecure":         insecure,
+		"useCerts":         useCerts,
+		"version":          version,
+		"debug":            debug,
+		"logResponseTimes": logResponseTimes,
 	}
 
 	doLog(log.WithFields(fields).Debug, "pmax client init")

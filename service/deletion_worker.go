@@ -20,6 +20,9 @@ const (
 	deletionStateDeletingVolume            = "DELETING_VOLUME"
 	deletionStateCompleted                 = "COMPLETED"
 	deletionMaxErrors                      = 4
+	maxRetryDuration                       = 30 * time.Minute
+	delayBetweenRetries                    = 10 * time.Second
+	maxRetryDeleteCount                    = 125
 	deletionCompletedRequestsHistoryLength = 10
 )
 
@@ -33,6 +36,15 @@ type deletionWorker struct {
 
 var delWorker *deletionWorker
 
+// DelayBetweenRetries - Specifies the delay between retries for a volume when an error is encountered
+var DelayBetweenRetries time.Duration
+
+// MaxRetryDeleteCount - This indicates the maximum number of retries which will be done for a volume
+var MaxRetryDeleteCount int
+
+// MaxRetryDuration - This indicates the maximum time a volume with errors can be retried for deletion
+var MaxRetryDuration time.Duration
+
 type deletionWorkerQueue []*deletionWorkerRequest
 
 type deletionWorkerRequest struct {
@@ -40,6 +52,7 @@ type deletionWorkerRequest struct {
 	volumeID              string
 	volumeName            string
 	volumeSizeInCylinders int64
+	skipDeallocate        bool
 	// These are filled in by delWorker
 	state   string
 	nerrors int
@@ -47,7 +60,10 @@ type deletionWorkerRequest struct {
 	volume  *types.Volume
 	job     *types.Job
 	// The following item is for the priority queue implementation
-	priority int64
+	priority            int64
+	additionTimeStamp   time.Time
+	lastErrorTimeStamp  time.Time
+	firstErrorTimeStamp time.Time
 }
 
 func (q deletionWorkerQueue) Len() int {
@@ -84,12 +100,16 @@ func (q *deletionWorkerQueue) Pop() interface{} {
 
 func (req *deletionWorkerRequest) fields() map[string]interface{} {
 	fields := map[string]interface{}{
-		"SymmetrixID": req.symmetrixID,
-		"VolumeID":    req.volumeID,
-		"VolumeName":  req.volumeName,
-		"State":       req.state,
-		"Size":        req.volumeSizeInCylinders,
-		"No. errors":  req.nerrors,
+		"SymmetrixID":         req.symmetrixID,
+		"VolumeID":            req.volumeID,
+		"VolumeName":          req.volumeName,
+		"State":               req.state,
+		"Size":                req.volumeSizeInCylinders,
+		"No. errors":          req.nerrors,
+		"SkipDeAllocate":      req.skipDeallocate,
+		"additionTimeStamp":   req.additionTimeStamp,
+		"lastErrorTimeStamp":  req.lastErrorTimeStamp,
+		"firstErrorTimeStamp": req.firstErrorTimeStamp,
 	}
 	if req.job != nil {
 		fields["JobID"] = req.job.JobID
@@ -97,19 +117,18 @@ func (req *deletionWorkerRequest) fields() map[string]interface{} {
 	return fields
 }
 
-// getKey determines the RB Key value base on buckets of the size of volumes in cylinders.
-// getKey penalizes requests that have had errors
+// getPriority determines the RB Key value base on buckets of the size of volumes in cylinders.
+// getPriority penalizes requests that have had errors
 func (req *deletionWorkerRequest) getPriority() int64 {
-	multiplier := 0
-	switch req.nerrors {
-	case 0:
-		multiplier = 1
-	case 1:
-		multiplier = 2
-	default:
-		multiplier = 3
+	multiplier := 5 * (req.nerrors + 1)
+	timeSinceLastError := time.Now().Sub(req.lastErrorTimeStamp)
+	timeBeforeNextRetry := 0
+	if timeSinceLastError >= delayBetweenRetries {
+		timeBeforeNextRetry = 0
+	} else {
+		timeBeforeNextRetry = int((delayBetweenRetries - timeSinceLastError).Seconds())
 	}
-	return req.volumeSizeInCylinders / int64(100) * int64(multiplier)
+	return req.volumeSizeInCylinders / int64(100) * int64(timeBeforeNextRetry+multiplier)
 }
 
 // This gives the current status of the deletion being processed
@@ -129,6 +148,14 @@ func (w *deletionWorker) requestDeletion(req *deletionWorkerRequest) {
 	req.state = deletionStateQueued
 	w.Mutex.Lock()
 	defer w.Mutex.Unlock()
+	for i := range w.Queue {
+		if w.Queue[i].volumeID == req.volumeID && w.Queue[i].symmetrixID == req.symmetrixID {
+			// Found!
+			log.Warningf("Volume ID: %s already present in the deletion queue", req.volumeID)
+			return
+		}
+	}
+	req.additionTimeStamp = time.Now()
 	heap.Push(&w.Queue, req)
 	log.WithFields(fields).Debug("Queued for Deletion")
 }
@@ -153,7 +180,24 @@ func (w *deletionWorker) removeItem() *deletionWorkerRequest {
 
 // startDeletionWorker starts the deletion worker thread(s).
 // It should be called when the driver is initializing.
-func (s *service) startDeletionWorker() error {
+func (s *service) startDeletionWorker(defaultRetryValues bool) error {
+	if s.adminClient == nil {
+		err := s.controllerProbe(context.Background())
+		if err != nil {
+			fmt.Printf("Failed to controller probe\n")
+			return err
+		}
+	}
+	if defaultRetryValues {
+		MaxRetryDeleteCount = maxRetryDeleteCount
+		MaxRetryDuration = maxRetryDuration
+		DelayBetweenRetries = delayBetweenRetries
+	} else {
+		// Only used for unit testing
+		MaxRetryDeleteCount = 5
+		MaxRetryDuration = 10 * time.Second
+		DelayBetweenRetries = 1 * time.Second
+	}
 	if delWorker == nil {
 		delWorker = new(deletionWorker)
 		delWorker.MinPollingInterval = 1 * time.Second
@@ -162,17 +206,32 @@ func (s *service) startDeletionWorker() error {
 		delWorker.CompletedRequests = make(deletionWorkerQueue, 0)
 		go deletionWorkerWorkerThread(delWorker, s)
 	}
-	// Rebuild the queues of volumes to be deleted by searching for volumes
+	// Run a separate goroutine to rebuild the queues of volumes
+	// to be deleted by searching for volumes
 	// with the _DELCSI prefix.
+	s.waitGroup.Wait() // This is only for testing for the cases when the startDeletionWorker is called again
+	s.waitGroup.Add(1)
+	go s.runPopulateDeletionQueuesThread()
+	return nil
+}
+
+func (s *service) runPopulateDeletionQueuesThread() error {
+	return populateDeletionQueuesThread(delWorker, s)
+}
+
+// populateDeletionQueuesThread - Populates the deletion queues
+func populateDeletionQueuesThread(w *deletionWorker, s *service) error {
+	defer s.waitGroup.Done()
 	if s.adminClient == nil {
-		s.controllerProbe(context.Background())
-	}
-	if s.adminClient == nil {
-		return fmt.Errorf("No adminClient so can't run deletionWorker search for volumes to be deleted")
+		errormsg := "No adminClient. So can't run deletionWorker search for volumes to be deleted"
+		log.Error(errormsg)
+		return fmt.Errorf(errormsg)
 	}
 	symIDList, err := s.adminClient.GetSymmetrixIDList()
 	if err != nil {
-		return fmt.Errorf("Could not retrieve SymmetrixID list for deleteionWorker")
+		errormsg := "Could not retrieve SymmetrixID list for deleteionWorker"
+		log.Error(errormsg)
+		return fmt.Errorf(errormsg)
 	}
 	for _, symID := range symIDList.SymmetrixIDs {
 		log.Printf("Processing symmetrix %s for volumes to be deleted", symID)
@@ -192,11 +251,18 @@ func (s *service) startDeletionWorker() error {
 				} else {
 					// Put volume on the queue if appropriate
 					if strings.HasPrefix(volume.VolumeIdentifier, volDeletePrefix) {
+						// Fetch the uCode version details
+						isPostElmSR, err := s.isPostElmSR(symID)
+						if err != nil {
+							log.Error("Failed to symmetrix uCode version details")
+							continue
+						}
 						req := &deletionWorkerRequest{
 							symmetrixID:           symID,
 							volumeID:              id,
 							volumeName:            volume.VolumeIdentifier,
 							volumeSizeInCylinders: int64(volume.CapacityCYL),
+							skipDeallocate:        isPostElmSR,
 						}
 						// If there is an existing job associated with this id, associate it
 						job := deviceIDToJob[id]
@@ -210,6 +276,7 @@ func (s *service) startDeletionWorker() error {
 			}
 		}
 	}
+	log.Info("Finished populating devices in the deletion worker queue")
 	return nil
 }
 
@@ -217,6 +284,10 @@ func (s *service) startDeletionWorker() error {
 // particular resourceType and returns a map of resourceID to Job
 func (s *service) getRunningJobsForSymmetrix(symID string, resourceType string) map[string]*types.Job {
 	result := make(map[string]*types.Job)
+	if s.adminClient == nil {
+		log.Error("deletionWorker: No adminclient. Can't query the array for running jobs")
+		return result
+	}
 	jobIDList, err := s.adminClient.GetJobIDList(symID, types.JobStatusRunning)
 	if err != nil {
 		log.Error(err)
@@ -247,65 +318,112 @@ func deletionWorkerWorkerThread(w *deletionWorker, s *service) {
 		}
 		// If we have a request process it
 		if req != nil {
+			skipRetry := false
 			req.err = nil
 			sleepTime = w.PollingInterval
 			log.WithFields(req.fields()).Info("deletionWorker processing")
 			// Validate the volume is still the same one.
 			csiVolumeID := fmt.Sprintf("%s-%s-%s", req.volumeName, req.symmetrixID, req.volumeID)
 			_, _, req.volume, req.err = s.GetVolumeByID(csiVolumeID)
-			if req.err != nil {
-				log.Error("deletion worker: " + req.err.Error())
+			if req.err != nil || req.volume == nil {
+				if req.err != nil {
+					log.Error("deletion worker: " + req.err.Error())
+				}
 				req.state = deletionStateCompleted
+				log.Infof("CSI Volume: %s spent %.2f seconds in the deletion queue",
+					csiVolumeID, time.Since(req.additionTimeStamp).Seconds())
 				w.addToCompletedRequests(req)
 				req = nil
 				continue
 			}
-			if req.volume == nil {
-				log.Error("volume is nil")
-				req.state = deletionStateCompleted
-				w.addToCompletedRequests(req)
-				req = nil
-				continue
+			if req.nerrors > 0 {
+				if time.Since(req.lastErrorTimeStamp) < DelayBetweenRetries {
+					log.WithFields(req.fields()).Info("Waiting before the next retry")
+					skipRetry = true
+				}
 			}
-
-			switch req.state {
-			case deletionStateQueued:
-				req.state = deletionStateDisassociateSG
-				fallthrough
-			case deletionStateDisassociateSG:
-				req.err = req.disassociateFromStorageGroups(s)
-				if req.err != nil {
-					break
+			if !skipRetry {
+				switch req.state {
+				case deletionStateQueued:
+					req.state = deletionStateDisassociateSG
+					fallthrough
+				case deletionStateDisassociateSG:
+					req.err = req.disassociateFromStorageGroups(s)
+					if req.err != nil {
+						break
+					}
+					req.state = deletionStateDeletingTracks
+					fallthrough
+				case deletionStateDeletingTracks:
+					req.err = req.deleteTracks(s)
+					if req.err != nil {
+						break
+					}
+					if req.job != nil {
+						// job still running
+						break
+					}
+					// No err, no job, we're done
+					req.state = deletionStateDeletingVolume
+					fallthrough
+				case deletionStateDeletingVolume:
+					req.err = req.deleteVolume(s)
+					if req.err != nil {
+						if strings.Contains(req.err.Error(), errDeviceInStorageGrp) {
+							if req.nerrors < MaxRetryDeleteCount-1 {
+								// Put the request back in the queue and attempt to remove device from SG again
+								log.WithFields(req.fields()).Error(fmt.Sprintf("Error - %s. Retrying by moving the deletion request state to DISASSOCIATE SG",
+									req.err.Error()))
+								req.state = deletionStateDisassociateSG
+								skipRetry = true
+							}
+						}
+						break
+					}
+					req.state = deletionStateCompleted
 				}
-				req.state = deletionStateDeletingTracks
-				fallthrough
-			case deletionStateDeletingTracks:
-				req.err = req.deleteTracks(s)
-				if req.err != nil {
-					break
-				}
-				if req.job != nil {
-					// job still running
-					break
-				}
-				// No err, no job, we're done
-				req.state = deletionStateDeletingVolume
-				fallthrough
-			case deletionStateDeletingVolume:
-				req.err = req.deleteVolume(s)
-				if req.err != nil {
-					break
-				}
-				req.state = deletionStateCompleted
 			}
 			if req.err != nil {
+				if req.nerrors == 0 {
+					req.firstErrorTimeStamp = time.Now()
+				}
 				req.nerrors = req.nerrors + 1
-				if req.nerrors < deletionMaxErrors {
-					log.WithFields(req.fields()).Info(fmt.Sprintf("Error %d will be retried: %s", req.nerrors, req.err.Error()))
+				req.lastErrorTimeStamp = time.Now()
+			}
+			if skipRetry {
+				// Just add the req back to the queue
+				w.queueForRetry(req)
+				req = nil
+				skipRetry = false
+				sleepTime = w.MinPollingInterval
+			} else if req.err != nil {
+				queueForRetry := false
+				if req.state == deletionStateDeletingVolume {
+					// Do this only when the volume in the state - deleting volume
+					if req.nerrors >= MaxRetryDeleteCount {
+						// Keep trying until the max retry duration even if the max number of retries are hit
+						if time.Since(req.firstErrorTimeStamp) < MaxRetryDuration {
+							queueForRetry = true
+						}
+					} else {
+						// Keep trying until the max number of retries are hit
+						queueForRetry = true
+					}
+				} else {
+					// For any other state, just check against deletion max errors
+					if req.nerrors < deletionMaxErrors {
+						// Keep retrying until you hit the deletion max errors
+						queueForRetry = true
+					}
+				}
+				if queueForRetry {
+					log.WithFields(req.fields()).Error(fmt.Sprintf("Error %d will be retried: %s", req.nerrors, req.err))
 					w.queueForRetry(req)
 					req = nil
 				} else {
-					log.WithFields(req.fields()).Error(fmt.Sprintf("Error %d will not be retried: %s", req.nerrors, req.err.Error()))
+					log.WithFields(req.fields()).Error(fmt.Sprintf("Error %d will not be retried: %s", req.nerrors, req.err))
+					log.Infof("CSI Volume: %s spent %.2f seconds in the deletion queue",
+						csiVolumeID, time.Since(req.additionTimeStamp).Seconds())
 					w.addToCompletedRequests(req)
 					req = nil
 				}
@@ -313,6 +431,8 @@ func deletionWorkerWorkerThread(w *deletionWorker, s *service) {
 				log.WithFields(req.fields()).Info("Waiting on job to complete...")
 			} else {
 				log.WithFields(req.fields()).Info("Completed...")
+				log.Infof("CSI Volume: %s spent %.2f seconds in the deletion queue",
+					csiVolumeID, time.Since(req.additionTimeStamp).Seconds())
 				w.addToCompletedRequests(req)
 				req = nil
 				sleepTime = w.MinPollingInterval
@@ -354,10 +474,14 @@ func (req *deletionWorkerRequest) disassociateFromStorageGroups(s *service) erro
 			return err
 		}
 	}
+	if len(req.volume.StorageGroupIDList) == 0 {
+		log.WithFields(fields).Info("deletion worker: volume is not present in any SG")
+		return nil
+	}
 	// Repeat for any SGs the volume is a memmber of
 	for _, sgID := range req.volume.StorageGroupIDList {
 		fields["StorageGroup"] = sgID
-		log.WithFields(fields).Debug("deletion worker: Removing volume from StorageGroup")
+		log.WithFields(fields).Info("deletion worker: Removing volume from StorageGroup")
 		_, err := s.adminClient.RemoveVolumesFromStorageGroup(req.symmetrixID, sgID, req.volumeID)
 		if err != nil {
 			log.WithFields(fields).Error("Failed RemoveVolumesFromStorageGroup: " + err.Error())
@@ -371,6 +495,10 @@ func (req *deletionWorkerRequest) disassociateFromStorageGroups(s *service) erro
 func (req *deletionWorkerRequest) deleteTracks(s *service) error {
 	var err error
 	fields := req.fields()
+	if req.skipDeallocate {
+		log.WithFields(fields).Info("deletion worker: Array supports rapid TDEV deallocate. Skipping deallocate step")
+		return nil
+	}
 	// If haven't initiated job yet, then do so.
 	if req.job == nil {
 		log.WithFields(fields).Debug("deletion worker: Initiating removal of tracks")

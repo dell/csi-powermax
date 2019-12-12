@@ -30,6 +30,26 @@ Feature: Powermax OS CSI interface
     Then there are no errors
     And all volumes are deleted successfully
 
+@v1.1.0
+  Scenario Outline: Create and delete basic volume using various volume sizes
+    Given a Powermax service
+    And a basic block volume request "integration11" <sizeMB>
+    When I call CreateVolume
+    And the volume size is <expectedGB> 
+    #   When I call ListVolume
+    #	Then a valid ListVolumeResponse is returned
+    And when I call DeleteVolume
+    Then the error message should contain <errormsg>
+    And all volumes are deleted successfully
+
+    Examples:
+    | sizeMB       | expectedGB    | errormsg                                        |
+    | "0"          | "1.00"        | "none"                                          |
+    | "8192"       | "8.00"        | "none"                                          |
+# 2 TB
+    | "2097152"    | "2048.00"     | "none"                                          |
+    | "100000000"  | "0.00"        | "greater than the maximum available capacity"  |
+
 @v1.0.0
 # This test checks an important DL scenario, that to delete a volume 
 # it must match not only the symmetrix ID and device ID, but also the volume name.
@@ -101,6 +121,28 @@ Feature: Powermax OS CSI interface
     Then there are no errors
     And all volumes are deleted successfully
 
+@v1.1.0
+  Scenario: Create publish, node stage, node publish, node unpublish, node unstage, unpublish, delete basic volume
+    Given a Powermax service
+    And a mount volume request "integration6"
+    When I call CreateVolume
+    And there are no errors
+    And when I call PublishVolume "Node1"
+    And there are no errors
+    And when I call NodeStageVolume "Node1"
+    And there are no errors
+    And when I call NodePublishVolume "Node1"
+    And there are no errors
+    And when I call NodeUnpublishVolume "Node1"
+    And there are no errors
+    And when I call NodeUnstageVolume "Node1"
+    And there are no errors
+    And when I call UnpublishVolume "Node1"
+    And there are no errors
+    And when I call DeleteVolume
+    Then there are no errors
+    And all volumes are deleted successfully
+
 @v1.0.0
   Scenario: Idempotent create publish, node publish, node unpublish, unpublish, delete basic volume
     Given a Powermax service
@@ -147,7 +189,7 @@ Feature: Powermax OS CSI interface
   Scenario: Create and delete basic volume beyond maximum capacity
     Given a Powermax service
     And max retries 1
-    And a basic block volume request "integration4" "1048577"
+    And a basic block volume request "integration4" "1073741824"
     When I call CreateVolume
     Then the error message should contain "OutOfRange desc = bad capacity"
 	
@@ -330,13 +372,45 @@ Feature: Powermax OS CSI interface
     Then there are no errors
     And all volumes are deleted successfully
 
+    Examples:
+    | numberOfVolumes |
+    | 1               |
+    | 2               |
+    | 5               |
+    | 8               |
+   # | 10              |
+   # | 20              |
+   # | 50              |
+   # | 100             |
+   # | 200             |
+
+@v1.1.0
+  Scenario Outline: Scalability test to create volumes, publish, node stage, node publish, node unpublish, node unstage,  unpublish, delete volumes in parallel
+    Given a Powermax service
+    When I create <numberOfVolumes> volumes in parallel
+    And there are no errors
+    And I publish <numberOfVolumes> volumes in parallel
+    And there are no errors
+    And I node stage <numberOfVolumes> volumes in parallel
+    And there are no errors
+    And I node publish <numberOfVolumes> volumes in parallel
+    And there are no errors
+    And I node unpublish <numberOfVolumes> volumes in parallel
+    And there are no errors
+    And I node unstage <numberOfVolumes> volumes in parallel
+    And there are no errors
+    And I unpublish <numberOfVolumes> volumes in parallel
+    And there are no errors
+    And when I delete <numberOfVolumes> volumes in parallel
+    Then there are no errors
+    And all volumes are deleted successfully
 
     Examples:
     | numberOfVolumes |
     | 1               |
     | 2               |
     | 5               |
-   # | 8               |
+    | 8               |
    # | 10              |
    # | 20              |
    # | 50              |
@@ -374,7 +448,7 @@ Feature: Powermax OS CSI interface
     Examples:
     | numberOfVolumes |
     | 1               |
-    | 10               |
+    #| 10               |
     #| 20               |
 
 @v1.0.0
