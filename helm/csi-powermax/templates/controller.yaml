@@ -17,7 +17,7 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["persistentvolumes"]
-    verbs: ["get", "list", "watch", "create", "delete", "update"]
+    verbs: ["get", "list", "watch", "create", "delete", "update", "patch" ]
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "watch", "update"]
@@ -26,7 +26,7 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: ["storage.k8s.io"]
     resources: ["volumeattachments"]
-    verbs: ["get", "list", "watch", "update"]
+    verbs: ["get", "list", "watch", "update", "patch" ]
   - apiGroups: ["storage.k8s.io"]
     resources: ["csinodes"]
     verbs: ["get", "list", "watch", "update"]
@@ -37,6 +37,15 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotcontents"]
+    verbs: ["get", "list", "watch", "update", "create", "delete"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots", "volumesnapshots/status"]
+    verbs: ["get", "list", "watch", "update"]
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
     verbs: ["create", "list", "watch", "delete"]
@@ -79,7 +88,10 @@ spec:
           args:
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
-            - "--timeout=120s"
+            {{- if eq .Values.kubeversion  "v1.16" }}
+            - "--timeout=180s"
+            - "--worker-threads=6"
+            {{- end}}
           env:
             - name: ADDRESS
               value: /var/run/csi/csi.sock
@@ -99,7 +111,25 @@ spec:
             {{- if eq .Values.kubeversion  "v1.14" }}
             - "--timeout=120s"
             {{- end}}
+            {{- if eq .Values.kubeversion  "v1.16" }}
+            - "--timeout=180s"
+            - "--worker-threads=6"
+            {{- end}}
             - "--v=5"
+          env:
+            - name: ADDRESS
+              value: /var/run/csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/csi
+        - name: snapshotter
+          image: {{ required "Must provide the CSI snapshotter container image." .Values.images.snapshotter }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--v=5"
+            - "--snapshot-name-prefix={{ required "Must privided a Snapshot Name Prefix" .Values.snapNamePrefix }}"
+            - "--snapshot-name-uuid-length=10"
+            - "--timeout=600s"
           env:
             - name: ADDRESS
               value: /var/run/csi/csi.sock
@@ -129,6 +159,8 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-creds
                   key: password
+            - name: X_CSI_POWERMAX_VERSION
+              value: "90"
             - name: X_CSI_POWERMAX_DEBUG
               value: {{ .Values.powerMaxDebug | default "false" | lower | quote }}
             - name: X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION
@@ -161,3 +193,4 @@ spec:
         - name: certs
           secret:
               secretName: {{ .Release.Name }}-certs
+              optional: true

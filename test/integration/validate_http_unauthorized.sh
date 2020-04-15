@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 source ../../env.sh
 rm -rf unix_sock
 nonhttp=$(echo $X_CSI_POWERMAX_ENDPOINT | sed 's/https:/http:/')

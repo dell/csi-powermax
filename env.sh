@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # HTTP endpoint of Unisphere
 export X_CSI_POWERMAX_ENDPOINT="https://0.0.0.1:8443"

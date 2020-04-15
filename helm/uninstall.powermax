@@ -1,4 +1,4 @@
 #!/bin/bash
-helm delete --purge powermax
+helm delete -n powermax powermax
 sleep 10
 kubectl get pods -n powermax

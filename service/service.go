@@ -1,3 +1,17 @@
+/*
+ Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
+
 package service
 
 import (
@@ -12,8 +26,8 @@ import (
 	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	types "github.com/dell/csi-powermax/pmax/types/v90"
 	"github.com/dell/goiscsi"
+	types "github.com/dell/gopowermax/types/v90"
 	gocsi "github.com/rexray/gocsi"
 	csictx "github.com/rexray/gocsi/context"
 	log "github.com/sirupsen/logrus"
@@ -21,7 +35,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/dell/csi-powermax/core"
-	"github.com/dell/csi-powermax/pmax"
+	pmax "github.com/dell/gopowermax"
 )
 
 const (
@@ -37,9 +51,17 @@ const (
 	thickProvisioned = "ThickProvisioned"
 	defaultPrivDir   = "/dev/disk/csi-powermax"
 
-	defaultPmaxTimeout = 120
-	csiPrefix          = "csi-"
+	defaultPmaxTimeout         = 120
+	defaultLockCleanupDuration = 4
+	// defaultU4pVersion should be reset to base supported endpoint
+	// version for the CSI driver release
+	defaultU4pVersion = "90"
+	csiPrefix         = "csi-"
+
+	logFields = "logFields"
 )
+
+type contextKey string // specific string type used for context keys
 
 // Manifest is the SP's manifest.
 var Manifest = map[string]string{
@@ -62,6 +84,7 @@ type Opts struct {
 	Endpoint                   string
 	User                       string
 	Password                   string
+	Version                    string
 	SystemName                 string
 	NodeName                   string
 	TransportProtocol          string
@@ -87,7 +110,10 @@ type service struct {
 	pmaxTimeoutSeconds int64
 	// replace this with Unisphere client
 	adminClient pmax.Pmax
-	iscsiClient goiscsi.ISCSIinterface
+	// Following should be removed during u4p endpoint
+	// migration to 91
+	adminClient91 pmax.Pmax
+	iscsiClient   goiscsi.ISCSIinterface
 	// replace this with Unisphere system if needed
 	system            *interface{}
 	privDir           string
@@ -99,6 +125,11 @@ type service struct {
 	storagePoolCacheDuration time.Duration
 	// only used for testing, indicates if the deletion worked finished populating queue
 	waitGroup sync.WaitGroup
+
+	// Gobrick stuff
+	fcConnector               fcConnector
+	iscsiConnector            iSCSIConnector
+	arrayTransportProtocolMap map[string]string // map of array SN to IscsiTransportProtocol or FcTransportProtocol
 }
 
 // New returns a new Service.
@@ -141,10 +172,9 @@ func (s *service) BeforeServe(
 		DisableColors: true,
 		FullTimestamp: true,
 	})
-
+	s.StartLockManager(defaultLockCleanupDuration * time.Hour)
 	s.pmaxTimeoutSeconds = defaultPmaxTimeout
 	s.storagePoolCacheDuration = StoragePoolCacheDuration
-
 	// Get the SP's operating mode.
 	s.mode = csictx.Getenv(ctx, gocsi.EnvVarMode)
 
@@ -161,6 +191,12 @@ func (s *service) BeforeServe(
 	}
 	if pw, ok := csictx.LookupEnv(ctx, EnvPassword); ok {
 		opts.Password = pw
+	}
+	if vs, ok := csictx.LookupEnv(ctx, EnvVersion); ok {
+		opts.Version = vs
+	}
+	if opts.Version == "" {
+		opts.Version = defaultU4pVersion
 	}
 	if name, ok := csictx.LookupEnv(ctx, EnvNodeName); ok {
 		shortHostName := strings.Split(name, ".")[0]
@@ -287,6 +323,15 @@ func (s *service) BeforeServe(
 			delWorker = new(deletionWorker)
 		}
 	}
+
+	// Start the snapshot housekeeping worker thread
+	if !strings.EqualFold(s.mode, "node") {
+		s.startSnapCleanupWorker()
+		if snapCleaner == nil {
+			snapCleaner = new(snapCleanupWorker)
+		}
+	}
+
 	return nil
 }
 
@@ -372,9 +417,35 @@ func (s *service) createPowerMaxClient() error {
 			Endpoint: s.opts.Endpoint,
 			Username: s.opts.User,
 			Password: s.opts.Password,
+			Version:  s.opts.Version,
 		})
 		if err != nil {
 			s.adminClient = nil
+			return status.Errorf(codes.FailedPrecondition,
+				"unable to login to Unisphere: %s", err.Error())
+		}
+	}
+
+	// Create the PowerMax API client for u4p 91 endpoint
+	if s.adminClient91 == nil {
+		applicationName := ApplicationName + " v" + core.SemVer
+		c, err := pmax.NewClientWithArgs(
+			s.opts.Endpoint, "", applicationName, s.opts.Insecure, !s.opts.DisableCerts)
+		if err != nil {
+			return status.Errorf(codes.FailedPrecondition,
+				"unable to create PowerMax client: %s", err.Error())
+		}
+		s.adminClient91 = c
+		s.adminClient91.SetAllowedArrays(s.getArrayWhitelist())
+
+		err = s.adminClient91.Authenticate(&pmax.ConfigConnect{
+			Endpoint: s.opts.Endpoint,
+			Username: s.opts.User,
+			Password: s.opts.Password,
+			Version:  "91",
+		})
+		if err != nil {
+			s.adminClient91 = nil
 			return status.Errorf(codes.FailedPrecondition,
 				"unable to login to Unisphere: %s", err.Error())
 		}
@@ -394,4 +465,27 @@ func (s *service) getCSIVolume(vol *types.Volume) *csi.Volume {
 
 func (s *service) getClusterPrefix() string {
 	return s.opts.ClusterPrefix
+}
+
+func setLogFields(ctx context.Context, fields log.Fields) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, contextKey(logFields), fields)
+}
+
+func getLogFields(ctx context.Context) log.Fields {
+	if ctx == nil {
+		return log.Fields{}
+	}
+	fields, ok := ctx.Value(contextKey(logFields)).(log.Fields)
+	if !ok {
+		fields = log.Fields{}
+	}
+	csiReqID, ok := ctx.Value(csictx.RequestIDKey).(string)
+	if !ok {
+		return fields
+	}
+	fields["RequestID"] = csiReqID
+	return fields
 }

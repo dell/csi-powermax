@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 DBSQL=/root/dbsamples-0.1/world/world.sql
 helm install -n postgres postgres
 echo "Waiting for pods to come up..."
@@ -13,7 +13,7 @@ kubectl describe svc postgres-postgresql
 
 sleep 20
 #echo "Logging into container..."
-#kubectl exec -it postgres-postgresql-master-0 /bin/sh
+#kubectl exec -it postgres-postgresql-master-0 /bin/bash
 
 echo "Set up port forwarding..."
 kubectl port-forward --namespace default svc/postgres-postgresql 5432:5432 &

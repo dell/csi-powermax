@@ -69,9 +69,10 @@ Feature: PowerMax CSI interface
       Then the error contains <errormsg>
 
      Examples:
-      | induced                           | errormsg                                         |
-      | "UpdateStorageGroupError"         | "Failed to add volume to storage group"          |
-      | "GetMaskingViewConnectionsError"  | "none"                                           |
+      | induced                           | errormsg                                              |
+      | "UpdateStorageGroupError"         | "Failed to add volume to storage group"               |
+      | "GetMaskingViewConnectionsError"  | "Could not get MV Connections"                        |
+      | "GetPortError"                    | "Failed to fetch port details for any director ports" |
 
 @controllerPublish
 @v1.0.0
@@ -92,6 +93,27 @@ Feature: PowerMax CSI interface
       | "CreateMaskingViewError"  | "Failed to create masking view"                  |
       | "UpdateStorageGroupError" | "Failed to add volume to storage group"          |
       | "GetStorageGroupError"    | "Failed to fetch SG details"                     |
+
+@controllerPublish
+@v1.0.0
+     Scenario Outline: Publish volume with no masking view and induced errors
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      When I request a PortGroup
+      And a valid CreateVolumeResponse is returned
+      And I set transport protocol to "ISCSI"
+      And I have a Node "node1" with Host
+      And I induce error <induced>
+      And I call PublishVolume with "single-writer" to "node1"
+      Then the error contains <errormsg>
+
+     Examples:
+      | induced                   | errormsg                                         |
+      | "CreateStorageGroupError" | "Failed to create storage group"                 |
+      | "CreateMaskingViewError"  | "Failed to create masking view"                  |
+      | "UpdateStorageGroupError" | "Failed to add volume to storage group"          |
+      | "GetStorageGroupError"    | "Failed to fetch SG details"                     |
+      | "GetMaskingViewError"     | "none"                                           |
 
 @controllerPublish
 @v1.0.0

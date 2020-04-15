@@ -44,16 +44,17 @@ Feature: PowerMax CSI interface
 
     Examples:
     | transport | error                                   | errormsg                                                          |
+    | "FC"      | "InduceOverloadError"                   | "overload"                                                        |
     | "FC"      | "TargetNotCreatedForNodePublish"        | "none"                                                            |
-    | "FC"      | "BadVolumeIdentifier"                   | "The CSI Volume ID bad volume identifier is not formed correctly" |
+    | "FC"      | "BadVolumeIdentifier"                   | "The CSI ID bad volume identifier is not formed correctly" |
     | "FC"      | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"                     |
     | "FC"      | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
-    | "FC"      | "GOFSWWNToDevicePathError"              | "Unable to find device after multiple discovery attempts"         |
+    | "FC"      | "GobrickConnectError"                   | "induced ConnectVolumeError"                                      |
     | "ISCSI"   | "TargetNotCreatedForNodePublish"        | "none"                                                            |
-    | "ISCSI"   | "BadVolumeIdentifier"                   | "The CSI Volume ID bad volume identifier is not formed correctly" |
+    | "ISCSI"   | "BadVolumeIdentifier"                   | "The CSI ID bad volume identifier is not formed correctly" |
     | "ISCSI"   | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"                     |
     | "ISCSI"   | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
-    | "ISCSI"   | "GOFSWWNToDevicePathError"              | "Unable to find device after multiple discovery attempts"         |
+    | "ISCSI"   | "GobrickConnectError"                   | "induced ConnectVolumeError"                                      |
 
 
 @nodePublish
@@ -105,9 +106,9 @@ Feature: PowerMax CSI interface
     Examples:
     | errora                                  | errorb                        | errormsg                                                                  |
     | "GOFSMockDevMountsError"                | "none"                        | "none"                                                                    |
-    | "GOFSWWNToDevicePathError"              | "none"                        | "Unable to find device after multiple discovery attempts"                 |
-    | "GOFSWWNToDevicePathError"              | "GOISCSIDiscoveryError"       | "Unable to find device after multiple discovery attempts"                 |
-    | "GOFSWWNToDevicePathError"              | "GOISCSIRescanError"          | "Unable to find device after multiple discovery attempts"                 |
+    | "GOFSWWNToDevicePathError"              | "none"                        | "Device path not found for WWN"                                           |
+    | "GOFSWWNToDevicePathError"              | "GOISCSIDiscoveryError"       | "Device path not found for WWN"                                           |
+    | "GOFSWWNToDevicePathError"              | "GOISCSIRescanError"          | "Device path not found for WWN"                                           |
     | "GOFSMockMountError"                    | "none"                        | "mode conflicts with existing mounts@@mount induced error"                |
     | "GOFSMockGetMountsError"                | "none"                        | "could not reliably determine existing mount status"                      |
     # may be different for Windows vs. Linux
@@ -201,6 +202,7 @@ Feature: PowerMax CSI interface
     And a controller published volume
     And a capability with voltype <voltype> access <access> fstype <fstype>
     And get Node Publish Volume Request
+    And I call NodeStageVolume
     And I call NodePublishVolume
     And I call NodeUnpublishVolume
     And I call NodeUnstageVolume
@@ -221,17 +223,24 @@ Feature: PowerMax CSI interface
     And a controller published volume
     And a capability with voltype "mount" access "single-writer" fstype "xfs"
     And get Node Publish Volume Request
+    And I call NodeStageVolume
     And I call NodePublishVolume
     And I call NodeUnpublishVolume
     And get Node Publish Volume Request
     And I induce error <induced>
+    And I induce error <induced2>
     And I call NodeUnstageVolume
     Then the error contains <errormsg>
 
     Examples:
-    | induced                    | errormsg                                            |
-    | "UnspecifiedNodeName"      | "Error getting NodeName from the environment"       |
-    | "NodeUnpublishNoTargetPath"| "Staging Target argument is required"               |
+    | induced                    | induced2                   | errormsg                                            |
+    | "none"                     | "none"                     | "none"                                              |
+    | "InduceOverloadError"      | "none"                     | "overload"                                          |
+    | "GOFSMockUnmountError"     | "none"                     | "none"                             |
+    | "GobrickDisconnectError"   | "none"                     | "disconnectVolume exceeded retry limit"             |
+    | "NodeUnpublishNoTargetPath"| "none"                     | "Staging Target argument is required"               |
+    | "InvalidVolumeID"          | "none"                     | "is not formed correctly"                           |
+    | "InvalidVolumeID"          | "InvalidateNodeID"         | "Error getting NodeName from the environment"       |
 
 @nodePublish
 @v1.0.0
@@ -251,7 +260,6 @@ Feature: PowerMax CSI interface
     | "block"      | "multiple-writer"              | "none"     | "none"                                       |
     | "mount"      | "single-writer"                | "xfs"      | "none"                                       |
 
-@wip
 @nodePublish
 @v1.0.0
   Scenario Outline: Multipath node Unpublish various use cases from examples
@@ -259,9 +267,12 @@ Feature: PowerMax CSI interface
     And I have a Node "node1" with MaskingView
     And a controller published multipath volume
     And a capability with voltype <voltype> access <access> fstype "none"
+    And get Node Publish Volume Request
+    And I call NodeStageVolume
     And I call NodePublishVolume
     And I induce error <error>
     And I call NodeUnpublishVolume
+    And I call NodeUnstageVolume
     And there are no remaining mounts
     Then the error contains <errormsg>
 
@@ -269,7 +280,7 @@ Feature: PowerMax CSI interface
     | voltype      | access                         | error                            | errormsg                                     |
     | "block"      | "single-writer"                | "none"                           | "none"                                       |
     | "block"      | "multiple-writer"              | "none"                           | "none"                                       |
-    | "mount"      | "single-writer"                | "GOFSMultipathCommandError"      | "multipath command induced error"            |
+    | "mount"      | "single-writer"                | "none"                           | "none"                                       |
 
 @nodePublish
 @v1.0.0
@@ -305,7 +316,6 @@ Feature: PowerMax CSI interface
 
     Examples:
     | error                                   | errormsg                                                    |
-    | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"               |
     # The spec says should return Volume Not Found, but Kubernetes will loop forever trying to Unpublish it, so treat it idempotently.
     #| "NodeUnpublishBadVolume"                | "Volume cannot be found"                                    |
     | "NodeUnpublishBadVolume"                | "none"                                                      |
@@ -313,9 +323,7 @@ Feature: PowerMax CSI interface
     | "NodeUnpublishNoTargetPath"             | "target path required"                                      |
     | "GOFSMockUnmountError"                  | "Error unmounting target"                                   |
     | "PrivateDirectoryNotExistForNodePublish"| "none"                                                      |
-    | "BadVolumeIdentifier"                   | "volume identifier malformed"                               |
     | "GOFSWWNToDevicePathError"              | "none"                                                      |
-    | "GOFSRemoveBlockDeviceError"            | "remove block device induced error"                         |
 
 @nodePublish
 @v1.0.0
@@ -352,20 +360,6 @@ Feature: PowerMax CSI interface
 
 @nodePublish
 @v1.0.0
-  Scenario: Call copyMultipathConfigFile with valid path
-    Given a nodeRoot with multipath config file
-    When I call copyMultipathConfigFile with root "test/root"
-    Then the error contains "none"
-
-@nodePublish
-@v1.0.0
-  Scenario: Call copyMultipathConfigFile with invalid path
-    Given a nodeRoot with multipath config file
-    When I call copyMultipathConfigFile with root "test/bad"
-    Then the error contains "cannot find the path specified@@no such file or directory"
-
-@nodePublish
-@v1.0.0
    Scenario Outline: UnmountPrivMount
      Given a PowerMax service
      And a private mount <mnta>
@@ -383,20 +377,6 @@ Feature: PowerMax CSI interface
      | "test/mnt1"            | "none"                  | "GOFSMockUnmountError"            | "false"       | "unmount induced error"              |
      | "test/mnt1"            | "test/mnt2"             | "GOFSMockGetMountsError"          | "false"       | "getMounts induced error"            |
      | "test/mnt1"            | "test/mnt2"             | "none"                            | "false"       | "none"                               |
-
-@v1.1.0
-  Scenario Outline: call linearScanToRemoveDevices with various circumstances
-    Given a PowerMax service
-    And I have <ndevs> sysblock deviceso
-    And I induce error <induced>
-    When I call linearScanToRemoveDevices
-    Then the error contains <errormsg>
-
-    Examples:
-    | ndevs         | induced                      | errormsg                                   |
-    | 0             | "none"                       | "none"                                     |
-    | 1             | "none"                       | "none"                                     |
-    | 1             | "GOFSRemoveBlockDeviceError" | "weren't successfully deleted"             |
 
 @v1.1.0
   Scenario Outline: Call verifyInitiatorsNotInADifferentHost various scenarios

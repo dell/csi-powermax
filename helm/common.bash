@@ -24,5 +24,6 @@ waitOnRunning() {
 
 # Get the kubernetes major and minor version numbers.
 kMajorVersion=$(kubectl version | grep 'Server Version' | sed -e 's/^.*Major:"//' -e 's/",.*//')
-kMinorVersion=$(kubectl version | grep 'Server Version' | sed -e 's/^.*Minor:"//' -e 's/",.*//')
-
+kMinorVersion=$(kubectl version | grep 'Server Version' | sed -e 's/^.*Minor:"//' -e 's/\+\?",.*//')
+echo $kMajorVersion
+echo $kMinorVersion
