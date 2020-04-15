@@ -1,14 +1,32 @@
+/*
+ Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
 package service
 
 import (
+	"context"
 	"fmt"
-	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"os"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	log "github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -18,6 +36,7 @@ const (
 var s service
 var mockedExitStatus = 0
 var mockedStdout string
+var debugUnitTest = false
 
 func TestDeletionQueue(t *testing.T) {
 	if delWorker == nil {
@@ -47,40 +66,90 @@ func TestDeletionQueue(t *testing.T) {
 }
 
 var counters = [60]int{}
+var testwg sync.WaitGroup
 
 func incrementCounter(identifier string, num int) {
-	AcquireLock(identifier, identifier)
+	lockNumber := RequestLock(identifier, "")
+	timeToSleep := rand.Intn(1010-500) + 500
+	time.Sleep(time.Duration(timeToSleep) * time.Microsecond)
+	if debugUnitTest {
+		fmt.Printf("Sleeping for :%d microseconds\n", timeToSleep)
+	}
 	counters[num]++
-	ReleaseLock(identifier, identifier)
+	ReleaseLock(identifier, "", lockNumber)
+	testwg.Done()
 }
 
+// TestReleaseLockWOAcquiring tries to release a lock that
+// was never acquired.
+func TestReleaseLockWOAcquiring(t *testing.T) {
+	LockRequestHandler()
+	CleanupMapEntries(10 * time.Millisecond)
+	ReleaseLock("nonExistentLock", "", 0)
+}
+
+// TestReleasingOtherLock tries to release a lock that it didn't acquire
+func TestReleasingOtherLock(t *testing.T) {
+	LockRequestHandler()
+	CleanupMapEntries(10 * time.Millisecond)
+	lockNumber := RequestLock("new_lock", "")
+	ReleaseLock("new_lock", "", lockNumber+1)
+	ReleaseLock("new_lock", "", lockNumber)
+}
+
+var lockCounter int
+
+func incrementLockCounter() {
+	lockNumber := RequestLock("identifier", "")
+	defer ReleaseLock("identifier", "", lockNumber)
+	lockCounter++
+}
+
+func TestLockCounter(t *testing.T) {
+	LockRequestHandler()
+	CleanupMapEntries(10 * time.Millisecond)
+	for i := 0; i < 500; i++ {
+		// Acquire and release the lock in same goroutine
+		incrementLockCounter()
+	}
+	if lockCounter != 500 {
+		t.Error(fmt.Sprintf("Expected lock counter to be 500 but found: %d", lockCounter))
+	}
+}
 func TestLocks(t *testing.T) {
+	LockRequestHandler()
+	CleanupMapEntries(10 * time.Millisecond)
 	for i := 0; i < 60; i++ {
+		testwg.Add(1)
 		sgname := "sg" + strconv.Itoa(i)
 		go incrementCounter(sgname, i)
 	}
 	for i := 0; i < 60; i++ {
+		testwg.Add(1)
 		sgname := "sg" + strconv.Itoa(i)
 		go incrementCounter(sgname, i)
 	}
 	for i := 0; i < 60; i++ {
+		testwg.Add(1)
 		sgname := "sg" + strconv.Itoa(i)
 		go incrementCounter(sgname, i)
 	}
 	for i := 0; i < 60; i++ {
+		testwg.Add(1)
 		sgname := "sg" + strconv.Itoa(i)
 		go incrementCounter(sgname, i)
 	}
 	for i := 0; i < 60; i++ {
+		testwg.Add(1)
 		sgname := "sg" + strconv.Itoa(i)
 		go incrementCounter(sgname, i)
 	}
 	for i := 0; i < 60; i++ {
+		testwg.Add(1)
 		sgname := "sg" + strconv.Itoa(i)
 		go incrementCounter(sgname, i)
 	}
-	fmt.Println("Sleeping for 15 seconds")
-	time.Sleep(15 * time.Second)
+	testwg.Wait()
 	// Check if all the counters were updated properly
 	for _, counter := range counters {
 		if counter != 6 {
@@ -210,7 +279,7 @@ func TestVolumeIdentifier(t *testing.T) {
 	volumeName := "Vol-Name"
 	symID := "123456789012"
 	csiDeviceID := s.createCSIVolumeID(volumePrefix, volumeName, symID, devID)
-	volumeNameT, symIDT, devIDT, err := s.parseCSIVolumeID(csiDeviceID)
+	volumeNameT, symIDT, devIDT, err := s.parseCsiID(csiDeviceID)
 	if err != nil {
 		t.Error()
 		t.Error(err.Error())
@@ -218,21 +287,21 @@ func TestVolumeIdentifier(t *testing.T) {
 	volumeName = fmt.Sprintf("csi-%s-%s", volumePrefix, volumeName)
 	if volumeNameT != volumeName ||
 		symIDT != symID || devIDT != devID {
-		t.Error("createCSIVolumeID and parseCSIVolumeID doesn't match")
+		t.Error("createCSIVolumeID and parseCsiID doesn't match")
 	}
 	// Test for empty device id
-	_, _, _, err = s.parseCSIVolumeID("")
+	_, _, _, err = s.parseCsiID("")
 	if err == nil {
 		t.Error("Expected an error while parsing empty ID but recieved success")
 	}
 	// Test for malformed device id
 	malformedCSIDeviceID := "Vol1-Test"
-	volumeNameT, symIDT, devIDT, err = s.parseCSIVolumeID(malformedCSIDeviceID)
+	volumeNameT, symIDT, devIDT, err = s.parseCsiID(malformedCSIDeviceID)
 	if err == nil {
 		t.Error("Expected an error while parsing malformed ID but recieved success")
 	}
 	malformedCSIDeviceID = "-vol1-Test"
-	_, _, _, err = s.parseCSIVolumeID(malformedCSIDeviceID)
+	_, _, _, err = s.parseCsiID(malformedCSIDeviceID)
 	if err == nil {
 		t.Error("Expected an error while parsing malformed ID but recieved success")
 	}
@@ -332,5 +401,110 @@ func TestFibreChannelSplitInitiatorID(t *testing.T) {
 	_, _, _, err = splitFibreChannelInitiatorID("meaningless string")
 	if err == nil {
 		t.Errorf("Expected error but got none")
+	}
+}
+
+func TestPending(t *testing.T) {
+	tests := []struct {
+		npending     int
+		maxpending   int
+		differentIDs bool
+		errormsg     string
+	}{
+		{npending: 2,
+			maxpending:   1,
+			differentIDs: true,
+			errormsg:     "overload",
+		},
+		{npending: 4,
+			maxpending:   5,
+			differentIDs: true,
+			errormsg:     "none",
+		},
+		{npending: 2,
+			maxpending:   5,
+			differentIDs: false,
+			errormsg:     "pending",
+		},
+		{npending: 0,
+			maxpending:   1,
+			differentIDs: false,
+			errormsg:     "none",
+		},
+	}
+	for _, test := range tests {
+		pendState := &pendingState{
+			maxPending: test.maxpending,
+		}
+		for i := 0; i < test.npending; i++ {
+			id := strconv.Itoa(i)
+			if test.differentIDs == false {
+				id = "same"
+			}
+			var vid volumeIDType
+			vid = volumeIDType(id)
+			err := vid.checkAndUpdatePendingState(pendState)
+			if debugUnitTest {
+				fmt.Printf("test %v err %v\n", test, err)
+			}
+			if i+1 == test.npending {
+				if test.errormsg == "none" {
+					if err != nil {
+						t.Error("Expected no error but got: " + err.Error())
+					}
+				} else {
+					if err != nil && !strings.Contains(err.Error(), test.errormsg) {
+						t.Error("Didn't get expected error: " + test.errormsg)
+					}
+				}
+			}
+		}
+		for i := 0; i <= test.maxpending; i++ {
+			id := strconv.Itoa(i)
+			if test.differentIDs == false {
+				id = "same"
+			}
+			var vid volumeIDType
+			vid = volumeIDType(id)
+			vid.clearPending(pendState)
+		}
+	}
+}
+
+func TestGobrickInitialization(t *testing.T) {
+	iscsiConnectorPrev := s.iscsiConnector
+	s.iscsiConnector = nil
+	s.initISCSIConnector("/")
+	if s.iscsiConnector == nil {
+		t.Error("Expected s.iscsiConnector to be initialized")
+	}
+	s.iscsiConnector = iscsiConnectorPrev
+
+	fcConnectorPrev := s.fcConnector
+	s.fcConnector = nil
+	s.initFCConnector("/")
+	if s.fcConnector == nil {
+		t.Error("Expected s.fcConnector to be initialized")
+	}
+	s.fcConnector = fcConnectorPrev
+}
+
+func TestSetGetLogFields(t *testing.T) {
+	fields := log.Fields{
+		"RequestID": "123",
+		"DeviceID":  "12345",
+	}
+	ctx := setLogFields(nil, fields)
+	fields = getLogFields(ctx)
+	if fields["RequestID"] == nil {
+		t.Error("Expected fields.CSIRequestID to be initialized")
+	}
+	fields = getLogFields(nil)
+	if fields == nil {
+		t.Error("Expected fields to be initialized")
+	}
+	fields = getLogFields(context.Background())
+	if fields == nil {
+		t.Error("Expected fields to be initialized")
 	}
 }

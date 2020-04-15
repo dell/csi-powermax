@@ -1,5 +1,4 @@
-#!/bin/sh
-
+#!/bin/bash
 if [ -f "../vendor" ]; then
     # Tell the applicable Go tools to use the vendor directory, if it exists.
     MOD_FLAGS="-mod=vendor"
@@ -16,7 +15,7 @@ fmt_count() {
 }
 
 fmt() {
-    gofmt -d ./service ./pmax ./test/k8_integration | tee $FMT_TMPFILE
+    gofmt -d ./service ./test/k8_integration | tee $FMT_TMPFILE
     cat $FMT_TMPFILE | wc -l > $FMT_COUNT_TMPFILE
     if [ ! `cat $FMT_COUNT_TMPFILE` -eq "0" ]; then
         echo Found `cat $FMT_COUNT_TMPFILE` formatting issue\(s\).
@@ -30,14 +29,14 @@ FMT_RETURN_CODE=$?
 echo === Finished
 
 echo === Vetting...
-go vet ${MOD_FLAGS} ./service/... ./pmax/... ./test/k8_integration/...
+CGO_ENABLED=0 go vet ${MOD_FLAGS} ./service/... ./test/k8_integration/...
 VET_RETURN_CODE=$?
 echo === Finished
 
 echo === Linting...
 (command -v golint >/dev/null 2>&1 \
     || GO111MODULE=off go get -insecure -u golang.org/x/lint/golint) \
-    && golint --set_exit_status ./service/... ./pmax/... ./test/k8_integration/...
+    && golint --set_exit_status ./service/... ./test/k8_integration/...
 LINT_RETURN_CODE=$?
 echo === Finished
 

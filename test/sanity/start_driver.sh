@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # This will run coverage analysis using the integration testing.
 # The env.sh must point to a valid Unisphere deployment and the iscsi packages must be installed
 # on this system. This will make real calls to  Unisphere

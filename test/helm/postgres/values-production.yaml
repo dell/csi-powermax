@@ -127,7 +127,7 @@ postgresqlUsername: postgres
 ##
 # initdbScripts:
 #   my_init_script.sh:|
-#      #!/bin/sh
+#      #!/bin/bash
 #      echo "Do something."
 
 ## ConfigMap with scripts to be run at first boot

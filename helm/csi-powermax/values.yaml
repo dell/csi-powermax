@@ -3,6 +3,7 @@
 # You must set this for your Unisphere instance.
 unisphere: https://127.0.0.1:8443
 
+
 # clusterPrefix defines a prefix that is appended onto all resources created in the Array
 # This should be unique per K8s/CSI deployment
 # maximum length of this value is 3 characters
@@ -12,17 +13,21 @@ clusterPrefix: ABC
 # THIS MUST BE ALL LOWER CASE.
 volumeNamePrefix: pmax
 
+# snapNamePrefix defines a prefix that is prepended to snapshots.
+# THIS MUST BE ALL LOWER CASE.
+snapNamePrefix: pmsn
+
 # "controllerCount" defines the number of PowerMax controller nodes to deploy to
 # the Kubernetes release
 controllerCount: 1
 
-# "portGroups" defines the set of existing port groups that the driver will use
-# command separated list of portgroup names
+# "portGroups" defines the set of existing port groups that the driver will use.
+# It is a comma separated list of portgroup names.
 portGroups: PortGroup1, PortGroup2, PortGroup3
 
-# "arrayWhitelist", if set, defines a set of arrays that will be exposed via the CSI Driver
-# if set to an empty string, all arrays known to Unisphere will be exposed
-# command separated list of array serial numbers
+# "arrayWhitelist", if set, defines a set of arrays that will be exposed via the CSI Driver.
+# If set to an empty string, all arrays known to Unisphere will be exposed.
+# It is a comma separated list of array serial numbers.
 arrayWhitelist: ""
 
 # "grpcMaxThreads" is an integer string which sets the maximum number of current grpc
@@ -71,4 +76,4 @@ storageClass:
 # IT IS RECOMMENDED YOU DO NOT CHANGE THE IMAGES TO BE DOWNLOADED.
 images:
   # "images.driver" defines the container images used for the driver container.
-  driver: dellemc/csi-powermax:v1.1.0.000R
+  driver: dellemc/csi-powermax:v1.2.0.000R

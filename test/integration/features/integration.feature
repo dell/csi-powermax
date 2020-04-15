@@ -103,25 +103,8 @@ Feature: Powermax OS CSI interface
     Then there are no errors
     And all volumes are deleted successfully
 
-@v1.0.0
-  Scenario: Create publish, node publish, node unpublish, unpublish, delete basic volume
-    Given a Powermax service
-    And a mount volume request "integration5"
-    When I call CreateVolume
-    And there are no errors
-    And when I call PublishVolume "Node1"
-    And there are no errors
-    And when I call NodePublishVolume "Node1"
-    And there are no errors
-    And when I call NodeUnpublishVolume "Node1"
-    And there are no errors
-    And when I call UnpublishVolume "Node1"
-    And there are no errors
-    And when I call DeleteVolume
-    Then there are no errors
-    And all volumes are deleted successfully
-
 @v1.1.0
+@wip
   Scenario: Create publish, node stage, node publish, node unpublish, node unstage, unpublish, delete basic volume
     Given a Powermax service
     And a mount volume request "integration6"
@@ -144,6 +127,7 @@ Feature: Powermax OS CSI interface
     And all volumes are deleted successfully
 
 @v1.0.0
+@wip
   Scenario: Idempotent create publish, node publish, node unpublish, unpublish, delete basic volume
     Given a Powermax service
     And an idempotent test
@@ -156,6 +140,10 @@ Feature: Powermax OS CSI interface
     And there are no errors
     And when I call PublishVolume "Node1"
     And there are no errors
+    And when I call NodeStageVolume "Node1"
+    And there are no errors
+    And when I call NodeStageVolume "Node1"
+    And there are no errors
     And when I call NodePublishVolume "Node1"
     And there are no errors
     And when I call NodePublishVolume "Node1"
@@ -163,6 +151,10 @@ Feature: Powermax OS CSI interface
     And when I call NodeUnpublishVolume "Node1"
     And there are no errors
     And when I call NodeUnpublishVolume "Node1"
+    And there are no errors
+    And when I call NodeUnstageVolume "Node1"
+    And there are no errors
+    And when I call NodeUnstageVolume "Node1"
     And there are no errors
     And when I call UnpublishVolume "Node1"
     And there are no errors
@@ -229,7 +221,7 @@ Feature: Powermax OS CSI interface
     And a valid ListVolumeResponse is returned
     And I call ListSnapshot
     And a valid ListSnapshotResponse is returned
-    And I call CreateVolumeFromSnapshot
+    And I call LinkVolumeToSnapshot
     Then there are no errors
     And I call ListVolume
     And a valid ListVolumeResponse is returned
@@ -292,9 +284,11 @@ Feature: Powermax OS CSI interface
     When I call CreateVolume
     And there are no errors
     And when I call PublishVolume "nodeID"
+    And when I call NodeStageVolume "nodeID"
     And when I call NodePublishVolume "nodeID"
     And verify published volume with voltype <voltype> access <access> fstype <fstype>
     And when I call NodePublishVolume "nodeID"
+    And when I call NodeUnstageVolume "nodeID"
     And when I call NodeUnpublishVolume "nodeID"
     And when I call UnpublishVolume "nodeID"
     And when I call DeleteVolume
@@ -356,15 +350,20 @@ Feature: Powermax OS CSI interface
     Then there are no errors
 
 @v1.0.0
+@wip
   Scenario Outline: Scalability test to create volumes, publish, node publish, node unpublish, unpublish, delete volumes in parallel
     Given a Powermax service
     When I create <numberOfVolumes> volumes in parallel
     And there are no errors
     And I publish <numberOfVolumes> volumes in parallel
     And there are no errors
+    And I node stage <numberOfVolumes> volumes in parallel
+    And there are no errors
     And I node publish <numberOfVolumes> volumes in parallel
     And there are no errors
     And I node unpublish <numberOfVolumes> volumes in parallel
+    And there are no errors
+    And I node unstage <numberOfVolumes> volumes in parallel
     And there are no errors
     And I unpublish <numberOfVolumes> volumes in parallel
     And there are no errors
@@ -385,6 +384,7 @@ Feature: Powermax OS CSI interface
    # | 200             |
 
 @v1.1.0
+@wip
   Scenario Outline: Scalability test to create volumes, publish, node stage, node publish, node unpublish, node unstage,  unpublish, delete volumes in parallel
     Given a Powermax service
     When I create <numberOfVolumes> volumes in parallel
@@ -418,7 +418,7 @@ Feature: Powermax OS CSI interface
    # | 200             |
 
 @v1.0.0
-  Scenario Outline: Idempotent create volumes, publish, node publish, node unpublish, unpublish, delete volumes in parallel
+  Scenario Outline: Idempotent create volumes, publish, node stage, node publish, node unpublish, node unstage, unpublish, delete volumes in parallel
     Given a Powermax service
     When I create <numberOfVolumes> volumes in parallel
     And there are no errors
@@ -428,6 +428,10 @@ Feature: Powermax OS CSI interface
     And there are no errors
     And I publish <numberOfVolumes> volumes in parallel
     And there are no errors
+    And I node stage <numberOfVolumes> volumes in parallel
+    And there are no errors
+    And I node stage <numberOfVolumes> volumes in parallel
+    And there are no errors
     And I node publish <numberOfVolumes> volumes in parallel
     And there are no errors
     And I node publish <numberOfVolumes> volumes in parallel
@@ -435,6 +439,10 @@ Feature: Powermax OS CSI interface
     And I node unpublish <numberOfVolumes> volumes in parallel
     And there are no errors
     And I node unpublish <numberOfVolumes> volumes in parallel
+    And there are no errors
+    And I node unstage <numberOfVolumes> volumes in parallel
+    And there are no errors
+    And I node unstage <numberOfVolumes> volumes in parallel
     And there are no errors
     And I unpublish <numberOfVolumes> volumes in parallel
     And there are no errors
@@ -459,9 +467,13 @@ Feature: Powermax OS CSI interface
     And there are no errors
     And when I call PublishVolume "Node1"
     And there are no errors
+    And when I call NodeStageVolume "Node1"
+    And there are no errors
     And when I call NodePublishVolume "Node1"
     And there are no errors
     And when I call NodeUnpublishVolume "Node1"
+    And there are no errors
+    And when I call NodeUnstageVolume "Node1"
     And there are no errors
     And when I call UnpublishVolume "Node1"
     And there are no errors
@@ -472,3 +484,185 @@ Feature: Powermax OS CSI interface
     | fstype | access          | voltype |
     | "xfs"  | "single-writer" | "mount" |
     | "ext4" | "single-writer" | "mount" |
+
+
+@v1.2.0
+  Scenario: Create volume, create snapshot, create volume from snapshot, create volume from volume
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    And I call CreateSnapshot
+    And there are no errors
+    And I call LinkVolumeToSnapshot
+    Then there are no errors
+    And I call LinkVolumeToVolume
+    And there are no errors
+    Then I call DeleteSnapshot
+    And there are no errors
+    And when I call DeleteVolume
+    And there are no errors
+    And when I call DeleteAllVolumes
+    And there are no errors
+
+@v1.2.0
+Scenario: Create 'n' snapshots from a volume in parallel
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    And I create 4 snapshots in parallel
+    And there are no errors
+    Then I call DeleteAllSnapshots
+    And there are no errors
+    And when I call DeleteAllVolumes
+    And there are no errors
+
+@v1.2.0
+Scenario: Create 'n' volumes from snapshot in parallel
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    And I call CreateSnapshot
+    And there are no errors
+    And I create 10 volumes from snapshot in parallel
+    And there are no errors
+    Then I call DeleteSnapshot
+    And there are no errors
+    And when I call DeleteAllVolumes
+    And there are no errors
+
+@v1.2.0
+Scenario: Create 'n' volumes from volume in parallel
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    And I create 4 volumes from volume in parallel
+    And there are no errors
+    Then when I call DeleteAllVolumes
+    And there are no errors
+
+@v1.2.0
+Scenario: Delete snapshot
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    And I call CreateSnapshot
+    And there are no errors
+    And I call DeleteSnapshot
+    And there are no errors
+    Then when I call DeleteVolume
+    And there are no errors
+
+
+@v1.2.0
+Scenario: Delete 'n' snapshots in parallel
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    And I create 10 snapshots in parallel
+    And there are no errors
+    Then I call DeleteSnapshot in parallel
+    And there are no errors
+    Then when I call DeleteVolume
+    And there are no errors
+
+@v1.2.0
+Scenario: Delete Snapshot then the Volume having a snapshot
+  Given a Powermax service
+  And a basic block volume request "integration1" "50"
+  When I call CreateVolume
+  And there are no errors
+  And I create 2 snapshots in parallel
+  And there are no errors
+  Then I call DeleteAllSnapshots
+  And there are no errors
+  Then when I call DeleteVolume
+  And there are no errors
+
+@v1.2.0
+Scenario: Deleting and creating a snapshot concurrently on source and target volumes
+  Given a Powermax service
+  And a basic block volume request "integration1" "50"
+  When I call CreateVolume
+  And there are no errors
+  And I call CreateSnapshot
+  And there are no errors
+  And I call LinkVolumeToSnapshot
+  And there are no errors
+  Then I call DeleteSnapshot and CreateSnapshot in parallel
+  And there are no errors
+  And I call DeleteSnapshot
+  And there are no errors
+  And when I call DeleteAllVolumes
+  And there are no errors
+
+@v1.2.0
+  Scenario: Creating a Snapshot on newly created Volume from Snasphot
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    And I call CreateSnapshot
+    And there are no errors
+    Then I call LinkVolumeToSnapshot
+    And there are no errors
+    And I call CreateSnapshot on new volume
+    And there are no errors
+    Then I call DeleteAllSnapshots
+    And there are no errors
+    And when I call DeleteAllVolumes
+    And there are no errors
+
+@v1.2.0
+  Scenario: Deleting Target Volume then the Source Volume
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    And I call CreateSnapshot
+    And there are no errors
+    Then I call LinkVolumeToSnapshot
+    And there are no errors
+    And I call DeleteTargetVolume
+    And there are no errors
+    Then I call DeleteSnapshot
+    And there are no errors
+    And when I call DeleteAllVolumes
+    And there are no errors
+
+@v1.2.0
+  Scenario: Creating a Volume from newly created Volume from Volume
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    Then I call LinkVolumeToVolume
+    And there are no errors
+    Then I call CreateVolume from new volume
+    And there are no errors
+    And when I call DeleteAllVolumes
+    And there are no errors
+
+@v1.2.0
+  Scenario: Checks if a soft deleted volume is hard deleted
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    And I create 2 snapshots in parallel
+    And there are no errors
+    And when I call DeleteVolume
+    And there are no errors 
+    And I delete a snapshot
+    And there are no errors
+    Then I check if volume exist
+    And there are no errors
+    And I delete a snapshot
+    And there are no errors
+    Then I check if volume is deleted
+    And there are no errors

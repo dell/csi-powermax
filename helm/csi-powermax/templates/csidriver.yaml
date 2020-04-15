@@ -8,4 +8,6 @@ metadata:
     name: powermax
 spec:
     attachRequired: true
+    {{ if eq .Values.kubeversion  "v1.13" }}
     podInfoOnMountVersion: "v1"
+    {{ end }} 

@@ -1,3 +1,17 @@
+/*
+ Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
+
 package service
 
 import (
@@ -16,7 +30,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	types "github.com/dell/csi-powermax/pmax/types/v90"
+	types "github.com/dell/gopowermax/types/v90"
+	"github.com/golang/protobuf/ptypes"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -33,7 +48,9 @@ const (
 	MinVolumeSizeBytes = 51118080
 	// MaxVolumeSizeBytes - This is the maximum volume size in bytes. This is equal to
 	// the minimum number of bytes required to create a 1 TB volume on Powermax arrays
-	MaxVolumeSizeBytes              = 1099512545280
+	MaxVolumeSizeBytes = 1099512545280
+	// GiB is 1 Gibibyte in bytes
+	GiB                             = 1073741824
 	removeModeOnlyMe                = "ONLY_ME"
 	errNoMultiMap                   = "volume not enabled for mapping to multiple hosts"
 	errUnknownAccessType            = "unknown access type is not Block or Mount"
@@ -66,12 +83,17 @@ const (
 	errDeviceInStorageGrp           = "device is a member of a storage group"
 	IscsiTransportProtocol          = "ISCSI"
 	FcTransportProtocol             = "FC"
+	MaxSnapIdentifierLength         = 32
+	SnapDelPrefix                   = "DEL"
+	delSrcTag                       = "DS"
+	SnapLock                        = "snapshot_lock"
 )
 
 // Keys for parameters to CreateVolume
 const (
 	SymmetrixIDParam  = "SYMID"
 	ServiceLevelParam = "ServiceLevel"
+	ContentSource     = "VolumeContentSource"
 	StoragePoolParam  = "SRP"
 	// If storage_group is set, this over-rides the generation of the Storage Group from SLO/SRP
 	StorageGroupParam      = "StorageGroup"
@@ -124,6 +146,9 @@ var (
 
 	// A map of the symmetrixID to the pmaxCachedInformation structure for that pmax
 	pmaxCache map[string]*pmaxCachedInformation
+
+	// Quickly fail if there is too much load
+	controllerPendingState pendingState
 )
 
 func (s *service) GetPortIdentifier(symID string, dirPortKey string) (string, error) {
@@ -200,7 +225,9 @@ func (s *service) CreateVolume(
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
-		reqID = headers["csi.requestid"][0]
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
 	}
 
 	if err := s.requireProbe(ctx); err != nil {
@@ -256,11 +283,74 @@ func (s *service) CreateVolume(
 		log.Error("Volume AccessibilityRequirements is not supported")
 		return nil, status.Errorf(codes.InvalidArgument, "Volume AccessibilityRequirements is not supported")
 	}
-	// Volume content source is not supported until we do Snapshots or Clones
+
+	// Get the required capacity
+	cr := req.GetCapacityRange()
+	requiredCylinders, err := s.validateVolSize(cr, symmetrixID, storagePoolID)
+	if err != nil {
+		return nil, err
+	}
+
+	var srcVolID, srcSnapID string
+	var symID, SrcDevID, snapID string
+	var srcVol *types.Volume
+	var volContent string
+	// When content source is specified, the size of the new volume
+	// is determined based on the size of the source volume in the
+	// snapshot. The size of the new volume to be created should be
+	// greater than or equal to the size of snapshot source
 	contentSource := req.GetVolumeContentSource()
 	if contentSource != nil {
-		log.Error("Volume VolumeContentSource is not supported")
-		return nil, status.Error(codes.InvalidArgument, "Volume VolumeContentSource is not supported")
+		switch req.GetVolumeContentSource().GetType().(type) {
+		case *csi.VolumeContentSource_Volume:
+			srcVolID = req.GetVolumeContentSource().GetVolume().GetVolumeId()
+			if srcVolID != "" {
+				_, symID, SrcDevID, err = s.parseCsiID(srcVolID)
+				if err != nil {
+					// We couldn't comprehend the identifier.
+					log.Error("Could not parse CSI VolumeId: " + srcVolID)
+					return nil, status.Error(codes.InvalidArgument, "Source volume identifier not in supported format")
+				}
+				volContent = srcVolID
+			}
+			break
+		case *csi.VolumeContentSource_Snapshot:
+			srcSnapID = req.GetVolumeContentSource().GetSnapshot().GetSnapshotId()
+			if srcSnapID != "" {
+				snapID, symID, SrcDevID, err = s.parseCsiID(srcSnapID)
+				if err != nil {
+					// We couldn't comprehend the identifier.
+					log.Error("Snapshot identifier not in supported format: " + srcSnapID)
+					return nil, status.Error(codes.InvalidArgument, "Snapshot identifier not in supported format")
+				}
+				volContent = snapID
+			}
+			break
+		default:
+			return nil, status.Error(codes.InvalidArgument, "VolumeContentSource is missing volume and snapshot source")
+		}
+		// check snapshot is licensed
+		if err := s.IsSnapshotLicensed(symID); err != nil {
+			log.Error("Error - " + err.Error())
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+
+	if SrcDevID != "" && symID != "" {
+		if symID != symmetrixID {
+			log.Error("The volume content source is in different PowerMax array")
+			return nil, status.Errorf(codes.Internal, "The volume content source is in different PowerMax array")
+		}
+		srcVol, err = s.adminClient.GetVolumeByID(symmetrixID, SrcDevID)
+		if err != nil {
+			log.Error("Volume content source volume couldn't be found in the array: " + err.Error())
+			return nil, status.Errorf(codes.Internal, "Volume content source volume couldn't be found in the array: %s", err.Error())
+		}
+		// reset the volume size to match with source
+		if requiredCylinders < srcVol.CapacityCYL {
+			log.Error("Capacity specified is smaller than the source")
+			return nil, status.Error(codes.InvalidArgument, "Requested capacity is smaller than the source")
+		}
 	}
 
 	// Validate volume capabilities
@@ -270,13 +360,6 @@ func (s *service) CreateVolume(
 		if isBlock && !s.opts.EnableBlock {
 			return nil, status.Error(codes.InvalidArgument, "Block Volume Capability is not supported")
 		}
-	}
-
-	// Get the required capacity
-	cr := req.GetCapacityRange()
-	requiredCylinders, err := s.validateVolSize(cr, symmetrixID, storagePoolID)
-	if err != nil {
-		return nil, err
 	}
 
 	// Get the volume name
@@ -317,6 +400,8 @@ func (s *service) CreateVolume(
 		"requiredCylinders": requiredCylinders,
 		"storageGroupName":  storageGroupName,
 		"CSIRequestID":      reqID,
+		"SourceVolume":      srcVolID,
+		"SourceSnapshot":    srcSnapID,
 	}
 	log.WithFields(fields).Info("Executing CreateVolume with following fields")
 
@@ -332,7 +417,7 @@ func (s *service) CreateVolume(
 		}
 	}
 
-	// Idempotency test. We will read the volume and check for:
+	// Idempotency test. We w	ill read the volume and check for:
 	// 1. Existence of a volume with matching volume name
 	// 2. Matching cylinderSize
 	// 3. Is a member of the storage group
@@ -374,6 +459,7 @@ func (s *service) CreateVolume(
 				ServiceLevelParam: serviceLevel,
 				StoragePoolParam:  storagePoolID,
 				CapacityGB:        fmt.Sprintf("%.2f", vol.CapacityGB),
+				ContentSource:     volContent,
 				//Format the time output
 				"CreationTime": time.Now().Format("20060102150405"),
 			}
@@ -381,6 +467,7 @@ func (s *service) CreateVolume(
 			csiResp := &csi.CreateVolumeResponse{
 				Volume: volResp,
 			}
+			volResp.ContentSource = contentSource
 			return csiResp, nil
 		}
 	}
@@ -388,20 +475,39 @@ func (s *service) CreateVolume(
 		log.Error("A volume with the same name " + volumeName + "exists but has a different size than requested. Use a different name.")
 		return nil, status.Errorf(codes.AlreadyExists, "A volume with the same name %s exists but has a different size than requested. Use a different name.", volumeName)
 	}
+
 	// Let's create the volume
 	vol, err := s.adminClient.CreateVolumeInStorageGroup(symmetrixID, storageGroupName, volumeIdentifier, requiredCylinders)
 	if err != nil {
 		log.Error(fmt.Sprintf("Could not create volume: %s: %s", volumeName, err.Error()))
 		return nil, status.Errorf(codes.Internal, "Could not create volume: %s: %s", volumeName, err.Error())
 	}
+	// If volume content source is specified, initiate no_copy to newly created volume
+	if contentSource != nil {
+		if srcVolID != "" {
+			//Build the temporary snapshot identifier
+			snapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
+			err = s.LinkVolumeToVolume(symID, srcVol, vol.VolumeID, snapID, reqID)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
+			}
+		} else if srcSnapID != "" {
+			err = s.LinkVolumeToSnapshot(symID, srcVol.VolumeID, vol.VolumeID, snapID, reqID)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
+			}
+		}
+	}
 	// Formulate the return response
 	vol.VolumeID = fmt.Sprintf("%s-%s-%s", volumeIdentifier, symmetrixID, vol.VolumeID)
 	volResp := s.getCSIVolume(vol)
+	volResp.ContentSource = contentSource
 	//Set the volume context
 	attributes := map[string]string{
 		ServiceLevelParam: serviceLevel,
 		StoragePoolParam:  storagePoolID,
 		CapacityGB:        fmt.Sprintf("%.2f", vol.CapacityGB),
+		ContentSource:     volContent,
 		//Format the time output
 		"CreationTime": time.Now().Format("20060102150405"),
 	}
@@ -409,7 +515,6 @@ func (s *service) CreateVolume(
 	csiResp := &csi.CreateVolumeResponse{
 		Volume: volResp,
 	}
-
 	return csiResp, nil
 }
 
@@ -444,7 +549,7 @@ func (s *service) validateVolSize(cr *csi.CapacityRange, symmetrixID, storagePoo
 		remainingCapInGB := totalSrpCapInGB - usedSrpCapInGB
 		// maxAvailBytes is the remaining capacity in bytes
 		maxAvailBytes = int64(remainingCapInGB) * 1024 * 1024 * 1024
-		log.Printf("totalSrcCapInGB %f usedSrpCapInGB %f remainingCapInGB %f maxAvailBytes %d",
+		log.Infof("totalSrcCapInGB %f usedSrpCapInGB %f remainingCapInGB %f maxAvailBytes %d",
 			totalSrpCapInGB, usedSrpCapInGB, remainingCapInGB, maxAvailBytes)
 	}
 
@@ -605,24 +710,24 @@ func (s *service) createCSIVolumeID(volumePrefix, volumeName, symID, devID strin
 	return fmt.Sprintf("%s%s-%s-%s-%s", CsiVolumePrefix, s.getClusterPrefix(), volumeName, symID, devID)
 }
 
-// parseCSVolumeID returns the VolumeName, Array ID, and Device ID given the CSI ID.
+// parseCsiID returns the VolumeName, Array ID, and Device ID given the CSI ID.
 // The last 19 characters of the CSI volume ID are special:
 //      A dash '-', followed by 12 digits of array serial number, followed by a dash, followed by 5 digits of array device id.
 //	That's 19 characters total on the right end.
 // Also an error returned if mal-formatted.
-func (s *service) parseCSIVolumeID(csiVolumeID string) (
+func (s *service) parseCsiID(csiID string) (
 	volName string, arrayID string, devID string, err error) {
-	if csiVolumeID == "" {
+	if csiID == "" {
 		err = fmt.Errorf("A Volume ID is required for the request")
 		return
 	}
 	// get the Device ID and Array ID
-	idComponents := strings.Split(csiVolumeID, "-")
+	idComponents := strings.Split(csiID, "-")
 	// Protect against mal-formed component
 	numOfIDComponents := len(idComponents)
 	if numOfIDComponents < 3 {
 		// Not well formed
-		err = fmt.Errorf("The CSI Volume ID %s is not formed correctly", csiVolumeID)
+		err = fmt.Errorf("The CSI ID %s is not formed correctly", csiID)
 		return
 	}
 	// Device ID is the last token
@@ -632,14 +737,14 @@ func (s *service) parseCSIVolumeID(csiVolumeID string) (
 
 	// The two here is for two dashes - one at front of array ID and one between the Array ID and Device ID
 	lengthOfTrailer := len(devID) + len(arrayID) + 2
-	length := len(csiVolumeID)
+	length := len(csiID)
 	if length <= lengthOfTrailer+2 {
 		// Not well formed...
-		err = fmt.Errorf("The CSI Volume ID %s is not formed correctly", csiVolumeID)
+		err = fmt.Errorf("The CSI ID %s is not formed correctly", csiID)
 		return
 	}
 	// calculate the volume name, which is everything before the array ID
-	volName = csiVolumeID[0 : length-lengthOfTrailer]
+	volName = csiID[0 : length-lengthOfTrailer]
 	return
 }
 
@@ -648,10 +753,25 @@ func (s *service) DeleteVolume(
 	req *csi.DeleteVolumeRequest) (
 	*csi.DeleteVolumeResponse, error) {
 
+	id := req.GetVolumeId()
+	volName, symID, devID, err := s.parseCsiID(id)
+	if err != nil {
+		// We couldn't comprehend the identifier.
+		log.Info("Could not parse CSI VolumeId: " + id)
+		return &csi.DeleteVolumeResponse{}, nil
+	}
+	var volumeID volumeIDType = volumeIDType(id)
+	if err := volumeID.checkAndUpdatePendingState(&controllerPendingState); err != nil {
+		return nil, err
+	}
+	defer volumeID.clearPending(&controllerPendingState)
+
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
-		reqID = headers["csi.requestid"][0]
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
 	}
 
 	if err := s.requireProbe(ctx); err != nil {
@@ -659,13 +779,6 @@ func (s *service) DeleteVolume(
 		return nil, err
 	}
 
-	id := req.GetVolumeId()
-	volName, symID, devID, err := s.parseCSIVolumeID(id)
-	if err != nil {
-		// We couldn't comprehend the identifier.
-		log.Info("Could not parse CSI VolumeId: " + id)
-		return &csi.DeleteVolumeResponse{}, nil
-	}
 	// log all parameters used in CreateVolume call
 	fields := map[string]interface{}{
 		"SymmetrixID":  symID,
@@ -676,7 +789,7 @@ func (s *service) DeleteVolume(
 	log.WithFields(fields).Info("Executing DeleteVolume with following fields")
 
 	vol, err := s.adminClient.GetVolumeByID(symID, devID)
-	fmt.Printf("vol: %#v, error: %#v\n", vol, err)
+	log.Debugf("vol: %#v, error: %#v\n", vol, err)
 	if err != nil {
 		if strings.Contains(err.Error(), cannotBeFound) || strings.Contains(err.Error(), ignoredViaAWhitelist) {
 			// The volume is already deleted
@@ -694,6 +807,7 @@ func (s *service) DeleteVolume(
 			vol.VolumeIdentifier, volName))
 		return &csi.DeleteVolumeResponse{}, nil
 	}
+
 	// find if volume is present in any masking view
 	for _, sgid := range vol.StorageGroupIDList {
 		sg, err := s.adminClient.GetStorageGroup(symID, sgid)
@@ -707,36 +821,40 @@ func (s *service) DeleteVolume(
 			return nil, status.Errorf(codes.Internal, "Volume is in use")
 		}
 	}
-	// Fetch the uCode version details
-	isPostElmSR, err := s.isPostElmSR(symID)
+
+	// Verify if volume is snapshot source
+	isSnapSrc, err := s.IsSnapshotSource(symID, devID)
 	if err != nil {
-		log.Error("Failed to get symmetrix uCode version details")
-		return nil, status.Errorf(codes.Internal, "Failed to fetch uCode version details")
+		log.Error("Failed to determine volume as a snapshot source: Error - ", err.Error())
+		return nil, status.Errorf(codes.Internal, err.Error())
 	}
-	// Rename the volume before delete
-	// If the name length goes beyond 64 characters, Unisphere can truncate
-	// from the end. The objective is to retrieve volumes marked for deletion from
-	// Symmetrix if the plugin abruptly shutdown
-	newVolName := fmt.Sprintf("%s%s", DeletionPrefix, volName)
-	if len(newVolName) > MaxVolIdentifierLength {
-		newVolName = newVolName[:MaxVolIdentifierLength]
+	if isSnapSrc {
+		//Execute soft delete i.e. return DeleteVolume success to the CO/k8s
+		//after appending the volumeID with 'DS' tag. While appending the tag, ensure
+		//that length of volume name shouldn't exceed MaxVolIdentifierLength
+
+		var newVolName string
+		//truncLen is number of characters to truncate if new volume name with DS tag exceeds
+		//MaxVolIdentifierLength
+		truncLen := len(volName) + len(delSrcTag) - MaxVolIdentifierLength
+		if truncLen > 0 {
+			//Truncate volName to fit in '-' and 'DS' tag
+			volName = volName[:len(volName)-truncLen]
+		}
+		newVolName = fmt.Sprintf("%s-%s", volName, delSrcTag)
+		vol, err = s.adminClient.RenameVolume(symID, devID, newVolName)
+		if err != nil || vol == nil {
+			log.Error(fmt.Sprintf("DeleteVolume: Could not rename volume %s", id))
+			return nil, status.Errorf(codes.Internal, "Failed to rename volume")
+		}
+		log.Infof("Soft deletion of source volume (%s) is successful", volName)
+		return &csi.DeleteVolumeResponse{}, nil
 	}
-	vol, err = s.adminClient.RenameVolume(symID, devID, newVolName)
-	if err != nil || vol == nil {
-		log.Error(fmt.Sprintf("DeleteVolume: Could not rename volume %s", id))
-		return nil, status.Errorf(codes.Internal, "Failed to rename volume")
+	err = s.MarkVolumeForDeletion(symID, vol)
+	if err != nil {
+		log.Error("RequestSoftVolDelete failed with error - ", err.Error())
+		return nil, status.Errorf(codes.Internal, "Failed marking volume for deletion with error (%s)", err.Error())
 	}
-
-	var delReq deletionWorkerRequest
-
-	delReq.volumeID = vol.VolumeID
-	delReq.volumeName = vol.VolumeIdentifier
-	delReq.symmetrixID = symID
-	delReq.volumeSizeInCylinders = int64(vol.CapacityCYL)
-	delReq.skipDeallocate = isPostElmSR
-	delWorker.requestDeletion(&delReq)
-	log.Printf("Request dispatched to delete worker thread for %s/%s", vol.VolumeID, symID)
-
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
@@ -748,20 +866,17 @@ func (s *service) ControllerPublishVolume(
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
-		reqID = headers["csi.requestid"][0]
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
 	}
 
 	volumeContext := req.GetVolumeContext()
 	if volumeContext != nil {
-		log.Printf("VolumeContext:")
+		log.Infof("VolumeContext:")
 		for key, value := range volumeContext {
-			log.Printf("    [%s]=%s", key, value)
+			log.Infof("    [%s]=%s", key, value)
 		}
-	}
-
-	if err := s.requireProbe(ctx); err != nil {
-		log.Error("Failed to probe with error: " + err.Error())
-		return nil, err
 	}
 
 	volID := req.GetVolumeId()
@@ -769,6 +884,16 @@ func (s *service) ControllerPublishVolume(
 		log.Error("volume ID is required")
 		return nil, status.Error(codes.InvalidArgument,
 			"volume ID is required")
+	}
+	var volumeID volumeIDType = volumeIDType(volID)
+	if err := volumeID.checkAndUpdatePendingState(&controllerPendingState); err != nil {
+		return nil, err
+	}
+	defer volumeID.clearPending(&controllerPendingState)
+
+	if err := s.requireProbe(ctx); err != nil {
+		log.Error("Failed to probe with error: " + err.Error())
+		return nil, err
 	}
 
 	nodeID := req.GetNodeId()
@@ -846,9 +971,8 @@ func (s *service) ControllerPublishVolume(
 			}
 		}
 	}
-
-	AcquireLock(tgtStorageGroupID, reqID)
-	defer ReleaseLock(tgtStorageGroupID, reqID)
+	lockNum := RequestLock(tgtStorageGroupID, reqID)
+	defer ReleaseLock(tgtStorageGroupID, reqID, lockNum)
 
 	publishContext := map[string]string{
 		PublishContextDeviceWWN: vol.WWN,
@@ -900,10 +1024,7 @@ func (s *service) ControllerPublishVolume(
 				// Do a double check for the SG as well
 				if volumeAlreadyInSG {
 					log.Debug("volume already mapped")
-					s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID)
-					return &csi.ControllerPublishVolumeResponse{
-						PublishContext: publishContext,
-					}, nil
+					return s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID)
 				}
 				log.Error(fmt.Sprintf("ControllerPublishVolume: Masking view - %s has conflicting SG", tgtMaskingViewID))
 				return nil, status.Errorf(codes.FailedPrecondition,
@@ -928,10 +1049,7 @@ func (s *service) ControllerPublishVolume(
 			tgtMaskingView.StorageGroupID == tgtStorageGroupID {
 			if volumeInMaskingView {
 				log.Debug("volume already mapped")
-				s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID)
-				return &csi.ControllerPublishVolumeResponse{
-					PublishContext: publishContext,
-				}, nil
+				return s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID)
 			}
 			//Add the volume to masking view
 			err := s.adminClient.AddVolumesToStorageGroup(symID, tgtStorageGroupID, devID)
@@ -1003,14 +1121,15 @@ func (s *service) ControllerPublishVolume(
 			return nil, status.Error(codes.Internal, "Failed to create masking view")
 		}
 	}
-	s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID)
 
-	return &csi.ControllerPublishVolumeResponse{
-		PublishContext: publishContext}, nil
+	return s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID)
 }
 
-// Adds the LUN_ADDRESS and SCSI target information to the PublishContext by looking at MaskingView connections
-func (s *service) updatePublishContext(publishContext map[string]string, symID, tgtMaskingViewID, deviceID string) {
+// Adds the LUN_ADDRESS and SCSI target information to the PublishContext by looking at MaskingView connections.
+// The return arguments are suitable for directly passing back to the grpc called.
+// This routine is careful to throw errors if it cannot come up with a valid context, because having ControllerPublish
+// succeed but without valid context will only cause the NodeStage or NodePublish to fail.
+func (s *service) updatePublishContext(publishContext map[string]string, symID, tgtMaskingViewID, deviceID string) (*csi.ControllerPublishVolumeResponse, error) {
 	// We ignore errors here; adding the HostLunAddress to the context is optional (could be multiple.)
 	// Adding target information is also optional as NodePublish may succeed without target information
 	var connections []*types.MaskingViewConnection
@@ -1018,7 +1137,7 @@ func (s *service) updatePublishContext(publishContext map[string]string, symID, 
 	connections, err = s.adminClient.GetMaskingViewConnections(symID, tgtMaskingViewID, deviceID)
 	if err != nil {
 		log.Error("Could not get MV Connections: " + err.Error())
-		return
+		return nil, status.Errorf(codes.Internal, "PublishContext: Could not get MV Connections: %s", tgtMaskingViewID)
 	}
 	lunid := ""
 	dirPorts := make([]string, 0)
@@ -1032,8 +1151,8 @@ func (s *service) updatePublishContext(publishContext map[string]string, symID, 
 			dirPorts = appendIfMissing(dirPorts, conn.DirectorPort)
 
 		} else if lunid != conn.HostLUNAddress {
-			log.Printf("MV Connection: Multiple HostLUNAddress values")
-			return
+			log.Infof("MV Connection: Multiple HostLUNAddress values")
+			return nil, status.Error(codes.Internal, "PublishContext: MV Connection has multiple HostLUNAddress values")
 		} else {
 			// Add each port per entry for the volume in masking view connections
 			dirPorts = appendIfMissing(dirPorts, conn.DirectorPort)
@@ -1048,12 +1167,18 @@ func (s *service) updatePublishContext(publishContext map[string]string, symID, 
 		portIdentifiers += portIdentifier + ","
 	}
 	if portIdentifiers == "" {
-		log.Errorf("Failed to fetch port details for all director ports which are part of masking view: %s", tgtMaskingViewID)
-	} else {
-		log.Debugf("Port identifiers in publish context: %s", portIdentifiers)
-		publishContext[PortIdentifiers] = portIdentifiers
+		log.Errorf("Failed to fetch port details for any director ports which are part of masking view: %s", tgtMaskingViewID)
+		return nil, status.Errorf(codes.Internal,
+			"PublishContext: Failed to fetch port details for any director ports which are part of masking view: %s", tgtMaskingViewID)
+	}
+	log.Debugf("Port identifiers in publish context: %s", portIdentifiers)
+	publishContext[PortIdentifiers] = portIdentifiers
+
+	if lunid == "" {
+		return nil, status.Error(codes.Internal, "PublishContext: Could not determine HostLUNAddress")
 	}
 	publishContext[PublishContextLUNAddress] = lunid
+	return &csi.ControllerPublishVolumeResponse{PublishContext: publishContext}, nil
 }
 
 // IsNodeISCSI - Takes a sym id, node id as input and based on the transport protocol setting
@@ -1122,7 +1247,7 @@ func (s *service) IsNodeISCSI(symID, nodeID string) (bool, error) {
 // on array, device ID, volume structure
 func (s *service) GetVolumeByID(volID string) (string, string, *types.Volume, error) {
 	// parse the volume and get the array serial and volume ID
-	volName, symID, devID, err := s.parseCSIVolumeID(volID)
+	volName, symID, devID, err := s.parseCsiID(volID)
 	if err != nil {
 		return "", "", nil, status.Errorf(codes.InvalidArgument,
 			"volID: %s malformed. Error: %s", volID, err.Error())
@@ -1200,12 +1325,9 @@ func (s *service) ControllerUnpublishVolume(
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
-		reqID = headers["csi.requestid"][0]
-	}
-
-	if err := s.requireProbe(ctx); err != nil {
-		log.Error("Failed to probe with error: " + err.Error())
-		return nil, err
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
 	}
 
 	volID := req.GetVolumeId()
@@ -1214,12 +1336,22 @@ func (s *service) ControllerUnpublishVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume ID is required")
 	}
+	var volumeID volumeIDType = volumeIDType(volID)
+	if err := volumeID.checkAndUpdatePendingState(&controllerPendingState); err != nil {
+		return nil, err
+	}
+	defer volumeID.clearPending(&controllerPendingState)
 
 	nodeID := req.GetNodeId()
 	if nodeID == "" {
 		log.Error("Node ID is required")
 		return nil, status.Error(codes.InvalidArgument,
 			"Node ID is required")
+	}
+
+	if err := s.requireProbe(ctx); err != nil {
+		log.Error("Failed to probe with error: " + err.Error())
+		return nil, err
 	}
 
 	//Fetch the volume details from array
@@ -1272,8 +1404,8 @@ func (s *service) ControllerUnpublishVolume(
 		tgtStorageGroupID = tgtISCSIStorageGroupID
 		tgtMaskingViewID = tgtISCSIMaskingViewID
 	}
-	AcquireLock(tgtStorageGroupID, reqID)
-	defer ReleaseLock(tgtStorageGroupID, reqID)
+	lockNum := RequestLock(tgtStorageGroupID, reqID)
+	defer ReleaseLock(tgtStorageGroupID, reqID, lockNum)
 
 	tempStorageGroupList := []string{tgtStorageGroupID}
 	maskingViewIDs, storageGroups, err := s.GetMaskingViewAndSGDetails(symID, tempStorageGroupList)
@@ -1335,7 +1467,9 @@ func (s *service) ValidateVolumeCapabilities(
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
-		reqID = headers["csi.requestid"][0]
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
 	}
 
 	if err := s.requireProbe(ctx); err != nil {
@@ -1345,7 +1479,7 @@ func (s *service) ValidateVolumeCapabilities(
 
 	volID := req.GetVolumeId()
 	// parse the volume and get the array serial and volume ID
-	volName, symID, devID, err := s.parseCSIVolumeID(volID)
+	volName, symID, devID, err := s.parseCsiID(volID)
 	if err != nil {
 		log.Error(fmt.Sprintf("volID: %s malformed. Error: %s", volID, err.Error()))
 		return nil, status.Errorf(codes.InvalidArgument,
@@ -1538,7 +1672,9 @@ func (s *service) GetCapacity(
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
-		reqID = headers["csi.requestid"][0]
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
 	}
 
 	if err := s.requireProbe(ctx); err != nil {
@@ -1554,7 +1690,7 @@ func (s *service) GetCapacity(
 			log.Error("GetVolumeCapabilities failed with error: " + reason)
 			return nil, status.Errorf(codes.InvalidArgument, reason)
 		}
-		fmt.Printf("Supported capabilities - Error(%s)\n", reason)
+		log.Infof("Supported capabilities - Error(%s)\n", reason)
 	}
 
 	params := req.GetParameters()
@@ -1607,7 +1743,7 @@ func (s *service) getStoragePoolCapacities(symmetrixID, storagePoolID string) (*
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Could not retrieve StoragePool %s. Error(%s)", storagePoolID, err.Error())
 	}
-	log.Printf("StoragePoolCapacities: %#v", srp.SrpCap)
+	log.Infof("StoragePoolCapacities: %#v", srp.SrpCap)
 	return srp.SrpCap, nil
 }
 
@@ -1636,6 +1772,13 @@ func (s *service) ControllerGetCapabilities(
 				Type: &csi.ControllerServiceCapability_Rpc{
 					Rpc: &csi.ControllerServiceCapability_RPC{
 						Type: csi.ControllerServiceCapability_RPC_GET_CAPACITY,
+					},
+				},
+			},
+			{
+				Type: &csi.ControllerServiceCapability_Rpc{
+					Rpc: &csi.ControllerServiceCapability_RPC{
+						Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
 					},
 				},
 			},
@@ -1681,6 +1824,7 @@ func (s *service) controllerProbe(ctx context.Context) error {
 }
 
 func (s *service) requireProbe(ctx context.Context) error {
+	controllerPendingState.maxPending = 6
 	if s.adminClient == nil {
 		if !s.opts.AutoProbe {
 			return status.Error(codes.FailedPrecondition,
@@ -1816,17 +1960,191 @@ func (s *service) CreateSnapshot(
 	ctx context.Context,
 	req *csi.CreateSnapshotRequest) (
 	*csi.CreateSnapshotResponse, error) {
+	// Requires probe
+	if err := s.requireProbe(ctx); err != nil {
+		return nil, err
+	}
 
-	return nil, status.Error(codes.Unimplemented, "")
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+
+	// Get the snapshot name
+	snapName := req.GetName()
+	if snapName == "" {
+		log.Error("Snapshot name cannot be empty")
+		return nil, status.Error(codes.InvalidArgument,
+			"Snapshot name cannot be empty")
+	}
+
+	// Get the snapshot prefix from environment
+	maxLength := MaxSnapIdentifierLength - len(s.getClusterPrefix()) - len(CsiVolumePrefix) - 5
+	//First get the short snap name
+	shortSnapName := truncateString(snapName, maxLength)
+	//Form the snapshot identifier using short snap name
+	snapID := fmt.Sprintf("%s%s-%s", CsiVolumePrefix, s.getClusterPrefix(), shortSnapName)
+
+	// Validate snapshot volume
+	volID := req.GetSourceVolumeId()
+	if volID == "" {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"Source volume ID is required for creating snapshot")
+	}
+	_, symID, devID, err := s.parseCsiID(volID)
+	if err != nil {
+		// We couldn't comprehend the identifier.
+		log.Error("Could not parse CSI VolumeId: " + volID)
+		return nil, status.Error(codes.InvalidArgument,
+			"Could not parse CSI VolumeId")
+	}
+
+	// check snapshot is licensed
+	if err := s.IsSnapshotLicensed(symID); err != nil {
+		log.Error("Error - " + err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	vol, err := s.adminClient.GetVolumeByID(symID, devID)
+	if err != nil {
+		log.Error("Could not find device: " + devID)
+		return nil, status.Error(codes.InvalidArgument,
+			"Could not find source volume on the array")
+	}
+
+	// Is it an idempotent request?
+	snapInfo, err := s.adminClient.GetSnapshotInfo(symID, devID, snapID)
+	if err == nil && snapInfo.VolumeSnapshotSource != nil {
+		snapID = fmt.Sprintf("%s-%s-%s", snapID, symID, devID)
+		snapshot := &csi.Snapshot{
+			SnapshotId:     snapID,
+			SourceVolumeId: volID, ReadyToUse: true,
+			CreationTime: ptypes.TimestampNow()}
+		resp := &csi.CreateSnapshotResponse{Snapshot: snapshot}
+		return resp, nil
+	}
+
+	// log all parameters used in CreateSnapshot call
+	fields := map[string]interface{}{
+		"CSIRequestID": reqID,
+		"SymmetrixID":  symID,
+		"SnapshotID":   snapID,
+		"DeviceID":     devID,
+	}
+	log.WithFields(fields).Info("Executing CreateSnapshot with following fields")
+
+	// Create snapshot
+	lockNumber := RequestLock(SnapLock, reqID)
+	snap, err := s.CreateSnapshotFromVolume(symID, vol, snapID, 0, reqID)
+	ReleaseLock(SnapLock, reqID, lockNumber)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "Failed to create snapshot: %s", err.Error())
+	}
+
+	snapID = fmt.Sprintf("%s-%s-%s", snap.SnapshotName, symID, devID)
+	// populate response structure
+	snapshot := &csi.Snapshot{
+		SnapshotId:     snapID,
+		SourceVolumeId: volID, ReadyToUse: true,
+		CreationTime: ptypes.TimestampNow()}
+	resp := &csi.CreateSnapshotResponse{Snapshot: snapshot}
+
+	log.Debugf("Created snapshot: SnapshotId %s SourceVolumeId %s CreationTime %s",
+		snapshot.SnapshotId, snapshot.SourceVolumeId, ptypes.TimestampString(snapshot.CreationTime))
+	return resp, nil
 }
 
+// DeleteSnapshot deletes a snapshot
 func (s *service) DeleteSnapshot(
 	ctx context.Context,
 	req *csi.DeleteSnapshotRequest) (
 	*csi.DeleteSnapshotResponse, error) {
+	// Requires probe
+	if err := s.requireProbe(ctx); err != nil {
+		return nil, err
+	}
 
-	return nil, status.Error(codes.Unimplemented, "")
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
 
+	// Validate snapshot volume
+	id := req.GetSnapshotId()
+	if id == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "Snapshot ID to be deleted is required")
+	}
+	snapID, symID, devID, err := s.parseCsiID(id)
+	if err != nil {
+		// We couldn't comprehend the identifier.
+		log.Error("Could not parse CSI snapshot identifier: " + id)
+		return nil, status.Error(codes.InvalidArgument, "Snapshot name is not in supported format")
+	}
+
+	// check snapshot is licensed
+	if err := s.IsSnapshotLicensed(symID); err != nil {
+		log.Error("Error - " + err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Idempotency check
+	snapInfo, err := s.adminClient.GetSnapshotInfo(symID, devID, snapID)
+	if err != nil {
+		//Unisphere returns "does not exist"
+		//when the snapshot is not found for Elm-SR ucode(9.0)
+		if strings.Contains(err.Error(), "does not exist") {
+			return &csi.DeleteSnapshotResponse{}, nil
+		}
+		// Snapshot to be deleted couldn't be found in the system.
+		log.Errorf("GetSnapshotInfo() failed with error (%s) for snapshot (%s)", err.Error(), snapID)
+		return nil, status.Errorf(codes.Internal,
+			"GetSnapshotInfo() failed with error (%s) for snapshot (%s)", err.Error(), snapID)
+	}
+	//Unisphere return success and an empty object
+	//when the snapshot is not found for Foxtail ucode(9.1)
+	if snapInfo.VolumeSnapshotSource == nil {
+		return &csi.DeleteSnapshotResponse{}, nil
+	}
+
+	// log all parameters used in DeleteSnapshot call
+	fields := map[string]interface{}{
+		"SymmetrixID":    symID,
+		"SnapshotName":   snapID,
+		"SourceDeviceID": devID,
+		"CSIRequestID":   reqID,
+	}
+	log.WithFields(fields).Info("Executing DeleteSnapshot with following fields")
+
+	lockHandle := fmt.Sprintf("%s%s", devID, symID)
+	lockNum := RequestLock(lockHandle, reqID)
+	defer ReleaseLock(lockHandle, reqID, lockNum)
+	// mark the snapshot for deletion by changing the snapshot name to mark for deletion
+	newSnapID, err := s.MarkSnapshotForDeletion(symID, snapID, devID)
+	if err != nil {
+		log.Errorf("Failed to rename snapshot (%s) error (%s)", snapID, err.Error())
+		return nil, status.Errorf(codes.Internal, "Failed to rename snapshot - Error(%s)", err.Error())
+	}
+	err = s.UnlinkAndTerminate(symID, devID, newSnapID)
+	if err != nil {
+		//Push the undeleted snapshot for cleanup
+		var cleanReq snapCleanupRequest
+		cleanReq.snapshotID = newSnapID
+		cleanReq.symmetrixID = symID
+		cleanReq.volumeID = devID
+		cleanReq.requestID = reqID
+		snapCleaner.requestCleanup(&cleanReq)
+		log.Errorf("Returning success though it failed to terminate snapshot (%s) with error (%s)",
+			snapID, err.Error())
+		return &csi.DeleteSnapshotResponse{}, nil
+	}
+	log.Debugf("Deleted snapshot for SnapshotId (%s) and SourceVolumeId (%s)", snapID, devID)
+	return &csi.DeleteSnapshotResponse{}, nil
 }
 
 // mergeStringMaps copies the additional key/value pairs into the base string map.
@@ -1847,4 +2165,39 @@ func mergeStringMaps(base map[string]string, additional map[string]string) map[s
 
 func (s *service) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
+}
+
+//MarkVolumeForDeletion renames the volume with deletion prefix and sends a
+//request to deletion_worker queue
+func (s *service) MarkVolumeForDeletion(symID string, vol *types.Volume) error {
+	if vol == nil {
+		return fmt.Errorf("MarkVolumeForDeletion: Null volume object")
+	}
+	oldVolName := vol.VolumeIdentifier
+	// Rename the volume to mark it for deletion
+	newVolName := fmt.Sprintf("%s%s", DeletionPrefix, oldVolName)
+	if len(newVolName) > MaxVolIdentifierLength {
+		newVolName = newVolName[:MaxVolIdentifierLength]
+	}
+	vol, err := s.adminClient.RenameVolume(symID, vol.VolumeID, newVolName)
+	if err != nil || vol == nil {
+		return fmt.Errorf("MarkVolumeForDeletion: Failed to rename volume %s", oldVolName)
+	}
+
+	// Fetch the uCode version details
+	isPostElmSR, err := s.isPostElmSR(symID)
+	if err != nil {
+		return fmt.Errorf("Failed to get symmetrix uCode version details")
+	}
+
+	// Create a delete worker request for this volume
+	var delReq deletionWorkerRequest
+	delReq.volumeID = vol.VolumeID
+	delReq.volumeName = vol.VolumeIdentifier
+	delReq.symmetrixID = symID
+	delReq.volumeSizeInCylinders = int64(vol.CapacityCYL)
+	delReq.skipDeallocate = isPostElmSR
+	delWorker.requestDeletion(&delReq)
+	log.Infof("Request dispatched to delete worker thread for %s/%s", vol.VolumeID, symID)
+	return nil
 }

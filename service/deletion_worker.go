@@ -1,3 +1,17 @@
+/*
+ Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
+
 package service
 
 import (
@@ -8,13 +22,14 @@ import (
 	"sync"
 	"time"
 
-	types "github.com/dell/csi-powermax/pmax/types/v90"
+	types "github.com/dell/gopowermax/types/v90"
 	log "github.com/sirupsen/logrus"
 )
 
 const (
 	volDeleteKey                           = "_DELcsi"
 	deletionStateQueued                    = "QUEUED"
+	deletionStateRemoveSnapshot            = "REMOVE_SNAPSHOT"
 	deletionStateDisassociateSG            = "DISASSOCIATE_STORAGE_GROUPS"
 	deletionStateDeletingTracks            = "DELETING_TRACKS"
 	deletionStateDeletingVolume            = "DELETING_VOLUME"
@@ -250,7 +265,9 @@ func populateDeletionQueuesThread(w *deletionWorker, s *service) error {
 					continue
 				} else {
 					// Put volume on the queue if appropriate
-					if strings.HasPrefix(volume.VolumeIdentifier, volDeletePrefix) {
+					if strings.HasPrefix(volume.VolumeIdentifier, volDeletePrefix) ||
+						(s.isSourceTaggedToDelete(volume.VolumeIdentifier) &&
+							!volume.SnapSource) {
 						// Fetch the uCode version details
 						isPostElmSR, err := s.isPostElmSR(symID)
 						if err != nil {
@@ -310,6 +327,26 @@ func (s *service) getRunningJobsForSymmetrix(symID string, resourceType string) 
 // This is an endless thread that will move volume deletions forward.
 func deletionWorkerWorkerThread(w *deletionWorker, s *service) {
 	var req *deletionWorkerRequest
+	symLicenseList := make(map[string]bool)
+	var symIDList *types.SymmetrixIDList
+	var err error
+
+	for symIDList == nil {
+		symIDList, err = s.adminClient.GetSymmetrixIDList()
+		if err != nil {
+			log.Error("Could not retrieve SymmetrixID list: " + err.Error())
+			time.Sleep(5 * time.Second)
+		}
+	}
+
+	// Check snapshot license for all connected PowerMax
+	for _, symID := range symIDList.SymmetrixIDs {
+		// check snapshot is licensed
+		if err := s.IsSnapshotLicensed(symID); err == nil {
+			symLicenseList[symID] = true
+		}
+	}
+
 	for {
 		sleepTime := w.MinPollingInterval
 		// Get a new request if we have none
@@ -345,6 +382,17 @@ func deletionWorkerWorkerThread(w *deletionWorker, s *service) {
 			if !skipRetry {
 				switch req.state {
 				case deletionStateQueued:
+					req.state = deletionStateRemoveSnapshot
+					fallthrough
+				case deletionStateRemoveSnapshot:
+					if licensed, ok := symLicenseList[req.symmetrixID]; ok {
+						if licensed {
+							req.err = req.RemoveSnapRelations(s)
+							if req.err != nil {
+								break
+							}
+						}
+					}
 					req.state = deletionStateDisassociateSG
 					fallthrough
 				case deletionStateDisassociateSG:
@@ -398,7 +446,8 @@ func deletionWorkerWorkerThread(w *deletionWorker, s *service) {
 				sleepTime = w.MinPollingInterval
 			} else if req.err != nil {
 				queueForRetry := false
-				if req.state == deletionStateDeletingVolume {
+				if req.state == deletionStateDeletingVolume ||
+					req.state == deletionStateRemoveSnapshot {
 					// Do this only when the volume in the state - deleting volume
 					if req.nerrors >= MaxRetryDeleteCount {
 						// Keep trying until the max retry duration even if the max number of retries are hit
@@ -448,6 +497,28 @@ func (w *deletionWorker) addToCompletedRequests(req *deletionWorkerRequest) {
 		w.CompletedRequests = w.CompletedRequests[1:deletionCompletedRequestsHistoryLength]
 	}
 	w.CompletedRequests = append(w.CompletedRequests, req)
+}
+
+// RemoveSnapRelations removes all snapshot relationship from the volume.
+func (req *deletionWorkerRequest) RemoveSnapRelations(s *service) error {
+	fields := req.fields()
+	// First, fetch the volume.
+	if req.volume == nil {
+		return fmt.Errorf("req.volume is nil")
+	}
+	if req.volume.SnapSource || req.volume.SnapTarget {
+		reqID := "RemoveSnap"
+		lockHandle := fmt.Sprintf("%s%s", req.volumeID, req.symmetrixID)
+		lockNum := RequestLock(lockHandle, reqID)
+		defer ReleaseLock(lockHandle, reqID, lockNum)
+
+		err := s.UnlinkAndTerminate(req.symmetrixID, req.volumeID, "")
+		if err != nil {
+			log.WithFields(fields).Errorf("UnlinkAndTerminate failed with error (%s)", err.Error())
+			return err
+		}
+	}
+	return nil
 }
 
 // disassociatedFromStorageGroups disassociates the requested volume from all storage groups.

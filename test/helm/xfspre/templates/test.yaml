@@ -13,13 +13,13 @@ spec:
     selector:
         matchLabels:
           app: powermaxtest
+    serviceName: test2vols
     template:
       metadata:
         labels:
           app: powermaxtest
       spec:
         serviceAccount: powermaxtest
-        hostNetwork: true
         containers:
           - name: test
             image: docker.io/centos:latest

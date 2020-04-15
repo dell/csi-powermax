@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 n=0
 namespacevar=powermax

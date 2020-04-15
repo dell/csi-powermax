@@ -188,3 +188,4 @@ spec:
         - name: certs
           secret:
               secretName: {{ .Release.Name }}-certs
+              optional: true

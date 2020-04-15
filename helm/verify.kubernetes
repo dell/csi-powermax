@@ -1,5 +1,5 @@
-#!/bin/sh
-source ./common.bash
+#!/bin/bash
+source common.bash
 
 # Determine the nodes
 MINION_NODES=$(kubectl get nodes -o wide | grep  -v -e master -e INTERNAL | awk ' { print $6; }')

@@ -1,16 +1,33 @@
+/*
+ Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
+
 package service
 
 import (
 	"context"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"math/rand"
 	"os"
+	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/dell/gobrick"
 	"github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
 	csictx "github.com/rexray/gocsi/context"
@@ -20,7 +37,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	types "github.com/dell/csi-powermax/pmax/types/v90"
+	types "github.com/dell/gopowermax/types/v90"
 )
 
 var (
@@ -36,19 +53,15 @@ var (
 	targetMountRecheckSleepTime = 3 * time.Second
 	multipathMutex              sync.Mutex
 	deviceDeleteMutex           sync.Mutex
+	disconnectVolumeRetryTime   = 1 * time.Second
+	nodePendingState            pendingState
+	sysBlock                    = "/sys/block" // changed for unit testing
 )
 
 func (s *service) NodeStageVolume(
 	ctx context.Context,
 	req *csi.NodeStageVolumeRequest) (
 	*csi.NodeStageVolumeResponse, error) {
-
-	// Probe the node if required and make sure startup called
-	err := s.nodeProbe(ctx)
-	if err != nil {
-		log.Error("nodeProbe failed with error :" + err.Error())
-		return nil, err
-	}
 
 	privTgt := req.GetStagingTargetPath()
 	if privTgt == "" {
@@ -58,11 +71,25 @@ func (s *service) NodeStageVolume(
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
-		reqID = headers["csi.requestid"][0]
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
 	}
 
-	// Get the VolumeID and parse it
+	// Get the VolumeID and parse it, check if pending op for this volume ID
 	id := req.GetVolumeId()
+	var volID volumeIDType = volumeIDType(id)
+	if err := volID.checkAndUpdatePendingState(&nodePendingState); err != nil {
+		return nil, err
+	}
+	defer volID.clearPending(&nodePendingState)
+
+	// Probe the node if required and make sure startup called
+	err := s.nodeProbe(ctx)
+	if err != nil {
+		log.Error("nodeProbe failed with error :" + err.Error())
+		return nil, err
+	}
 
 	// Parse the CSI VolumeId and validate against the volume
 	symID, devID, vol, err := s.GetVolumeByID(id)
@@ -71,6 +98,12 @@ func (s *service) NodeStageVolume(
 		return nil, err
 	}
 	volumeWWN := vol.WWN
+
+	// Save volume WWN to node disk
+	err = s.writeWWNFile(id, volumeWWN)
+	if err != nil {
+		log.Error("Could not write WWN file: " + volumeWWN)
+	}
 
 	// Get publishContext
 	publishContext := req.GetPublishContext()
@@ -88,21 +121,109 @@ func (s *service) NodeStageVolume(
 		"WWN":               volumeWWN,
 	}
 	log.WithFields(f).Info("NodeStageVolume")
+	ctx = setLogFields(ctx, f)
 
-	// scan for the symlink and device path
-	symlinkPath, devPath, err := s.nodeScanForDeviceSymlinkPath(volumeWWN, volumeLUNAddress, targetIdentifiers, reqID, symID, f)
+	publishContextData := publishContextData{
+		deviceWWN:        "0x" + volumeWWN,
+		volumeLUNAddress: volumeLUNAddress,
+	}
+	iscsiTargets, fcTargets, useFC := s.getArrayTargets(targetIdentifiers, symID)
+	iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
+	if useFC {
+		s.initFCConnector(iscsiChroot)
+		publishContextData.fcTargets = fcTargets
+	} else {
+		s.initISCSIConnector(iscsiChroot)
+		publishContextData.iscsiTargets = iscsiTargets
+	}
+	devicePath, err := s.connectDevice(ctx, publishContextData, useFC)
 	if err != nil {
 		return nil, err
 	}
-	// Take some time to reverify in case other paths discovered (e.g. multipath)
-	time.Sleep(nodePublishSleepTime)
-	_, newDevPath, err := gofsutil.WWNToDevicePathX(context.Background(), volumeWWN)
-	if err == nil && newDevPath != "" && newDevPath != devPath {
-		log.Printf("devPath updated from %s to %s", devPath, newDevPath)
-		devPath = newDevPath
-	}
-	log.WithFields(f).WithField("symlinkPath", symlinkPath).WithField("devPath", devPath).Info("NodeStageVolume completed")
+
+	log.WithFields(f).WithField("devPath", devicePath).Info("NodeStageVolume completed")
 	return &csi.NodeStageVolumeResponse{}, nil
+}
+
+type publishContextData struct {
+	deviceWWN        string
+	volumeLUNAddress string
+	iscsiTargets     []ISCSITargetInfo
+	fcTargets        []FCTargetInfo
+}
+
+// ISCSITargetInfo represents basic information about iSCSI target
+type ISCSITargetInfo struct {
+	Portal string
+	Target string
+}
+
+// FCTargetInfo represents basic information about FC target
+type FCTargetInfo struct {
+	WWPN string
+}
+
+func (s *service) connectDevice(ctx context.Context, data publishContextData, useFC bool) (string, error) {
+	logFields := getLogFields(ctx)
+	var err error
+	// The volumeLUNAddress is hex.
+	lun, err := strconv.ParseInt(data.volumeLUNAddress, 16, 0)
+	if err != nil {
+		log.WithFields(logFields).Errorf("failed to convert lun number to int: %s", err.Error())
+		return "", err
+	}
+	var device gobrick.Device
+	if useFC {
+		device, err = s.connectFCDevice(ctx, int(lun), data)
+	} else {
+		device, err = s.connectISCSIDevice(ctx, int(lun), data)
+	}
+
+	if err != nil {
+		log.Errorf("Unable to find device after multiple discovery attempts: %s", err.Error())
+		return "", status.Errorf(codes.Internal,
+			"Unable to find device after multiple discovery attempts: %s", err.Error())
+	}
+	devicePath := path.Join("/dev/", device.Name)
+	return devicePath, nil
+}
+
+func (s *service) connectISCSIDevice(ctx context.Context,
+	lun int, data publishContextData) (gobrick.Device, error) {
+	logFields := getLogFields(ctx)
+	var targets []gobrick.ISCSITargetInfo
+	for _, t := range data.iscsiTargets {
+		targets = append(targets, gobrick.ISCSITargetInfo{Target: t.Target, Portal: t.Portal})
+	}
+	// separate context to prevent 15 seconds cancel from kubernetes
+	connectorCtx, cFunc := context.WithTimeout(context.Background(), time.Second*120)
+	connectorCtx = setLogFields(connectorCtx, logFields)
+	defer cFunc()
+	// TBD connectorCtx = copyTraceObj(ctx, connectorCtx)
+	connectorCtx = setLogFields(connectorCtx, logFields)
+	return s.iscsiConnector.ConnectVolume(connectorCtx, gobrick.ISCSIVolumeInfo{
+		Targets: targets,
+		Lun:     lun,
+	})
+}
+
+func (s *service) connectFCDevice(ctx context.Context,
+	lun int, data publishContextData) (gobrick.Device, error) {
+	logFields := getLogFields(ctx)
+	var targets []gobrick.FCTargetInfo
+	for _, t := range data.fcTargets {
+		targets = append(targets, gobrick.FCTargetInfo{WWPN: t.WWPN})
+	}
+	// separate context to prevent 15 seconds cancel from kubernetes
+	connectorCtx, cFunc := context.WithTimeout(context.Background(), time.Second*120)
+	connectorCtx = setLogFields(connectorCtx, logFields)
+	defer cFunc()
+	// TBD connectorCtx = copyTraceObj(ctx, connectorCtx)
+	connectorCtx = setLogFields(connectorCtx, logFields)
+	return s.fcConnector.ConnectVolume(connectorCtx, gobrick.FCVolumeInfo{
+		Targets: targets,
+		Lun:     lun,
+	})
 }
 
 func (s *service) NodeUnstageVolume(
@@ -110,57 +231,67 @@ func (s *service) NodeUnstageVolume(
 	req *csi.NodeUnstageVolumeRequest) (
 	*csi.NodeUnstageVolumeResponse, error) {
 
-	// Probe the node if required and make sure startup called
-	err := s.nodeProbe(ctx)
-	if err != nil {
-		log.Error("nodeProbe failed with error :" + err.Error())
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+
+	// Get the VolumeID and parse it, check if pending op for this volume ID
+	id := req.GetVolumeId()
+	var volID volumeIDType = volumeIDType(id)
+	if err := volID.checkAndUpdatePendingState(&nodePendingState); err != nil {
 		return nil, err
 	}
+	defer volID.clearPending(&nodePendingState)
 
 	// Remove the staging directory.
 	stageTgt := req.GetStagingTargetPath()
 	if stageTgt == "" {
 		return nil, status.Error(codes.InvalidArgument, "A Staging Target argument is required")
 	}
-	err = gofsutil.Unmount(context.Background(), stageTgt)
+	err := gofsutil.Unmount(context.Background(), stageTgt)
 	if err != nil {
-		log.Info("NodeUnstageVolume error unmount stageTgt: " + err.Error())
+		log.Infof("NodeUnstageVolume error unmount stage target %s: %s", stageTgt, err.Error())
 	}
 	removeWithRetry(stageTgt)
 
-	var reqID string
-	headers, ok := metadata.FromIncomingContext(ctx)
-	if ok {
-		reqID = headers["csi.requestid"][0]
-	}
-
-	// Get the VolumeID and parse it
-	id := req.GetVolumeId()
-
-	// Parse the CSI VolumeId and validate against the volume
-	symID, devID, vol, err := s.GetVolumeByID(id)
+	// READ volume WWN from the local file copy
+	var volumeWWN string
+	volumeWWN, err = s.readWWNFile(id)
 	if err != nil {
-		// If the volume isn't found, or we fail to validate the name/id, k8s will retry NodeUnstage forever so...
-		// Make it stop...
-		if strings.Contains(err.Error(), notFound) || strings.Contains(err.Error(), failedToValidateVolumeNameAndID) {
-			return &csi.NodeUnstageVolumeResponse{}, nil
+		log.Infof("Fallback to retrieve WWN from server: %s", err)
+
+		// Fallback - retrieve the WWN from the array. Much more expensive.
+		// Probe the node if required and make sure startup called
+		err = s.nodeProbe(ctx)
+		if err != nil {
+			log.Error("nodeProbe failed with error :" + err.Error())
+			return nil, err
 		}
-		return nil, err
-	}
-	volumeWWN := vol.WWN
 
-	f := log.Fields{
-		"CSIRequestID": reqID,
-		"DeviceID":     devID,
-		"ID":           req.VolumeId,
-		"PrivTgt":      stageTgt,
-		"SymmetrixID":  symID,
-		"WWN":          volumeWWN,
+		// Parse the CSI VolumeId and validate against the volume
+		_, _, vol, err := s.GetVolumeByID(id)
+		if err != nil {
+			// If the volume isn't found, or we fail to validate the name/id, k8s will retry NodeUnstage forever so...
+			// Make it stop...
+			if strings.Contains(err.Error(), notFound) || strings.Contains(err.Error(), failedToValidateVolumeNameAndID) {
+				return &csi.NodeUnstageVolumeResponse{}, nil
+			}
+			return nil, err
+		}
+		volumeWWN = vol.WWN
 	}
-	log.WithFields(f).Info("NodeUnstageVolume")
 
-	err = s.nodeDeleteBlockDevices(volumeWWN, reqID)
+	// Parse the volume ID to get the symID and devID
+	_, symID, devID, err := s.parseCsiID(id)
 	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	if err := s.disconnectVolume(reqID, symID, devID, volumeWWN); err != nil {
 		return nil, err
 	}
 
@@ -170,8 +301,61 @@ func (s *service) NodeUnstageVolume(
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	s.removeWWNFile(id)
 
 	return &csi.NodeUnstageVolumeResponse{}, nil
+}
+
+// disconnectVolume disconnects a volume from a node and will verify it is disonnected
+// by no more /dev/disk/by-id entry, retrying if necessary.
+func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error {
+	for i := 0; i < 3; i++ {
+		var deviceName string
+		symlinkPath, devicePath, _ := gofsutil.WWNToDevicePathX(context.Background(), volumeWWN)
+		if devicePath == "" {
+			if i == 0 {
+				log.Infof("NodeUnstage Note- Didn't find device path for volume %s", volumeWWN)
+			}
+			return nil
+		}
+		devicePathComponents := strings.Split(devicePath, "/")
+		deviceName = devicePathComponents[len(devicePathComponents)-1]
+		f := log.Fields{
+			"CSIRequestID": reqID,
+			"DeviceID":     devID,
+			"DeviceName":   deviceName,
+			"DevicePath":   devicePath,
+			"Retry":        i,
+			"SymmetrixID":  symID,
+			"WWN":          volumeWWN,
+		}
+		log.WithFields(f).Info("NodeUnstageVolume disconnectVolume")
+
+		// Disconnect the volume using device name
+		nodeUnstageCtx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+		nodeUnstageCtx = setLogFields(nodeUnstageCtx, f)
+		switch s.arrayTransportProtocolMap[symID] {
+		case FcTransportProtocol:
+			s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+		case IscsiTransportProtocol:
+			s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+		}
+		cancel()
+		time.Sleep(disconnectVolumeRetryTime)
+
+		// Check that the /sys/block/DeviceName actually exists
+		if _, err := ioutil.ReadDir(sysBlock + deviceName); err != nil {
+			// If not, make sure the symlink is removed
+			os.Remove(symlinkPath)
+		}
+	}
+
+	// Recheck volume disconnected
+	devPath, _ := gofsutil.WWNToDevicePath(context.Background(), volumeWWN)
+	if devPath == "" {
+		return nil
+	}
+	return status.Errorf(codes.Internal, "disconnectVolume exceeded retry limit WWN %s devPath %s", volumeWWN, devPath)
 }
 
 // NodePublish volume handles the CSI request to publish a volume to a target directory.
@@ -183,7 +367,9 @@ func (s *service) NodePublishVolume(
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
-		reqID = headers["csi.requestid"][0]
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
 	}
 
 	// Probe the node if required and make sure startup called
@@ -205,9 +391,9 @@ func (s *service) NodePublishVolume(
 	// Get volumeContext
 	volumeContext := req.GetVolumeContext()
 	if volumeContext != nil {
-		log.Printf("VolumeContext:")
+		log.Infof("VolumeContext:")
 		for key, value := range volumeContext {
-			log.Printf("    [%s]=%s", key, value)
+			log.Infof("    [%s]=%s", key, value)
 		}
 	}
 
@@ -221,35 +407,27 @@ func (s *service) NodePublishVolume(
 	}
 	targetIdentifiers := publishContext[PortIdentifiers]
 
-	log.WithField("CSIRequestID", reqID).Printf("node publishing volume: %s lun: %s", deviceWWN, volumeLUNAddress)
+	log.WithField("CSIRequestID", reqID).Infof("node publishing volume: %s lun: %s", deviceWWN, volumeLUNAddress)
 
 	var symlinkPath string
 	var devicePath string
+	symlinkPath, devicePath, err = gofsutil.WWNToDevicePathX(context.Background(), deviceWWN)
+	if err != nil || symlinkPath == "" {
+		errmsg := fmt.Sprintf("Device path not found for WWN %s: %s", deviceWWN, err)
+		log.Error(errmsg)
+		return nil, status.Error(codes.NotFound, errmsg)
+	}
+
 	f := log.Fields{
 		"CSIRequestID":      reqID,
 		"DeviceID":          devID,
 		"DevicePath":        devicePath,
 		"ID":                req.VolumeId,
 		"Name":              volumeContext["Name"],
-		"SymlinkPath":       symlinkPath,
-		"SymmetrixID":       symID,
-		"TargetIdentifiers": targetIdentifiers,
-		"WWN":               deviceWWN,
-	}
-
-	symlinkPath, devicePath, err = s.nodeScanForDeviceSymlinkPath(deviceWWN, volumeLUNAddress, targetIdentifiers, reqID, symID, f)
-	if err != nil {
-		return nil, err
-	}
-
-	f = log.Fields{
-		"CSIRequestID":      reqID,
-		"DevicePath":        devicePath,
-		"ID":                req.VolumeId,
-		"Name":              volumeContext["Name"],
 		"WWN":               deviceWWN,
 		"PrivateDir":        s.privDir,
 		"SymlinkPath":       symlinkPath,
+		"SymmetrixID":       symID,
 		"TargetPath":        req.GetTargetPath(),
 		"TargetIdentifiers": targetIdentifiers,
 	}
@@ -271,7 +449,9 @@ func (s *service) NodeUnpublishVolume(
 	var err error
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
-		reqID = headers["csi.requestid"][0]
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
 	}
 
 	// Get the target path
@@ -280,13 +460,6 @@ func (s *service) NodeUnpublishVolume(
 		log.Error("target path required")
 		return nil, status.Error(codes.InvalidArgument,
 			"target path required")
-	}
-
-	// Probe the node if required and make sure startup called
-	err = s.nodeProbe(ctx)
-	if err != nil {
-		log.Error("nodeProbe failed with error :" + err.Error())
-		return nil, err
 	}
 
 	// Look through the mount table for the target path.
@@ -306,7 +479,7 @@ func (s *service) NodeUnpublishVolume(
 		}
 	}
 
-	log.Printf("targetMount: %#v", targetMount)
+	log.Infof("targetMount: %#v", targetMount)
 	devicePath := targetMount.Device
 	if devicePath == "devtmpfs" || devicePath == "" {
 		devicePath = targetMount.Source
@@ -315,33 +488,12 @@ func (s *service) NodeUnpublishVolume(
 	// Get the VolumeID and parse it
 	id := req.GetVolumeId()
 
-	// Parse the CSI VolumeId and validate against the volume
-	symID, devID, vol, err := s.GetVolumeByID(id)
-	if err != nil {
-		// The spec says we should return NotFound, but kubelet will
-		// call this repeatedly if we return it NotFound.
-		// Return good response.
-		if strings.Contains(err.Error(), notFound) || strings.Contains(err.Error(), failedToValidateVolumeNameAndID) {
-			return &csi.NodeUnpublishVolumeResponse{}, nil
-		}
-		return nil, err
-	}
-
-	volumeWWN := vol.WWN
-	if volumeWWN == "" {
-		log.Error(fmt.Sprintf("Volume has no WWN sym %s dev %s", symID, devID))
-		return nil, status.Error(codes.Internal, fmt.Sprintf("Volume has no WWN sym %s dev %s", symID, devID))
-	}
-
 	f := log.Fields{
 		"CSIRequestID": reqID,
-		"DeviceID":     devID,
 		"DevicePath":   devicePath,
 		"ID":           id,
 		"PrivateDir":   s.privDir,
-		"SymmetrixID":  symID,
 		"TargetPath":   req.GetTargetPath(),
-		"WWN":          volumeWWN,
 	}
 
 	// Unmount the target path.
@@ -357,13 +509,9 @@ func (s *service) NodeUnpublishVolume(
 		return nil, err
 	}
 
-	log.Printf("lastUmounted %v\n", lastUnmounted)
+	log.Infof("lastUmounted %v\n", lastUnmounted)
 	if lastUnmounted {
 		removeWithRetry(target)
-		err = s.nodeDeleteBlockDevices(volumeWWN, reqID)
-		if err != nil {
-			return nil, err
-		}
 		return &csi.NodeUnpublishVolumeResponse{}, nil
 	}
 
@@ -388,11 +536,7 @@ func (s *service) NodeUnpublishVolume(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if len(mnts) > 0 {
-		log.WithFields(f).Printf("Device mounts still present: %#v", mnts)
-	} else {
-		if err := s.nodeDeleteBlockDevices(volumeWWN, reqID); err != nil {
-			return nil, err
-		}
+		log.WithFields(f).Infof("Device mounts still present: %#v", mnts)
 	}
 	removeWithRetry(target)
 	return &csi.NodeUnpublishVolumeResponse{}, nil
@@ -408,7 +552,7 @@ func (s *service) getTargetMount(target string) (gofsutil.Info, error) {
 	for _, mount := range mounts {
 		if mount.Path == target {
 			targetMount = mount
-			log.Printf("matching targetMount %s target %s", target, mount.Path)
+			log.Infof("matching targetMount %s target %s", target, mount.Path)
 		}
 	}
 	return targetMount, nil
@@ -486,6 +630,8 @@ func (s *service) nodeStartup() error {
 	if s.nodeIsInitialized {
 		return nil
 	}
+	// Maximum number of pending requests before overload returned
+	nodePendingState.maxPending = 10
 
 	// Copy the multipath.conf file from /noderoot/etc/multipath.conf (EnvISCSIChroot)to /etc/multipath.conf if present
 	//iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
@@ -512,7 +658,7 @@ func (s *service) nodeStartup() error {
 		log.Error("nodeStartup could not GetInitiatorIQNs")
 	}
 
-	log.Printf("TransportProtocol %s FC portWWNs: %s ... IQNs: %s\n", s.opts.TransportProtocol, portWWNs, IQNs)
+	log.Infof("TransportProtocol %s FC portWWNs: %s ... IQNs: %s\n", s.opts.TransportProtocol, portWWNs, IQNs)
 	// The driver needs at least one FC or iSCSI initiator to be defined
 	if len(portWWNs) == 0 && len(IQNs) == 0 {
 		return fmt.Errorf("No FC or iSCSI initiators were found and at least 1 is required")
@@ -548,7 +694,7 @@ func (s *service) verifyInitiatorsNotInADifferentHost(symID string, nodeInitiato
 		}
 		for _, initiatorID := range initList.InitiatorIDs {
 			if initiatorID == nodeInitiator || strings.HasSuffix(initiatorID, nodeInitiator) {
-				fmt.Printf("Checking initiator %s against host %s\n", initiatorID, hostID)
+				log.Infof("Checking initiator %s against host %s\n", initiatorID, hostID)
 				initiator, err := s.adminClient.GetInitiatorByID(symID, initiatorID)
 				if err != nil {
 					log.Warning("Failed to fetch initiator details for initiator: " + initiatorID)
@@ -560,7 +706,7 @@ func (s *service) verifyInitiatorsNotInADifferentHost(symID string, nodeInitiato
 					log.Error(errormsg)
 					return 0, fmt.Errorf(errormsg)
 				}
-				fmt.Printf("valid initiator: %s\n", initiatorID)
+				log.Infof("valid initiator: %s\n", initiatorID)
 				nValidInitiators++
 			}
 		}
@@ -587,7 +733,7 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 	// determine a random delay period (in
 	period := rand.Int() % maximumStartupDelay
 	// sleep ...
-	log.Printf("Waiting for %d seconds", period)
+	log.Infof("Waiting for %d seconds", period)
 	time.Sleep(time.Duration(period) * time.Second)
 
 	// See if it's viable to use FC and/or ISCSI
@@ -602,7 +748,7 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 		if err != nil {
 			log.Error("Could not validate FC initiators" + err.Error())
 		}
-		fmt.Printf("valid FC initiators: %d\n", validFC)
+		log.Infof("valid FC initiators: %d\n", validFC)
 		if validFC > 0 && (s.opts.TransportProtocol == "" || s.opts.TransportProtocol == FcTransportProtocol) {
 			// We do have to have pre-existing initiators that were zoned for FC
 			useFC = true
@@ -614,17 +760,25 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 			// We do not have to have pre-existing initiators to use Iscsi (we can create them)
 			useIscsi = true
 		}
-		fmt.Printf("valid (existing) iSCSI initiators (must be manually created): %d\n", validIscsi)
+		log.Infof("valid (existing) iSCSI initiators (must be manually created): %d\n", validIscsi)
 
 		if !useFC && !useIscsi {
 			log.Error("No valid initiators- could not initialize FC or iSCSI")
 			return err
 		}
 
+		if s.arrayTransportProtocolMap == nil {
+			s.arrayTransportProtocolMap = make(map[string]string)
+		}
+		iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
 		if useFC {
 			s.setupArrayForFC(symID, portWWNs)
+			s.initFCConnector(iscsiChroot)
+			s.arrayTransportProtocolMap[symID] = FcTransportProtocol
 		} else if useIscsi {
 			s.setupArrayForIscsi(symID, IQNs)
+			s.initISCSIConnector(iscsiChroot)
+			s.arrayTransportProtocolMap[symID] = IscsiTransportProtocol
 		}
 	}
 
@@ -634,7 +788,7 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 
 func (s *service) setupArrayForFC(array string, portWWNs []string) error {
 	hostName, _, mvName := s.GetFCHostSGAndMVIDFromNodeID(s.opts.NodeName)
-	log.Printf("setting up array %s for Fibrechannel, host name: %s masking view: %s", array, hostName, mvName)
+	log.Infof("setting up array %s for Fibrechannel, host name: %s masking view: %s", array, hostName, mvName)
 
 	_, err := s.createOrUpdateFCHost(array, hostName, portWWNs)
 	return err
@@ -643,7 +797,7 @@ func (s *service) setupArrayForFC(array string, portWWNs []string) error {
 // setupArrayForIscsi is called to set up a node for iscsi operation.
 func (s *service) setupArrayForIscsi(array string, IQNs []string) error {
 	hostName, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
-	log.Printf("setting up array %s for Iscsi, host name: %s masking view ID: %s", array, hostName, mvName)
+	log.Infof("setting up array %s for Iscsi, host name: %s masking view ID: %s", array, hostName, mvName)
 
 	// Create or update the IscsiHost and Initiators
 	_, err := s.createOrUpdateIscsiHost(array, hostName, IQNs)
@@ -785,14 +939,14 @@ func (s *service) createOrUpdateFCHost(array string, nodeName string, portWWNs [
 			}
 		}
 	}
-	log.Printf("hostInitiators: %s\n", hostInitiators)
+	log.Infof("hostInitiators: %s\n", hostInitiators)
 
 	// See if the host is present
 	host, err := s.adminClient.GetHostByID(array, nodeName)
 	log.Debug(fmt.Sprintf("GetHostById returned: %v, %v", host, err))
 	if err != nil {
 		// host does not exist, create it
-		log.Printf(fmt.Sprintf("Array %s FC Host %s does not exist. Creating it.", array, nodeName))
+		log.Infof(fmt.Sprintf("Array %s FC Host %s does not exist. Creating it.", array, nodeName))
 		host, err = s.retryableCreateHost(array, nodeName, hostInitiators, nil)
 		if err != nil {
 			return host, err
@@ -803,7 +957,7 @@ func (s *service) createOrUpdateFCHost(array string, nodeName string, portWWNs [
 		stringSliceRegexReplace(arrayInitiators, "^.*:.*:", "")
 		// host does exist, update it if necessary
 		if len(arrayInitiators) != 0 && !stringSlicesEqual(arrayInitiators, hostInitiators) {
-			log.Printf("updating host: %s initiators to: %s", nodeName, hostInitiators)
+			log.Infof("updating host: %s initiators to: %s", nodeName, hostInitiators)
 			_, err := s.retryableUpdateHostInitiators(array, host, portWWNs)
 			if err != nil {
 				return host, err
@@ -826,11 +980,11 @@ func (s *service) createOrUpdateIscsiHost(array string, nodeName string, IQNs []
 	}
 
 	host, err := s.adminClient.GetHostByID(array, nodeName)
-	log.Printf(fmt.Sprintf("GetHostById returned: %v, %v", host, err))
+	log.Infof(fmt.Sprintf("GetHostById returned: %v, %v", host, err))
 
 	if err != nil {
 		// host does not exist, create it
-		log.Printf(fmt.Sprintf("ISCSI Host %s does not exist. Creating it.", nodeName))
+		log.Infof(fmt.Sprintf("ISCSI Host %s does not exist. Creating it.", nodeName))
 		host, err = s.retryableCreateHost(array, nodeName, IQNs, nil)
 		if err != nil {
 			return &types.Host{}, fmt.Errorf("Unable to create Host: %v", err)
@@ -840,7 +994,7 @@ func (s *service) createOrUpdateIscsiHost(array string, nodeName string, IQNs []
 		hostInitiators := stringSliceRegexMatcher(host.Initiators, "^iqn\\.")
 		// host does exist, update it if necessary
 		if len(hostInitiators) != 0 && !stringSlicesEqual(hostInitiators, IQNs) {
-			log.Printf("updating host: %s initiators to: %s", nodeName, IQNs)
+			log.Infof("updating host: %s initiators to: %s", nodeName, IQNs)
 			if _, err := s.retryableUpdateHostInitiators(array, host, IQNs); err != nil {
 				return host, err
 			}
@@ -932,216 +1086,80 @@ func (s *service) getPortalIPs(symID string) ([]string, error) {
 	ips, ok = symToPortalIPsMap.Load(symID)
 	if ok {
 		portalIPs = ips.([]string)
-		log.Printf("hit portalIPs %s", portalIPs)
+		log.Infof("hit portalIPs %s", portalIPs)
 	} else {
 		portalIPs, err = s.adminClient.GetListOfTargetAddresses(symID)
 		if err != nil {
 			return portalIPs, status.Error(codes.Internal, fmt.Sprintf("Could not get iscsi portalIPs: %s", err.Error()))
 		}
 		symToPortalIPsMap.Store(symID, portalIPs)
-		log.Printf("miss portalIPs %s", portalIPs)
+		log.Infof("miss portalIPs %s", portalIPs)
 	}
 
 	return portalIPs, nil
 }
 
-// nodeScanForDeviceSymlinkPath scans SCSI devices to get the device symlink and device paths.
-// devinceWWN is the volume's WWN field
-// volumeLUNAddress is the LUN Address in the masking view connections list (optional; expect only one per volume)
-// reqID is the CSI request ID
-// symID is the symmetrix ID
-// f is the logrus fields
-func (s *service) nodeScanForDeviceSymlinkPath(deviceWWN, volumeLUNAddress, targetIdentifiers string, reqID string, symID string, f log.Fields) (string, string, error) {
+// Returns the array targets and a boolean that is true if Fibrechannel.
+func (s *service) getArrayTargets(targetIdentifiers string, symID string) ([]ISCSITargetInfo, []FCTargetInfo, bool) {
+	iscsiTargets := make([]ISCSITargetInfo, 0)
+	fcTargets := make([]FCTargetInfo, 0)
+	var isFC bool
 	arrayTargets := strings.Split(targetIdentifiers, ",")
-	retryForISCSI := true
+
 	// Remove the last empty element from the slice as there is a trailing ","
 	if len(arrayTargets) == 1 && (arrayTargets[0] == targetIdentifiers) {
 		log.Error("Failed to parse the target identifier string: " + targetIdentifiers)
 	} else if len(arrayTargets) > 1 {
 		arrayTargets = arrayTargets[:len(arrayTargets)-1]
-		if strings.Contains(arrayTargets[0], "0x") {
-			retryForISCSI = false
-		}
-	}
-	log.Printf("Array targets: %s", arrayTargets)
-
-	// Determine if the device is visible, if not perform a simple rescan.
-	symlinkPath, devicePath, err := gofsutil.WWNToDevicePathX(context.Background(), deviceWWN)
-	for retry := 0; devicePath == "" && retry < 3; retry++ {
-		err = gofsutil.RescanSCSIHost(context.Background(), arrayTargets, volumeLUNAddress)
-		time.Sleep(nodePublishSleepTime)
-		symlinkPath, devicePath, err = gofsutil.WWNToDevicePathX(context.Background(), deviceWWN)
-	}
-	// If not iSCSI, it is Fibrechannel
-	if err != nil && !retryForISCSI {
-		log.WithFields(f).Error("No Fibrechannel DevicePath found after multiple rescans... last resort is issue_lip and retry")
-		maxRetries := 3
-		for retry := 0; err != nil && retry < maxRetries; retry++ {
-			err := gofsutil.IssueLIPToAllFCHosts(context.Background())
-			if err != nil {
-				log.Error(err.Error())
-			}
-			// Look for the device again
-			time.Sleep(lipSleepTime)
-			symlinkPath, devicePath, err = gofsutil.WWNToDevicePathX(context.Background(), deviceWWN)
-		}
-	}
-	// If is iSCSI
-	if err != nil && retryForISCSI {
-		log.WithFields(f).Error("No iSCSI DevicePath found after multiple rescans... last resort is iscsi DiscoverTargets and PerformRescan")
-		maxRetries := 2
-		for retry := 0; err != nil && retry < maxRetries; retry++ {
-			// Try running the iscsi discovery process again.
-			var portalIPs []string
-			portalIPs, err = s.getPortalIPs(symID)
-			if err == nil {
+		for i := 0; i < len(arrayTargets); i++ {
+			if strings.HasPrefix(arrayTargets[i], "0x") { // fc
+				tgt := strings.Replace(arrayTargets[i], "0x", "", 1)
+				isFC = true
+				fcTarget := FCTargetInfo{
+					WWPN: tgt,
+				}
+				fcTargets = append(fcTargets, fcTarget)
+			} else { // iscsi
+				portalIPs, _ := s.getPortalIPs(symID)
+				// Make an entry for each portal for each target
 				for _, portalIP := range portalIPs {
-					log.Info(fmt.Sprintf("Performing IscsiDiscovery and login on portalIP: %s", portalIP))
-					_, err = s.iscsiClient.DiscoverTargets(portalIP, true)
-					if err != nil {
-						log.Error("DiscoverTargets: " + err.Error())
+					iscsiTarget := ISCSITargetInfo{
+						Portal: portalIP,
+						Target: arrayTargets[i],
 					}
+					iscsiTargets = append(iscsiTargets, iscsiTarget)
 				}
-				time.Sleep(nodePublishSleepTime)
-				err = s.iscsiClient.PerformRescan()
-				if err != nil {
-					log.Error("RescanSCSIHost error: " + err.Error())
-				}
-				// Look for the device again
-				time.Sleep(nodePublishSleepTime)
-				symlinkPath, devicePath, err = gofsutil.WWNToDevicePathX(context.Background(), deviceWWN)
-			} else {
-				log.Printf("getPortalIPs returned %s %s", portalIPs, err)
 			}
 		}
 	}
-	if err != nil {
-		if retryForISCSI {
-			// delete the caches so will refresh since had an absolute failure
-			symToPortalIPsMap.Delete(symID)
-		}
-		log.WithFields(f).Error("Unable to find device after multiple discovery attempts: " + err.Error())
-		return "", "", status.Error(codes.NotFound, "Unable to find device after multiple discovery attempts: "+err.Error())
-	}
-	return symlinkPath, devicePath, nil
+	log.Infof("Array targets: %s", arrayTargets)
+	return iscsiTargets, fcTargets, isFC
 }
 
-// nodeDeleteBlockDevices deletes the block devices associated with a volume WWN (including multipath) on that node.
-// This should be done when the volume will no longer be used on the node.
-func (s *service) nodeDeleteBlockDevices(volumeWWN, reqID string) error {
-	var err error
-	for i := 0; i < maxBlockDevicesPerWWN; i++ {
-		// Wait for the next device to show up
-		symlinkPath, devicePath, _ := gofsutil.WWNToDevicePathX(context.Background(), volumeWWN)
-		if devicePath == "" {
-			// All done, no more paths for WWN
-			return nil
-		}
-		log.WithField("CSIRequestID", reqID).WithField("WWN", volumeWWN).WithField("SymlinkPath", symlinkPath).WithField("DevicePath", devicePath).
-			Info("Removing block device")
-		isMultipath := strings.HasPrefix(symlinkPath, gofsutil.MultipathDevDiskByIDPrefix)
-		if isMultipath {
-			var textBytes []byte
-			iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
-			// List the current multipath status
-			ctx := context.Background()
-			// Attempt to flush the devicePath
-			multipathMutex.Lock()
-			textBytes, err = gofsutil.MultipathCommand(ctx, 10, iscsiChroot, "-f", devicePath)
-			multipathMutex.Unlock()
-			if textBytes != nil && len(textBytes) > 0 {
-				log.WithField("CSIRequestID", reqID).Info(fmt.Sprintf("multipath -f %s: %s", devicePath, string(textBytes)))
-			}
-			if err != nil {
-				log.WithField("CSIRequestID", reqID).Info(fmt.Sprintf("multipath flush error: %s: %s", devicePath, err.Error()))
-			}
-			time.Sleep(multipathSleepTime)
-			continue
-		}
-
-		// RemoveBlockDevice is called in a goroutine in case it takes an extended period. It will return error status in channel errorChan.
-		// The mutex protecting concurrent device deletions is held for a maximum of deviceDeletionTimeout.
-		// After that time we check to see if we have received a response from the goroutine.
-		// If there was no response, we return an error that we timed out.
-		// Otherwise, we wait any additional necessary to have slept for the removeDeviceSleepTime.
-		deviceDeleteMutex.Lock()
-		startTime := time.Now()
-		endTime := startTime.Add(removeDeviceSleepTime)
-		errorChan := make(chan error, 1)
-		go func(devicePath string, errorChan chan error) {
-			err := gofsutil.RemoveBlockDevice(context.Background(), devicePath)
-			errorChan <- err
-		}(devicePath, errorChan)
-		done := false
-		for curTime := time.Now(); !done && curTime.Sub(startTime) < deviceDeletionTimeout; curTime = time.Now() {
-			select {
-			case err = <-errorChan:
-				done = true
-				log.Printf("device delete took %v", curTime.Sub(startTime))
-				if err != nil {
-					log.WithField("CSIRequestID", reqID).WithField("DevicePath", devicePath).Error(err)
-				}
-			default:
-				time.Sleep(deviceDeletionPoll)
-			}
-		}
-		deviceDeleteMutex.Unlock()
-		if !done {
-			return fmt.Errorf("Removing block device timed out after %v", deviceDeletionTimeout)
-		}
-		remainingTime := endTime.Sub(time.Now())
-		if remainingTime > (100 * time.Millisecond) {
-			time.Sleep(remainingTime)
-		}
-	}
+// writeWWNFile writes a volume's WWN to a file copy on the node
+func (s *service) writeWWNFile(id, volumeWWN string) error {
+	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
+	err := ioutil.WriteFile(wwnFileName, []byte(volumeWWN), 0644)
 	if err != nil {
-		return err
-	}
-	// Do a linear scan.
-	return linearScanToRemoveDevices(reqID, volumeWWN)
-}
-
-// linearScanToRemoveDevices does a linear scan through /sys/block for devices matching a volumeWWN, and attempts to remove them if any.
-func linearScanToRemoveDevices(reqID, volumeWWN string) error {
-	time.Sleep(removeDeviceSleepTime)
-	devs, _ := gofsutil.GetSysBlockDevicesForVolumeWWN(context.Background(), volumeWWN)
-	if len(devs) == 0 {
-		return nil
-	}
-	log.Printf("volume devices wwn %s still to be deleted: %s", volumeWWN, devs)
-	for _, dev := range devs {
-		devicePath := "/dev/" + dev
-		err := gofsutil.RemoveBlockDevice(context.Background(), devicePath)
-		if err != nil {
-			log.WithField("CSIRequestID", reqID).WithField("DevicePath", devicePath).Error(err)
-		}
-	}
-	devs, _ = gofsutil.GetSysBlockDevicesForVolumeWWN(context.Background(), volumeWWN)
-	if len(devs) > 0 {
-		return status.Error(codes.Internal, fmt.Sprintf("volume WWN %s had %d block devices that weren't successfully deleted: %s", volumeWWN, len(devs), devs))
+		return status.Errorf(codes.Internal, "Could not read WWN file: %s", wwnFileName)
 	}
 	return nil
 }
 
-// copyMultipathConfig file copies the /etc/multipath.conf file from the nodeRoot chdir path to
-// /etc/multipath.conf if testRoot is "". testRoot can be set for testing to copy somehwere else,
-// but it should be empty ( "" ) for normal operation. nodeRoot is normally iscsiChroot env. variable.
-func copyMultipathConfigFile(nodeRoot, testRoot string) error {
-	var srcFile *os.File
-	var dstFile *os.File
-	var err error
-	// Copy the multipath.conf file from /noderoot/etc/multipath.conf (EnvISCSIChroot)to /etc/multipath.conf if present
-	srcFile, err = os.Open(nodeRoot + "/etc/multipath.conf")
-	if err == nil {
-		dstFile, err = os.Create(testRoot + "/etc/multipath.conf")
-		if err != nil {
-			log.Error("Could not open /etc/multipath.conf for writing")
-		} else {
-			written, _ := io.Copy(dstFile, srcFile)
-			log.Printf("copied %d bytes to /etc/multipath.conf", written)
-			dstFile.Close()
-		}
-		srcFile.Close()
+// readWWNFile reads the WWN from a file copy on the node
+func (s *service) readWWNFile(id string) (string, error) {
+	// READ volume WWN
+	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
+	wwnBytes, err := ioutil.ReadFile(wwnFileName)
+	if err != nil {
+		return "", status.Errorf(codes.Internal, "Could not read WWN file: %s", wwnFileName)
 	}
-	return err
+	volumeWWN := string(wwnBytes)
+	return volumeWWN, nil
+}
+
+// removeWWNFile removes the WWN file from the node local disk
+func (s *service) removeWWNFile(id string) {
+	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
+	os.Remove(wwnFileName)
 }

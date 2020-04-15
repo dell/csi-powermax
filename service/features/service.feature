@@ -231,13 +231,6 @@ Feature: PowerMax CSI interface
       Then the error contains "Volume AccessibilityRequirements is not supported"
 
 @v1.0.0
-     Scenario: Create volume with VolumeContentSource
-      Given a PowerMax service
-      And I specify VolumeContentSource
-      And I call CreateVolume "volumecontentsource"
-      Then the error contains "Volume VolumeContentSource is not supported"
-
-@v1.0.0
      Scenario: Create volume with AccessMode_MULTINODE_WRITER
       Given a PowerMax service
       And I specify MULTINODEWRITER
@@ -419,18 +412,6 @@ Feature: PowerMax CSI interface
      Scenario: Call NodeGetVolumeStats, should get unimplemented
       Given a PowerMax service
       When I call NodeGetVolumeStats
-      Then the error contains "Unimplemented"
-
-@v1.0.0
-     Scenario: Call CreateSnapshot, should get unimplemented
-      Given a PowerMax service
-      When I call CreateSnapshot
-      Then the error contains "Unimplemented"
-
-@v1.0.0
-     Scenario: Call DeleteSnapshot, should get unimplemented
-      Given a PowerMax service
-      When I call DeleteSnapshot
       Then the error contains "Unimplemented"
 
 @v1.0.0

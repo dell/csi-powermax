@@ -28,7 +28,9 @@ Procedure
 1. Navigate to the test/helm directory, which contains the starttest.sh and various helm charts.
 
 2. Run the starttest.sh script with an argument of the specific helm chart to deploy and test. For example:
-> ./starttest.sh 2vols
+> bash starttest.sh -t <testname> -n <namespance>
+  Example  -> bash starttest.sh -t 2vols -n test 	
 3. After the test has completed, run the stoptest.sh script to delete the helm chart and cleanup the volumes.
-> ./stoptest.sh
+> bash stoptest.sh -t <testname> -n <namespace>
+ Example -> bash stoptest.sh -t 2vols -n test 
 
