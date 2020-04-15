@@ -1,3 +1,16 @@
+/*
+ Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
 package service
 
 import (
@@ -15,8 +28,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	pmax "github.com/dell/csi-powermax/pmax"
-	mock "github.com/dell/csi-powermax/pmax/mock"
+	pmax "github.com/dell/gopowermax"
+	mock "github.com/dell/gopowermax/mock"
 
 	"github.com/DATA-DOG/godog"
 	"github.com/DATA-DOG/godog/gherkin"
@@ -27,7 +40,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/metadata"
 
-	types "github.com/dell/csi-powermax/pmax/types/v90"
+	types "github.com/dell/gopowermax/types/v90"
 )
 
 const (
@@ -54,8 +67,8 @@ const (
 	nodePublishSymlinkDir      = "test/dev/disk/by-id"
 	nodePublishPathSymlinkDir  = "test/dev/disk/by-path"
 	nodePublishPrivateDir      = "test/tmp"
-	nodePublishWWN             = "60000970000197900046533030324538"
-	nodePublishAltWWN          = "60000970000197900046533030324539"
+	nodePublishWWN             = "60000970000197900046533030300501"
+	nodePublishAltWWN          = "60000970000197900046533030300502"
 	nodePublishLUNID           = "3"
 	iSCSIEtcDir                = "test/etc/iscsi"
 	iSCSIEtcFile               = "initiatorname.iscsi"
@@ -83,6 +96,7 @@ type feature struct {
 	err         error // return from the preceeding call
 	// replace this with the Unispher client
 	adminClient                          pmax.Pmax
+	adminClient91                        pmax.Pmax
 	symmetrixID                          string
 	system                               *interface{}
 	getPluginInfoResponse                *csi.GetPluginInfoResponse
@@ -98,6 +112,7 @@ type feature struct {
 	controllerGetCapabilitiesResponse    *csi.ControllerGetCapabilitiesResponse
 	validateVolumeCapabilitiesResponse   *csi.ValidateVolumeCapabilitiesResponse
 	createSnapshotResponse               *csi.CreateSnapshotResponse
+	deleteSnapshotResponse               *csi.DeleteSnapshotResponse
 	createVolumeRequest                  *csi.CreateVolumeRequest
 	publishVolumeRequest                 *csi.ControllerPublishVolumeRequest
 	unpublishVolumeRequest               *csi.ControllerUnpublishVolumeRequest
@@ -120,6 +135,7 @@ type feature struct {
 	createSnapshotRequest                *csi.CreateSnapshotRequest
 	volumeIDList                         []string
 	volumeNameToID                       map[string]string
+	snapshotNameToID                     map[string]string
 	snapshotIndex                        int
 	selectedPortGroup                    string
 	sgID                                 string
@@ -133,6 +149,7 @@ type feature struct {
 	iscsiTargets                         []goiscsi.ISCSITarget
 	lastUnmounted                        bool
 	errType                              string
+	isSnapSrc                            bool
 }
 
 var inducedErrors struct {
@@ -144,11 +161,14 @@ var inducedErrors struct {
 	badVolumeIdentifier bool
 	invalidVolumeID     bool
 	noVolumeID          bool
+	invalidSnapID       bool
 	differentVolumeID   bool
 	portGroupError      bool
 	noSymID             bool
 	noNodeName          bool
 	noIQNs              bool
+	nonExistentVolume   bool
+	noVolumeSource      bool
 }
 
 func (f *feature) checkGoRoutines(tag string) {
@@ -168,16 +188,22 @@ func (f *feature) aPowerMaxService() error {
 		fmt.Printf("time for last op: %v\n", dur)
 	}
 	f.lastTime = now
+	induceOverloadError = false
 	gofsutil.GOFSWWNPath = "test/dev/disk/by-id/wwn-0x"
 	nodePublishSleepTime = 5 * time.Millisecond
 	removeDeviceSleepTime = 5 * time.Millisecond
 	targetMountRecheckSleepTime = 30 * time.Millisecond
+	disconnectVolumeRetryTime = 10 * time.Millisecond
+	removeWithRetrySleepTime = 10 * time.Millisecond
 	maxBlockDevicesPerWWN = 3
 	f.checkGoRoutines("start aPowerMaxService")
 	// Save off the admin client and the system
 	if f.service != nil && f.service.adminClient != nil {
 		f.adminClient = f.service.adminClient
 		f.system = f.service.system
+	}
+	if f.service != nil && f.service.adminClient91 != nil {
+		f.adminClient91 = f.service.adminClient91
 	}
 	// Let the real code initialize it the first time, we reset the cache each test
 	if pmaxCache != nil {
@@ -225,12 +251,14 @@ func (f *feature) aPowerMaxService() error {
 	f.initiators = make([]string, 0)
 	f.ninitiators = 0
 	f.volumeNameToID = make(map[string]string)
+	f.snapshotNameToID = make(map[string]string)
 	f.snapshotIndex = 0
 	f.allowedArrays = []string{}
 	if f.adminClient != nil {
 		f.adminClient.SetAllowedArrays(f.allowedArrays)
 	}
 	f.iscsiTargets = make([]goiscsi.ISCSITarget, 0)
+	f.isSnapSrc = false
 
 	inducedErrors.invalidSymID = false
 	inducedErrors.invalidStoragePool = false
@@ -245,6 +273,9 @@ func (f *feature) aPowerMaxService() error {
 	inducedErrors.noSymID = false
 	inducedErrors.noNodeName = false
 	inducedErrors.noIQNs = false
+	inducedErrors.nonExistentVolume = false
+	inducedErrors.invalidSnapID = false
+	inducedErrors.noVolumeSource = false
 
 	// configure gofsutil; we use a mock interface
 	gofsutil.UseMockFS()
@@ -295,6 +326,11 @@ func (f *feature) aPowerMaxService() error {
 		f.server = nil
 	}
 
+	// Make sure the snapshot cleanup thread is started.
+	f.service.startSnapCleanupWorker()
+	snapCleaner.PollingInterval = 2 * time.Second
+	// Start the lock workers
+	f.service.StartLockManager(1 * time.Minute)
 	// Make sure the deletion worker is started.
 	f.service.startDeletionWorker(false)
 	f.checkGoRoutines("end aPowerMaxService")
@@ -310,11 +346,15 @@ func (f *feature) getService() *service {
 	if f.adminClient != nil {
 		svc.adminClient = f.adminClient
 	}
+	if f.adminClient91 != nil {
+		svc.adminClient91 = f.adminClient91
+	}
 	if f.system != nil {
 		svc.system = f.system
 	}
 	mock.Reset()
-	mock.Data.JSONDir = "../pmax/mock"
+	// This is a temp fix and needs to be handled in a different way
+	mock.Data.JSONDir = "../../gopowermax/mock"
 	svc.loggedInArrays = map[string]bool{}
 
 	var opts Opts
@@ -340,6 +380,12 @@ scini                 799210  0
 ip6t_rpfilter          12595  1
 `
 	svc.opts = opts
+	svc.arrayTransportProtocolMap = make(map[string]string)
+	svc.arrayTransportProtocolMap[mock.DefaultSymmetrixID] = IscsiTransportProtocol
+	svc.fcConnector = &mockFCGobrick{}
+	svc.iscsiConnector = &mockISCSIGobrick{}
+	mockGobrickReset()
+	disconnectVolumeRetryTime = 10 * time.Millisecond
 	f.service = svc
 	return svc
 }
@@ -731,6 +777,8 @@ func (f *feature) iInduceError(errtype string) error {
 		mock.InducedErrors.GetStorageGroupError = true
 	case "CreateStorageGroupError":
 		mock.InducedErrors.CreateStorageGroupError = true
+	case "GetMaskingViewError":
+		mock.InducedErrors.GetMaskingViewError = true
 	case "CreateMaskingViewError":
 		mock.InducedErrors.CreateMaskingViewError = true
 	case "GetStoragePoolListError":
@@ -763,6 +811,28 @@ func (f *feature) iInduceError(errtype string) error {
 		mock.InducedErrors.GetInitiatorError = true
 	case "GetInitiatorByIDError":
 		mock.InducedErrors.GetInitiatorByIDError = true
+	case "CreateSnapshotError":
+		mock.InducedErrors.CreateSnapshotError = true
+	case "LinkSnapshotError":
+		mock.InducedErrors.LinkSnapshotError = true
+	case "SnapshotNotLicensed":
+		mock.InducedErrors.SnapshotNotLicensed = true
+	case "InvalidResponse":
+		mock.InducedErrors.InvalidResponse = true
+	case "UnisphereMismatchError":
+		mock.InducedErrors.UnisphereMismatchError = true
+	case "TargetNotDefinedError":
+		mock.InducedErrors.TargetNotDefinedError = true
+	case "SnapshotExpired":
+		mock.InducedErrors.SnapshotExpired = true
+	case "GetSymVolumeError":
+		mock.InducedErrors.GetSymVolumeError = true
+	case "InvalidSnapshotName":
+		mock.InducedErrors.InvalidSnapshotName = true
+	case "GetVolSnapsError":
+		mock.InducedErrors.GetVolSnapsError = true
+	case "GetPrivVolumeByIDError":
+		mock.InducedErrors.GetPrivVolumeByIDError = true
 	case "NoSymlinkForNodePublish":
 		cmd := exec.Command("rm", "-rf", nodePublishSymlinkDir)
 		_, err := cmd.CombinedOutput()
@@ -893,6 +963,14 @@ func (f *feature) iInduceError(errtype string) error {
 	case "RescanError":
 		gofsutil.GOFSMock.InduceRescanError = true
 		inducedErrors.rescanError = true
+	case "GobrickConnectError":
+		mockGobrickInducedErrors.ConnectVolumeError = true
+	case "GobrickDisconnectError":
+		mockGobrickInducedErrors.DisconnectVolumeError = true
+	case "InduceOverloadError":
+		induceOverloadError = true
+	case "InvalidateNodeID":
+		f.iInvalidateTheNodeID()
 	case "none":
 		return nil
 	default:
@@ -1162,7 +1240,7 @@ func (f *feature) iHaveAFCPortGroup(portGroupID string) error {
 }
 
 func (f *feature) iAddTheVolumeTo(nodeID string) error {
-	volumeIdentifier, _, devID, _ := f.service.parseCSIVolumeID(f.volumeID)
+	volumeIdentifier, _, devID, _ := f.service.parseCsiID(f.volumeID)
 	mock.AddOneVolumeToStorageGroup(devID, volumeIdentifier, f.sgID, 1)
 	return nil
 }
@@ -1210,6 +1288,11 @@ func (f *feature) aValidVolume() error {
 
 func (f *feature) anInvalidVolume() error {
 	inducedErrors.invalidVolumeID = true
+	return nil
+}
+
+func (f *feature) anInvalidSnapshot() error {
+	inducedErrors.invalidSnapID = true
 	return nil
 }
 
@@ -1547,11 +1630,13 @@ func (f *feature) aValidControllerGetCapabilitiesResponseIsReturned() error {
 				count = count + 1
 			case csi.ControllerServiceCapability_RPC_GET_CAPACITY:
 				count = count + 1
+			case csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT:
+				count = count + 1
 			default:
 				return fmt.Errorf("received unexpected capability: %v", typex)
 			}
 		}
-		if count != 3 {
+		if count != 4 {
 			return fmt.Errorf("Did not retrieve all the expected capabilities")
 		}
 		return nil
@@ -1857,7 +1942,7 @@ func rescanCallback(scanstring string) {
 func (f *feature) getNodePublishVolumeRequest() error {
 	req := new(csi.NodePublishVolumeRequest)
 	req.VolumeId = volume1
-	volName, _, devID, err := f.service.parseCSIVolumeID(volume1)
+	volName, _, devID, err := f.service.parseCsiID(volume1)
 	if err != nil {
 		return errors.New("couldn't parse volume1")
 	}
@@ -2078,6 +2163,9 @@ func (f *feature) iCallNodeUnstageVolume() error {
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 	req := new(csi.NodeUnstageVolumeRequest)
 	req.VolumeId = f.nodePublishVolumeRequest.VolumeId
+	if inducedErrors.invalidVolumeID {
+		req.VolumeId = "badVolumeID"
+	}
 	req.StagingTargetPath = f.nodePublishVolumeRequest.StagingTargetPath
 	log.Printf("iCallNodeUnstageVolume %s %s", req.VolumeId, req.StagingTargetPath)
 	_, f.err = f.service.NodeUnstageVolume(ctx, req)
@@ -2102,7 +2190,7 @@ func (f *feature) aValidNodeGetCapabilitiesResponseIsReturned() error {
 	return errors.New("expected NodeGetCapabilities to return some capabilities")
 }
 
-func (f *feature) iCallCreateSnapshotWith(snapName string) error {
+func (f *feature) iCallCreateSnapshotWith(SnapID string) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 
@@ -2111,27 +2199,34 @@ func (f *feature) iCallCreateSnapshotWith(snapName string) error {
 	}
 	req := &csi.CreateSnapshotRequest{
 		SourceVolumeId: f.volumeIDList[0],
-		Name:           snapName,
+		Name:           SnapID,
 	}
 	if inducedErrors.invalidVolumeID {
 		req.SourceVolumeId = "00000000"
 	} else if inducedErrors.noVolumeID {
 		req.SourceVolumeId = ""
-	} else if len(f.volumeIDList) > 1 {
-		req.Parameters = make(map[string]string)
-		stringList := ""
-		for _, v := range f.volumeIDList {
-			if stringList == "" {
-				stringList = v
-			} else {
-				stringList = stringList + "," + v
-			}
-		}
-		// TODO
-		// req.Parameters[VolumeIDList] = stringList
-		return errors.New("VolumeIDList and snap cg not implemented")
+	} else if inducedErrors.nonExistentVolume {
+		req.SourceVolumeId = fmt.Sprintf("CSI-TST-00000000-%s-000000000", f.symmetrixID)
 	}
 	f.createSnapshotResponse, f.err = f.service.CreateSnapshot(ctx, req)
+	if f.createSnapshotResponse != nil {
+		f.snapshotNameToID[SnapID] = f.createSnapshotResponse.GetSnapshot().SnapshotId
+	}
+	return nil
+}
+
+func (f *feature) iCallCreateSnapshotOn(snapshotName, volumeName string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+
+	req := &csi.CreateSnapshotRequest{
+		SourceVolumeId: f.volumeNameToID[volumeName],
+		Name:           snapshotName,
+	}
+	f.createSnapshotResponse, f.err = f.service.CreateSnapshot(ctx, req)
+	if f.createSnapshotResponse != nil {
+		f.snapshotNameToID[snapshotName] = f.createSnapshotResponse.GetSnapshot().SnapshotId
+	}
 	return nil
 }
 
@@ -2152,14 +2247,29 @@ func (f *feature) aValidSnapshot() error {
 func (f *feature) iCallDeleteSnapshot() error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
-	req := &csi.DeleteSnapshotRequest{SnapshotId: goodSnapID, Secrets: make(map[string]string)}
-	req.Secrets["x"] = "y"
-	if inducedErrors.invalidVolumeID {
-		req.SnapshotId = "00000000"
-	} else if inducedErrors.noVolumeID {
-		req.SnapshotId = ""
+	snapshotID := ""
+	if f.createSnapshotResponse != nil {
+		snapshotID = f.createSnapshotResponse.GetSnapshot().GetSnapshotId()
 	}
-	_, f.err = f.service.DeleteSnapshot(ctx, req)
+	if inducedErrors.invalidSnapID {
+		snapshotID = "invalid_snap"
+	}
+	req := &csi.DeleteSnapshotRequest{
+		SnapshotId: snapshotID,
+		Secrets:    make(map[string]string),
+	}
+	req.Secrets["x"] = "y"
+	f.deleteSnapshotResponse, f.err = f.service.DeleteSnapshot(ctx, req)
+	return nil
+}
+
+func (f *feature) iCallRemoveSnapshot(snapshotName string) error {
+	snapshotName, arrayID, deviceID, err := f.service.parseCsiID(f.snapshotNameToID[snapshotName])
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	f.err = f.service.RemoveSnapshot(arrayID, deviceID, snapshotName, int64(0))
 	return nil
 }
 
@@ -2178,12 +2288,51 @@ func (f *feature) iCallCreateVolumeFromSnapshot() error {
 	if f.wrongStoragePool {
 		req.Parameters["storagepool"] = "bad storage pool"
 	}
-	source := &csi.VolumeContentSource_SnapshotSource{SnapshotId: goodSnapID}
+	var snapshotID string
+	if inducedErrors.invalidSnapID {
+		snapshotID = "invalid_snapshot"
+	} else {
+		snapshotID = f.createSnapshotResponse.GetSnapshot().GetSnapshotId()
+	}
+	source := &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID}
 	req.VolumeContentSource = new(csi.VolumeContentSource)
 	req.VolumeContentSource.Type = &csi.VolumeContentSource_Snapshot{Snapshot: source}
 	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
 	if f.err != nil {
 		fmt.Printf("Error on CreateVolume from snap: %s\n", f.err.Error())
+	}
+	return nil
+}
+
+func (f *feature) iCallCreateVolumeFromVolume() error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := f.getTypicalCreateVolumeRequest()
+	req.Name = "volumeFromVolume"
+	if f.wrongCapacity {
+		req.CapacityRange.RequiredBytes = 64 * 1024 * 1024 * 1024
+	}
+	if f.wrongStoragePool {
+		req.Parameters["storagepool"] = "bad storage pool"
+	}
+	var volumeID string
+	if inducedErrors.noVolumeSource {
+		volumeID = ""
+	} else if inducedErrors.nonExistentVolume {
+		volumeID = fmt.Sprintf("CSI-TST-00000000-%s-000000000", f.symmetrixID)
+	} else if inducedErrors.invalidVolumeID {
+		volumeID = "000000000"
+	} else {
+		volumeID = f.volumeID
+	}
+	source := &csi.VolumeContentSource_VolumeSource{VolumeId: volumeID}
+	req.VolumeContentSource = new(csi.VolumeContentSource)
+	if volumeID != "" {
+		req.VolumeContentSource.Type = &csi.VolumeContentSource_Volume{Volume: source}
+	}
+	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
+	if f.err != nil {
+		fmt.Printf("Error in creating a volume from another volume: %s\n", f.err.Error())
 	}
 	return nil
 }
@@ -2197,8 +2346,6 @@ func (f *feature) theWrongStoragePool() error {
 	f.wrongStoragePool = true
 	return nil
 }
-
-// Every increasing int used to generate unique snapshot indexes
 
 func (f *feature) thereAreValidSnapshotsOfVolume(nsnapshots int, volume string) error {
 	return godog.ErrPending
@@ -2287,7 +2434,7 @@ func (f *feature) iQueueForDeletion(volumeName string) error {
 	if volumeID == "" {
 		return fmt.Errorf("Could not find volumeID for volume %s", volumeName)
 	}
-	_, arrayID, devID, _ := f.service.parseCSIVolumeID(volumeID)
+	_, arrayID, devID, _ := f.service.parseCsiID(volumeID)
 	var volumeSize float64
 	if vol, ok := mock.Data.VolumeIDToVolume[devID]; ok {
 		volumeSize = vol.CapacityGB
@@ -2711,7 +2858,8 @@ func (f *feature) aNodeRootWithMultipathConfigFile() error {
 }
 
 func (f *feature) iCallCopyMultipathConfigFileWithRoot(testRoot string) error {
-	f.err = copyMultipathConfigFile("test/noderoot", testRoot)
+	// TODO: remove
+	//f.err = copyMultipathConfigFile("test/noderoot", testRoot)
 	return nil
 }
 
@@ -2821,7 +2969,8 @@ func (f *feature) iHaveSysblockDevices(cnt int) error {
 }
 
 func (f *feature) iCallLinearScanToRemoveDevices() error {
-	f.err = linearScanToRemoveDevices("0", nodePublishWWN)
+	// TODO: remove
+	//f.err = linearScanToRemoveDevices("0", nodePublishWWN)
 	return nil
 }
 
@@ -2837,6 +2986,299 @@ func (f *feature) iCallVerifyInitiatorsNotInADifferentHostForNode(nodeID string)
 func (f *feature) validInitiatorsAreReturned(expected int) error {
 	if expected != f.ninitiators {
 		return fmt.Errorf("expected %d initiators but got %d", expected, f.ninitiators)
+	}
+	return nil
+}
+
+func (f *feature) iCheckTheSnapshotLicense() error {
+	f.err = f.service.IsSnapshotLicensed(f.symmetrixID)
+	return nil
+}
+
+func (f *feature) iCallIsVolumeInSnapSessionOn(volumeName string) error {
+	var volumeID string
+	if inducedErrors.nonExistentVolume {
+		volumeID = fmt.Sprintf("CSI-TST-00000000-%s-000000000", f.symmetrixID)
+	} else {
+		volumeID = f.volumeNameToID[volumeName]
+	}
+	_, arrayID, deviceID, err := f.service.parseCsiID(volumeID)
+	if err != nil {
+		return fmt.Errorf("Error parsing the CSI VolumeID: %s", err.Error())
+	}
+	isSource, isTarget, err := f.service.IsVolumeInSnapSession(arrayID, deviceID)
+	if err != nil {
+		f.err = err
+	} else {
+		fmt.Printf("Source = %t; Target=%t", isSource, isTarget)
+	}
+	return nil
+}
+
+func (f *feature) iCallExecSnapActionToSnapshotTo(action, snapshotName, volumeName string) error {
+	snapshotName, arrayID, device1, err := f.service.parseCsiID(f.snapshotNameToID[snapshotName])
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	_, _, device2, err := f.service.parseCsiID(f.volumeNameToID[volumeName])
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	SourceList := []types.VolumeList{}
+	TargetList := []types.VolumeList{}
+	SourceList = append(SourceList, types.VolumeList{Name: device1})
+	TargetList = append(TargetList, types.VolumeList{Name: device2})
+	f.err = f.service.adminClient.ModifySnapshot(arrayID, SourceList, TargetList, snapshotName, action, "", int64(0))
+	return nil
+}
+
+func (f *feature) iCallUnlinkAndTerminate(volumeName string) error {
+	_, arrayID, deviceID, err := f.service.parseCsiID(f.volumeNameToID[volumeName])
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	f.err = f.service.UnlinkAndTerminate(arrayID, deviceID, "")
+	return nil
+}
+
+func (f *feature) iCallGetSnapSessionsOn(volumeName string) error {
+	_, arrayID, deviceID, err := f.service.parseCsiID(f.volumeNameToID[volumeName])
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	sourceSessions, targetSession, err := f.service.GetSnapSessions(arrayID, deviceID)
+	if err != nil {
+		f.err = err
+	}
+	fmt.Printf("SourceSessions = %v, TargetSession = %v\n", sourceSessions, targetSession)
+	return nil
+}
+
+func (f *feature) iCallRemoveTempSnapshotOn(volumeName string) error {
+	_, arrayID, deviceID, err := f.service.parseCsiID(f.volumeNameToID[volumeName])
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	_, targetSession, err := f.service.GetSnapSessions(arrayID, deviceID)
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	f.err = f.service.UnlinkSnapshot(arrayID, targetSession)
+	return nil
+}
+
+func (f *feature) iCallCreateSnapshotFromVolume(snapshotName string) error {
+	arrayID, _, volume, err := f.service.GetVolumeByID(f.volumeID)
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	reqID := strconv.Itoa(time.Now().Nanosecond())
+	reqID = "req:" + reqID
+	snapshot, err := f.service.CreateSnapshotFromVolume(arrayID, volume, snapshotName, int64(0), reqID)
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	fmt.Printf("VolumeSnapshot = %v\n", snapshot)
+	return nil
+}
+
+func (f *feature) iCallCreateVolumeFrom(volumeName, snapshotName string) error {
+	snapshotName, arrayID, sourceDevice, err := f.service.parseCsiID(f.snapshotNameToID[snapshotName])
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	reqID := strconv.Itoa(time.Now().Nanosecond())
+	reqID = "req:" + reqID
+	_, _, targetDevice, err := f.service.parseCsiID(f.volumeNameToID[volumeName])
+	f.err = f.service.LinkVolumeToSnapshot(arrayID, sourceDevice, targetDevice, snapshotName, reqID)
+	return nil
+}
+
+func (f *feature) iCallTerminateSnapshot() error {
+	snapshotName, arrayID, deviceID, err := f.service.parseCsiID(f.createSnapshotResponse.GetSnapshot().GetSnapshotId())
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	f.err = f.service.TerminateSnapshot(arrayID, deviceID, snapshotName)
+	return nil
+}
+
+func (f *feature) iCallUnlinkAndTerminateSnapshot() error {
+	snapshotName, arrayID, deviceID, err := f.service.parseCsiID(f.createSnapshotResponse.GetSnapshot().GetSnapshotId())
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	f.err = f.service.UnlinkAndTerminate(arrayID, deviceID, snapshotName)
+	return nil
+}
+
+func (f *feature) aValidDeleteSnapshotResponseIsReturned() error {
+	if f.err != nil {
+		return f.err
+	}
+	if f.deleteSnapshotResponse == nil {
+		return errors.New("Expected a valid delete snapshot response")
+	}
+	return nil
+}
+
+func (f *feature) aNonexistentVolume() error {
+	inducedErrors.nonExistentVolume = true
+	return nil
+}
+
+func (f *feature) noVolumeSource() error {
+	inducedErrors.noVolumeSource = true
+	return nil
+}
+
+func (f *feature) iResetTheLicenseCache() error {
+	licenseCached = false
+	symmRepCapabilities = nil
+	return nil
+}
+
+func (f *feature) iCallMarkSnapshotForDeletion() error {
+	snapshotName, arrayID, deviceID, err := f.service.parseCsiID(f.createSnapshotResponse.GetSnapshot().GetSnapshotId())
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	newSnapID, err := f.service.MarkSnapshotForDeletion(arrayID, snapshotName, deviceID)
+	f.createSnapshotResponse.Snapshot.SnapshotId = newSnapID
+	if err != nil {
+		f.err = err
+		return nil
+	}
+	fmt.Printf("Snapshot(%s) marked for deletion as %s", snapshotName, newSnapID)
+	return nil
+}
+
+func (f *feature) iCheckIfTheSnapshotHasBeenDeleted() error {
+	MAXRETRIES := 5
+	var snapshot *types.VolumeSnapshot
+	for i := 0; i < MAXRETRIES; i++ {
+		_, symID, deviceID, err := f.service.parseCsiID(f.createVolumeResponse.Volume.VolumeId)
+		if err != nil {
+			f.err = err
+			return nil
+		}
+		snapshot, err = f.service.adminClient.GetSnapshotInfo(symID, deviceID, f.createSnapshotResponse.Snapshot.SnapshotId)
+		if err != nil {
+			f.err = err
+			return nil
+		}
+		if snapshot.VolumeSnapshotSource == nil {
+			return nil
+		}
+		if i < MAXRETRIES-1 {
+			time.Sleep(time.Second * 1)
+		}
+	}
+	if snapshot.VolumeSnapshotSource != nil {
+		f.err = fmt.Errorf("Snapshot not deleted by the worker")
+	}
+	return nil
+}
+
+func (f *feature) iCallIsSnapshotSource() error {
+	var arrayID, deviceID string
+	if f.createSnapshotResponse != nil {
+		_, arrayID, deviceID, f.err = f.service.parseCsiID(f.createSnapshotResponse.GetSnapshot().GetSnapshotId())
+	} else {
+		_, arrayID, deviceID, f.err = f.service.parseCsiID(f.createVolumeResponse.GetVolume().GetVolumeId())
+	}
+
+	f.isSnapSrc, f.err = f.service.IsSnapshotSource(arrayID, deviceID)
+	return nil
+}
+
+func (f *feature) isSnapshotSourceReturns(isSnapSrcResponse string) error {
+	if !(isSnapSrcResponse == strconv.FormatBool(f.isSnapSrc)) {
+		f.err = fmt.Errorf("Incorrect response sent by IsSnapshotSource()")
+	}
+	return nil
+}
+
+func (f *feature) iCallDeleteSnapshotWith(snapshotName string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	snapshotID := ""
+	if f.createSnapshotResponse != nil {
+		snapshotID = f.snapshotNameToID[snapshotName]
+	}
+	if inducedErrors.invalidSnapID {
+		snapshotID = "invalid_snap"
+	}
+	req := &csi.DeleteSnapshotRequest{
+		SnapshotId: snapshotID,
+		Secrets:    make(map[string]string),
+	}
+	req.Secrets["x"] = "y"
+	f.deleteSnapshotResponse, f.err = f.service.DeleteSnapshot(ctx, req)
+	return nil
+}
+
+func (f *feature) iQueueSnapshotsForTermination() error {
+	snap1 := f.createSnapshotResponse.GetSnapshot().GetSnapshotId()
+	snapDelReq1 := new(snapCleanupRequest)
+	var err error
+	snapDelReq1.snapshotID, snapDelReq1.symmetrixID, snapDelReq1.volumeID, err = f.service.parseCsiID(snap1)
+	if err != nil {
+		return fmt.Errorf("Invalid snapshot name")
+	}
+	snapCleaner.requestCleanup(snapDelReq1)
+	snap2 := f.snapshotNameToID["snapshot2"]
+	snapDelReq2 := new(snapCleanupRequest)
+	snapDelReq2.snapshotID, snapDelReq2.symmetrixID, snapDelReq2.volumeID, err = f.service.parseCsiID(snap2)
+	if err != nil {
+		return fmt.Errorf("Invalid snapshot name")
+	}
+	snapCleaner.requestCleanup(snapDelReq2)
+	snapshot := f.snapshotNameToID["snapshot3"]
+	snapDelReq := new(snapCleanupRequest)
+	snapDelReq.snapshotID, snapDelReq.symmetrixID, snapDelReq.volumeID, err = f.service.parseCsiID(snapshot)
+	if err != nil {
+		return fmt.Errorf("Invalid snapshot name")
+	}
+	time.Sleep(10 * time.Second)
+	snapCleaner.requestCleanup(snapDelReq)
+	return nil
+}
+
+func (f *feature) theDeletionWorkerProcessesTheSnapshotsSuccessfully() error {
+	snapCount := len(f.snapshotNameToID)
+	for {
+		deletedSnapCount := 0
+		for _, snapshot := range f.snapshotNameToID {
+			snapName, symID, volumeID, err := f.service.parseCsiID(snapshot)
+			if err != nil {
+				continue
+			}
+			snapInfo, err := f.service.adminClient.GetSnapshotInfo(symID, volumeID, snapName)
+			if err != nil {
+				continue
+			}
+			if snapInfo.VolumeSnapshotLink == nil {
+				deletedSnapCount++
+			}
+			fmt.Printf("%v\n", snapInfo)
+		}
+		if snapCount == deletedSnapCount {
+			break
+		}
+		time.Sleep(2 * time.Second)
 	}
 	return nil
 }
@@ -2872,6 +3314,7 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^a valid PublishVolumeResponse is returned$`, f.aValidPublishVolumeResponseIsReturned)
 	s.Step(`^a valid volume$`, f.aValidVolume)
 	s.Step(`^an invalid volume$`, f.anInvalidVolume)
+	s.Step(`^an invalid snapshot$`, f.anInvalidSnapshot)
 	s.Step(`^no volume$`, f.noVolume)
 	s.Step(`^no node$`, f.noNode)
 	s.Step(`^no volume capability$`, f.noVolumeCapability)
@@ -2916,10 +3359,12 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call NodeGetCapabilities$`, f.iCallNodeGetCapabilities)
 	s.Step(`^a valid NodeGetCapabilitiesResponse is returned$`, f.aValidNodeGetCapabilitiesResponseIsReturned)
 	s.Step(`^I call CreateSnapshot$`, f.iCallCreateSnapshot)
-	s.Step(`^I call CreateSnapshot "([^"]*)"$`, f.iCallCreateSnapshotWith)
+	s.Step(`^I call CreateSnapshot With "([^"]*)"$`, f.iCallCreateSnapshotWith)
+	s.Step(`^I call CreateSnapshot "([^"]*)" on "([^"]*)"$`, f.iCallCreateSnapshotOn)
 	s.Step(`^a valid CreateSnapshotResponse is returned$`, f.aValidCreateSnapshotResponseIsReturned)
 	s.Step(`^a valid snapshot$`, f.aValidSnapshot)
 	s.Step(`^I call DeleteSnapshot$`, f.iCallDeleteSnapshot)
+	s.Step(`^I call RemoveSnapshot "([^"]*)"$`, f.iCallRemoveSnapshot)
 	s.Step(`^a valid snapshot consistency group$`, f.aValidSnapshotConsistencyGroup)
 	s.Step(`^I call Create Volume from Snapshot$`, f.iCallCreateVolumeFromSnapshot)
 	s.Step(`^the wrong capacity$`, f.theWrongCapacity)
@@ -2992,4 +3437,26 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call linearScanToRemoveDevices$`, f.iCallLinearScanToRemoveDevices)
 	s.Step(`^I call verifyInitiatorsNotInADifferentHost for node "([^"]*)"$`, f.iCallVerifyInitiatorsNotInADifferentHostForNode)
 	s.Step(`^(\d+) valid initiators are returned$`, f.validInitiatorsAreReturned)
+	s.Step(`^I check the snapshot license$`, f.iCheckTheSnapshotLicense)
+	s.Step(`^I call IsVolumeInSnapSession on "([^"]*)"$`, f.iCallIsVolumeInSnapSessionOn)
+	s.Step(`^I call ExecSnapAction to "([^"]*)" snapshot "([^"]*)" to "([^"]*)"$`, f.iCallExecSnapActionToSnapshotTo)
+	s.Step(`^I call UnlinkAndTerminate on "([^"]*)"$`, f.iCallUnlinkAndTerminate)
+	s.Step(`^I call GetSnapSessions on "([^"]*)"$`, f.iCallGetSnapSessionsOn)
+	s.Step(`^I call RemoveTempSnapshot on "([^"]*)"$`, f.iCallRemoveTempSnapshotOn)
+	s.Step(`^I call CreateSnapshotFromVolume "([^"]*)"$`, f.iCallCreateSnapshotFromVolume)
+	s.Step(`^I call create volume "([^"]*)" from "([^"]*)"$`, f.iCallCreateVolumeFrom)
+	s.Step(`^I call Create Volume from Volume$`, f.iCallCreateVolumeFromVolume)
+	s.Step(`^I call TerminateSnapshot$`, f.iCallTerminateSnapshot)
+	s.Step(`^I call UnlinkAndTerminate snapshot$`, f.iCallUnlinkAndTerminateSnapshot)
+	s.Step(`^a valid DeleteSnapshotResponse is returned$`, f.aValidDeleteSnapshotResponseIsReturned)
+	s.Step(`^a non-existent volume$`, f.aNonexistentVolume)
+	s.Step(`^no volume source$`, f.noVolumeSource)
+	s.Step(`^I reset the license cache$`, f.iResetTheLicenseCache)
+	s.Step(`^I call MarkSnapshotForDeletion$`, f.iCallMarkSnapshotForDeletion)
+	s.Step(`^I check if the snapshot has been deleted$`, f.iCheckIfTheSnapshotHasBeenDeleted)
+	s.Step(`^I call IsSnapshotSource$`, f.iCallIsSnapshotSource)
+	s.Step(`^I call DeleteSnapshot with "([^"]*)"$`, f.iCallDeleteSnapshotWith)
+	s.Step(`^IsSnapshotSource returns "([^"]*)"$`, f.isSnapshotSourceReturns)
+	s.Step(`^I queue snapshots for termination$`, f.iQueueSnapshotsForTermination)
+	s.Step(`^the deletion worker processes the snapshots successfully$`, f.theDeletionWorkerProcessesTheSnapshotsSuccessfully)
 }

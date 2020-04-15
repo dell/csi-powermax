@@ -1,4 +1,4 @@
-#/bin/sh
+#/bin/bash
 
 TEST=""
 NAMESPACE="test"
@@ -47,12 +47,12 @@ RELEASE=`basename "${TEST}"`
 
 VALUES="__${NAMESPACE}-${RELEASE}__.yaml"
 
-helm delete --purge "${RELEASE}"
+helm -n ${NAMESPACE} delete "${RELEASE}"
 sleep 10
 kubectl get pods -n "${NAMESPACE}"
 echo "waiting for persistent volumes to be cleaned up"
 sleep 90
-sh deletepvcs.sh -n "${NAMESPACE}"
+bash deletepvcs.sh -n "${NAMESPACE}"
 kubectl get persistentvolumes -o wide
 
 if [ -f "${VALUES}" ]; then
