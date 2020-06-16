@@ -15,11 +15,11 @@
 package service
 
 import (
-	// "errors"
-	// "fmt"
-
+	"errors"
 	"fmt"
 	"math/rand"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +74,7 @@ const (
 	PublishContextDeviceWWN         = "DEVICE_WWN"
 	PublishContextLUNAddress        = "LUN_ADDRESS"
 	PortIdentifiers                 = "PORT_IDENTIFIERS"
+	PortIdentifierKeyCount          = "PORT_IDENTIFIER_KEYS"
 	FCSuffix                        = "-FC"
 	PGSuffix                        = "PG"
 	notFound                        = "not found"       // error message from s.GetVolumeByID when volume not found
@@ -149,6 +150,9 @@ var (
 
 	// Quickly fail if there is too much load
 	controllerPendingState pendingState
+
+	// Retry delay for retrying GetMaskingViewConnections
+	getMVConnectionsDelay = 30 * time.Second
 )
 
 func (s *service) GetPortIdentifier(symID string, dirPortKey string) (string, error) {
@@ -157,6 +161,9 @@ func (s *service) GetPortIdentifier(symID string, dirPortKey string) (string, er
 	portIdentifier := ""
 	cache := getPmaxCache(symID)
 	cacheExpired := false
+	if cache == nil {
+		return "", fmt.Errorf("Internal error - cache pointer is empty")
+	}
 	if cache.portIdentifiers != nil {
 		portTimeStamp := cache.portIdentifiers.second.(time.Time)
 		if time.Now().Sub(portTimeStamp) < s.storagePoolCacheDuration {
@@ -417,7 +424,7 @@ func (s *service) CreateVolume(
 		}
 	}
 
-	// Idempotency test. We w	ill read the volume and check for:
+	// Idempotency test. We will read the volume and check for:
 	// 1. Existence of a volume with matching volume name
 	// 2. Matching cylinderSize
 	// 3. Is a member of the storage group
@@ -971,179 +978,90 @@ func (s *service) ControllerPublishVolume(
 			}
 		}
 	}
-	lockNum := RequestLock(tgtStorageGroupID, reqID)
-	defer ReleaseLock(tgtStorageGroupID, reqID, lockNum)
+
+	waitChan, lockChan, err := s.sgSvc.requestAddVolumeToSGMV(tgtStorageGroupID, tgtMaskingViewID, hostID, reqID, symID, devID, am)
+	if err != nil {
+		log.Error(err)
+		return nil, err
+	}
+	log.Infof("reqID %s devID %s waitChan %v lockChan %v", reqID, devID, waitChan, lockChan)
+
+	var connections []*types.MaskingViewConnection
+	for done := false; !done; {
+		select {
+		case response := <-waitChan:
+			err = response.err
+			connections = response.connections
+			if err != nil {
+				log.Infof("Received error %s on waitChan %v reqID %s", err, waitChan, reqID)
+			}
+			close(waitChan)
+			done = true
+		case <-lockChan:
+			// We own the lock, and should process the service
+			s.sgSvc.runAddVolumesToSGMV(symID, tgtStorageGroupID)
+		}
+	}
+
+	// Return error if that was the result
+	if err != nil {
+		return nil, err
+	}
 
 	publishContext := map[string]string{
 		PublishContextDeviceWWN: vol.WWN,
 	}
-	volumeAlreadyInSG := false
-	currentSGIDs := vol.StorageGroupIDList
-	for _, sgID := range currentSGIDs {
-		if sgID == tgtStorageGroupID {
-			volumeAlreadyInSG = true
-		}
-	}
-	maskingViewIDs, storageGroups, err := s.GetMaskingViewAndSGDetails(symID, currentSGIDs)
-	if err != nil {
-		log.Error("GetMaskingViewAndSGDetails Error: " + err.Error())
-		return nil, err
-	}
-	for _, storageGroup := range storageGroups {
-		if storageGroup.StorageGroupID == tgtStorageGroupID {
-			if storageGroup.SRP != "" {
-				log.Error("Conflicting SG present")
-				return nil, status.Error(codes.Internal, "Conflicting SG present")
-			}
-		}
-	}
-	maskingViewExists := false
-	volumeInMaskingView := false
-	// First check if our masking view is in the existsing list
-	for _, mvID := range maskingViewIDs {
-		if mvID == tgtMaskingViewID {
-			maskingViewExists = true
-			volumeInMaskingView = true
-		}
-	}
-	switch am.Mode {
-	case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
-		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
-		// Check if the volume is already mapped to some host
-		if vol.NumberOfFrontEndPaths > 0 {
-			// make sure we got at least one masking view
-			if len(maskingViewIDs) == 0 {
-				// this is an error, we should have gotten at least one MV
-				return nil, status.Error(codes.Internal, "No masking views found for volume")
-			}
-			if len(maskingViewIDs) > 1 {
-				log.Error("Volume already part of multiple Masking views")
-				return nil, status.Error(codes.Internal, "Volume already part of multiple Masking views")
-			}
-			if maskingViewIDs[0] == tgtMaskingViewID {
-				// Do a double check for the SG as well
-				if volumeAlreadyInSG {
-					log.Debug("volume already mapped")
-					return s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID)
-				}
-				log.Error(fmt.Sprintf("ControllerPublishVolume: Masking view - %s has conflicting SG", tgtMaskingViewID))
-				return nil, status.Errorf(codes.FailedPrecondition,
-					"Volume in conflicting masking view")
-			}
-			log.Error(fmt.Sprintf("ControllerPublishVolume: Volume present in a different masking view - %s", maskingViewIDs[0]))
-			return nil, status.Errorf(codes.FailedPrecondition,
-				"volume already present in a different masking view")
-		}
-	}
-	tgtMaskingView := &types.MaskingView{}
-	// Fetch the masking view
-	tgtMaskingView, err = s.adminClient.GetMaskingViewByID(symID, tgtMaskingViewID)
-	if err != nil {
-		log.Debug("Failed to fetch masking view from array")
-	} else {
-		maskingViewExists = true
-	}
-	if maskingViewExists {
-		// We just need to confirm if all the other entities are in order
-		if tgtMaskingView.HostID == hostID &&
-			tgtMaskingView.StorageGroupID == tgtStorageGroupID {
-			if volumeInMaskingView {
-				log.Debug("volume already mapped")
-				return s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID)
-			}
-			//Add the volume to masking view
-			err := s.adminClient.AddVolumesToStorageGroup(symID, tgtStorageGroupID, devID)
-			if err != nil {
-				log.Error(fmt.Sprintf("ControllerPublishVolume: Failed to add device - %s to storage group - %s", devID, tgtStorageGroupID))
-				return nil, status.Error(codes.Internal, "Failed to add volume to storage group")
-			}
-		} else {
-			errormsg := fmt.Sprintf(
-				"ControllerPublishVolume: Existing masking view %s with conflicting SG %s or Host %s",
-				tgtMaskingViewID, tgtStorageGroupID, hostID)
-			log.Error(errormsg)
-			return nil, status.Error(codes.Internal, errormsg)
-		}
-	} else {
-		// We need to create a Masking view
-		// First fetch the host details
-		host, err := s.adminClient.GetHostByID(symID, hostID)
-		retry := false
-		if err != nil {
-			// Retry once more after a gap of 2 seconds
-			retry = true
-			time.Sleep(2 * time.Second)
-		}
-		if retry {
-			host, err = s.adminClient.GetHostByID(symID, hostID)
-		}
-		if err != nil {
-			errormsg := fmt.Sprintf(
-				"ControllerPublishVolume: Failed to fetch host details for host %s on %s with error - %s", hostID, symID, err.Error())
-			log.Error(errormsg)
-			return nil, status.Error(codes.NotFound, errormsg)
-		}
-		//Fetch or create a port Group
-		portGroupID, err := s.SelectOrCreatePortGroup(symID, host)
-		if err != nil {
-			errormsg := fmt.Sprintf(
-				"ControllerPublishVolume: Failed to select/create PG for host %s on %s with error - %s", hostID, symID, err.Error())
-			log.Error(errormsg)
-			return nil, status.Error(codes.Internal, errormsg)
-		}
-		if !volumeAlreadyInSG {
-			// First check if our storage group exists
-			tgtStorageGroup, err := s.adminClient.GetStorageGroup(symID, tgtStorageGroupID)
-			if err == nil {
-				// Check if this SG is not managed by FAST
-				if tgtStorageGroup.SRP != "" {
-					log.Error(fmt.Sprintf("ControllerPublishVolume: Storage group - %s exists with same name but with conflicting params", tgtStorageGroupID))
-					return nil, status.Error(codes.Internal, "Storage group exists with same name but with conflicting params")
-				}
-			} else {
-				// Attempt to create SG
-				tgtStorageGroup, err = s.adminClient.CreateStorageGroup(symID, tgtStorageGroupID, "None", "", false)
-				if err != nil {
-					log.Error(fmt.Sprintf("ControllerPublishVolume: Failed to create storage group - %s", tgtStorageGroupID))
-					return nil, status.Error(codes.Internal, "Failed to create storage group")
-				}
-			}
-			// Add the volume to storage group
-			err = s.adminClient.AddVolumesToStorageGroup(symID, tgtStorageGroupID, devID)
-			if err != nil {
-				log.Error(fmt.Sprintf("ControllerPublishVolume: Failed to add device - %s to storage group - %s", devID, tgtStorageGroupID))
-				return nil, status.Error(codes.Internal, "Failed to add volume to storage group")
-			}
-		}
-		_, err = s.adminClient.CreateMaskingView(symID, tgtMaskingViewID, tgtStorageGroupID, hostID, true, portGroupID)
-		if err != nil {
-			log.Error(fmt.Sprintf("ControllerPublishVolume: Failed to create masking view - %s", tgtMaskingViewID))
-			return nil, status.Error(codes.Internal, "Failed to create masking view")
-		}
-	}
 
-	return s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID)
+	return s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID, reqID, connections)
 }
 
 // Adds the LUN_ADDRESS and SCSI target information to the PublishContext by looking at MaskingView connections.
+// The connections may be optionally passed in (returned by the batching code for batched requests) or
+// will be read (and retried) if necessary. GetMaskingViewConnections is an expensive call.
 // The return arguments are suitable for directly passing back to the grpc called.
 // This routine is careful to throw errors if it cannot come up with a valid context, because having ControllerPublish
 // succeed but without valid context will only cause the NodeStage or NodePublish to fail.
-func (s *service) updatePublishContext(publishContext map[string]string, symID, tgtMaskingViewID, deviceID string) (*csi.ControllerPublishVolumeResponse, error) {
-	// We ignore errors here; adding the HostLunAddress to the context is optional (could be multiple.)
-	// Adding target information is also optional as NodePublish may succeed without target information
-	var connections []*types.MaskingViewConnection
-	var err error
-	connections, err = s.adminClient.GetMaskingViewConnections(symID, tgtMaskingViewID, deviceID)
+func (s *service) updatePublishContext(publishContext map[string]string, symID, tgtMaskingViewID, deviceID, reqID string,
+	connections []*types.MaskingViewConnection) (*csi.ControllerPublishVolumeResponse, error) {
+
+	// If we got connections already from runAddVolumesToSGMV, see if there are any for our deviceID.
+	err := errors.New("no connections")
+	if len(connections) > 0 {
+		count := 0
+		for _, conn := range connections {
+			if deviceID == conn.VolumeID {
+				count++
+			}
+		}
+		log.Infof("PublishContext found %d incoming connections for %s %s %s", count, symID, tgtMaskingViewID, deviceID)
+		// If at least two connections passed from the batching code, then we're go to go without refetching the connections.
+		if count >= 2 {
+			err = nil
+		} else {
+			time.Sleep(getMVConnectionsDelay)
+		}
+	}
+
+	// Getting the connections may take some time, thus the retry loop. K8S will retry if this fails.
+	for retry := 0; retry < 2 && err != nil; retry++ {
+		if retry > 0 {
+			time.Sleep(getMVConnectionsDelay)
+			log.Infof("GetMaskingViewConnections retry %d %s %s %s err: %s", retry, symID, tgtMaskingViewID, deviceID, err)
+		}
+		lockNum := RequestLock(getMVLockKey(symID, tgtMaskingViewID), reqID)
+		connections, err = s.adminClient.GetMaskingViewConnections(symID, tgtMaskingViewID, deviceID)
+		ReleaseLock(getMVLockKey(symID, tgtMaskingViewID), reqID, lockNum)
+	}
 	if err != nil {
 		log.Error("Could not get MV Connections: " + err.Error())
 		return nil, status.Errorf(codes.Internal, "PublishContext: Could not get MV Connections: %s", tgtMaskingViewID)
 	}
+
+	// Process the connections
 	lunid := ""
 	dirPorts := make([]string, 0)
 	for _, conn := range connections {
 		if deviceID != conn.VolumeID {
-			log.Debug("MV Connection: VolumeID != deviceID")
 			continue
 		}
 		if lunid == "" {
@@ -1158,27 +1076,48 @@ func (s *service) updatePublishContext(publishContext map[string]string, symID, 
 			dirPorts = appendIfMissing(dirPorts, conn.DirectorPort)
 		}
 	}
+	if lunid == "" {
+		return nil, status.Error(codes.Internal, "PublishContext: No matching connections for deviceID")
+	}
+
 	portIdentifiers := ""
+	portIdsToTrace := ""
+	keyCount := 1
+	portCount := 0
+	portIdentifierKey := fmt.Sprintf("%s_%d", PortIdentifiers, keyCount)
 	for _, dirPortKey := range dirPorts {
 		portIdentifier, err := s.GetPortIdentifier(symID, dirPortKey)
 		if err != nil {
+			log.Errorf("PublishContext: Failed to fetch port details %s %s", symID, dirPortKey)
 			continue
 		}
+		//Each context key holds 3 portIdentifiers
+		if portCount == 3 {
+			portCount = 0
+			keyCount++
+			portIdentifiers = ""
+			//Create portIdentifierKey, e.g. PORT_IDENTIFIERS_2
+			portIdentifierKey = fmt.Sprintf("%s_%d", PortIdentifiers, keyCount)
+
+		}
 		portIdentifiers += portIdentifier + ","
+		portIdsToTrace += portIdentifiers
+		publishContext[portIdentifierKey] = portIdentifiers
+		portCount++
 	}
-	if portIdentifiers == "" {
-		log.Errorf("Failed to fetch port details for any director ports which are part of masking view: %s", tgtMaskingViewID)
+	if portIdsToTrace == "" {
+		log.Errorf("PublishContext: Failed to fetch port details for %s %s which are part of masking view: %s", symID, deviceID, tgtMaskingViewID)
 		return nil, status.Errorf(codes.Internal,
 			"PublishContext: Failed to fetch port details for any director ports which are part of masking view: %s", tgtMaskingViewID)
 	}
-	log.Debugf("Port identifiers in publish context: %s", portIdentifiers)
-	publishContext[PortIdentifiers] = portIdentifiers
-
-	if lunid == "" {
-		return nil, status.Error(codes.Internal, "PublishContext: Could not determine HostLUNAddress")
-	}
+	log.Debugf("Port identifiers in publish context: %s", portIdsToTrace)
+	publishContext[PortIdentifierKeyCount] = strconv.Itoa(keyCount)
 	publishContext[PublishContextLUNAddress] = lunid
 	return &csi.ControllerPublishVolumeResponse{PublishContext: publishContext}, nil
+}
+
+func getMVLockKey(symID, tgtMaskingViewID string) string {
+	return symID + ":" + tgtMaskingViewID
 }
 
 // IsNodeISCSI - Takes a sym id, node id as input and based on the transport protocol setting
@@ -1404,56 +1343,32 @@ func (s *service) ControllerUnpublishVolume(
 		tgtStorageGroupID = tgtISCSIStorageGroupID
 		tgtMaskingViewID = tgtISCSIMaskingViewID
 	}
-	lockNum := RequestLock(tgtStorageGroupID, reqID)
-	defer ReleaseLock(tgtStorageGroupID, reqID, lockNum)
 
-	tempStorageGroupList := []string{tgtStorageGroupID}
-	maskingViewIDs, storageGroups, err := s.GetMaskingViewAndSGDetails(symID, tempStorageGroupList)
+	waitChan, lockChan, err := s.sgSvc.requestRemoveVolumeFromSGMV(tgtStorageGroupID, tgtMaskingViewID, reqID, symID, devID)
 	if err != nil {
+		log.Error(err)
 		return nil, err
 	}
-	// Check if volume is in masking view
-	volumeInMaskingView := false
-	for _, maskingViewID := range maskingViewIDs {
-		if tgtMaskingViewID == maskingViewID {
-			volumeInMaskingView = true
-			break
+	log.Infof("reqID %s devID %s waitChan %v lockChan %v", reqID, devID, waitChan, lockChan)
+
+	for done := false; !done; {
+		select {
+		case response := <-waitChan:
+			err = response.err
+			if err != nil {
+				log.Infof("Received error %s on waitChan %v reqID %s", err, waitChan, reqID)
+			}
+			close(waitChan)
+			done = true
+		case <-lockChan:
+			// We own the lock, and should process the service
+			s.sgSvc.runRemoveVolumesFromSGMV(symID, tgtStorageGroupID)
 		}
 	}
-	if !volumeInMaskingView {
-		log.Debug("volume already unpublished")
-		return &csi.ControllerUnpublishVolumeResponse{}, nil
-	}
-	maskingViewDeleted := false
-	//First check if this is the only volume in the SG
-	if storageGroups[0].NumOfVolumes == 1 {
-		// We need to delete the MV first
-		err = s.adminClient.DeleteMaskingView(symID, tgtMaskingViewID)
-		if err != nil {
-			log.Error(fmt.Sprintf("Failed to delete masking view (Array: %s, MaskingView: %s) status %s",
-				symID, tgtMaskingViewID, err.Error()))
-			return nil, status.Errorf(codes.Internal,
-				"Failed to delete masking view (Array: %s, MaskingView: %s) status %s",
-				symID, tgtMaskingViewID, err.Error())
-		}
-		maskingViewDeleted = true
-	}
-	// Remove the volume from SG
-	_, err = s.adminClient.RemoveVolumesFromStorageGroup(symID, tgtStorageGroupID, devID)
+
+	// Return error if that was the result
 	if err != nil {
-		log.Error(fmt.Sprintf("Failed to remove volume from SG (Volume: %s, SG: %s) status %s",
-			devID, tgtStorageGroupID, err.Error()))
-		return nil, status.Errorf(codes.Internal,
-			"Failed to remove volume from SG (Volume: %s, SG: %s) status %s",
-			devID, tgtStorageGroupID, err.Error())
-	}
-	// If SG was deleted, then delete the SG as well
-	if maskingViewDeleted {
-		err = s.adminClient.DeleteStorageGroup(symID, tgtStorageGroupID)
-		if err != nil {
-			// We can just log a warning and continue
-			log.Warning(fmt.Printf("Failed to delete storage group %s", tgtStorageGroupID))
-		}
+		return nil, err
 	}
 
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
@@ -1782,6 +1697,13 @@ func (s *service) ControllerGetCapabilities(
 					},
 				},
 			},
+			{
+				Type: &csi.ControllerServiceCapability_Rpc{
+					Rpc: &csi.ControllerServiceCapability_RPC{
+						Type: csi.ControllerServiceCapability_RPC_CLONE_VOLUME,
+					},
+				},
+			},
 		},
 	}, nil
 }
@@ -1824,7 +1746,14 @@ func (s *service) controllerProbe(ctx context.Context) error {
 }
 
 func (s *service) requireProbe(ctx context.Context) error {
-	controllerPendingState.maxPending = 6
+	// If we're using the proxy, the throttling is in the proxy in front of U4V.
+	// so we can handle a large number of pending requests.
+	// Otherwise a small number since there's no protection for U4V.
+	if s.opts.UseProxy {
+		controllerPendingState.maxPending = 25
+	} else {
+		controllerPendingState.maxPending = 6
+	}
 	if s.adminClient == nil {
 		if !s.opts.AutoProbe {
 			return status.Error(codes.FailedPrecondition,
@@ -1897,6 +1826,7 @@ func (s *service) SelectOrCreateFCPGForHost(symID string, host *types.Host) (str
 	if err != nil {
 		return "", fmt.Errorf("Failed to fetch Fibre channel port groups for array: %s", symID)
 	}
+	log.Debugf("List of Fibre Channel Port Groups fetched from array: %v", fcPortGroupList)
 	filteredPGList := make([]string, 0)
 	for _, portGroupID := range fcPortGroupList.PortGroupIDs {
 		pgPrefix := "csi-" + s.opts.ClusterPrefix
@@ -1913,8 +1843,11 @@ func (s *service) SelectOrCreateFCPGForHost(symID string, host *types.Host) (str
 			var portList []string
 			if portGroup.PortGroupType == "Fibre" {
 				for _, portKey := range portGroup.SymmetrixPortKey {
-					portList = append(portList, portKey.PortID)
+					dirPort := fmt.Sprintf("%s:%s", portKey.DirectorID, portKey.PortID)
+					portList = append(portList, dirPort)
 				}
+				sort.Strings(portList)
+				sort.Strings(portListFromHost)
 				if stringSlicesEqual(portList, portListFromHost) {
 					validPortGroupID = portGroupID
 					log.Debug(fmt.Sprintf("Found valid port group %s on the array %s",
@@ -1946,8 +1879,9 @@ func (s *service) SelectOrCreateFCPGForHost(symID string, host *types.Host) (str
 		portGroupName := CSIPrefix + "-" + s.opts.ClusterPrefix + "-" + dirNames + PGSuffix
 		_, err = s.adminClient.CreatePortGroup(symID, portGroupName, portKeys)
 		if err != nil {
-			return "", fmt.Errorf("Failed to create PortGroup. Error - %s", err.Error())
+			return "", fmt.Errorf("Failed to create PortGroup - %s. Error - %s", portGroupName, err.Error())
 		}
+		log.Debugf("Successfully created Port Group for Fibre Channel with name: %s", portGroupName)
 		validPortGroupID = portGroupName
 	}
 	return validPortGroupID, nil

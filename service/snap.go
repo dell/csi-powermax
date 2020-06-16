@@ -310,7 +310,7 @@ func (s *service) RemoveSnapshot(symID string, srcDev string, snapID string, Gen
 
 	sourceVolumes := []types.VolumeList{}
 	sourceVolumes = append(sourceVolumes, types.VolumeList{Name: srcDev})
-	err = s.adminClient91.DeleteSnapshot(symID, snapID, sourceVolumes, Generation)
+	err = s.adminClient.DeleteSnapshot(symID, snapID, sourceVolumes, Generation)
 	if err != nil {
 		return fmt.Errorf("DeleteSnapshot failed with error (%s)", err.Error())
 	}

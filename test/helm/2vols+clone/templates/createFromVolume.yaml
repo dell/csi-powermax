@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clonedpvc
+  namespace: {{ .Values.namespace }}
+spec:
+  storageClassName: powermax
+  dataSource:
+    name: pvol0
+    kind: PersistentVolumeClaim
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 8Gi
