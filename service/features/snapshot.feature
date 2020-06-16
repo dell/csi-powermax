@@ -32,7 +32,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Create Snapshot and idempotency
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         When I call CreateSnapshot "snapshot1" on "volume1"
@@ -41,7 +40,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Create a snapshot on a volume which is already in a snap session
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And I call CreateVolume "volume2"
         And a valid CreateVolumeResponse is returned
@@ -54,7 +52,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Snapshot a single block volume but receive error
         Given a PowerMax service
-        When I call Probe
         And I induce error "CreateSnapshotError"
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
@@ -71,27 +68,23 @@ Feature: PowerMax CSI Interface
     Scenario: Create snapshot with no volume
         Given a PowerMax service
         And no volume
-        When I call Probe
         And I call CreateSnapshot With "snapshot1"
         Then the error contains "Source volume ID is required"
 @v1.2.0
     Scenario: Create snapshot with an invalid volume
         Given a PowerMax service
         And an invalid volume
-        When I call Probe
         And I call CreateSnapshot With "snapshot1"
         Then the error contains "Could not parse CSI VolumeId"
 @v1.2.0
     Scenario: Create snapshot on a non-existent volume
         Given a PowerMax service
         And a non-existent volume
-        When I call Probe
         And I call CreateSnapshot With "snapshot1"
         Then the error contains "Could not find source volume on the array"
 @v1.2.0
     Scenario: Remove snapshot
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -101,7 +94,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Remove snapshot but get error
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -112,7 +104,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Remove snapshot but the job fails
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -123,7 +114,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Existence of a snapsession on a volume
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         When I call IsVolumeInSnapSession on "volume1"
@@ -137,7 +127,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Link/Unlink snapshot
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -149,7 +138,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Unlink a source volume from all the snapshots and delete all the snapshots
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -158,14 +146,13 @@ Feature: PowerMax CSI Interface
         And a valid CreateSnapshotResponse is returned
         And I call CreateVolume "volume2"
         And a valid CreateVolumeResponse is returned
-        And I call ExecSnapAction to "Link" snapshot "snapshot1" to "volume2" 
+        And I call ExecSnapAction to "Link" snapshot "snapshot1" to "volume2"
         When I call UnlinkAndTerminate on "volume2"
         And I call UnlinkAndTerminate on "volume1"
         Then no error was received
 @v1.2.0
     Scenario: Unlink a target volume from the snapshot and get error
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -182,7 +169,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: GetSnapSessions call fails to GetVolumeSnapInfo
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -193,14 +179,13 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: GetSnapSessions call fails to GetPrivVolumeByID
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
         And a valid CreateSnapshotResponse is returned
         And I call CreateVolume "volume2"
         And a valid CreateVolumeResponse is returned
-        And I call ExecSnapAction to "Link" snapshot "snapshot1" to "volume2" 
+        And I call ExecSnapAction to "Link" snapshot "snapshot1" to "volume2"
         And no error was received
         When I induce error "GetPrivVolumeByIDError"
         And I call GetSnapSessions on "volume2"
@@ -208,14 +193,13 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Get all the source and target snap sessions on a volume
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
         And a valid CreateSnapshotResponse is returned
         And I call CreateVolume "volume2"
         And a valid CreateVolumeResponse is returned
-        When I call ExecSnapAction to "Link" snapshot "snapshot1" to "volume2" 
+        When I call ExecSnapAction to "Link" snapshot "snapshot1" to "volume2"
         And no error was received
         And I call GetSnapSessions on "volume2"
         And I call GetSnapSessions on "volume1"
@@ -224,7 +208,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Remove temporary snapshots
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateVolume "volume2"
@@ -238,7 +221,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Create a snapshot of a volume and check for idempotency (helper function)
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         When I call CreateSnapshotFromVolume "snapshot1"
@@ -248,7 +230,6 @@ Feature: PowerMax CSI Interface
     Scenario: Create a snapshot of linked target in undefined state (helper function)
         Given a PowerMax service
         And I induce error "TargetNotDefinedError"
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -262,7 +243,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Create a snapshot of linked target that doesn't unlink (helper function)
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -278,7 +258,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Create a volume from a snapshot (helper function)
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -290,7 +269,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Create a volume from a snapshot
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -301,13 +279,11 @@ Feature: PowerMax CSI Interface
     Scenario: Create a volume from invalid snapshot
         Given a PowerMax service
         And an invalid snapshot
-        When I call Probe
         And I call Create Volume from Snapshot
         Then the error contains "Snapshot identifier not in supported format"
 @v1.2.0
     Scenario: Create a volume from a snapshot but receive error
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -318,7 +294,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Create a volume from another volume
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         When I call Create Volume from Volume
@@ -327,27 +302,23 @@ Feature: PowerMax CSI Interface
     Scenario: Create a volume without specifying a source
         Given a PowerMax service
         And no volume source
-        When I call Probe
         And I call Create Volume from Volume
         Then the error contains "VolumeContentSource is missing volume and snapshot source"
 @v1.2.0
     Scenario: Create a volume with non-existent volume as a source
         Given a PowerMax service
         And a non-existent volume
-        When I call Probe
         And I call Create Volume from Volume
         Then the error contains "Volume content source volume couldn't be found"
 @v1.2.0
     Scenario: Create a volume from invalid volume
         Given a PowerMax service
         And an invalid volume
-        When I call Probe
         And I call Create Volume from Volume
         Then the error contains "Source volume identifier not in supported format"
 @v1.2.0
     Scenario: Create a volume from a volume but receive error
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I induce error "LinkSnapshotError"
@@ -356,7 +327,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Terminating a snaphot
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -368,7 +338,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Unlink and terminate snapshot
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -378,7 +347,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Unlink and terminate snapshot but get error
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -389,7 +357,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Unlink and terminate snapshot but unlinking fails
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -405,7 +372,6 @@ Feature: PowerMax CSI Interface
     Scenario: Unlink and terminate snapshot but targets are not in defined state
         Given a PowerMax service
         And I induce error "TargetNotDefinedError"
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -420,7 +386,6 @@ Feature: PowerMax CSI Interface
     Scenario: Unlink and terminate a snapshot that has already expired
         Given a PowerMax service
         And I induce error "SnapshotExpired"
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -431,7 +396,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Unlink and terminate a snapshot on a volume which is neither source no target
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         When I call UnlinkAndTerminate on "volume1"
@@ -440,7 +404,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Unlink and terminate the only snapshot but fail to GetVolume
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -451,7 +414,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario:  Unlink and terminate the only snapshot but fail to rename the tagged to delete volume
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -464,7 +426,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Delete snapshot
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -474,7 +435,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Idempotent delete snapshot
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -485,14 +445,12 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Delete a snapshot with no name
         Given a PowerMax service
-        When I call Probe
         And I call DeleteSnapshot
         Then the error contains "Snapshot ID to be deleted is required"
 @v1.2.0
     Scenario: Delete a snapshot with invalid name
         Given a PowerMax service
         And an invalid snapshot
-        When I call Probe
         And I call DeleteSnapshot
         Then the error contains "Snapshot name is not in supported format"
 @v1.2.0
@@ -504,7 +462,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Delete a snapshot but receive error
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -515,7 +472,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Mark snapshots for deletion
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And I call CreateVolume "volume2"
         And a valid CreateVolumeResponse is returned
@@ -528,7 +484,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Validate snapshot for deletion
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -539,7 +494,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Validate snapshot for deletion with no errors
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         When I call IsSnapshotSource
@@ -548,7 +502,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Snapshot cleanup thread but fetching symmetrix ids fails
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -560,7 +513,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Snapshot cleanup thread but fetching volumes with snapshot fails
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -572,7 +524,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Snapshot cleanup thread but the snapshots are returned with invalid names
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -584,7 +535,6 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Soft Deleting a volume
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
@@ -598,9 +548,8 @@ Feature: PowerMax CSI Interface
         Then I call DeleteSnapshot with "snapshot2"
         And no error was received
 @v1.2.0
-    Scenario: Queueing the snapshots for deletion 
+    Scenario: Queueing the snapshots for deletion
         Given a PowerMax service
-        And I call Probe
         And I call CreateVolume "volume1"
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"

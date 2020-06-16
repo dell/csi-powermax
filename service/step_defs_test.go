@@ -77,6 +77,7 @@ const (
 	defaultStorageGroup        = "DefaultStorageGroup"
 	defaultIscsiInitiator      = "iqn.1993-08.org.debian:01:5ae293b352a2"
 	defaultFcInitiator         = "0x10000090fa6603b7"
+	defaultArrayTargetIQN      = "iqn.1992-04.com.emc:600009700bcbb70e3287017400000001"
 	defaultFcInitiatorWWN      = "10000090fa6603b7"
 	defaultFcStoragePortWWN    = "5000000000000001"
 	portalIP                   = "1.2.3.4"
@@ -96,9 +97,9 @@ type feature struct {
 	err         error // return from the preceeding call
 	// replace this with the Unispher client
 	adminClient                          pmax.Pmax
-	adminClient91                        pmax.Pmax
 	symmetrixID                          string
 	system                               *interface{}
+	poolcachewg                          sync.WaitGroup
 	getPluginInfoResponse                *csi.GetPluginInfoResponse
 	getPluginCapabilitiesResponse        *csi.GetPluginCapabilitiesResponse
 	probeResponse                        *csi.ProbeResponse
@@ -146,10 +147,16 @@ type feature struct {
 	ninitiators                          int
 	host                                 *types.Host
 	allowedArrays                        []string
-	iscsiTargets                         []goiscsi.ISCSITarget
+	iscsiTargets                         []maskingViewTargetInfo
 	lastUnmounted                        bool
 	errType                              string
 	isSnapSrc                            bool
+	addVolumeToSGMVResponse1             chan addVolumeToSGMVResponse
+	addVolumeToSGMVResponse2             chan addVolumeToSGMVResponse
+	removeVolumeFromSGMVResponse1        chan removeVolumeFromSGMVResponse
+	removeVolumeFromSGMVResponse2        chan removeVolumeFromSGMVResponse
+	lockChan                             chan bool
+	iscsiTargetInfo                      []ISCSITargetInfo
 }
 
 var inducedErrors struct {
@@ -195,15 +202,16 @@ func (f *feature) aPowerMaxService() error {
 	targetMountRecheckSleepTime = 30 * time.Millisecond
 	disconnectVolumeRetryTime = 10 * time.Millisecond
 	removeWithRetrySleepTime = 10 * time.Millisecond
+	getMVConnectionsDelay = 10 * time.Millisecond
 	maxBlockDevicesPerWWN = 3
+	maxAddGroupSize = 10
+	maxRemoveGroupSize = 10
+	enableBatchGetMaskingViewConnections = true
 	f.checkGoRoutines("start aPowerMaxService")
 	// Save off the admin client and the system
 	if f.service != nil && f.service.adminClient != nil {
 		f.adminClient = f.service.adminClient
 		f.system = f.service.system
-	}
-	if f.service != nil && f.service.adminClient91 != nil {
-		f.adminClient91 = f.service.adminClient91
 	}
 	// Let the real code initialize it the first time, we reset the cache each test
 	if pmaxCache != nil {
@@ -249,6 +257,7 @@ func (f *feature) aPowerMaxService() error {
 	f.mvID = ""
 	f.hostID = ""
 	f.initiators = make([]string, 0)
+	f.iscsiTargetInfo = make([]ISCSITargetInfo, 0)
 	f.ninitiators = 0
 	f.volumeNameToID = make(map[string]string)
 	f.snapshotNameToID = make(map[string]string)
@@ -257,8 +266,13 @@ func (f *feature) aPowerMaxService() error {
 	if f.adminClient != nil {
 		f.adminClient.SetAllowedArrays(f.allowedArrays)
 	}
-	f.iscsiTargets = make([]goiscsi.ISCSITarget, 0)
+	f.iscsiTargets = make([]maskingViewTargetInfo, 0)
 	f.isSnapSrc = false
+	f.addVolumeToSGMVResponse1 = nil
+	f.addVolumeToSGMVResponse2 = nil
+	f.removeVolumeFromSGMVResponse1 = nil
+	f.removeVolumeFromSGMVResponse2 = nil
+	f.lockChan = nil
 
 	inducedErrors.invalidSymID = false
 	inducedErrors.invalidStoragePool = false
@@ -312,6 +326,7 @@ func (f *feature) aPowerMaxService() error {
 	goiscsi.GOISCSIMock.InduceLoginError = false
 	goiscsi.GOISCSIMock.InduceLogoutError = false
 	goiscsi.GOISCSIMock.InduceRescanError = false
+	goiscsi.GOISCSIMock.InduceSetCHAPError = false
 
 	// Get the httptest mock handler. Only set
 	// a new server if there isn't one already.
@@ -343,11 +358,9 @@ func (f *feature) aPowerMaxService() error {
 func (f *feature) getService() *service {
 	mock.InducedErrors.NoConnection = false
 	svc := new(service)
+	svc.sgSvc = newStorageGroupService(svc)
 	if f.adminClient != nil {
 		svc.adminClient = f.adminClient
-	}
-	if f.adminClient91 != nil {
-		svc.adminClient91 = f.adminClient91
 	}
 	if f.system != nil {
 		svc.system = f.system
@@ -384,7 +397,9 @@ ip6t_rpfilter          12595  1
 	svc.arrayTransportProtocolMap[mock.DefaultSymmetrixID] = IscsiTransportProtocol
 	svc.fcConnector = &mockFCGobrick{}
 	svc.iscsiConnector = &mockISCSIGobrick{}
+	svc.dBusConn = &mockDbusConnection{}
 	mockGobrickReset()
+	mockgosystemdReset()
 	disconnectVolumeRetryTime = 10 * time.Millisecond
 	f.service = svc
 	return svc
@@ -901,6 +916,10 @@ func (f *feature) iInduceError(errtype string) error {
 		goiscsi.GOISCSIMock.InduceDiscoveryError = true
 	case "GOISCSIRescanError":
 		goiscsi.GOISCSIMock.InduceRescanError = true
+	case "InduceSetCHAPError":
+		goiscsi.GOISCSIMock.InduceSetCHAPError = true
+	case "InduceLoginError":
+		goiscsi.GOISCSIMock.InduceLoginError = true
 	case "NodeUnpublishNoTargetPath":
 		f.nodePublishVolumeRequest.TargetPath = ""
 		f.nodePublishVolumeRequest.StagingTargetPath = ""
@@ -967,6 +986,21 @@ func (f *feature) iInduceError(errtype string) error {
 		mockGobrickInducedErrors.ConnectVolumeError = true
 	case "GobrickDisconnectError":
 		mockGobrickInducedErrors.DisconnectVolumeError = true
+	case "ListUnitsError":
+		mockgosystemdInducedErrors.ListUnitsError = true
+	case "ISCSIDInactiveError":
+		mockgosystemdInducedErrors.ISCSIDInactiveError = true
+	case "StartUnitError":
+		mockgosystemdInducedErrors.ISCSIDInactiveError = true
+		mockgosystemdInducedErrors.StartUnitError = true
+	case "ListUnitISCSIDNotPresentError":
+		mockgosystemdInducedErrors.ListUnitISCSIDNotPresentError = true
+	case "StartUnitMaskedError":
+		mockgosystemdInducedErrors.ISCSIDInactiveError = true
+		mockgosystemdInducedErrors.StartUnitMaskedError = true
+	case "JobFailure":
+		mockgosystemdInducedErrors.ISCSIDInactiveError = true
+		mockgosystemdInducedErrors.JobFailure = true
 	case "InduceOverloadError":
 		induceOverloadError = true
 	case "InvalidateNodeID":
@@ -1131,6 +1165,9 @@ func (f *feature) iHaveANodeWithInitiatorsWithMaskingView(nodeID, initList strin
 func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 	f.service.opts.NodeName = nodeID
 	transportProtocol := f.service.opts.TransportProtocol
+	if nodeID == "none" {
+		return nil
+	}
 	if transportProtocol == "FC" {
 		f.hostID, f.sgID, f.mvID = f.service.GetFCHostSGAndMVIDFromNodeID(nodeID)
 		initiator := defaultFcInitiatorWWN
@@ -1145,6 +1182,7 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		} else {
 			portGroupID = "fc_ports"
 		}
+		mock.AddPortGroup(portGroupID, "Fibre", []string{defaultFCDirPort})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	} else {
 		f.hostID, f.sgID, f.mvID = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
@@ -1160,6 +1198,7 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		} else {
 			portGroupID = "iscsi_ports"
 		}
+		mock.AddPortGroup(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	}
 	return nil
@@ -1632,11 +1671,13 @@ func (f *feature) aValidControllerGetCapabilitiesResponseIsReturned() error {
 				count = count + 1
 			case csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT:
 				count = count + 1
+			case csi.ControllerServiceCapability_RPC_CLONE_VOLUME:
+				count = count + 1
 			default:
 				return fmt.Errorf("received unexpected capability: %v", typex)
 			}
 		}
-		if count != 4 {
+		if count != 5 {
 			return fmt.Errorf("Did not retrieve all the expected capabilities")
 		}
 		return nil
@@ -1939,6 +1980,17 @@ func rescanCallback(scanstring string) {
 	}
 }
 
+// getPortIdentifiers returns #portCount portsIDs attached together
+func (f *feature) getPortIdentifiers(portCount int) string {
+	portIDs := ""
+	if f.service.opts.TransportProtocol == FcTransportProtocol {
+		portIDs = strings.Repeat(fmt.Sprintf("%s,", defaultFcInitiator), portCount)
+	} else {
+		portIDs = strings.Repeat(fmt.Sprintf("%s,", defaultArrayTargetIQN), portCount)
+	}
+	return portIDs
+}
+
 func (f *feature) getNodePublishVolumeRequest() error {
 	req := new(csi.NodePublishVolumeRequest)
 	req.VolumeId = volume1
@@ -1953,13 +2005,13 @@ func (f *feature) getNodePublishVolumeRequest() error {
 	req.PublishContext = make(map[string]string)
 	req.PublishContext[PublishContextDeviceWWN] = nodePublishWWN
 	req.PublishContext[PublishContextLUNAddress] = nodePublishLUNID
-	var portIDs string
-	if f.service.opts.TransportProtocol == FcTransportProtocol {
-		portIDs = fmt.Sprintf("%s,", defaultFcInitiator)
-	} else {
-		portIDs = fmt.Sprintf("%s,", defaultIscsiInitiator)
+	keyCount := 2  // holds the count of port identifiers set are there
+	portCount := 3 // holds the count of port identifiers present in one set of key count
+	req.PublishContext[PortIdentifierKeyCount] = strconv.Itoa(keyCount)
+	for i := 1; i <= keyCount; i++ {
+		portIdentifierKey := fmt.Sprintf("%s_%d", PortIdentifiers, i)
+		req.PublishContext[portIdentifierKey] = f.getPortIdentifiers(portCount)
 	}
-	req.PublishContext[PortIdentifiers] = portIDs
 	block := f.capability.GetBlock()
 	if block != nil {
 		req.TargetPath = datafile
@@ -2768,7 +2820,7 @@ func (f *feature) iInvokeEnsureLoggedIntoEveryArray() error {
 
 func (f *feature) arraysAreLoggedIn(count int) error {
 	if count != len(f.service.loggedInArrays) {
-		return fmt.Errorf("Expected %d arrays logged in but go %d", count, len(f.service.loggedInArrays))
+		return fmt.Errorf("Expected %d arrays logged in but got %d", count, len(f.service.loggedInArrays))
 	}
 	return nil
 }
@@ -2800,12 +2852,29 @@ func (f *feature) theResultHasPorts(expected string) error {
 	return nil
 }
 
+func (f *feature) runValidateStoragePoolID(symID, storagePool string) {
+	_ = f.service.validateStoragePoolID(symID, storagePool)
+	f.poolcachewg.Done()
+}
+
 func (f *feature) iCallValidateStoragePoolIDInParallel(numberOfWorkers int) error {
 	f.service.setStoragePoolCacheDuration(1 * time.Millisecond)
 	for i := 0; i < numberOfWorkers; i++ {
-		go f.service.validateStoragePoolID(f.symmetrixID, mock.DefaultStoragePool)
+		f.poolcachewg.Add(1)
+		go f.runValidateStoragePoolID(f.symmetrixID, mock.DefaultStoragePool)
 	}
 	return nil
+}
+
+func (f *feature) iWaitForTheExecutionToComplete() error {
+	f.poolcachewg.Wait()
+	fmt.Println("All goroutines finished execution")
+	return nil
+}
+
+func (f *feature) runGetPortIdentifier(symID, dirPortKey string) {
+	_, _ = f.service.GetPortIdentifier(symID, dirPortKey)
+	f.poolcachewg.Done()
 }
 
 func (f *feature) iCallGetPortIdentifierInParallel(numberOfWorkers int) error {
@@ -2820,7 +2889,8 @@ func (f *feature) iCallGetPortIdentifierInParallel(numberOfWorkers int) error {
 		if index == 4 {
 			index = 0
 		}
-		go f.service.GetPortIdentifier(f.symmetrixID, dirPortKeys[index])
+		f.poolcachewg.Add(1)
+		go f.runValidateStoragePoolID(f.symmetrixID, dirPortKeys[index])
 		index++
 	}
 	return nil
@@ -2906,6 +2976,11 @@ func (f *feature) blockVolumesAreNotEnabled() error {
 func (f *feature) iSetTransportProtocolTo(protocol string) error {
 	os.Setenv("X_CSI_TRANSPORT_PROTOCOL", protocol)
 	f.service.opts.TransportProtocol = protocol
+	return nil
+}
+
+func (f *feature) iEnableISCSICHAP() error {
+	f.service.opts.EnableCHAP = true
 	return nil
 }
 
@@ -3283,6 +3358,187 @@ func (f *feature) theDeletionWorkerProcessesTheSnapshotsSuccessfully() error {
 	return nil
 }
 
+func (f *feature) iCallEnsureISCSIDaemonStarted() error {
+	f.err = f.service.ensureISCSIDaemonStarted()
+	return nil
+}
+
+func (f *feature) iCallRequestAddVolumeToSGMVMv(nodeID, maskingViewName string) error {
+	if nodeID == "none" {
+		return nil
+	}
+	accessMode := new(csi.VolumeCapability_AccessMode)
+	accessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER
+	f.hostID, f.sgID, f.mvID = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+	deviceIDComponents := strings.Split(f.volumeID, "-")
+	deviceID := deviceIDComponents[len(deviceIDComponents)-1]
+	fmt.Printf("deviceID %s\n", deviceID)
+	if maskingViewName != "" && maskingViewName != "default" {
+		f.addVolumeToSGMVResponse2, f.lockChan, f.err = f.service.sgSvc.requestAddVolumeToSGMV(f.sgID, maskingViewName, f.hostID, "0001", mock.DefaultSymmetrixID, deviceID, accessMode)
+	} else {
+		f.addVolumeToSGMVResponse1, f.lockChan, f.err = f.service.sgSvc.requestAddVolumeToSGMV(f.sgID, f.mvID, f.hostID, "0001", mock.DefaultSymmetrixID, deviceID, accessMode)
+	}
+	return nil
+}
+
+func (f *feature) iCallRequestRemoveVolumeFromSGMVMv(nodeID, maskingViewName string) error {
+	if nodeID == "none" {
+		return nil
+	}
+	accessMode := new(csi.VolumeCapability_AccessMode)
+	accessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER
+	f.hostID, f.sgID, f.mvID = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+	deviceIDComponents := strings.Split(f.volumeID, "-")
+	deviceID := deviceIDComponents[len(deviceIDComponents)-1]
+	fmt.Printf("deviceID %s\n", deviceID)
+	if maskingViewName != "" && maskingViewName != "default" {
+		f.removeVolumeFromSGMVResponse2, f.lockChan, f.err = f.service.sgSvc.requestRemoveVolumeFromSGMV(f.sgID, maskingViewName, "0001", mock.DefaultSymmetrixID, deviceID)
+	} else {
+		f.removeVolumeFromSGMVResponse1, f.lockChan, f.err = f.service.sgSvc.requestRemoveVolumeFromSGMV(f.sgID, f.mvID, "0001", mock.DefaultSymmetrixID, deviceID)
+	}
+	return nil
+}
+
+func (f *feature) iCallRunAddVolumesToSGMV() error {
+	// If we've already errored or we didn't successfully call requestAddVolumeToSGMV, we still call runAddVolumesToSGMV,
+	// which should return immediately logging a "sgstate missing" message
+	if f.err != nil || f.addVolumeToSGMVResponse1 == nil {
+		f.service.sgSvc.runAddVolumesToSGMV(mock.DefaultSymmetrixID, f.sgID)
+		return nil
+	}
+	// This loop like the one in ControllerPublish where we wait on result or our turn to execute the service.
+	done1 := false
+	done2 := false
+	var err2 error
+	if f.addVolumeToSGMVResponse2 == nil {
+		// no 2nd request so done2 is already done
+		done2 = true
+	}
+	for !done1 || !done2 {
+		select {
+		case resp := <-f.addVolumeToSGMVResponse1:
+			f.err = resp.err
+			fmt.Printf("Received response1 err %v", f.err)
+			done1 = true
+		case resp := <-f.addVolumeToSGMVResponse2:
+			err2 = resp.err
+			fmt.Printf("Received response2 err %v", err2)
+			done2 = true
+		case <-f.lockChan:
+			f.service.sgSvc.runAddVolumesToSGMV(mock.DefaultSymmetrixID, f.sgID)
+		}
+	}
+	if f.addVolumeToSGMVResponse1 != nil {
+		close(f.addVolumeToSGMVResponse1)
+	}
+	if f.addVolumeToSGMVResponse2 != nil {
+		close(f.addVolumeToSGMVResponse2)
+	}
+	if err2 != nil {
+		f.err = err2
+	}
+	return nil
+}
+
+func (f *feature) iCallRunRemoveVolumesFromSGMV() error {
+	// If we've already errored or we didn't successfully call requestRemoveVolumeFromSGMV, we still call runRemoveVolumesFromSGMV,
+	// which should return immediately logging a "sgstate missing" message
+	if f.err != nil || f.removeVolumeFromSGMVResponse1 == nil {
+		f.service.sgSvc.runRemoveVolumesFromSGMV(mock.DefaultSymmetrixID, f.sgID)
+		return nil
+	}
+	// This loop like the one in ControllerPublish where we wait on result or our turn to execute the service.
+	done1 := false
+	done2 := false
+	var err2 error
+	if f.removeVolumeFromSGMVResponse2 == nil {
+		// no 2nd request so done2 is already done
+		done2 = true
+	}
+	for !done1 || !done2 {
+		select {
+		case resp := <-f.removeVolumeFromSGMVResponse1:
+			f.err = resp.err
+			fmt.Printf("Received waitChan1 err %v", f.err)
+			done1 = true
+		case resp := <-f.removeVolumeFromSGMVResponse2:
+			err2 = resp.err
+			fmt.Printf("Received response2 err %v", err2)
+			done2 = true
+		case <-f.lockChan:
+			f.service.sgSvc.runRemoveVolumesFromSGMV(mock.DefaultSymmetrixID, f.sgID)
+		}
+	}
+	if f.removeVolumeFromSGMVResponse1 != nil {
+		close(f.removeVolumeFromSGMVResponse1)
+	}
+	if f.removeVolumeFromSGMVResponse2 != nil {
+		close(f.removeVolumeFromSGMVResponse2)
+	}
+	if err2 != nil {
+		f.err = err2
+	}
+	return nil
+}
+
+func (f *feature) iCallHandleAddVolumeToSGMVError() error {
+	accessMode := new(csi.VolumeCapability_AccessMode)
+	accessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER
+	deviceIDComponents := strings.Split(f.volumeID, "-")
+	deviceID := deviceIDComponents[len(deviceIDComponents)-1]
+	req := &addVolumeToSGMVRequest{
+		tgtStorageGroupID: f.sgID,
+		tgtMaskingViewID:  f.mvID,
+		hostID:            f.hostID,
+		reqID:             "0002",
+		symID:             mock.DefaultSymmetrixID,
+		devID:             deviceID,
+		accessMode:        accessMode,
+		respChan:          make(chan addVolumeToSGMVResponse, 1),
+	}
+	f.service.sgSvc.handleAddVolumeToSGMVError(req)
+	resp := <-req.respChan
+	f.err = resp.err
+	return nil
+}
+
+func (f *feature) iCallHandleRemoveVolumeFromSGMVError() error {
+	deviceIDComponents := strings.Split(f.volumeID, "-")
+	deviceID := deviceIDComponents[len(deviceIDComponents)-1]
+	req := &removeVolumeFromSGMVRequest{
+		tgtStorageGroupID: f.sgID,
+		tgtMaskingViewID:  f.mvID,
+		reqID:             "0002",
+		symID:             mock.DefaultSymmetrixID,
+		devID:             deviceID,
+		respChan:          make(chan removeVolumeFromSGMVResponse, 1),
+	}
+	f.service.sgSvc.handleRemoveVolumeFromSGMVError(req)
+	resp := <-req.respChan
+	f.err = resp.err
+	return nil
+}
+
+func (f *feature) iCallGetAndConfigureArrayISCSITargets() error {
+	arrayTargets := make([]string, 0)
+	arrayTargets = append(arrayTargets, defaultArrayTargetIQN)
+	f.iscsiTargetInfo = f.service.getAndConfigureArrayISCSITargets(arrayTargets, mock.DefaultSymmetrixID)
+	fmt.Println(f.iscsiTargetInfo)
+	return nil
+}
+
+func (f *feature) targetsAreReturned(count int) error {
+	if len(f.iscsiTargetInfo) != count {
+		return fmt.Errorf("expected %d iscsi targets but found %d", count, len(f.iscsiTargetInfo))
+	}
+	return nil
+}
+
+func (f *feature) iInvalidateSymToMaskingViewTargetCache() error {
+	f.service.InvalidateSymToMaskingViewTargets()
+	return nil
+}
+
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -3459,4 +3715,16 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^IsSnapshotSource returns "([^"]*)"$`, f.isSnapshotSourceReturns)
 	s.Step(`^I queue snapshots for termination$`, f.iQueueSnapshotsForTermination)
 	s.Step(`^the deletion worker processes the snapshots successfully$`, f.theDeletionWorkerProcessesTheSnapshotsSuccessfully)
+	s.Step(`^I call ensureISCSIDaemonStarted$`, f.iCallEnsureISCSIDaemonStarted)
+	s.Step(`^I call requestAddVolumeToSGMV "([^"]*)" mv "([^"]*)"$`, f.iCallRequestAddVolumeToSGMVMv)
+	s.Step(`^I call runAddVolumesToSGMV$`, f.iCallRunAddVolumesToSGMV)
+	s.Step(`^I call handleAddVolumeToSGMVError$`, f.iCallHandleAddVolumeToSGMVError)
+	s.Step(`^I call requestRemoveVolumeFromSGMV "([^"]*)" mv "([^"]*)"$`, f.iCallRequestRemoveVolumeFromSGMVMv)
+	s.Step(`^I call runRemoveVolumesFromSGMV$`, f.iCallRunRemoveVolumesFromSGMV)
+	s.Step(`^I call handleRemoveVolumeFromSGMVError$`, f.iCallHandleRemoveVolumeFromSGMVError)
+	s.Step(`^I enable ISCSI CHAP$`, f.iEnableISCSICHAP)
+	s.Step(`^I wait for the execution to complete$`, f.iWaitForTheExecutionToComplete)
+	s.Step(`^I call getAndConfigureArrayISCSITargets$`, f.iCallGetAndConfigureArrayISCSITargets)
+	s.Step(`^(\d+) targets are returned$`, f.targetsAreReturned)
+	s.Step(`^I invalidate symToMaskingViewTarget cache$`, f.iInvalidateSymToMaskingViewTargetCache)
 }

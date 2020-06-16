@@ -34,7 +34,7 @@ func (s *service) GetPluginInfo(
 	*csi.GetPluginInfoResponse, error) {
 
 	return &csi.GetPluginInfoResponse{
-		Name:          Name,
+		Name:          s.getDriverName(),
 		VendorVersion: core.SemVer,
 		Manifest:      Manifest,
 	}, nil

@@ -16,10 +16,9 @@ package service
 
 import (
 	"context"
-
+	"github.com/coreos/go-systemd/dbus"
 	"github.com/dell/gobrick"
 	log "github.com/sirupsen/logrus"
-	//"golang.org/x/net/context"
 )
 
 type customLogger struct{}
@@ -67,4 +66,32 @@ func setupGobrick(srv *service) {
 	//if srv.opts.EnableTracing {
 	//	gobrick.SetTracer(&customTracer{})
 	//}
+}
+
+// DBus is a message bus system which provides a way for applications
+// to talk to each other. It is used by systemd and its auxiliary daemons
+// and they expose a number of APIs on the D-Bus
+type dBusConn interface {
+	Close()
+	ListUnits() ([]dbus.UnitStatus, error)
+	StartUnit(name string, mode string, ch chan<- string) (int, error)
+}
+
+func (s *service) createDbusConnection() error {
+	if s.dBusConn == nil {
+		conn, err := dbus.New()
+		if err != nil {
+			log.Errorf("Failed to initialize connection to dbus. Error - %s", err.Error())
+			return err
+		}
+		s.dBusConn = conn
+	}
+	return nil
+}
+
+func (s *service) closeDbusConnection() {
+	if s.dBusConn != nil {
+		s.dBusConn.Close()
+		s.dBusConn = nil
+	}
 }

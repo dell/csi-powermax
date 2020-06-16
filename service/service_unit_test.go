@@ -508,3 +508,18 @@ func TestSetGetLogFields(t *testing.T) {
 		t.Error("Expected fields to be initialized")
 	}
 }
+
+func TestEsnureISCSIDaemonIsStarted(t *testing.T) {
+	s.dBusConn = &mockDbusConnection{}
+	// Return a ListUnit mock response without ISCSId unit
+	mockgosystemdInducedErrors.ListUnitISCSIDNotPresentError = true
+	errMsg := fmt.Sprintf("failed to find iscsid.service. Going to panic")
+	assert.PanicsWithError(t, errMsg, func() { s.ensureISCSIDaemonStarted() })
+	mockgosystemdReset()
+	s.dBusConn = &mockDbusConnection{}
+	// Set the Daemon to inactive in mock response
+	mockgosystemdInducedErrors.ISCSIDInactiveError = true
+	mockgosystemdInducedErrors.StartUnitMaskedError = true
+	errMsg = fmt.Sprintf("mock - unit is masked - failed to start the unit")
+	assert.PanicsWithError(t, errMsg, func() { s.ensureISCSIDaemonStarted() })
+}

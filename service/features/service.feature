@@ -508,6 +508,7 @@ Feature: PowerMax CSI interface
 @v1.0.0
     Scenario Outline: Validate ensureLoggedIntoEveryArray
       Given a PowerMax service
+      And I have a Node "node1" with MaskingView
       And there are no arrays logged in
       And I induce error <induced1>
       When I invoke ensureLoggedIntoEveryArray
@@ -517,9 +518,27 @@ Feature: PowerMax CSI interface
       Examples:
       | induced1               | errormsg                                         | count |
       | "GetSymmetrixError"    | "Unable to retrieve Array List"                  | 0     |
-      | "GetDirectorError"     | "Error retrieving Director"                      | 0     |
-      | "GOISCSIDiscoveryError"| "Unable to perform iSCSI discovery and login"    | 0     |
-      | "none"                 | "none"                                           | 3     |
+      | "GOISCSIDiscoveryError"| "failed to login to (some) ISCSI targets"        | 0     |
+      | "none"                 | "none"                                           | 2     |
+
+@v1.3.0
+    Scenario Outline: Validate ensureLoggedIntoEveryArray with CHAP
+      Given a PowerMax service
+      And I have a Node "node1" with MaskingView
+      And I enable ISCSI CHAP
+      And there are no arrays logged in
+      And I invalidate symToMaskingViewTarget cache
+      And I induce error <induced1>
+      When I invoke ensureLoggedIntoEveryArray
+      Then the error contains <errormsg>
+      And <count> arrays are logged in
+
+      Examples:
+      | induced1               | errormsg                                         | count |
+      | "GetSymmetrixError"    | "Unable to retrieve Array List"                  | 0     |
+      | "InduceLoginError"     | "failed to login to (some) ISCSI targets"        | 0     |
+      | "InduceSetCHAPError"   | "set CHAP induced error"                         | 0     |
+      | "none"                 | "none"                                           | 2     |
 
 @v1.0.0
     Scenario Outline: Validate Array Whitelists
@@ -557,6 +576,7 @@ Feature: PowerMax CSI interface
     Scenario Outline: Test validateStoragePoolID function
       Given a PowerMax service
       And I call validateStoragePoolID <numberOfTimes> in parallel
+      And I wait for the execution to complete
       Then no error was received
 
        Examples:
@@ -586,8 +606,71 @@ Feature: PowerMax CSI interface
     Scenario Outline: Test GetPortIdentifier function
       Given a PowerMax service
       And I call GetPortIdentifier <numberOfTimes> in parallel
+      And I wait for the execution to complete
       Then no error was received
 
        Examples:
        | numberOfTimes               |
        | 2000                        |
+
+@v1.3.0
+    Scenario Outline: Test ensureISCSIDaemonStarted function
+      Given a PowerMax service
+      And I induce error <induced>
+      When I call ensureISCSIDaemonStarted
+      Then the error contains <errormsg>
+
+      Examples:
+      | induced                             | errormsg                              |
+      | "none"                              | "none"                                |
+      | "ListUnitsError"                    | "failed to list the units"            |
+      | "StartUnitError"                    | "failed to start"                     |
+      | "ISCSIDInactiveError"               | "none"                                |
+      | "JobFailure"                        | "Failed to get a successful response" |
+
+@v1.3.0
+    Scenario: Test ensureLoggedIntoEveryArray without masking view
+      Given a PowerMax service
+      And I enable ISCSI CHAP
+      And there are no arrays logged in
+      And I invalidate symToMaskingViewTarget cache
+      When I invoke ensureLoggedIntoEveryArray
+      Then the error contains "Not Found"
+
+@v1.3.0
+    Scenario: Test getAndConfigureArrayISCSITargets
+      Given a PowerMax service
+      And I have a Node "node1" with MaskingView
+      When I call getAndConfigureArrayISCSITargets
+      Then 2 targets are returned
+
+@v1.3.0
+    Scenario: Test getAndConfigureArrayISCSITargets after cache was populated
+      Given a PowerMax service
+      And I have a Node "node1" with MaskingView
+      When I call getAndConfigureArrayISCSITargets
+      Then 2 targets are returned
+
+@v1.3.0
+    Scenario: Test getAndConfigureArrayISCSITargets without masking view
+      Given a PowerMax service
+      And I invalidate symToMaskingViewTarget cache
+      When I call getAndConfigureArrayISCSITargets
+      Then 0 targets are returned
+
+@v1.3.0
+    Scenario: Test getAndConfigureArrayISCSITargets with CHAP enabled
+      Given a PowerMax service
+      And I enable ISCSI CHAP
+      And I have a Node "node1" with MaskingView
+      When I call getAndConfigureArrayISCSITargets
+      Then 2 targets are returned
+
+@v1.3.0
+    Scenario: Test getAndConfigureArrayISCSITargets with CHAP enabled and cache invalidated
+      Given a PowerMax service
+      And I enable ISCSI CHAP
+      And I invalidate symToMaskingViewTarget cache
+      And I have a Node "node1" with MaskingView
+      When I call getAndConfigureArrayISCSITargets
+      Then 2 targets are returned

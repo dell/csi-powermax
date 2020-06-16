@@ -7,7 +7,11 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
+  {{- if eq .Values.customDriverName.enabled true}}
+  name: {{ printf "%s-%s-controller" .Release.Namespace .Values.customDriverName.value }}
+  {{- else }}
   name: {{ .Release.Name }}-controller
+  {{- end }}
 rules:
   - apiGroups: [""]
     resources: ["events"]
@@ -53,14 +57,22 @@ rules:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
+  {{- if eq .Values.customDriverName.enabled true}}
+  name: {{ printf "%s-%s-controller" .Release.Namespace .Values.customDriverName.value }}
+  {{- else }}
   name: {{ .Release.Name }}-controller
+  {{- end }}
 subjects:
   - kind: ServiceAccount
     name: {{ .Release.Name }}-controller
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
+  {{- if eq .Values.customDriverName.enabled true}}
+  name: {{ printf "%s-%s-controller" .Release.Namespace .Values.customDriverName.value }}
+  {{- else }}
   name: {{ .Release.Name }}-controller
+  {{- end }}
   apiGroup: rbac.authorization.k8s.io
 ---
 kind: StatefulSet
@@ -106,7 +118,11 @@ spec:
             - "--volume-name-uuid-length=10"
             {{- if eq .Values.kubeversion  "v1.13" }}
             - "--connection-timeout=300s"
+            {{- if eq .Values.customDriverName.enabled true}}
+            - "--provisioner={{ required "Must provide a driver name" (printf "%s.%s.dellemc.com" .Release.Namespace .Values.customDriverName.value) }}"
+            {{- else }}
             - "--provisioner=csi-powermax.dellemc.com"
+            {{- end }}
             {{- end}}
             {{- if eq .Values.kubeversion  "v1.14" }}
             - "--timeout=120s"
@@ -141,6 +157,12 @@ spec:
           imagePullPolicy: Always
           command: [ "/csi-powermax.sh" ]
           env:
+            - name: X_CSI_POWERMAX_DRIVER_NAME
+              {{- if eq .Values.customDriverName.enabled true}}
+              value: {{ required "Must provide a driver name" (printf "%s.%s.dellemc.com" .Release.Namespace .Values.customDriverName.value) }}
+              {{- else }}
+              value: csi-powermax.dellemc.com
+              {{- end }}  
             - name: CSI_ENDPOINT
               value: /var/run/csi/csi.sock
             - name: X_CSI_MODE
@@ -167,6 +189,8 @@ spec:
               value: {{ .Values.skipCertificateValidation | default "true" | lower | quote }}
             - name: X_CSI_POWERMAX_INSECURE
               value: {{ .Values.powerMaxInsecure | default "none" | lower | quote }}
+            - name: X_CSI_POWERMAX_PROXY_SERVICE_NAME
+              value: {{ .Values.proxy | default "none" }}
             - name: X_CSI_ENABLE_BLOCK
               value: {{ .Values.enableBlock | default "false" | lower | quote }}
             - name: X_CSI_POWERMAX_PORTGROUPS

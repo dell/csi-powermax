@@ -74,6 +74,7 @@ Feature: PowerMax CSI interface
       | "GetMaskingViewConnectionsError"  | "Could not get MV Connections"                        |
       | "GetPortError"                    | "Failed to fetch port details for any director ports" |
 
+#@wip
 @controllerPublish
 @v1.0.0
      Scenario Outline: Publish volume with no masking view and induced errors
@@ -280,6 +281,7 @@ Feature: PowerMax CSI interface
       And I call PublishVolume with "multiple-writer" to "node1"
       Then a valid PublishVolumeResponse is returned
 
+#@wip
 @controllerPublish
 @v1.0.0
      Scenario: Publish volume to a Node with conflicting MV
@@ -351,6 +353,7 @@ Feature: PowerMax CSI interface
       And I call PublishVolume with "unknown" to "node1"
       Then the error contains "access mode cannot be UNKNOWN"
 
+#@wip
 @controllerPublish
 @v1.0.0
      Scenario: Unpublish volume
@@ -415,7 +418,11 @@ Feature: PowerMax CSI interface
      Examples:
       | induced                   | errormsg                                         |
       | "DeleteMaskingViewError"  | "Error deleting Masking view: induced error"     |
-      | "UpdateStorageGroupError" | "Error updating Storage Group: induced error"    |
+      # The new code retries individually if there was an error, and the masking view has been
+      # deleted, so on the retry there is no error but the volume is left in the SG.
+      # I'm not sure what to do about this. It would be true in the real world if k8s retried also.
+      | "UpdateStorageGroupError" | "none"                                           |
+      #| "UpdateStorageGroupError" | "Error updating Storage Group: induced error"    |
       | "GetStorageGroupError"    | "Failed to fetch SG details"                     |
       | "DeleteStorageGroupError" | "none"                                           |
 
@@ -478,3 +485,153 @@ Feature: PowerMax CSI interface
       | "FA-1D:4"        | "FA-1D:5"             | "none"                | "0x5000000000000002" | "none"                                                |
       | ""               | "FA-1D:5"             | "none"                | "0x5000000000000002" | "none"                                                |
 
+@controllerPublish
+@v1.3.0
+#@wip
+   Scenario Outline: Call requestAddVolumesToSGMV and runAddVolumesToSGMV with various scenarios
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      And I request a PortGroup
+      And a valid CreateVolumeResponse is returned
+      And I have a Node <node> with MaskingView
+      When I call requestAddVolumeToSGMV <node> mv <mv>
+      And I induce error <induced>
+      And I call runAddVolumesToSGMV
+      Then the error contains <errormsg> 
+     
+      Examples:
+      | node     |  mv        | induced                 | errormsg                                      |
+      | "node1"  |  "default" | "none"                  | "none"                                        |
+      | "node1"  |  "default" | "GetVolumeError"        | "Error retrieving Volume"                     |
+      | "node1"  |  "default" | "GetStorageGroupError"  | "Failed to fetch SG details"                  |
+      | "none"   |  "default" | "none"                  | "none"                                        |
+
+@controllerPublish
+@v1.3.0
+@wip
+   Scenario Outline: Call requestAddVolumesToSGMV and runAddVolumesToSGMV when creating masking view
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      And I request a PortGroup
+      And a valid CreateVolumeResponse is returned
+      When I call requestAddVolumeToSGMV <node> mv <mv>
+      And I induce error <induced>
+      And I call runAddVolumesToSGMV
+      Then the error contains <errormsg> 
+     
+      Examples:
+      | node     |  mv        | induced                 | errormsg                                      |
+      | "node1"  |  "default" | "GetHostError"          | "Failed to fetch host details"                |
+
+@controllerPublish
+@v1.3.0
+#@wip
+   Scenario Outline: Test handleAddVolumeToSGMV with various scenarios
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      And I request a PortGroup
+      And a valid CreateVolumeResponse is returned
+      And I have a Node <node> with MaskingView
+      When I call requestAddVolumeToSGMV <node> mv <mv>
+      And I call runAddVolumesToSGMV
+      And I call requestAddVolumeToSGMV <node> mv <mv>
+      And I induce error <induced>
+      And I call handleAddVolumeToSGMVError
+      Then the error contains <errormsg> 
+     
+      Examples:
+      | node     |  mv        | induced                 | errormsg                                      |
+      | "node1"  |  "default" | "none"                  | "none"                                        |
+      | "node1"  |  "default" | "GetVolumeError"        | "Error retrieving Volume"                     |
+      | "node1"  |  "default" | "GetMaskingViewError"   | "none"                                        |
+
+@controllerPublish
+@v1.3.0
+#@wip
+   Scenario Outline: Test requestAddVolumesToSGMV with multiple requests
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      And I request a PortGroup
+      And a valid CreateVolumeResponse is returned
+      And I have a Node <node> with MaskingView
+      When I call requestAddVolumeToSGMV <node> mv <mv1>
+      And I call requestAddVolumeToSGMV <node> mv <mv2>
+      And I call runAddVolumesToSGMV
+      And I induce error <induced>
+      And I call handleAddVolumeToSGMVError
+      Then the error contains <errormsg> 
+     
+      Examples:
+      | node     |  mv1       | mv2       | induced                 | errormsg                                      |
+      | "node1"  |  "badmv"   | "default" | "none"                  | "none"                                        |
+      | "node1"  |  "default" | "badmv"   | "none"                  | "none"                                        |
+      | "node1"  |  "default" | "default" | "none"                  | "none"                                        |
+
+@controllerPublish
+@v1.3.0
+@wip
+     Scenario Outline: Test requestRemoveVolumesFromSGMV and runRemoveVolumesFromSGMV
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      When I request a PortGroup
+      And a valid CreateVolumeResponse is returned
+      And I have a Node "node1" with MaskingView
+      And I call PublishVolume with "single-writer" to "node1"
+      And no error was received
+      When I call requestRemoveVolumeFromSGMV <node> mv <mv>
+      And I induce error <induced>
+      And I call runRemoveVolumesFromSGMV
+      Then the error contains <errormsg> 
+     
+      Examples:
+      | node     |  mv        | induced                 | errormsg                                      |
+      | "node1"  |  "default" | "none"                  | "none"                                        |
+      | "node1"  |  "default" | "GetStorageGroupError"  | "Failed to fetch SG details"                  |
+
+@controllerPublish
+@v1.3.0
+@wip
+   Scenario Outline: Test handleRemoveVolumeFromSGMV with various scenarios
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      When I request a PortGroup
+      And a valid CreateVolumeResponse is returned
+      And I have a Node "node1" with MaskingView
+      And I call PublishVolume with "single-writer" to "node1"
+      And no error was received
+      When I call requestRemoveVolumeFromSGMV <node> mv <mv>
+      And I call runRemoveVolumesFromSGMV
+      And I call requestRemoveVolumeFromSGMV <node> mv <mv>
+      And I induce error <induced>
+      And I call handleRemoveVolumeFromSGMVError
+      Then the error contains <errormsg> 
+     
+      Examples:
+      | node     |  mv        | induced                 | errormsg                                      |
+      | "node1"  |  "default" | "none"                  | "none"                                        |
+      | "node1"  |  "default" | "GetVolumeError"        | "Error retrieving Volume"                     |
+      | "node1"  |  "default" | "GetMaskingViewError"   | "none"                                        |
+
+@controllerPublish
+@v1.3.0
+@wip
+   Scenario Outline: Test requestRemoveVolumesFromSGMV with multiple requests
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      When I request a PortGroup
+      And a valid CreateVolumeResponse is returned
+      And I have a Node "node1" with MaskingView
+      And I call PublishVolume with "single-writer" to "node1"
+      And no error was received
+      When I call requestRemoveVolumeFromSGMV <node> mv <mv1>
+      And I call requestRemoveVolumeFromSGMV <node> mv <mv2>
+      And I call runRemoveVolumesFromSGMV
+      And I induce error <induced>
+      And I call handleRemoveVolumeFromSGMVError
+      Then the error contains <errormsg> 
+     
+      Examples:
+      | node     |  mv1       | mv2       | induced                 | errormsg                                      |
+      | "node1"  |  "badmv"   | "default" | "none"                  | "none"                                        |
+      | "node1"  |  "default" | "badmv"   | "none"                  | "none"                                        |
+      | "node1"  |  "default" | "default" | "none"                  | "none"                                        |

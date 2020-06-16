@@ -15,6 +15,9 @@
 package service
 
 const (
+	// EnvDriverName is the name of the enviroment variable used to set the
+	// name of the driver
+	EnvDriverName = "X_CSI_POWERMAX_DRIVER_NAME"
 	// EnvEndpoint is the name of the enviroment variable used to set the
 	// HTTP endpoint of Unisphere
 	EnvEndpoint = "X_CSI_POWERMAX_ENDPOINT"
@@ -85,4 +88,23 @@ const (
 	// Valid values are "FC" or "ISCSI" or "". If "", will choose FC if both are available.
 	// This is mainly for testing.
 	EnvPreferredTransportProtocol = "X_CSI_TRANSPORT_PROTOCOL"
+
+	// EnvUnisphereProxyServiceName is the name of the proxy service in kubernetes
+	// If set, then driver will attempt to read the associated env value
+	// If set to none, then the driver will connect to Unisphere
+	EnvUnisphereProxyServiceName = "X_CSI_POWERMAX_PROXY_SERVICE_NAME"
+
+	// EnvEnableCHAP is the flag which determines if the driver is going
+	// to set the CHAP credentials in the ISCSI node database at the time
+	// of node plugin boot
+	EnvEnableCHAP = "X_CSI_POWERMAX_ISCSI_ENABLE_CHAP"
+
+	// EnvISCSICHAPUserName is the the username for the ISCSI CHAP
+	// authentication for the host initiator(s)
+	// If set to none, then the driver will use the ISCSI IQN as the username
+	EnvISCSICHAPUserName = "X_CSI_POWERMAX_ISCSI_CHAP_USERNAME"
+
+	// EnvISCSICHAPPassword is the the password for the ISCSI CHAP
+	// authentication for the host initiator(s)
+	EnvISCSICHAPPassword = "X_CSI_POWERMAX_ISCSI_CHAP_PASSWORD"
 )
