@@ -27,6 +27,7 @@ import (
 	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/coreos/go-systemd/dbus"
 	"github.com/dell/gobrick"
 	"github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
@@ -57,6 +58,32 @@ var (
 	nodePendingState            pendingState
 	sysBlock                    = "/sys/block" // changed for unit testing
 )
+
+type maskingViewTargetInfo struct {
+	target           goiscsi.ISCSITarget
+	IsCHAPConfigured bool
+}
+
+// Mapping between symid and all remote targets on the sym
+// key - string, value - []ISCSITargetInfo
+var symToAllISCSITargets sync.Map
+
+// Mapping between symid and remote targets for this node
+// key - string, value - []maskingViewTargetInfo
+var symToMaskingViewTargets sync.Map
+
+// Map to store if sym has fc connectivity or not
+var isSymConnFC = make(map[string]bool)
+
+// InvalidateSymToMaskingViewTargets - invalidates the cache
+// Only used for testing
+func (s *service) InvalidateSymToMaskingViewTargets() {
+	deletefunc := func(key interface{}, value interface{}) bool {
+		symToMaskingViewTargets.Delete(key)
+		return true
+	}
+	symToMaskingViewTargets.Range(deletefunc)
+}
 
 func (s *service) NodeStageVolume(
 	ctx context.Context,
@@ -108,7 +135,17 @@ func (s *service) NodeStageVolume(
 	// Get publishContext
 	publishContext := req.GetPublishContext()
 	volumeLUNAddress := publishContext[PublishContextLUNAddress]
-	targetIdentifiers := publishContext[PortIdentifiers]
+	var keyCount int
+	targetIdentifiers := ""
+	if count, ok := publishContext[PortIdentifierKeyCount]; ok {
+		keyCount, _ = strconv.Atoi(count)
+		for i := 1; i <= keyCount; i++ {
+			portIdentifierKey := fmt.Sprintf("%s_%d", PortIdentifiers, i)
+			targetIdentifiers += publishContext[portIdentifierKey]
+		}
+	} else {
+		targetIdentifiers = publishContext[PortIdentifiers]
+	}
 
 	f := log.Fields{
 		"CSIRequestID":      reqID,
@@ -405,7 +442,17 @@ func (s *service) NodePublishVolume(
 		log.Error("Device WWN required to be in PublishContext")
 		return nil, status.Error(codes.InvalidArgument, "Device WWN required to be in PublishContext")
 	}
-	targetIdentifiers := publishContext[PortIdentifiers]
+	var keyCount int
+	targetIdentifiers := ""
+	if count, ok := publishContext[PortIdentifierKeyCount]; ok {
+		keyCount, _ = strconv.Atoi(count)
+		for i := 1; i <= keyCount; i++ {
+			portIdentifierKey := fmt.Sprintf("%s_%d", PortIdentifiers, i)
+			targetIdentifiers += publishContext[portIdentifierKey]
+		}
+	} else {
+		targetIdentifiers = publishContext[PortIdentifiers]
+	}
 
 	log.WithField("CSIRequestID", reqID).Infof("node publishing volume: %s lun: %s", deviceWWN, volumeLUNAddress)
 
@@ -575,6 +622,9 @@ func (s *service) nodeProbe(ctx context.Context) error {
 	if s.nodeIsInitialized {
 		// nothing to do for FC
 		if s.opts.TransportProtocol != FcTransportProtocol {
+			// Make sure that there is only discovery/login attempt at one time
+			s.nodeProbeMutex.Lock()
+			defer s.nodeProbeMutex.Unlock()
 			_ = s.ensureLoggedIntoEveryArray(false)
 		}
 	}
@@ -775,7 +825,12 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 			s.setupArrayForFC(symID, portWWNs)
 			s.initFCConnector(iscsiChroot)
 			s.arrayTransportProtocolMap[symID] = FcTransportProtocol
+			isSymConnFC[symID] = true
 		} else if useIscsi {
+			err := s.ensureISCSIDaemonStarted()
+			if err != nil {
+				log.Errorf("Failed to start the ISCSI Daemon. Error - %s", err.Error())
+			}
 			s.setupArrayForIscsi(symID, IQNs)
 			s.initISCSIConnector(iscsiChroot)
 			s.arrayTransportProtocolMap[symID] = IscsiTransportProtocol
@@ -805,45 +860,277 @@ func (s *service) setupArrayForIscsi(array string, IQNs []string) error {
 		log.Error(err.Error())
 		return err
 	}
+	_, err = s.getAndConfigureMaskingViewTargets(array, mvName, IQNs)
+	return err
+}
 
+// getAndConfigureMaskingViewTargets - Returns a list of ISCSITargets for a given masking view
+// also update the node database with CHAP authentication (if required) and perform discovery/login
+func (s *service) getAndConfigureMaskingViewTargets(array, mvName string, IQNs []string) ([]goiscsi.ISCSITarget, error) {
 	// Check the masking view
+	goISCSITargets := make([]goiscsi.ISCSITarget, 0)
 	view, err := s.adminClient.GetMaskingViewByID(array, mvName)
 	if err != nil {
 		// masking view does not exist, not an error but no need to login
 		log.Debugf("Masking View %s does not exist for array %s, skipping login", mvName, array)
-	} else {
-		// masking view exists, we need to log into some targets
-		targets, err := s.getIscsiTargetsForMaskingView(array, view)
+		return goISCSITargets, err
+	}
+	log.Infof("Masking View: %s exists for array id: %s", mvName, array)
+	// masking view exists, we need to log into some targets
+	// this will also update the cache
+	targets, err := s.getIscsiTargetsForMaskingView(array, view)
+	if err != nil {
+		log.Debugf(err.Error())
+		return goISCSITargets, err
+	}
+	for _, tgt := range targets {
+		goISCSITargets = append(goISCSITargets, tgt.target)
+	}
+	log.Debugf("Masking View Targets: %v", goISCSITargets)
+	// First set the CHAP credentials
+	if len(targets) > 0 {
+		err = s.setCHAPCredentials(array, targets, IQNs)
 		if err != nil {
-			log.Debugf(err.Error())
-			return err
+			errorMsg := "Unable to set ISCSI CHAP credentials for some targets in the node database"
+			log.Errorf("%s Error - %s", errorMsg, err.Error())
+			return goISCSITargets, err
 		}
+		err = s.loginIntoISCSITargets(array, targets)
+	}
+	return goISCSITargets, err
+}
+
+// loginIntoISCSITargets - for a given array id and list of masking view targets
+// attempt login. The login method is different if CHAP is enabled
+// also update the logged in arrays cache
+func (s *service) loginIntoISCSITargets(array string, targets []maskingViewTargetInfo) error {
+	var err error
+	loggedInAll := true
+	if s.opts.EnableCHAP {
+		// CHAP is already enabled on the array, discovery will not work
+		// so we need to do a login (as we have already setup the database(s) successfully
 		for _, tgt := range targets {
-			// discover the targets but do not login
-			log.Debugf("Discovering iSCSI targets on %s", tgt.Portal)
-			_, err = s.iscsiClient.DiscoverTargets(tgt.Portal, true)
-			s.iscsiClient.DiscoverTargets(tgt.Portal, false)
+			loginError := s.iscsiClient.PerformLogin(tgt.target)
+			if loginError != nil {
+				log.Errorf("Failed to perform ISCSI login for target: %s. Error: %s",
+					tgt.target.Target, loginError.Error())
+				err = loginError
+				loggedInAll = false
+			} else {
+				log.Infof("Successfully logged into target: %s", tgt.target.Target)
+			}
+		}
+	} else {
+		for _, tgt := range targets {
+			// If CHAP is not enabled, attempt a discovery login
+			log.Debugf("Discovering iSCSI targets on %s", tgt.target.Portal)
+			_, discoveryError := s.iscsiClient.DiscoverTargets(tgt.target.Portal, true)
+			if discoveryError != nil {
+				log.Errorf("Failed to discover the ISCSI target: %s. Error: %s",
+					tgt.target.Target, discoveryError.Error())
+				err = discoveryError
+				loggedInAll = false
+			} else {
+				log.Infof("Successfully logged into target: %s on portal :%s",
+					tgt.target.Target, tgt.target.Portal)
+			}
+		}
+	}
+	// If we successfully logged into all targets, then marked the array as logged in
+	if loggedInAll {
+		s.cacheMutex.Lock()
+		s.loggedInArrays[array] = true
+		s.cacheMutex.Unlock()
+	}
+	return err
+}
+
+// setCHAPCredentials - Sets the CHAP credentials for a list of masking view targets
+// in the node database. Also if any credentials were updated, it updates the target cache
+func (s *service) setCHAPCredentials(array string, targets []maskingViewTargetInfo, IQNs []string) error {
+	if s.opts.EnableCHAP {
+		if len(IQNs) > 0 {
+			if s.opts.CHAPUserName != "" {
+				errorMsg := "multiple IQNs found on host and CHAP username is not set. invalid configuration"
+				log.Debugf(errorMsg)
+				return fmt.Errorf(errorMsg)
+			}
+		}
+		chapUserName := s.opts.CHAPUserName
+		modified := false
+		for i := range targets {
+			if chapUserName == "" {
+				chapUserName = IQNs[0]
+			}
+			if !targets[i].IsCHAPConfigured {
+				log.Debugf("Setting CHAP credentials for targets: %v", targets)
+				err := s.iscsiClient.SetCHAPCredentials(targets[i].target, chapUserName, s.opts.CHAPPassword)
+				if err != nil {
+					log.Error(err)
+					// If we were able to set credentials for some targets successfully
+					// even then we won't be updating the cache
+					return err
+				}
+				log.Debugf("Successfully set CHAP credentials for targets: %v", targets)
+				targets[i].IsCHAPConfigured = true
+				modified = true
+			}
+		}
+		if modified {
+			// Update the cache
+			symToMaskingViewTargets.Store(array, targets)
 		}
 	}
 	return nil
 }
 
-func (s *service) getIscsiTargetsForMaskingView(array string, view *types.MaskingView) ([]goiscsi.ISCSITarget, error) {
+func getUnitStatus(units []dbus.UnitStatus, name string) *dbus.UnitStatus {
+	for _, u := range units {
+		if u.Name == name {
+			return &u
+		}
+	}
+	return nil
+}
+
+func (s *service) ensureISCSIDaemonStarted() error {
+	target := "iscsid.service"
+	err := s.createDbusConnection()
+	if err != nil {
+		return err
+	}
+	defer s.closeDbusConnection()
+	units, err := s.dBusConn.ListUnits()
+	if err != nil {
+		log.Errorf("Failed to list systemd units. Error - %s", err.Error())
+		return err
+	}
+	unit := getUnitStatus(units, target)
+	if unit == nil {
+		// Failed to get the status of ISCSI Daemon
+		errMsg := fmt.Sprintf("failed to find %s. Going to panic", target)
+		log.Error(errMsg)
+		panic(fmt.Errorf(errMsg))
+	} else if unit.ActiveState != "active" {
+		log.Infof("%s is not active. Current state - %s", target, unit.ActiveState)
+	} else {
+		log.Info("ISCSI Daemon is active")
+		return nil
+	}
+	log.Infof("Attempting to start %s", target)
+	responsechan := make(chan string)
+	// We try to replace the unit
+	_, err = s.dBusConn.StartUnit(target, "replace", responsechan)
+	if err != nil {
+		// Failed to start the unit
+		log.Errorf("Failed to start %s. Error - %s", target, err.Error())
+		if strings.Contains(err.Error(), "is masked") {
+			// If unit is masked, it can't be started even manually
+			panic(err)
+		} else {
+			return err
+		}
+	}
+	// Wait on the response channel
+	job := <-responsechan
+	if job != "done" {
+		// Job didn't succeed
+		errMsg := fmt.Sprintf("Failed to get a successful response from the job to start ISCSI daemon")
+		log.Error(errMsg)
+		return fmt.Errorf(errMsg)
+	}
+	log.Info("Successfully started ISCSI daemon")
+	return nil
+}
+
+func (s *service) ensureLoggedIntoEveryArray(skipLogin bool) error {
+	arrays := &types.SymmetrixIDList{}
+	var err error
+
+	// Get the list of arrays
+	arrays, err = s.retryableGetSymmetrixIDList()
+	if err != nil {
+		return err
+	}
+	// Get iscsi initiators.
+	IQNs, iSCSIErr := s.iscsiClient.GetInitiators("")
+	if iSCSIErr != nil {
+		return iSCSIErr
+	}
+	_, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
+	// for each array known to unisphere, ensure we have performed ISCSI login for our masking views
+	for _, array := range arrays.SymmetrixIDs {
+		if isSymConnFC[array] {
+			// Check if we have marked this array as FC earlier
+			continue
+		}
+		s.cacheMutex.Lock()
+		if s.loggedInArrays[array] {
+			// we have already logged into this array
+			log.Debugf("(ISCSI) Already logged into the array: %s", array)
+			s.cacheMutex.Unlock()
+			break
+		} else {
+			log.Debugf("(ISCSI) No logins were done earlier for %s", array)
+		}
+		s.cacheMutex.Unlock()
+		// Try to get the masking view targets from the cache
+		mvTargets, ok := symToMaskingViewTargets.Load(array)
+		if ok {
+			// Entry is present in cache
+			// This means that we discovered the targets
+			// but haven't logged in for some reason
+			log.Debugf("Cache hit for %s", array)
+			maskingViewTargets := mvTargets.([]maskingViewTargetInfo)
+			// First set the CHAP credentials if required
+			err = s.setCHAPCredentials(array, maskingViewTargets, IQNs)
+			if err != nil {
+				//log the error and continue
+				log.Errorf("Failed to set CHAP credentials for %v", maskingViewTargets)
+				// Reset the error
+				err = nil
+			}
+			err = s.loginIntoISCSITargets(array, maskingViewTargets)
+		} else {
+			// Entry not in cache
+			// Configure MaskingView Targets - CHAP, Discovery/Login
+			_, tempErr := s.getAndConfigureMaskingViewTargets(array, mvName, IQNs)
+			if tempErr != nil {
+				if strings.Contains(tempErr.Error(), "does not exist") {
+					// Ignore this error
+					log.Debugf("Couldn't configure ISCSI targets as masking view: %s doesn't exist for array: %s",
+						mvName, array)
+					tempErr = nil
+				} else {
+					err = tempErr
+					log.Errorf("Failed to configure ISCSI targets for masking view: %s, array: %s. Error: %s",
+						mvName, array, tempErr.Error())
+				}
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("failed to login to (some) ISCSI targets. Error: %s", err.Error())
+		}
+	}
+	return nil
+}
+
+func (s *service) getIscsiTargetsForMaskingView(array string, view *types.MaskingView) ([]maskingViewTargetInfo, error) {
 	if array == "" {
-		return []goiscsi.ISCSITarget{}, fmt.Errorf("No array specified")
+		return []maskingViewTargetInfo{}, fmt.Errorf("No array specified")
 	}
 	if view.PortGroupID == "" {
-		return []goiscsi.ISCSITarget{}, fmt.Errorf("Masking view contains no PortGroupID")
+		return []maskingViewTargetInfo{}, fmt.Errorf("Masking view contains no PortGroupID")
 	}
 	// get the PortGroup in the masking view
 	portGroup, err := s.adminClient.GetPortGroupByID(array, view.PortGroupID)
 	if err != nil {
-		return []goiscsi.ISCSITarget{}, err
+		return []maskingViewTargetInfo{}, err
 	}
-	targets := make([]goiscsi.ISCSITarget, 0)
+	targets := make([]maskingViewTargetInfo, 0)
 	// for each Port
 	for _, portKey := range portGroup.SymmetrixPortKey {
-		pID := strings.Split(portKey.PortID, ":")[1]
+		pID := portKey.PortID
 		port, err := s.adminClient.GetPort(array, portKey.DirectorID, pID)
 		if err != nil {
 			// unable to get port details
@@ -856,60 +1143,14 @@ func (s *service) getIscsiTargetsForMaskingView(array string, view *types.Maskin
 				GroupTag: "0",
 				Target:   port.SymmetrixPort.Identifier,
 			}
-			targets = append(targets, t)
+			targets = append(targets, maskingViewTargetInfo{
+				target:           t,
+				IsCHAPConfigured: false,
+			})
 		}
 	}
+	symToMaskingViewTargets.Store(array, targets)
 	return targets, nil
-}
-
-func (s *service) ensureLoggedIntoEveryArray(skipLogin bool) error {
-	arrays := &types.SymmetrixIDList{}
-	var err error
-
-	// Get the list of arrays
-	arrays, err = s.retryableGetSymmetrixIDList()
-	if err != nil {
-		return err
-	}
-
-	// for each array known to unisphere, ensure we have performed an iSCSI login at least once
-	for _, array := range arrays.SymmetrixIDs {
-		deadline := time.Now().Add(time.Duration(s.GetPmaxTimeoutSeconds()) * time.Second)
-		for tries := 0; time.Now().Before(deadline); tries++ {
-			var addresses []string
-			addresses, err = s.adminClient.GetListOfTargetAddresses(array)
-			if err != nil {
-				return err
-			}
-			if s.loggedInArrays[array] {
-				// we have already logged into this array
-				break
-			}
-			for _, addr := range addresses {
-				if skipLogin == false {
-					_, err = s.iscsiClient.DiscoverTargets(addr, true)
-				} else {
-					log.Debug("Skipping iSCSI login due to user request")
-					err = nil
-				}
-				if err != nil {
-					// Retry on this error
-					log.Error(fmt.Sprintf("Failed to execute iSCSI login to target: %s; retrying...", addr))
-					time.Sleep(time.Second << uint(tries)) // incremental back-off
-					continue
-				} else {
-					// set the flag saying that we have logged into the array
-					log.Debug(fmt.Sprintf("loggedInArrays: %v", s.loggedInArrays))
-					s.loggedInArrays[array] = true
-				}
-			}
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("Unable to perform iSCSI discovery and login, timed out")
-		}
-	}
-	return nil
 }
 
 func (s *service) createOrUpdateFCHost(array string, nodeName string, portWWNs []string) (*types.Host, error) {
@@ -1072,34 +1313,40 @@ func (s *service) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolum
 	return nil, status.Error(codes.Unimplemented, "")
 }
 
-// Given a volume WWN, delete all the associated block devices (including multipath) on that node.
-// Caches for nodeScanForDeviceSymlinkPath
-var symToPortalIPsMap sync.Map
-
 // Gets the iscsi target iqn values that can be used for rescanning.
-func (s *service) getPortalIPs(symID string) ([]string, error) {
-	var portalIPs []string
+func (s *service) getISCSITargets(symID string) ([]ISCSITargetInfo, error) {
+	var targets []ISCSITargetInfo
 	var ips interface{}
 	var ok bool
-	var err error
 
-	ips, ok = symToPortalIPsMap.Load(symID)
+	ips, ok = symToAllISCSITargets.Load(symID)
 	if ok {
-		portalIPs = ips.([]string)
-		log.Infof("hit portalIPs %s", portalIPs)
+		targets = ips.([]ISCSITargetInfo)
+		log.Infof("Found targets %v in cache", targets)
 	} else {
-		portalIPs, err = s.adminClient.GetListOfTargetAddresses(symID)
+		pmaxTargets, err := s.adminClient.GetISCSITargets(symID)
 		if err != nil {
-			return portalIPs, status.Error(codes.Internal, fmt.Sprintf("Could not get iscsi portalIPs: %s", err.Error()))
+			return targets, status.Error(codes.Internal, fmt.Sprintf("Could not get iscsi target information: %s", err.Error()))
 		}
-		symToPortalIPsMap.Store(symID, portalIPs)
-		log.Infof("miss portalIPs %s", portalIPs)
+		for _, pmaxTarget := range pmaxTargets {
+			for _, ipaddr := range pmaxTarget.PortalIPs {
+				target := ISCSITargetInfo{
+					Target: pmaxTarget.IQN,
+					Portal: ipaddr,
+				}
+				targets = append(targets, target)
+			}
+		}
+		symToAllISCSITargets.Store(symID, targets)
+		log.Infof("Updated targets %v in cache", targets)
 	}
 
-	return portalIPs, nil
+	return targets, nil
 }
 
 // Returns the array targets and a boolean that is true if Fibrechannel.
+// If the target is ISCSI, it also updates ISCSI node database if CHAP
+// authentication was requested
 func (s *service) getArrayTargets(targetIdentifiers string, symID string) ([]ISCSITargetInfo, []FCTargetInfo, bool) {
 	iscsiTargets := make([]ISCSITargetInfo, 0)
 	fcTargets := make([]FCTargetInfo, 0)
@@ -1119,21 +1366,113 @@ func (s *service) getArrayTargets(targetIdentifiers string, symID string) ([]ISC
 					WWPN: tgt,
 				}
 				fcTargets = append(fcTargets, fcTarget)
-			} else { // iscsi
-				portalIPs, _ := s.getPortalIPs(symID)
-				// Make an entry for each portal for each target
-				for _, portalIP := range portalIPs {
-					iscsiTarget := ISCSITargetInfo{
-						Portal: portalIP,
-						Target: arrayTargets[i],
-					}
-					iscsiTargets = append(iscsiTargets, iscsiTarget)
-				}
 			}
+		}
+		if !isFC {
+			iscsiTargets = s.getAndConfigureArrayISCSITargets(arrayTargets, symID)
 		}
 	}
 	log.Infof("Array targets: %s", arrayTargets)
 	return iscsiTargets, fcTargets, isFC
+}
+
+func (s *service) getAndConfigureArrayISCSITargets(arrayTargets []string, symID string) []ISCSITargetInfo {
+	iscsiTargets := make([]ISCSITargetInfo, 0)
+	allTargets, _ := s.getISCSITargets(symID)
+	IQNs, err := s.iscsiClient.GetInitiators("")
+	if err != nil {
+		log.Errorf("Failed to fetch initiators for the host. Error: %s", err.Error())
+		return iscsiTargets
+	}
+	cachedTargets, ok := symToMaskingViewTargets.Load(symID)
+	if ok {
+		targets := cachedTargets.([]maskingViewTargetInfo)
+		// Enable CHAP if required
+		err = s.setCHAPCredentials(symID, targets, IQNs)
+		if err != nil {
+			// Log the error and continue
+			log.Errorf("Failed to set CHAP credentials for targets: %v. Error: %s", targets, err.Error())
+		} else {
+			// Update the cache if required
+			cacheUpdated := false
+			for i := range targets {
+				if !targets[i].IsCHAPConfigured {
+					targets[i].IsCHAPConfigured = true
+					cacheUpdated = true
+				}
+			}
+			if cacheUpdated {
+				symToMaskingViewTargets.Store(symID, targets)
+			}
+		}
+		// Check if the array targets are all present in the cache
+		for _, arrayTarget := range arrayTargets {
+			found := false
+			for _, tgt := range targets {
+				if arrayTarget == tgt.target.Target {
+					iscsiTarget := ISCSITargetInfo{
+						Target: arrayTarget,
+						Portal: tgt.target.Portal,
+					}
+					iscsiTargets = append(iscsiTargets, iscsiTarget)
+					found = true
+				}
+			}
+			if !found {
+				// Some array targets are not present in cache
+				// This mostly means that the Port group was modified post
+				// driver boot. Invalidate the cache
+				symToMaskingViewTargets.Delete(symID)
+				// Look in the cache for all targets on the array
+				isFound := false
+				for _, tgt := range allTargets {
+					if arrayTarget == tgt.Target {
+						iscsiTarget := ISCSITargetInfo{
+							Target: arrayTarget,
+							Portal: tgt.Portal,
+						}
+						iscsiTargets = append(iscsiTargets, iscsiTarget)
+						isFound = true
+					}
+				}
+				if !isFound {
+					// This will be an extremely rare case
+					// A new ISCSI target/portal IP has been configured
+					// on the array and added to the Port Group
+					// after the node driver cache information
+					// Invalidate the cache. Return whatever targets we have found until now
+					symToAllISCSITargets.Delete(symID)
+					break
+				}
+			}
+		}
+		return iscsiTargets
+	}
+	// There is no cached information
+	_, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
+	// Get the Masking View Targets and configure CHAP if required
+	// This call updates the cache as well
+	goISCSITargets, err := s.getAndConfigureMaskingViewTargets(symID, mvName, IQNs)
+	if err != nil {
+		log.Errorf("Failed to get and configure masking view targets. Error: %s", err.Error())
+	}
+	for _, arrayTarget := range arrayTargets {
+		found := false
+		for _, goiscsiTarget := range goISCSITargets {
+			if arrayTarget == goiscsiTarget.Target {
+				iscsiTarget := ISCSITargetInfo{
+					Target: arrayTarget,
+					Portal: goiscsiTarget.Portal,
+				}
+				iscsiTargets = append(iscsiTargets, iscsiTarget)
+				found = true
+			}
+		}
+		if !found {
+			log.Errorf("Internal Error - Target: %s not found on array: %s", arrayTarget, symID)
+		}
+	}
+	return iscsiTargets
 }
 
 // writeWWNFile writes a volume's WWN to a file copy on the node

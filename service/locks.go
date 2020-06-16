@@ -22,6 +22,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type lockWorkers struct {
+}
+
+var lockWorker *lockWorkers
+
 // LockRequest - Input structure to specify a request for locking a resource
 type LockRequest struct {
 	ResourceID  string
@@ -38,9 +43,10 @@ type LockRequestInfo struct {
 
 // LockInfo - Stores information about each resource id in the map
 type LockInfo struct {
-	LockRequests      chan LockRequestInfo
-	CurrentLockNumber int
-	Count             int
+	LockRequests       chan LockRequestInfo
+	CurrentLockNumber  int
+	CurrentWaitChannel chan int
+	Count              int
 }
 
 var lockMutex sync.Mutex
@@ -66,9 +72,10 @@ func LockRequestHandler() {
 						// Create an entry in the fifolocks map as this is the first call for this resource id
 						waitChannels := make(chan LockRequestInfo, 100)
 						lockInfo := LockInfo{
-							CurrentLockNumber: request.LockNumber,
-							LockRequests:      waitChannels,
-							Count:             1,
+							CurrentLockNumber:  request.LockNumber,
+							CurrentWaitChannel: request.WaitChannel,
+							LockRequests:       waitChannels,
+							Count:              1,
 						}
 						fifolocks[request.ResourceID] = &lockInfo
 						request.WaitChannel <- 1
@@ -80,10 +87,13 @@ func LockRequestHandler() {
 						// Lock is held by this request id
 						if request.Unlock {
 							// This is an unlock request
+							// First close the channel
+							close(lockInfo.CurrentWaitChannel)
 							select {
 							case lockRequestInfo := <-lockInfo.LockRequests:
 								// Grant the lock and notify the next goroutine waiting for the lock
 								lockInfo.CurrentLockNumber = lockRequestInfo.LockNumber
+								lockInfo.CurrentWaitChannel = lockRequestInfo.WaitChannel
 								lockInfo.Count = 1
 								lockRequestInfo.WaitChannel <- 1
 							default:
@@ -106,6 +116,7 @@ func LockRequestHandler() {
 								// Entry for resource ID already present in fifolocks
 								// Grant the lock to caller as no goroutines waiting
 								lockInfo.CurrentLockNumber = request.LockNumber
+								lockInfo.CurrentWaitChannel = request.WaitChannel
 								request.WaitChannel <- 1
 							} else {
 								// Queue a lock request
@@ -183,6 +194,9 @@ func ReleaseLock(resourceID string, requestID string, lockNum int) {
 
 // StartLockManager - Used to start the lock request handler & clean up workers
 func (s *service) StartLockManager(duration time.Duration) {
-	LockRequestHandler()
-	CleanupMapEntries(duration)
+	if lockWorker == nil {
+		lockWorker = new(lockWorkers)
+		LockRequestHandler()
+		CleanupMapEntries(duration)
+	}
 }

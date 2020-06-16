@@ -3,7 +3,11 @@ kind: StorageClass
 metadata:
   name: {{ required "Must provide a storage class name." .Values.storageClass.name}}-xfs
   annotations:
+{{- if eq .Values.customDriverName.enabled true}}
+provisioner: {{ printf "%s.%s.dellemc.com" .Release.Namespace .Values.customDriverName.value }}
+{{- else }}
 provisioner: csi-powermax.dellemc.com
+{{- end }}
 reclaimPolicy: {{ required "Must provide a storage class reclaim policy." .Values.storageClass.reclaimPolicy }}
 parameters:
   FsType: xfs

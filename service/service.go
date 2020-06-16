@@ -53,9 +53,9 @@ const (
 
 	defaultPmaxTimeout         = 120
 	defaultLockCleanupDuration = 4
-	// defaultU4pVersion should be reset to base supported endpoint
+	// defaultU4PVersion should be reset to base supported endpoint
 	// version for the CSI driver release
-	defaultU4pVersion = "90"
+	defaultU4PVersion = "91"
 	csiPrefix         = "csi-"
 
 	logFields = "logFields"
@@ -82,16 +82,23 @@ type Service interface {
 // Opts defines service configuration options.
 type Opts struct {
 	Endpoint                   string
+	UseProxy                   bool
+	ProxyServiceHost           string
+	ProxyServicePort           string
 	User                       string
 	Password                   string
 	Version                    string
 	SystemName                 string
 	NodeName                   string
 	TransportProtocol          string
+	DriverName                 string
+	CHAPUserName               string
+	CHAPPassword               string
 	Insecure                   bool
 	Thick                      bool
 	AutoProbe                  bool
 	EnableBlock                bool
+	EnableCHAP                 bool
 	PortGroups                 []string
 	ClusterPrefix              string
 	AllowedArrays              []string
@@ -110,16 +117,14 @@ type service struct {
 	pmaxTimeoutSeconds int64
 	// replace this with Unisphere client
 	adminClient pmax.Pmax
-	// Following should be removed during u4p endpoint
-	// migration to 91
-	adminClient91 pmax.Pmax
-	iscsiClient   goiscsi.ISCSIinterface
+	iscsiClient goiscsi.ISCSIinterface
 	// replace this with Unisphere system if needed
 	system            *interface{}
 	privDir           string
 	loggedInArrays    map[string]bool
 	mutex             sync.Mutex
 	cacheMutex        sync.Mutex
+	nodeProbeMutex    sync.Mutex
 	nodeIsInitialized bool
 	// Timeout for storage pool cache
 	storagePoolCacheDuration time.Duration
@@ -129,14 +134,19 @@ type service struct {
 	// Gobrick stuff
 	fcConnector               fcConnector
 	iscsiConnector            iSCSIConnector
+	dBusConn                  dBusConn
 	arrayTransportProtocolMap map[string]string // map of array SN to IscsiTransportProtocol or FcTransportProtocol
+
+	sgSvc *storageGroupSvc
 }
 
 // New returns a new Service.
 func New() Service {
-	return &service{
+	svc := &service{
 		loggedInArrays: map[string]bool{},
 	}
+	svc.sgSvc = newStorageGroupService(svc)
+	return svc
 }
 
 func (s *service) BeforeServe(
@@ -144,28 +154,38 @@ func (s *service) BeforeServe(
 
 	defer func() {
 		fields := map[string]interface{}{
-			"endpoint":       s.opts.Endpoint,
-			"user":           s.opts.User,
-			"password":       "",
-			"systemname":     s.opts.SystemName,
-			"nodename":       s.opts.NodeName,
-			"insecure":       s.opts.Insecure,
-			"thickprovision": s.opts.Thick,
-			"privatedir":     s.privDir,
-			"autoprobe":      s.opts.AutoProbe,
-			"enableblock":    s.opts.EnableBlock,
-			"portgroups":     s.opts.PortGroups,
-			"clusterprefix":  s.opts.ClusterPrefix,
-			"arrays":         s.opts.AllowedArrays,
-			"transport":      s.opts.TransportProtocol,
-			"mode":           s.mode,
+			"endpoint":          s.opts.Endpoint,
+			"useProxy":          s.opts.UseProxy,
+			"ProxyServiceHost":  s.opts.ProxyServiceHost,
+			"ProxyServicePort":  s.opts.ProxyServicePort,
+			"user":              s.opts.User,
+			"password":          "",
+			"systemname":        s.opts.SystemName,
+			"nodename":          s.opts.NodeName,
+			"insecure":          s.opts.Insecure,
+			"thickprovision":    s.opts.Thick,
+			"privatedir":        s.privDir,
+			"autoprobe":         s.opts.AutoProbe,
+			"enableblock":       s.opts.EnableBlock,
+			"enablechap":        s.opts.EnableCHAP,
+			"portgroups":        s.opts.PortGroups,
+			"clusterprefix":     s.opts.ClusterPrefix,
+			"arrays":            s.opts.AllowedArrays,
+			"transport":         s.opts.TransportProtocol,
+			"mode":              s.mode,
+			"drivername":        s.opts.DriverName,
+			"iscsichapuser":     s.opts.CHAPUserName,
+			"iscsichappassword": "",
 		}
 
 		if s.opts.Password != "" {
 			fields["password"] = "******"
 		}
+		if s.opts.CHAPPassword != "" {
+			fields["iscsichappassword"] = "******"
+		}
 
-		log.WithFields(fields).Infof("configured %s", Name)
+		log.WithFields(fields).Infof("configured %s", s.getDriverName())
 	}()
 
 	log.SetFormatter(&log.TextFormatter{
@@ -173,13 +193,18 @@ func (s *service) BeforeServe(
 		FullTimestamp: true,
 	})
 	s.StartLockManager(defaultLockCleanupDuration * time.Hour)
+	if lockWorker == nil {
+		lockWorker = new(lockWorkers)
+	}
 	s.pmaxTimeoutSeconds = defaultPmaxTimeout
 	s.storagePoolCacheDuration = StoragePoolCacheDuration
 	// Get the SP's operating mode.
 	s.mode = csictx.Getenv(ctx, gocsi.EnvVarMode)
 
 	opts := Opts{}
-
+	if ep, ok := csictx.LookupEnv(ctx, EnvDriverName); ok {
+		opts.DriverName = ep
+	}
 	if ep, ok := csictx.LookupEnv(ctx, EnvEndpoint); ok {
 		opts.Endpoint = ep
 	}
@@ -192,11 +217,17 @@ func (s *service) BeforeServe(
 	if pw, ok := csictx.LookupEnv(ctx, EnvPassword); ok {
 		opts.Password = pw
 	}
+	if chapuser, ok := csictx.LookupEnv(ctx, EnvISCSICHAPUserName); ok {
+		opts.CHAPUserName = chapuser
+	}
+	if pw, ok := csictx.LookupEnv(ctx, EnvISCSICHAPPassword); ok {
+		opts.CHAPPassword = pw
+	}
 	if vs, ok := csictx.LookupEnv(ctx, EnvVersion); ok {
 		opts.Version = vs
 	}
 	if opts.Version == "" {
-		opts.Version = defaultU4pVersion
+		opts.Version = defaultU4PVersion
 	}
 	if name, ok := csictx.LookupEnv(ctx, EnvNodeName); ok {
 		shortHostName := strings.Split(name, ".")[0]
@@ -215,7 +246,7 @@ func (s *service) BeforeServe(
 		opts.AllowedArrays = []string{}
 	}
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
-
+	opts.ProxyServiceHost, opts.ProxyServicePort, opts.UseProxy = s.getProxySettingsFromEnv()
 	opts.GrpcMaxThreads = 4
 	if maxThreads, ok := csictx.LookupEnv(ctx, EnvGrpcMaxThreads); ok {
 		maxIntThreads, err := strconv.Atoi(maxThreads)
@@ -279,7 +310,7 @@ func (s *service) BeforeServe(
 	opts.Thick = pb(EnvThick)
 	opts.AutoProbe = pb(EnvAutoProbe)
 	opts.EnableBlock = pb(EnvEnableBlock)
-
+	opts.EnableCHAP = pb(EnvEnableCHAP)
 	s.opts = opts
 
 	// setup the iscsi client
@@ -333,6 +364,33 @@ func (s *service) BeforeServe(
 	}
 
 	return nil
+}
+
+func (s *service) getProxySettingsFromEnv() (string, string, bool) {
+	serviceHost := ""
+	servicePort := ""
+	if proxyServiceName, ok := csictx.LookupEnv(context.Background(), EnvUnisphereProxyServiceName); ok {
+		if proxyServiceName != "none" {
+			// Change it to uppercase
+			proxyServiceName = strings.ToUpper(proxyServiceName)
+			// Change all "-" to underscores
+			proxyServiceName = strings.Replace(proxyServiceName, "-", "_", -1)
+			serviceHostEnv := fmt.Sprintf("%s_SERVICE_HOST", proxyServiceName)
+			servicePortEnv := fmt.Sprintf("%s_SERVICE_PORT", proxyServiceName)
+			if sh, ok := csictx.LookupEnv(context.Background(), serviceHostEnv); ok {
+				serviceHost = sh
+				if sp, ok := csictx.LookupEnv(context.Background(), servicePortEnv); ok {
+					servicePort = sp
+					if serviceHost == "" || servicePort == "" {
+						log.Warning("Either ServiceHost and ServicePort is set to empty")
+						return "", "", false
+					}
+					return serviceHost, servicePort, true
+				}
+			}
+		}
+	}
+	return "", "", false
 }
 
 func (s *service) getTransportProtocolFromEnv() string {
@@ -400,12 +458,18 @@ func (s *service) getArrayWhitelist() []string {
 func (s *service) createPowerMaxClient() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+	endPoint := ""
+	if s.opts.UseProxy {
+		endPoint = fmt.Sprintf("https://%s:%s", s.opts.ProxyServiceHost, s.opts.ProxyServicePort)
+	} else {
+		endPoint = s.opts.Endpoint
+	}
 
 	// Create our PowerMax API client, if needed
 	if s.adminClient == nil {
 		applicationName := ApplicationName + " v" + core.SemVer
 		c, err := pmax.NewClientWithArgs(
-			s.opts.Endpoint, "", applicationName, s.opts.Insecure, !s.opts.DisableCerts)
+			endPoint, defaultU4PVersion, applicationName, s.opts.Insecure, !s.opts.DisableCerts)
 		if err != nil {
 			return status.Errorf(codes.FailedPrecondition,
 				"unable to create PowerMax client: %s", err.Error())
@@ -414,10 +478,10 @@ func (s *service) createPowerMaxClient() error {
 		s.adminClient.SetAllowedArrays(s.getArrayWhitelist())
 
 		err = s.adminClient.Authenticate(&pmax.ConfigConnect{
-			Endpoint: s.opts.Endpoint,
+			Endpoint: endPoint,
 			Username: s.opts.User,
 			Password: s.opts.Password,
-			Version:  s.opts.Version,
+			Version:  defaultU4PVersion,
 		})
 		if err != nil {
 			s.adminClient = nil
@@ -426,30 +490,6 @@ func (s *service) createPowerMaxClient() error {
 		}
 	}
 
-	// Create the PowerMax API client for u4p 91 endpoint
-	if s.adminClient91 == nil {
-		applicationName := ApplicationName + " v" + core.SemVer
-		c, err := pmax.NewClientWithArgs(
-			s.opts.Endpoint, "", applicationName, s.opts.Insecure, !s.opts.DisableCerts)
-		if err != nil {
-			return status.Errorf(codes.FailedPrecondition,
-				"unable to create PowerMax client: %s", err.Error())
-		}
-		s.adminClient91 = c
-		s.adminClient91.SetAllowedArrays(s.getArrayWhitelist())
-
-		err = s.adminClient91.Authenticate(&pmax.ConfigConnect{
-			Endpoint: s.opts.Endpoint,
-			Username: s.opts.User,
-			Password: s.opts.Password,
-			Version:  "91",
-		})
-		if err != nil {
-			s.adminClient91 = nil
-			return status.Errorf(codes.FailedPrecondition,
-				"unable to login to Unisphere: %s", err.Error())
-		}
-	}
 	return nil
 }
 
@@ -465,6 +505,13 @@ func (s *service) getCSIVolume(vol *types.Volume) *csi.Volume {
 
 func (s *service) getClusterPrefix() string {
 	return s.opts.ClusterPrefix
+}
+
+func (s *service) getDriverName() string {
+	if s.opts.DriverName == "" {
+		return Name
+	}
+	return s.opts.DriverName
 }
 
 func setLogFields(ctx context.Context, fields log.Fields) context.Context {

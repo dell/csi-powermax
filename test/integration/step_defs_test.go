@@ -30,11 +30,12 @@ import (
 )
 
 const (
-	MaxRetries      = 10
-	RetrySleepTime  = 10 * time.Second
-	ShortSleepTime  = 3 * time.Second
-	SleepTime       = 100 * time.Millisecond
-	ApplicationName = "CSI Driver Integration Tests"
+	MaxRetries        = 10
+	RetrySleepTime    = 10 * time.Second
+	ShortSleepTime    = 3 * time.Second
+	SleepTime         = 100 * time.Millisecond
+	ApplicationName   = "CSI Driver Integration Tests"
+	defaultApiVersion = "91"
 )
 
 type feature struct {
@@ -91,7 +92,7 @@ func (f *feature) aPowermaxService() error {
 		if endpoint == "" {
 			return fmt.Errorf("Cannot read X_CSI_POWERMAX_ENDPOINT")
 		}
-		f.pmaxClient, err = pmax.NewClientWithArgs(endpoint, "", ApplicationName, true, false)
+		f.pmaxClient, err = pmax.NewClientWithArgs(endpoint, defaultApiVersion, ApplicationName, true, false)
 		if err != nil {
 			return fmt.Errorf("Cannot attach to pmax library: %s", err)
 		}

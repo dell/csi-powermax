@@ -213,7 +213,9 @@ func publishVolume(
 		if !alreadyMounted {
 			fs := mntVol.GetFsType()
 			mntFlags := mntVol.GetMountFlags()
-
+			if fs == "xfs" {
+				mntFlags = append(mntFlags, "nouuid")
+			}
 			if err := handlePrivFSMount(
 				ctx, accMode, sysDevice, mntFlags, fs, privTgt); err != nil {
 				// K8S may have removed the desired mount point. Clean up the private target.
@@ -301,6 +303,9 @@ func publishVolume(
 	var mntFlags []string
 	mntFlags = make([]string, 0)
 	mntFlags = mntVol.GetMountFlags()
+	if mntVol.FsType == "xfs" {
+		mntFlags = append(mntFlags, "nouuid")
+	}
 	if ro || accMode.GetMode() == csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY {
 		mntFlags = append(mntFlags, "ro")
 	}
