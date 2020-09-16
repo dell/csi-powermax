@@ -107,4 +107,18 @@ const (
 	// EnvISCSICHAPPassword is the the password for the ISCSI CHAP
 	// authentication for the host initiator(s)
 	EnvISCSICHAPPassword = "X_CSI_POWERMAX_ISCSI_CHAP_PASSWORD"
+
+	// EnvNodeNameTemplate is the templatized name to construct node names
+	// by the driver based on a name format as specified by the user in this
+	// variable
+	EnvNodeNameTemplate = "X_CSI_IG_NODENAME_TEMPLATE"
+
+	// EnvModifyHostName when this value is set to "true", the driver will
+	// modify the existing host name to a new name as specified in the EnvNodeNameTemplate
+	EnvModifyHostName = "X_CSI_IG_MODIFY_HOSTNAME"
+
+	// EnvProxyEnabled is the flag which indicates if the REST endpoint URL
+	// is pointing to the reverse proxy
+	// Only used for testing
+	EnvProxyEnabled = "X_CSI_REVERSE_PROXY_ENABLED"
 )

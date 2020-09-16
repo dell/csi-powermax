@@ -15,7 +15,7 @@ fmt_count() {
 }
 
 fmt() {
-    gofmt -d ./service ./test/k8_integration | tee $FMT_TMPFILE
+    gofmt -d ./service ./csireverseproxy ./test/k8_integration | tee $FMT_TMPFILE
     cat $FMT_TMPFILE | wc -l > $FMT_COUNT_TMPFILE
     if [ ! `cat $FMT_COUNT_TMPFILE` -eq "0" ]; then
         echo Found `cat $FMT_COUNT_TMPFILE` formatting issue\(s\).
@@ -28,15 +28,19 @@ fmt
 FMT_RETURN_CODE=$?
 echo === Finished
 
-echo === Vetting...
+echo === Vetting csi-powermax
 CGO_ENABLED=0 go vet ${MOD_FLAGS} ./service/... ./test/k8_integration/...
 VET_RETURN_CODE=$?
 echo === Finished
 
+echo === Vetting csireverseproxy
+(cd csireverseproxy && CGO_ENABLED=0 go vet ${MOD_FLAGS} ./...)
+VET_CSIREVPROXY_RETURN_CODE=$?
+
 echo === Linting...
 (command -v golint >/dev/null 2>&1 \
     || GO111MODULE=off go get -insecure -u golang.org/x/lint/golint) \
-    && golint --set_exit_status ./service/... ./test/k8_integration/...
+    && golint --set_exit_status ./service/... ./csireverseproxy/... ./test/k8_integration/...
 LINT_RETURN_CODE=$?
 echo === Finished
 
@@ -44,6 +48,7 @@ echo === Finished
 fail_checks=0
 [ "${FMT_RETURN_CODE}" != "0" ] && echo "Formatting checks failed! => Run 'make format'." && fail_checks=1
 [ "${VET_RETURN_CODE}" != "0" ] && echo "Vetting checks failed!" && fail_checks=1
+[ "${VET_CSIREVPROXY_RETURN_CODE}" != "0" ] && echo "Vetting checks on csireverseproxy failed!" && fail_checks=1
 [ "${LINT_RETURN_CODE}" != "0" ] && echo "Linting checks failed!" && fail_checks=1
 
 exit ${fail_checks}

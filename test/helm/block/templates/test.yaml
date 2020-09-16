@@ -37,4 +37,4 @@ spec:
         storageClassName: powermax
         resources:
           requests:
-            storage: 8Ti
+            storage: 8Gi

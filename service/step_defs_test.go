@@ -85,6 +85,7 @@ const (
 	defaultFCDirPort           = "FA-1D:4"
 	defaultISCSIDirPort1       = "SE1-E:6"
 	defaultISCSIDirPort2       = "SE2-E:4"
+	MaxRetries                 = 10
 )
 
 var allBlockDevices = [2]string{nodePublishBlockDevicePath, altPublishBlockDevicePath}
@@ -157,6 +158,9 @@ type feature struct {
 	removeVolumeFromSGMVResponse2        chan removeVolumeFromSGMVResponse
 	lockChan                             chan bool
 	iscsiTargetInfo                      []ISCSITargetInfo
+	maxRetryCount                        int
+	failedSnaps                          map[string]failedSnap
+	doneChan                             chan bool
 }
 
 var inducedErrors struct {
@@ -178,6 +182,12 @@ var inducedErrors struct {
 	noVolumeSource      bool
 }
 
+type failedSnap struct {
+	volID     string
+	snapID    string
+	operation string
+}
+
 func (f *feature) checkGoRoutines(tag string) {
 	goroutines := runtime.NumGoroutine()
 	fmt.Printf("goroutines %s new %d old groutines %d\n", tag, goroutines, f.nGoRoutines)
@@ -196,6 +206,7 @@ func (f *feature) aPowerMaxService() error {
 	}
 	f.lastTime = now
 	induceOverloadError = false
+	inducePendingError = false
 	gofsutil.GOFSWWNPath = "test/dev/disk/by-id/wwn-0x"
 	nodePublishSleepTime = 5 * time.Millisecond
 	removeDeviceSleepTime = 5 * time.Millisecond
@@ -206,6 +217,7 @@ func (f *feature) aPowerMaxService() error {
 	maxBlockDevicesPerWWN = 3
 	maxAddGroupSize = 10
 	maxRemoveGroupSize = 10
+	f.maxRetryCount = MaxRetries
 	enableBatchGetMaskingViewConnections = true
 	f.checkGoRoutines("start aPowerMaxService")
 	// Save off the admin client and the system
@@ -273,6 +285,8 @@ func (f *feature) aPowerMaxService() error {
 	f.removeVolumeFromSGMVResponse1 = nil
 	f.removeVolumeFromSGMVResponse2 = nil
 	f.lockChan = nil
+	f.failedSnaps = make(map[string]failedSnap)
+	f.doneChan = make(chan bool)
 
 	inducedErrors.invalidSymID = false
 	inducedErrors.invalidStoragePool = false
@@ -305,6 +319,11 @@ func (f *feature) aPowerMaxService() error {
 	gofsutil.GOFSMock.InduceRemoveBlockDeviceError = false
 	gofsutil.GOFSMock.InduceMultipathCommandError = false
 	gofsutil.GOFSMock.InduceRescanError = false
+	gofsutil.GOFSMock.InduceGetMountInfoFromDeviceError = false
+	gofsutil.GOFSMock.InduceDeviceRescanError = false
+	gofsutil.GOFSMock.InduceResizeMultipathError = false
+	gofsutil.GOFSMock.InduceFSTypeError = false
+	gofsutil.GOFSMock.InduceResizeFSError = false
 	gofsutil.GOFSMock.InduceGetDiskFormatType = ""
 	gofsutil.GOFSMockMounts = gofsutil.GOFSMockMounts[:0]
 	gofsutil.GOFSMockWWNToDevice = make(map[string]string)
@@ -386,6 +405,8 @@ func (f *feature) getService() *service {
 	opts.EnableListVolumesSnapshots = true
 	opts.ClusterPrefix = "TST"
 	opts.NonDefaultRetries = true
+	opts.ModifyHostName = false
+	opts.NodeNameTemplate = ""
 	opts.Lsmod = `
 Module                  Size  Used by
 vsock_diag             12610  0
@@ -828,6 +849,10 @@ func (f *feature) iInduceError(errtype string) error {
 		mock.InducedErrors.GetInitiatorByIDError = true
 	case "CreateSnapshotError":
 		mock.InducedErrors.CreateSnapshotError = true
+	case "DeleteSnapshotError":
+		mock.InducedErrors.DeleteSnapshotError = true
+	case "RenameSnapshotError":
+		mock.InducedErrors.RenameSnapshotError = true
 	case "LinkSnapshotError":
 		mock.InducedErrors.LinkSnapshotError = true
 	case "SnapshotNotLicensed":
@@ -848,6 +873,11 @@ func (f *feature) iInduceError(errtype string) error {
 		mock.InducedErrors.GetVolSnapsError = true
 	case "GetPrivVolumeByIDError":
 		mock.InducedErrors.GetPrivVolumeByIDError = true
+	case "ExpandVolumeError":
+		mock.InducedErrors.ExpandVolumeError = true
+	case "MaxSnapSessionError":
+		mock.InducedErrors.MaxSnapSessionError = true
+
 	case "NoSymlinkForNodePublish":
 		cmd := exec.Command("rm", "-rf", nodePublishSymlinkDir)
 		_, err := cmd.CombinedOutput()
@@ -912,6 +942,16 @@ func (f *feature) iInduceError(errtype string) error {
 		gofsutil.GOFSMock.InduceRemoveBlockDeviceError = true
 	case "GOFSMultipathCommandError":
 		gofsutil.GOFSMock.InduceMultipathCommandError = true
+	case "GOFSInduceGetMountInfoFromDeviceError":
+		gofsutil.GOFSMock.InduceGetMountInfoFromDeviceError = true
+	case "GOFSInduceDeviceRescanError":
+		gofsutil.GOFSMock.InduceDeviceRescanError = true
+	case "GOFSInduceResizeMultipathError":
+		gofsutil.GOFSMock.InduceResizeMultipathError = true
+	case "GOFSInduceFSTypeError":
+		gofsutil.GOFSMock.InduceFSTypeError = true
+	case "GOFSInduceResizeFSError":
+		gofsutil.GOFSMock.InduceResizeFSError = true
 	case "GOISCSIDiscoveryError":
 		goiscsi.GOISCSIMock.InduceDiscoveryError = true
 	case "GOISCSIRescanError":
@@ -1003,6 +1043,8 @@ func (f *feature) iInduceError(errtype string) error {
 		mockgosystemdInducedErrors.JobFailure = true
 	case "InduceOverloadError":
 		induceOverloadError = true
+	case "InducePendingError":
+		inducePendingError = true
 	case "InvalidateNodeID":
 		f.iInvalidateTheNodeID()
 	case "none":
@@ -1321,6 +1363,17 @@ func (f *feature) aValidVolume() error {
 	sgList[0] = defaultStorageGroup
 	mock.AddStorageGroup(defaultStorageGroup, "SRP_1", "Optimized")
 	mock.AddOneVolumeToStorageGroup(devID, volumeIdentifier, defaultStorageGroup, 1)
+	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, goodVolumeID)
+	return nil
+}
+
+func (f *feature) aValidVolumeWithSizeOfCYL(nCYL int) error {
+	devID := goodVolumeID
+	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + goodVolumeName
+	sgList := make([]string, 1)
+	sgList[0] = defaultStorageGroup
+	mock.AddStorageGroup(defaultStorageGroup, "SRP_1", "Optimized")
+	mock.AddOneVolumeToStorageGroup(devID, volumeIdentifier, defaultStorageGroup, nCYL)
 	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, goodVolumeID)
 	return nil
 }
@@ -1673,11 +1726,13 @@ func (f *feature) aValidControllerGetCapabilitiesResponseIsReturned() error {
 				count = count + 1
 			case csi.ControllerServiceCapability_RPC_CLONE_VOLUME:
 				count = count + 1
+			case csi.ControllerServiceCapability_RPC_EXPAND_VOLUME:
+				count = count + 1
 			default:
 				return fmt.Errorf("received unexpected capability: %v", typex)
 			}
 		}
-		if count != 5 {
+		if count != 6 {
 			return fmt.Errorf("Did not retrieve all the expected capabilities")
 		}
 		return nil
@@ -2194,18 +2249,42 @@ func (f *feature) iCallNodeStageVolume() error {
 	return nil
 }
 
-func (f *feature) iCallControllerExpandVolume() error {
+func (f *feature) iCallControllerExpandVolume(nCYL int64) error {
+	var req *csi.ControllerExpandVolumeRequest
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
-	req := new(csi.ControllerExpandVolumeRequest)
+	if nCYL != 0 {
+		req = &csi.ControllerExpandVolumeRequest{
+			VolumeId:      f.volumeID,
+			CapacityRange: &csi.CapacityRange{RequiredBytes: nCYL * cylinderSizeInBytes},
+		}
+	} else {
+		req = &csi.ControllerExpandVolumeRequest{
+			VolumeId: f.volumeID,
+		}
+	}
+	if inducedErrors.noVolumeID {
+		req.VolumeId = ""
+	}
 	_, f.err = f.service.ControllerExpandVolume(ctx, req)
 	return nil
 }
 
-func (f *feature) iCallNodeExpandVolume() error {
+func (f *feature) iCallNodeExpandVolume(volPath string) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
-	req := new(csi.NodeExpandVolumeRequest)
+	req := &csi.NodeExpandVolumeRequest{
+		VolumeId:   f.volumeID,
+		VolumePath: volPath,
+	}
+	if volPath != "" {
+		if err := os.MkdirAll(volPath, 0777); err != nil {
+			return err
+		}
+	}
+	if inducedErrors.noVolumeID {
+		req.VolumeId = ""
+	}
 	_, f.err = f.service.NodeExpandVolume(ctx, req)
 	return nil
 }
@@ -2266,7 +2345,13 @@ func (f *feature) iCallCreateSnapshotWith(SnapID string) error {
 	}
 	return nil
 }
-
+func (f *feature) addFailedSnapshotToDoARetry(volID, SnapID, operation string) {
+	f.failedSnaps[SnapID] = failedSnap{
+		volID:     volID,
+		snapID:    SnapID,
+		operation: operation,
+	}
+}
 func (f *feature) iCallCreateSnapshotOn(snapshotName, volumeName string) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
@@ -2278,6 +2363,9 @@ func (f *feature) iCallCreateSnapshotOn(snapshotName, volumeName string) error {
 	f.createSnapshotResponse, f.err = f.service.CreateSnapshot(ctx, req)
 	if f.createSnapshotResponse != nil {
 		f.snapshotNameToID[snapshotName] = f.createSnapshotResponse.GetSnapshot().SnapshotId
+	}
+	if f.err != nil && (strings.Contains(f.err.Error(), "pending") || strings.Contains(f.err.Error(), "overload")) {
+		f.addFailedSnapshotToDoARetry(volumeName, snapshotName, "create")
 	}
 	return nil
 }
@@ -2312,6 +2400,9 @@ func (f *feature) iCallDeleteSnapshot() error {
 	}
 	req.Secrets["x"] = "y"
 	f.deleteSnapshotResponse, f.err = f.service.DeleteSnapshot(ctx, req)
+	if f.err != nil && (strings.Contains(f.err.Error(), "pending") || strings.Contains(f.err.Error(), "overload")) {
+		f.addFailedSnapshotToDoARetry(f.createSnapshotResponse.GetSnapshot().GetSourceVolumeId(), snapshotID, "delete")
+	}
 	return nil
 }
 
@@ -2683,6 +2774,7 @@ func (f *feature) iInvokeNodeHostSetupWithAService(mode string) error {
 }
 
 func (f *feature) theErrorClearsAfterSeconds(seconds int64) error {
+
 	go func(seconds int64) {
 		time.Sleep(time.Duration(seconds) * time.Second)
 		switch f.errType {
@@ -2696,9 +2788,22 @@ func (f *feature) theErrorClearsAfterSeconds(seconds int64) error {
 			mock.InducedErrors.UpdateStorageGroupError = false
 		case "DeleteVolumeError":
 			mock.InducedErrors.DeleteVolumeError = false
+		case "InduceOverloadError":
+			induceOverloadError = false
+		case "InducePendingError":
+			inducePendingError = false
 		}
+		f.doneChan <- true
 	}(seconds)
 	return nil
+}
+
+func (f *feature) iEnsureTheErrorIsCleared() error {
+	iscleared := <-f.doneChan
+	if iscleared {
+		return nil
+	}
+	return fmt.Errorf("The induced error is still not cleared")
 }
 
 func (f *feature) aProvidedArrayWhitelistOf(whitelist string) error {
@@ -3049,12 +3154,12 @@ func (f *feature) iCallLinearScanToRemoveDevices() error {
 	return nil
 }
 
-func (f *feature) iCallVerifyInitiatorsNotInADifferentHostForNode(nodeID string) error {
+func (f *feature) iCallverifyAndUpdateInitiatorsInADiffHostForNode(nodeID string) error {
 	initiators := make([]string, 0)
 	initiators = append(initiators, defaultIscsiInitiator)
 	symID := f.symmetrixID
 	hostID, _, _ := f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
-	f.ninitiators, f.err = f.service.verifyInitiatorsNotInADifferentHost(symID, initiators, hostID)
+	f.ninitiators, f.err = f.service.verifyAndUpdateInitiatorsInADiffHost(symID, initiators, hostID)
 	return nil
 }
 
@@ -3105,7 +3210,7 @@ func (f *feature) iCallExecSnapActionToSnapshotTo(action, snapshotName, volumeNa
 	TargetList := []types.VolumeList{}
 	SourceList = append(SourceList, types.VolumeList{Name: device1})
 	TargetList = append(TargetList, types.VolumeList{Name: device2})
-	f.err = f.service.adminClient.ModifySnapshot(arrayID, SourceList, TargetList, snapshotName, action, "", int64(0))
+	f.err = f.service.adminClient.ModifySnapshotS(arrayID, SourceList, TargetList, snapshotName, action, "", int64(0))
 	return nil
 }
 
@@ -3144,7 +3249,7 @@ func (f *feature) iCallRemoveTempSnapshotOn(volumeName string) error {
 		f.err = err
 		return nil
 	}
-	f.err = f.service.UnlinkSnapshot(arrayID, targetSession)
+	f.err = f.service.UnlinkSnapshot(arrayID, targetSession, MaxUnlinkCount)
 	return nil
 }
 
@@ -3236,7 +3341,7 @@ func (f *feature) iCallMarkSnapshotForDeletion() error {
 		f.err = err
 		return nil
 	}
-	fmt.Printf("Snapshot(%s) marked for deletion as %s", snapshotName, newSnapID)
+	fmt.Printf("Snapshot(%s) marked for deletion as %s \n", snapshotName, newSnapID)
 	return nil
 }
 
@@ -3539,6 +3644,55 @@ func (f *feature) iInvalidateSymToMaskingViewTargetCache() error {
 	return nil
 }
 
+func (f *feature) iRetryOnFailedSnapshotToSucceed() error {
+	for _, failedSnap := range f.failedSnaps {
+		for i := 1; i <= f.maxRetryCount; i++ {
+			if failedSnap.operation == "create" {
+				_ = f.iCallCreateSnapshotOn(failedSnap.snapID, failedSnap.volID)
+				if f.err == nil {
+					delete(f.failedSnaps, failedSnap.snapID)
+					break
+				} else {
+					fmt.Printf("Retry CreateSnapshot (%d) failed for SnapID (%s) with error (%s)\n", i, failedSnap.snapID, f.err.Error())
+				}
+			} else if failedSnap.operation == "delete" {
+				_ = f.iCallDeleteSnapshot()
+				if f.err == nil {
+					delete(f.failedSnaps, failedSnap.snapID)
+					break
+				} else {
+					fmt.Printf("Retry DeleteSnapshot (%d) failed for SnapID (%s) with error (%s)\n", i, failedSnap.snapID, f.err.Error())
+				}
+			}
+			time.Sleep(2 * time.Second)
+		}
+	}
+	if f.err != nil {
+		fmt.Println("The snap operation even failed after Max Retries")
+		f.err = errors.New("The snap operation even failed after Max Retries")
+	}
+	return nil
+}
+func (f *feature) iSetModifyHostNameToFalse() error {
+	f.service.opts.ModifyHostName = false
+	return nil
+}
+
+func (f *feature) iSetModifyHostNameToTrue() error {
+	f.service.opts.ModifyHostName = true
+	return nil
+}
+
+func (f *feature) iHaveANodeNameTemplate(template string) error {
+	f.service.opts.NodeNameTemplate = template
+	return nil
+}
+
+func (f *feature) iCallBuildHostIDFromTemplateForNodeHost(node string) error {
+	_, f.err = f.service.buildHostIDFromTemplate(node)
+	return nil
+}
+
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -3569,6 +3723,7 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call PublishVolume with "([^"]*)" to "([^"]*)"$`, f.iCallPublishVolumeWithTo)
 	s.Step(`^a valid PublishVolumeResponse is returned$`, f.aValidPublishVolumeResponseIsReturned)
 	s.Step(`^a valid volume$`, f.aValidVolume)
+	s.Step(`^a valid volume with size of (\d+) CYL$`, f.aValidVolumeWithSizeOfCYL)
 	s.Step(`^an invalid volume$`, f.anInvalidVolume)
 	s.Step(`^an invalid snapshot$`, f.anInvalidSnapshot)
 	s.Step(`^no volume$`, f.noVolume)
@@ -3671,8 +3826,8 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^the result has "([^"]*)" ports$`, f.theResultHasPorts)
 	s.Step(`^I call validateStoragePoolID (\d+) in parallel$`, f.iCallValidateStoragePoolIDInParallel)
 	s.Step(`^I call GetPortIdentifier (\d+) in parallel$`, f.iCallGetPortIdentifierInParallel)
-	s.Step(`^I call ControllerExpandVolume$`, f.iCallControllerExpandVolume)
-	s.Step(`^I call NodeExpandVolume$`, f.iCallNodeExpandVolume)
+	s.Step(`I call ControllerExpandVolume with Capacity Range set to (\d+)$`, f.iCallControllerExpandVolume)
+	s.Step(`I call NodeExpandVolume with volumePath as "([^"]*)"$`, f.iCallNodeExpandVolume)
 	s.Step(`^a device path "([^"]*)" lun "([^"]*)"$`, f.aDevicePathLun)
 	s.Step(`^device "([^"]*)" is mounted$`, f.deviceIsMounted)
 	s.Step(`^there are (\d+) remaining device entries for lun "([^"]*)"$`, f.thereAreRemainingDeviceEntriesForLun)
@@ -3691,7 +3846,7 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I have a port "([^"]*)" identifier "([^"]*)" type "([^"]*)"$`, f.iHaveAPortIdentifierType)
 	s.Step(`^I have (\d+) sysblock deviceso$`, f.iHaveSysblockDevices)
 	s.Step(`^I call linearScanToRemoveDevices$`, f.iCallLinearScanToRemoveDevices)
-	s.Step(`^I call verifyInitiatorsNotInADifferentHost for node "([^"]*)"$`, f.iCallVerifyInitiatorsNotInADifferentHostForNode)
+	s.Step(`^I call verifyAndUpdateInitiatorsInADiffHost for node "([^"]*)"$`, f.iCallverifyAndUpdateInitiatorsInADiffHostForNode)
 	s.Step(`^(\d+) valid initiators are returned$`, f.validInitiatorsAreReturned)
 	s.Step(`^I check the snapshot license$`, f.iCheckTheSnapshotLicense)
 	s.Step(`^I call IsVolumeInSnapSession on "([^"]*)"$`, f.iCallIsVolumeInSnapSessionOn)
@@ -3727,4 +3882,10 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call getAndConfigureArrayISCSITargets$`, f.iCallGetAndConfigureArrayISCSITargets)
 	s.Step(`^(\d+) targets are returned$`, f.targetsAreReturned)
 	s.Step(`^I invalidate symToMaskingViewTarget cache$`, f.iInvalidateSymToMaskingViewTargetCache)
+	s.Step(`^I retry on failed snapshot to succeed$`, f.iRetryOnFailedSnapshotToSucceed)
+	s.Step(`^I ensure the error is cleared$`, f.iEnsureTheErrorIsCleared)
+	s.Step(`^I set ModifyHostName to false$`, f.iSetModifyHostNameToFalse)
+	s.Step(`^I set ModifyHostName to true$`, f.iSetModifyHostNameToTrue)
+	s.Step(`^I have a NodeNameTemplate "([^"]*)"$`, f.iHaveANodeNameTemplate)
+	s.Step(`^I call buildHostIDFromTemplate for node "([^"]*)"$`, f.iCallBuildHostIDFromTemplateForNodeHost)
 }

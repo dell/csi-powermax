@@ -21,6 +21,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -638,11 +639,19 @@ func (s *service) NodeGetCapabilities(
 
 	return &csi.NodeGetCapabilitiesResponse{
 		Capabilities: []*csi.NodeServiceCapability{
-			{Type: &csi.NodeServiceCapability_Rpc{
-				Rpc: &csi.NodeServiceCapability_RPC{
-					Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
+			{
+				Type: &csi.NodeServiceCapability_Rpc{
+					Rpc: &csi.NodeServiceCapability_RPC{
+						Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
+					},
 				},
 			},
+			{
+				Type: &csi.NodeServiceCapability_Rpc{
+					Rpc: &csi.NodeServiceCapability_RPC{
+						Type: csi.NodeServiceCapability_RPC_EXPAND_VOLUME,
+					},
+				},
 			},
 		},
 	}, nil
@@ -727,11 +736,17 @@ func (s *service) nodeStartup() error {
 	return err
 }
 
-// verifyInitiatorsNotInADiffernetHost verifies that a set of node initiators are not in a different host than expected.
+func isValidHostID(hostID string) bool {
+	rx := regexp.MustCompile("^[a-zA-Z0-9]{1}[a-zA-Z0-9_\\-]*$")
+	return rx.MatchString(hostID)
+}
+
+// verifyAndUpdateInitiatorsInADiffHost verifies that a set of node initiators are not in a different host than expected.
+// If they are, it updates the host name for the initiators if ModifyHostName env variable is set.
 // These can be either FC initiators (hex numbers) or iSCSI initiators (starting with iqn.)
 // It returns the number of initiators for the host that were found.
 // Do not mix both FC and iSCSI initiators in a single call.
-func (s *service) verifyInitiatorsNotInADifferentHost(symID string, nodeInitiators []string, hostID string) (int, error) {
+func (s *service) verifyAndUpdateInitiatorsInADiffHost(symID string, nodeInitiators []string, hostID string) (int, error) {
 	initList, err := s.adminClient.GetInitiatorList(symID, "", false, false)
 	if err != nil {
 		log.Warning("Failed to fetch initiator list for the SYM :" + symID)
@@ -750,11 +765,23 @@ func (s *service) verifyInitiatorsNotInADifferentHost(symID string, nodeInitiato
 					log.Warning("Failed to fetch initiator details for initiator: " + initiatorID)
 					continue
 				}
-				if (initiator.HostID != "") && (initiator.HostID != hostID) {
-					errormsg := fmt.Sprintf("initiator: %s is already a part of a different host: %s on: %s",
-						initiatorID, initiator.HostID, symID)
-					log.Error(errormsg)
-					return 0, fmt.Errorf(errormsg)
+				if initiator.HostID != "" {
+					if initiator.HostID != hostID &&
+						s.opts.ModifyHostName {
+						// User has set ModifyHostName to modify host name in case of a mismatch
+						log.Infof("UpdateHostName processing: %s to %s", initiator.HostID, hostID)
+						_, err := s.adminClient.UpdateHostName(symID, initiator.HostID, hostID)
+						if err != nil {
+							errormsg := fmt.Sprintf("Failed to change host name from %s to %s: %s", initiator.HostID, hostID, err)
+							log.Error(errormsg)
+							return 0, fmt.Errorf(errormsg)
+						}
+					} else if initiator.HostID != hostID {
+						errormsg := fmt.Sprintf("initiator: %s is already a part of a different host: %s on: %s",
+							initiatorID, initiator.HostID, symID)
+						log.Error(errormsg)
+						return 0, fmt.Errorf(errormsg)
+					}
 				}
 				log.Infof("valid initiator: %s\n", initiatorID)
 				nValidInitiators++
@@ -794,16 +821,16 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 
 	// Loop through the symmetrix, looking for existing initiators
 	for _, symID := range symmetrixIDs {
-		validFC, err := s.verifyInitiatorsNotInADifferentHost(symID, portWWNs, hostIDFC)
+		validFC, err := s.verifyAndUpdateInitiatorsInADiffHost(symID, portWWNs, hostIDFC)
 		if err != nil {
-			log.Error("Could not validate FC initiators" + err.Error())
+			log.Error("Could not validate FC initiators " + err.Error())
 		}
 		log.Infof("valid FC initiators: %d\n", validFC)
 		if validFC > 0 && (s.opts.TransportProtocol == "" || s.opts.TransportProtocol == FcTransportProtocol) {
 			// We do have to have pre-existing initiators that were zoned for FC
 			useFC = true
 		}
-		validIscsi, err := s.verifyInitiatorsNotInADifferentHost(symID, IQNs, hostIDIscsi)
+		validIscsi, err := s.verifyAndUpdateInitiatorsInADiffHost(symID, IQNs, hostIDIscsi)
 		if err != nil {
 			log.Error("Could not validate iSCSI initiators" + err.Error())
 		} else if s.opts.TransportProtocol == "" || s.opts.TransportProtocol == IscsiTransportProtocol {
@@ -822,7 +849,10 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 		}
 		iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
 		if useFC {
-			s.setupArrayForFC(symID, portWWNs)
+			err := s.setupArrayForFC(symID, portWWNs)
+			if err != nil {
+				log.Errorf("Failed to do the FC setup the Array(%s). Error - %s", symID, err.Error())
+			}
 			s.initFCConnector(iscsiChroot)
 			s.arrayTransportProtocolMap[symID] = FcTransportProtocol
 			isSymConnFC[symID] = true
@@ -831,7 +861,10 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 			if err != nil {
 				log.Errorf("Failed to start the ISCSI Daemon. Error - %s", err.Error())
 			}
-			s.setupArrayForIscsi(symID, IQNs)
+			err = s.setupArrayForIscsi(symID, IQNs)
+			if err != nil {
+				log.Errorf("Failed to do the ISCSI setup for the Array(%s). Error - %s", symID, err.Error())
+			}
 			s.initISCSIConnector(iscsiChroot)
 			s.arrayTransportProtocolMap[symID] = IscsiTransportProtocol
 		}
@@ -844,7 +877,6 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 func (s *service) setupArrayForFC(array string, portWWNs []string) error {
 	hostName, _, mvName := s.GetFCHostSGAndMVIDFromNodeID(s.opts.NodeName)
 	log.Infof("setting up array %s for Fibrechannel, host name: %s masking view: %s", array, hostName, mvName)
-
 	_, err := s.createOrUpdateFCHost(array, hostName, portWWNs)
 	return err
 }
@@ -1309,8 +1341,130 @@ func (s *service) retryableGetSymmetrixIDList() (*types.SymmetrixIDList, error) 
 	return arrays, nil
 }
 
-func (s *service) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+//NodeExpandVolume helps extending a volume size on a node
+func (s *service) NodeExpandVolume(
+	ctx context.Context,
+	req *csi.NodeExpandVolumeRequest) (
+	*csi.NodeExpandVolumeResponse, error) {
+
+	var reqID string
+	var err error
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+
+	// Probe the node if required and make sure startup called
+	err = s.nodeProbe(ctx)
+	if err != nil {
+		log.Error("nodeProbe failed with error :" + err.Error())
+		return nil, err
+	}
+
+	// We are getting target path that points to mounted path on "/"
+	// This doesn't help us, though we should trace the path received
+	volumePath := req.GetVolumePath()
+	if volumePath == "" {
+		log.Error("Volume path required")
+		return nil, status.Error(codes.InvalidArgument,
+			"Volume path required")
+	}
+
+	id := req.GetVolumeId()
+
+	// Parse the CSI VolumeId and validate against the volume
+	_, _, vol, err := s.GetVolumeByID(id)
+	if err != nil {
+		// If the volume isn't found, we cannot stage it
+		return nil, err
+	}
+	volumeWWN := vol.WWN
+
+	//Get the pmax volume name so that it can be searched in the system
+	//to find mount information
+	replace := CSIPrefix + "-" + s.getClusterPrefix() + "-"
+	volName := strings.Replace(vol.VolumeIdentifier, replace, "", 1)
+
+	//Locate and fetch all (multipath/regular) mounted paths using this volume
+	devMnt, err := gofsutil.GetMountInfoFromDevice(ctx, volName)
+	if err != nil {
+		// No mounts were found. Perhaps it is a raw block device, which would not be mounted.
+		deviceNames, _ := gofsutil.GetSysBlockDevicesForVolumeWWN(context.Background(), volumeWWN)
+		if len(deviceNames) > 0 {
+			for _, deviceName := range deviceNames {
+				devicePath := sysBlock + "/" + deviceName
+				log.Infof("Rescanning unmounted (raw block) device %s to expand size", deviceName)
+				err = gofsutil.DeviceRescan(context.Background(), devicePath)
+				if err != nil {
+					log.Errorf("Failed to rescan device (%s) with error (%s)", devicePath, err.Error())
+					return nil, status.Error(codes.Internal, err.Error())
+				}
+			}
+			return &csi.NodeExpandVolumeResponse{}, nil
+		}
+		log.Errorf("Failed to find mount info for (%s) with error (%s)", volName, err.Error())
+		return nil, status.Error(codes.Internal,
+			fmt.Sprintf("Failed to find mount info for (%s) with error (%s)", volName, err.Error()))
+	}
+	log.Infof("Mount info for volume %s: %+v", volName, devMnt)
+
+	size := req.GetCapacityRange().GetRequiredBytes()
+
+	f := log.Fields{
+		"CSIRequestID": reqID,
+		"VolumeName":   volName,
+		"VolumePath":   volumePath,
+		"Size":         size,
+		"VolumeWWN":    volumeWWN,
+	}
+	log.WithFields(f).Info("Calling resize the file system")
+
+	// Rescan the device for the volume expanded on the array
+	for _, device := range devMnt.DeviceNames {
+		devicePath := sysBlock + "/" + device
+		err = gofsutil.DeviceRescan(context.Background(), devicePath)
+		if err != nil {
+			log.Errorf("Failed to rescan device (%s) with error (%s)", devicePath, err.Error())
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+
+	// Expand the filesystem with the actual expanded volume size.
+	if devMnt.MPathName != "" {
+		err = gofsutil.ResizeMultipath(context.Background(), devMnt.MPathName)
+		if err != nil {
+			log.Errorf("Failed to resize filesystem: device  (%s) with error (%s)", devMnt.MountPoint, err.Error())
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+	//For a regular device, get the device path (devMnt.DeviceNames[1]) where the filesystem is mounted
+	//PublishVolume creates devMnt.DeviceNames[0] but is left unused for regular devices
+	var devicePath string
+	if len(devMnt.DeviceNames) > 1 {
+		devicePath = "/dev/" + devMnt.DeviceNames[1]
+	} else {
+		devicePath = "/dev/" + devMnt.DeviceNames[0]
+	}
+
+	// Determine file system type
+	fsType, err := gofsutil.FindFSType(context.Background(), devMnt.MountPoint)
+	if err != nil {
+		log.Errorf("Failed to fetch filesystem for volume  (%s) with error (%s)", devMnt.MountPoint, err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	log.Infof("Found %s filesystem mounted on volume %s", fsType, devMnt.MountPoint)
+
+	//Resize the filesystem
+	err = gofsutil.ResizeFS(context.Background(), devMnt.MountPoint, devicePath, devMnt.MPathName, fsType)
+	if err != nil {
+		log.Errorf("Failed to resize filesystem: mountpoint (%s) device (%s) with error (%s)",
+			devMnt.MountPoint, devicePath, err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &csi.NodeExpandVolumeResponse{}, nil
 }
 
 // Gets the iscsi target iqn values that can be used for rescanning.

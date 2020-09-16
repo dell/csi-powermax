@@ -26,6 +26,7 @@ import (
 type volumeIDType string
 
 var induceOverloadError bool // for testing only
+var inducePendingError bool  //for testing only
 
 // pendingState type limits the number of pending requests by making sure there are no other requests for the same volumeID,
 // otherwise a "pending" error is returned.
@@ -44,7 +45,7 @@ func (volID volumeIDType) checkAndUpdatePendingState(ps *pendingState) error {
 		ps.pendingMap = make(map[volumeIDType]time.Time)
 	}
 	startTime := ps.pendingMap[volID]
-	if startTime.IsZero() == false {
+	if startTime.IsZero() == false || inducePendingError {
 		log.Infof("volumeID %s pending %s", volID, time.Now().Sub(startTime))
 		return status.Errorf(codes.Unavailable, "pending")
 	}

@@ -9,6 +9,7 @@ provisioner: {{ printf "%s.%s.dellemc.com" .Release.Namespace .Values.customDriv
 provisioner: csi-powermax.dellemc.com
 {{- end }}
 reclaimPolicy: {{ required "Must provide a storage class reclaim policy." .Values.storageClass.reclaimPolicy }}
+allowVolumeExpansion: true
 parameters:
   FsType: xfs
   SYMID: {{ required "Must provide a default storage class Symmetrix ID (SYMID)." .Values.storageClass.symmetrixID | toJson }}

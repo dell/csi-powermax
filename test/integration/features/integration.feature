@@ -43,11 +43,11 @@ Feature: Powermax OS CSI interface
     And all volumes are deleted successfully
 
     Examples:
-    | sizeMB       | expectedGB    | errormsg                                        |
-    | "0"          | "1.00"        | "none"                                          |
-    | "8192"       | "8.00"        | "none"                                          |
+    | sizeMB       | expectedGB    | errormsg                                       |
+    | "0"          | "1.00"        | "none"                                         |
+    | "8192"       | "8.00"        | "none"                                         |
 # 2 TB
-    | "2097152"    | "2048.00"     | "none"                                          |
+    | "2097152"    | "2048.00"     | "none"                                         |
     | "100000000"  | "0.00"        | "greater than the maximum available capacity"  |
 
 @v1.0.0
@@ -104,7 +104,7 @@ Feature: Powermax OS CSI interface
     And all volumes are deleted successfully
 
 @v1.1.0
-@wip
+@xwip
   Scenario: Create publish, node stage, node publish, node unpublish, node unstage, unpublish, delete basic volume
     Given a Powermax service
     And a mount volume request "integration6"
@@ -127,7 +127,7 @@ Feature: Powermax OS CSI interface
     And all volumes are deleted successfully
 
 @v1.0.0
-@wip
+@xwip
   Scenario: Idempotent create publish, node publish, node unpublish, unpublish, delete basic volume
     Given a Powermax service
     And an idempotent test
@@ -350,7 +350,7 @@ Feature: Powermax OS CSI interface
     Then there are no errors
 
 @v1.0.0
-@wip
+@xwip
   Scenario Outline: Scalability test to create volumes, publish, node publish, node unpublish, unpublish, delete volumes in parallel
     Given a Powermax service
     When I create <numberOfVolumes> volumes in parallel
@@ -384,7 +384,7 @@ Feature: Powermax OS CSI interface
    # | 200             |
 
 @v1.1.0
-@wip
+@xwip
   Scenario Outline: Scalability test to create volumes, publish, node stage, node publish, node unpublish, node unstage,  unpublish, delete volumes in parallel
     Given a Powermax service
     When I create <numberOfVolumes> volumes in parallel
@@ -411,11 +411,11 @@ Feature: Powermax OS CSI interface
     | 2               |
     | 5               |
     | 8               |
-   # | 10              |
-   # | 20              |
-   # | 50              |
-   # | 100             |
-   # | 200             |
+    # | 10              |
+    # | 20              |
+    # | 50              |
+    # | 100             |
+    # | 200             |
 
 @v1.0.0
   Scenario Outline: Idempotent create volumes, publish, node stage, node publish, node unpublish, node unstage, unpublish, delete volumes in parallel
@@ -511,7 +511,7 @@ Scenario: Create 'n' snapshots from a volume in parallel
     And a basic block volume request "integration1" "50"
     When I call CreateVolume
     And there are no errors
-    And I create 4 snapshots in parallel
+    And I create 10 snapshots in parallel
     And there are no errors
     Then I call DeleteAllSnapshots
     And there are no errors
@@ -617,7 +617,6 @@ Scenario: Deleting and creating a snapshot concurrently on source and target vol
     And there are no errors
     And when I call DeleteAllVolumes
     And there are no errors
-
 @v1.2.0
   Scenario: Deleting Target Volume then the Source Volume
     Given a Powermax service
@@ -625,6 +624,8 @@ Scenario: Deleting and creating a snapshot concurrently on source and target vol
     When I call CreateVolume
     And there are no errors
     And I call CreateSnapshot
+    And there are no errors
+    Then I call LinkVolumeToSnapshot
     And there are no errors
     Then I call LinkVolumeToSnapshot
     And there are no errors
@@ -666,3 +667,93 @@ Scenario: Deleting and creating a snapshot concurrently on source and target vol
     And there are no errors
     Then I check if volume is deleted
     And there are no errors
+
+@wip
+@v1.4.0
+Scenario: Expand Mount Volume
+    Given a Powermax service
+    And a mount volume request "integration6"
+    When I call CreateVolume
+    And there are no errors
+    And when I call PublishVolume "Node1"
+    And there are no errors
+    And when I call NodeStageVolume "Node1"
+    And there are no errors
+    And when I call NodePublishVolume "Node1"
+    And there are no errors
+    And when I call ExpandVolume to 100 cylinders
+    And there are no errors
+    And when I call NodeExpandVolume
+    And there are no errors
+    And when I call NodeUnpublishVolume "Node1"
+    And there are no errors
+    And when I call NodeUnstageVolume "Node1"
+    And there are no errors
+    And when I call UnpublishVolume "Node1"
+    And there are no errors
+    And when I call DeleteVolume
+    Then there are no errors
+    And all volumes are deleted successfully
+
+@v1.4.0
+  Scenario: Expand Mount Volume with Capacity Bytes not set
+    Given a Powermax service
+    And a mount volume request "integration6"
+    When I call CreateVolume
+    And there are no errors
+    And when I call PublishVolume "Node1"
+    And there are no errors
+    And when I call NodeStageVolume "Node1"
+    And there are no errors
+    And when I call NodePublishVolume "Node1"
+    And there are no errors
+    And when I call ExpandVolume to 0 cylinders
+    Then the error message should contain "Invalid argument"
+    And all volumes are deleted successfully
+
+@wip
+@v1.4.0
+Scenario: Expand Raw Block Volume
+    Given a Powermax service
+    And a mount volume request "integration6"
+    And a basic block volume request "integration7" "100"
+    When I call CreateVolume
+    And there are no errors
+    And when I call PublishVolume "Node1"
+    And there are no errors
+    And when I call NodeStageVolume "Node1"
+    And there are no errors
+    And when I call NodePublishVolume "Node1"
+    And there are no errors
+    And when I call ExpandVolume to 100 cylinders
+    And there are no errors
+    And when I call NodeExpandVolume
+    And there are no errors
+    And when I call NodeUnpublishVolume "Node1"
+    And there are no errors
+    And when I call NodeUnstageVolume "Node1"
+    And there are no errors
+    And when I call UnpublishVolume "Node1"
+    And there are no errors
+    And when I call DeleteVolume
+    Then there are no errors
+    And all volumes are deleted successfully
+
+@v1.4.0
+Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel and retry for failing snapshot request
+  Given a Powermax service
+  And a basic block volume request "integration1" "50"
+  When I create <n> volumes in parallel
+  And there are no errors
+  And I create a snapshot per volume in parallel
+  And there are no errors
+  Then I call DeleteSnapshot in parallel
+  And there are no errors
+  And when I call DeleteAllVolumes
+  And there are no errors
+
+  Examples:
+  | n  |
+  | 10 |
+  | 20 |
+  | 35 |
