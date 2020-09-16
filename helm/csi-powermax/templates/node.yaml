@@ -91,15 +91,27 @@ spec:
             - name: X_CSI_POWERMAX_ARRAYS
               value:  {{ .Values.arrayWhitelist | default "" | toJson }}
             - name: X_CSI_POWERMAX_PROXY_SERVICE_NAME
-              value: {{ .Values.proxy | default "none" }}
+            {{- if eq .Values.csireverseproxy.enabled true }}
+              value: {{ .Release.Name }}-reverseproxy
+            {{- else }}
+              value: "none"
+            {{- end }}
             - name: X_CSI_ISCSI_CHROOT
               value: {{ .Values.ISCSIChroot | default "/noderoot" }}
             - name: X_CSI_GRPC_MAX_THREADS
-              value: {{ .Values.grpcMaxThreads | default "4" | toJson }}
+            {{- if eq .Values.csireverseproxy.enabled true }}
+              value: "50"
+            {{- else }}
+              value: "4"
+            {{- end }}
             - name: X_CSI_TRANSPORT_PROTOCOL
               value: {{ .Values.transportProtocol | default "" }}
             - name: SSL_CERT_DIR
               value: /certs
+            - name: X_CSI_IG_NODENAME_TEMPLATE
+              value: {{ .Values.nodeNameTemplate | default "" }}
+            - name: X_CSI_IG_MODIFY_HOSTNAME
+              value: {{ .Values.modifyHostName | default "false" | lower | quote }}
           volumeMounts:
             - name: driver-path
               mountPath: /var/lib/kubelet/plugins/powermax.emc.dell.com

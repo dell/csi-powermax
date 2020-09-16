@@ -378,12 +378,13 @@ Feature: PowerMax CSI interface
      | "test/mnt1"            | "test/mnt2"             | "GOFSMockGetMountsError"          | "false"       | "getMounts induced error"            |
      | "test/mnt1"            | "test/mnt2"             | "none"                            | "false"       | "none"                               |
 
+
 @v1.1.0
-  Scenario Outline: Call verifyInitiatorsNotInADifferentHost various scenarios
+  Scenario Outline: Call verifyAndUpdateInitiatorsInADiffHost in various scenarios without modifying host name
     Given a PowerMax service
     And I induce error <induced>
     And I have a Node <node1> with Host
-    When I call verifyInitiatorsNotInADifferentHost for node <node2>
+    When I call verifyAndUpdateInitiatorsInADiffHost for node <node2>
     Then <nvalid> valid initiators are returned
     And the error contains <errormsg>
 
@@ -392,3 +393,44 @@ Feature: PowerMax CSI interface
     |"host1"        | "host2"                  | 0               | "none"                                   | "is already a part of a different host"             |
     |"host1"        | "host1"                  | 1               | "none"                                   | "none"                                              |
     |"host1"        | "host1"                  | 0               | "GetInitiatorByIDError"                  | "none"                                              |
+
+@v1.4.0
+  Scenario Outline: Call verifyAndUpdateInitiatorsInADiffHost in various scenarios with modifying host name
+    Given a PowerMax service
+    And I induce error <induced>
+    And I set ModifyHostName to <modify>
+    And I have a NodeNameTemplate <template>
+    And I have a Node <node1> with Host
+    When I call verifyAndUpdateInitiatorsInADiffHost for node <node2>
+    Then <nvalid> valid initiators are returned
+    And the error contains <errormsg>
+
+    Examples:
+    |node1          | node2     | nvalid   | modify   | template                  | induced                   | errormsg                                            |
+    |"host1"        | "host2"   | 0        | false    | "temp-csi-%host1%"        | "none"                    | "is already a part of a different host"             |
+    |"host1"        | "host1"   | 1        | false    | "temp-csi-%host1%"        | "none"                    | "none"                                              |
+    |"host1"        | "host1"   | 0        | false    | "temp-csi-%host1%"        | "GetInitiatorByIDError"   | "none"                                              |
+    |"host1"        | "host2"   | 0        | false    | "temp.!csi-%host1%"       | "none"                    | "is already a part of a different host"             |
+    |"host1"        | "host2"   | 1        | true     | "temp-csi-%host1%"        | "none"                    | "none"                                              |
+    |"host1"        | "host2"   | 0        | true     | "temp-csi-%host1%"        | "UpdateHostError"         | "Error updating Host"                               |
+    |"host1"        | "host2"   | 1        | true     | "temp-csi-%host1"         | "none"                    | "none"                                              |
+    |"host1"        | "host2"   | 1        | true     | "temp.!csi-%host1%"       | "none"                    | "none"                                              |
+    
+@v1.4.0
+  Scenario Outline: Test buildHostIDFromTemplate
+    Given a PowerMax service
+    And I have a NodeNameTemplate <template>
+    When I call buildHostIDFromTemplate for node <node>
+    Then the error contains <errormsg>
+
+    Examples:
+    | template             | node     | errormsg                 |
+    | "temp.!csi-%host%"   | "host1"  | "not acceptable"         |
+    | "-temp.!csi-%host%"  | "host1"  | "not acceptable"         |
+    | "0temp.csi-%host%"   | "host1"  | "not acceptable"         |
+    | "?temp-csi-%host%"   | "host1"  | "not acceptable"         |
+    | "-csi-/-%host%"      | "host1"  | "not acceptable"         |
+    | "temp-csi-%host"     | "host1"  | "not formed correctly"   |
+    | "%host%"             | "host1"  | "none"                   |
+    | "0csi-%host%_node"   | "host1"  | "none"                   |
+    | "%host%-csi-__"      | "host1"  | "none"                   |

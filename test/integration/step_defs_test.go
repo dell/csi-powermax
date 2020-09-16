@@ -43,6 +43,10 @@ type feature struct {
 	createVolumeRequest      *csi.CreateVolumeRequest
 	createVolumeResponse     *csi.CreateVolumeResponse
 	publishVolumeRequest     *csi.ControllerPublishVolumeRequest
+	expandVolumeRequest      *csi.ControllerExpandVolumeRequest
+	expandVolumeResponse     *csi.ControllerExpandVolumeResponse
+	nodeExpandVolumeRequest  *csi.NodeExpandVolumeRequest
+	nodeExpandVolumeResponse *csi.NodeExpandVolumeResponse
 	publishVolumeResponse    *csi.ControllerPublishVolumeResponse
 	nodePublishVolumeRequest *csi.NodePublishVolumeRequest
 	listVolumesResponse      *csi.ListVolumesResponse
@@ -74,6 +78,10 @@ func (f *feature) aPowermaxService() error {
 	f.createVolumeResponse = nil
 	f.publishVolumeRequest = nil
 	f.publishVolumeResponse = nil
+	f.expandVolumeRequest = nil
+	f.expandVolumeResponse = nil
+	f.nodeExpandVolumeRequest = nil
+	f.nodeExpandVolumeResponse = nil
 	f.listVolumesResponse = nil
 	f.listSnapshotsResponse = nil
 	f.getCapacityRequest = nil
@@ -174,8 +182,8 @@ func (f *feature) iCallCreateVolume() error {
 		fmt.Printf("CreateVolume error %s:\n", err.Error())
 		f.addError(err)
 	} else {
-		fmt.Printf("CreateVolume %s (%s) %s\n", f.createVolumeResponse.GetVolume().VolumeContext["Name"],
-			f.createVolumeResponse.GetVolume().VolumeId, f.createVolumeResponse.GetVolume().VolumeContext["CreationTime"])
+		fmt.Printf("CreateVolume %s (%s) %s %s\n", f.createVolumeResponse.GetVolume().VolumeContext["Name"],
+			f.createVolumeResponse.GetVolume().VolumeId, f.createVolumeResponse.GetVolume().VolumeContext["CreationTime"], f.createVolumeResponse.GetVolume().VolumeContext["CapacityBytes"])
 		f.volID = f.createVolumeResponse.GetVolume().VolumeId
 		f.volIDList = append(f.volIDList, f.createVolumeResponse.GetVolume().VolumeId)
 	}
@@ -513,7 +521,7 @@ func (f *feature) getNodePublishVolumeRequest() *csi.NodePublishVolumeRequest {
 	mount := f.capability.GetMount()
 	if mount != nil {
 		now := time.Now()
-		targetPath := fmt.Sprintf("datadir-%d", now.Nanosecond())
+		targetPath := fmt.Sprintf("%s-datadir-%d", f.volID, now.Nanosecond())
 		var fileMode os.FileMode
 		fileMode = 0777
 		err := os.Mkdir(targetPath, fileMode)
@@ -1350,8 +1358,6 @@ func (f *feature) theVolumeSizeIs(expectedVolSize string) error {
 func (f *feature) iCreateSnapshotsInParallel(nSnaps int) error {
 	idchan := make(chan string, nSnaps)
 	errchan := make(chan error, nSnaps)
-	ctx := context.Background()
-	client := csi.NewControllerClient(grpcClient)
 	t0 := time.Now()
 	//Send requests
 	for i := 0; i < nSnaps; i++ {
@@ -1364,17 +1370,14 @@ func (f *feature) iCreateSnapshotsInParallel(nSnaps int) error {
 				Name:           name,
 			}
 			if req != nil {
-				resp, err = client.CreateSnapshot(ctx, req)
-				fmt.Println("response for createSnapshot", resp)
+				resp, err = f.createSnapshot(req)
 				if resp != nil {
+					fmt.Println("response for createSnapshot", resp)
 					idchan <- resp.GetSnapshot().GetSnapshotId()
 				} else {
 					fmt.Println("response for createSnapshot is nil")
 					idchan <- ""
 				}
-			}
-			if err != nil {
-				fmt.Printf("CreateSnapshot returned error: %s\n", err.Error())
 			}
 			errchan <- err
 		}(name, idchan, errchan)
@@ -1504,48 +1507,30 @@ func (f *feature) iCreateVolumesFromVolumeInParallel(nVols int) error {
 	return nil
 }
 func (f *feature) iCallDeleteSnapshotInParallel() error {
-	ctx := context.Background()
 	nSnaps := len(f.snapIDList)
 	fmt.Printf("The number of snapshots to delete%d ", nSnaps)
-	client := csi.NewControllerClient(grpcClient)
-	idchan := make(chan int, nSnaps)
+	done := make(chan bool, nSnaps)
 	errchan := make(chan error, nSnaps)
 	t0 := time.Now()
 	// Send requests
 	for index := 0; index < nSnaps; index++ {
-		go func(index int, idchan chan int, errchan chan error) {
-			var resp *csi.DeleteSnapshotResponse
-			var err error
-			req := &csi.DeleteSnapshotRequest{
-				SnapshotId: f.snapIDList[index],
-			}
-			if req != nil {
-				resp, err = client.DeleteSnapshot(ctx, req)
-				if resp != nil {
-					idchan <- index
-				} else {
-					fmt.Println("response for deleteSnapshot is nil")
-					idchan <- -1
-				}
-			}
-			if err != nil {
-				fmt.Printf("DeleteSnapshot returned error: %s\n", err.Error())
-			}
+		go func(snapID string, done chan bool, errchan chan error) {
+			err := f.deleteSnapshot(snapID)
+			done <- true
 			errchan <- err
-		}(index, idchan, errchan)
+		}(f.snapIDList[index], done, errchan)
 	}
 	// Wait on complete, collecting ids and errors
 	nerrors := 0
 	for i := 0; i < nSnaps; i++ {
-		var id int
-		var err error
-		id = <-idchan
-		if id != -1 {
-			//f.snapIDList = append(f.snapIDList[:i], f.snapIDList[i+1:]...)
-			//fmt.Println(f.snapIDList)
-			//do nothing
+		if f.snapIDList[i] == "" {
+			continue
 		}
-		err = <-errchan
+		finished := <-done
+		if !finished {
+			return errors.New("premature completion")
+		}
+		err := <-errchan
 		if err != nil {
 			fmt.Printf("Delete snapshot received error: %s\n", err.Error())
 			f.addError(err)
@@ -1592,47 +1577,104 @@ func (f *feature) iCallCreateVolumeFromNewVolume() error {
 	return nil
 }
 
-func (f *feature) createSnapshot(errChan chan error) {
+func (f *feature) createSnapshot(req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
 	ctx := context.Background()
 	client := csi.NewControllerClient(grpcClient)
-	req := &csi.CreateSnapshotRequest{
-		SourceVolumeId: f.volIDList[len(f.volIDList)-1],
-		Name:           "snapshot-0sd5347a-0110-22e9-ab1c-0059096a64sd3",
+	var resp *csi.CreateSnapshotResponse
+	var err error
+	// Retry loop to deal with API being overwhelmed
+	for i := 0; i < f.maxRetryCount; i++ {
+		resp, err = client.CreateSnapshot(ctx, req)
+		if err == nil {
+			break
+		}
+		fmt.Printf("Create Snapshot retry: %s\n", err.Error())
+		time.Sleep(RetrySleepTime)
 	}
-	resp, err := client.CreateSnapshot(ctx, req)
-	if err != nil {
-		fmt.Printf("CreateSnapshot returned error: %s\n", err.Error())
-		errChan <- err
-	} else {
-		f.snapshotID = resp.Snapshot.SnapshotId
-		f.snapIDList = append(f.snapIDList, resp.Snapshot.SnapshotId)
-		fmt.Printf("createSnapshot: SnapshotId %s SourceVolumeId %s CreationTime %s\n",
-			resp.Snapshot.SnapshotId, resp.Snapshot.SourceVolumeId, ptypes.TimestampString(resp.Snapshot.CreationTime))
-		errChan <- nil
-	}
+	return resp, err
 }
 
-func (f *feature) deleteSnapshot(errChan chan error) {
+func (f *feature) deleteSnapshot(snapID string) error {
 	ctx := context.Background()
 	client := csi.NewControllerClient(grpcClient)
 	req := &csi.DeleteSnapshotRequest{
-		SnapshotId: f.snapIDList[0],
+		SnapshotId: snapID,
 	}
-	_, err := client.DeleteSnapshot(ctx, req)
-	if err != nil {
-		fmt.Printf("DeleteSnapshot returned error: %s\n", err.Error())
-		errChan <- err
-	} else {
-		fmt.Printf("DeleteSnapshot: SnapshotId %s\n", req.SnapshotId)
-		errChan <- nil
+	var err error
+	// Retry loop to deal with API being overwhelmed
+	for i := 0; i < f.maxRetryCount; i++ {
+		_, err = client.DeleteSnapshot(ctx, req)
+		if err == nil {
+			break
+		}
+		fmt.Printf("DeleteSnapshot ID %s: retry %s\n", req.SnapshotId, err.Error())
+		time.Sleep(RetrySleepTime)
 	}
+	return err
 }
 
+func (f *feature) iCreateASnapshotPerVolumeInParallel() error {
+	nSnaps := len(f.volIDList) // nSnaps is the no. of vols present, on which we make 1 snap each
+	idchan := make(chan string, nSnaps)
+	errchan := make(chan error, nSnaps)
+	t0 := time.Now()
+	//Send requests
+	for i := 0; i < nSnaps; i++ {
+		name := fmt.Sprintf("Scale_Test_Snap%d", i)
+		go func(volID, name string, idchan chan string, errchan chan error) {
+			var resp *csi.CreateSnapshotResponse
+			var err error
+			req := &csi.CreateSnapshotRequest{
+				SourceVolumeId: volID,
+				Name:           name,
+			}
+			if req != nil {
+				resp, err = f.createSnapshot(req)
+				if resp != nil {
+					fmt.Println("response for createSnapshot", resp)
+					idchan <- resp.GetSnapshot().GetSnapshotId()
+				} else {
+					fmt.Println("response for createSnapshot is nil")
+					idchan <- ""
+				}
+			}
+			errchan <- err
+		}(f.volIDList[i], name, idchan, errchan)
+	}
+	//wait on complete, collecting ids and errors
+	nerrors := 0
+	for i := 0; i < nSnaps; i++ {
+		var id string
+		var err error
+		id = <-idchan
+		if id != "" {
+			f.snapIDList = append(f.snapIDList, id)
+		}
+		err = <-errchan
+		if err != nil {
+			fmt.Printf("create snapshot received error: %s\n", err.Error())
+			f.addError(err)
+			nerrors++
+		}
+	}
+	t1 := time.Now()
+	if len(f.snapIDList) > nSnaps {
+		f.snapIDList = f.snapIDList[0:nSnaps]
+	}
+	fmt.Printf("Create snapshot time for %d snap %d errors: %v %v\n", nSnaps, nerrors, t1.Sub(t0).Seconds(), t1.Sub(t0).Seconds()/float64(nSnaps))
+	time.Sleep(SleepTime)
+	return nil
+}
 func (f *feature) iCallDeleteSnapshotAndCreateSnapshotInParallel() error {
 	errChan := make(chan error, 2)
-	go f.createSnapshot(errChan)
-	go f.deleteSnapshot(errChan)
-
+	go func() {
+		err := f.iCallCreateSnapshot()
+		errChan <- err
+	}()
+	go func() {
+		err := f.iCallDeleteSnapshot()
+		errChan <- err
+	}()
 	for i := 0; i < 2; i++ {
 		err := <-errChan
 		if err != nil {
@@ -1737,6 +1779,85 @@ func (f *feature) parseCsiID(csiID string) (
 	return
 }
 
+func (f *feature) whenICallExpandVolumeToCylinders(nCYL int64) error {
+	err := f.controllerExpandVolume(f.volID, nCYL)
+	if err != nil {
+		fmt.Printf("ControllerExpandVolume %s:\n", err.Error())
+		f.addError(err)
+	} else {
+		fmt.Printf("ControllerExpandVolume completed successfully\n")
+	}
+	time.Sleep(SleepTime)
+	return nil
+}
+
+func (f *feature) controllerExpandVolume(volID string, nCYL int64) error {
+	const cylinderSizeInBytes = 1966080
+	var resp *csi.ControllerExpandVolumeResponse
+	var err error
+	var req *csi.ControllerExpandVolumeRequest
+	if nCYL != 0 {
+		req = &csi.ControllerExpandVolumeRequest{
+			VolumeId:      volID,
+			CapacityRange: &csi.CapacityRange{RequiredBytes: nCYL * cylinderSizeInBytes},
+		}
+	} else {
+		req = &csi.ControllerExpandVolumeRequest{
+			VolumeId: volID,
+		}
+	}
+	ctx := context.Background()
+	client := csi.NewControllerClient(grpcClient)
+	// Retry loop to deal with API being overwhelmed
+	for i := 0; i < f.maxRetryCount; i++ {
+		resp, err = client.ControllerExpandVolume(ctx, req)
+		if err == nil {
+			break
+		}
+		fmt.Printf("Controller ExpandVolume retry: %s\n", err.Error())
+		time.Sleep(RetrySleepTime)
+	}
+	f.expandVolumeResponse = resp
+	return err
+}
+
+func (f *feature) whenICallNodeExpandVolume() error {
+	nodePublishReq := f.nodePublishVolumeRequest
+	if nodePublishReq == nil {
+		err := fmt.Errorf("Volume is not stage, nodePublishVolumeRequest not found")
+		return err
+	}
+	err := f.nodeExpandVolume(f.volID, nodePublishReq.TargetPath)
+	if err != nil {
+		fmt.Printf("NodeExpandVolume %s:\n", err.Error())
+		f.addError(err)
+	} else {
+		fmt.Printf("NodeExpandVolume completed successfully\n")
+	}
+	time.Sleep(SleepTime)
+	return nil
+}
+func (f *feature) nodeExpandVolume(volID, volPath string) error {
+	var resp *csi.NodeExpandVolumeResponse
+	var err error
+	req := &csi.NodeExpandVolumeRequest{
+		VolumeId:   volID,
+		VolumePath: volPath,
+	}
+	ctx := context.Background()
+	client := csi.NewNodeClient(grpcClient)
+	// Retry loop to deal with API being overwhelmed
+	for i := 0; i < f.maxRetryCount; i++ {
+		resp, err = client.NodeExpandVolume(ctx, req)
+		if err == nil {
+			break
+		}
+		fmt.Printf("Node ExpandVolume retry: %s\n", err.Error())
+		time.Sleep(RetrySleepTime)
+	}
+	f.nodeExpandVolumeResponse = resp
+	return err
+}
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a Powermax service$`, f.aPowermaxService)
@@ -1750,6 +1871,8 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^when I call UnpublishVolume$`, f.whenICallUnpublishVolume)
 	s.Step(`^when I call PublishVolume "([^"]*)"$`, f.whenICallPublishVolume)
 	s.Step(`^when I call UnpublishVolume "([^"]*)"$`, f.whenICallUnpublishVolume)
+	s.Step(`^when I call ExpandVolume to (\d+) cylinders$$`, f.whenICallExpandVolumeToCylinders)
+	s.Step(`^when I call NodeExpandVolume$`, f.whenICallNodeExpandVolume)
 	s.Step(`^access type is "([^"]*)"$`, f.accessTypeIs)
 	s.Step(`^max retries (\d+)$`, f.maxRetries)
 	s.Step(`^a capability with voltype "([^"]*)" access "([^"]*)" fstype "([^"]*)"$`, f.aCapabilityWithVoltypeAccessFstype)
@@ -1803,4 +1926,5 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I check if volume exist$`, f.iCheckIfVolumeExist)
 	s.Step(`^I check if volume is deleted$`, f.iCheckIfVolumeIsDeleted)
 	s.Step(`^I delete a snapshot$`, f.iDeleteASnapshot)
+	s.Step(`^I create a snapshot per volume in parallel$`, f.iCreateASnapshotPerVolumeInParallel)
 }

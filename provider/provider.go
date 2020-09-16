@@ -18,13 +18,22 @@ import (
 	"github.com/rexray/gocsi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
+	"os"
+	"strconv"
 	"time"
 )
 
 // New returns a new Mock Storage Plug-in Provider.
 func New() gocsi.StoragePluginProvider {
 	// Get the MaxConcurrentStreams server option and configure it.
-	maxStreams := grpc.MaxConcurrentStreams(4)
+	maxConcurrentStreams := uint32(4)
+	if maxThreads, found := os.LookupEnv(service.EnvGrpcMaxThreads); found {
+		tempConcurrentStreams, err := strconv.Atoi(maxThreads)
+		if err == nil {
+			maxConcurrentStreams = uint32(tempConcurrentStreams)
+		}
+	}
+	maxStreams := grpc.MaxConcurrentStreams(maxConcurrentStreams)
 	keepaliveEnforcementPolicy := keepalive.EnforcementPolicy{
 		MinTime: 10 * time.Second,
 	}

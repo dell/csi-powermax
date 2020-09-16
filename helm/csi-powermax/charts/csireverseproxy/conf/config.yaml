@@ -1,0 +1,14 @@
+mode: Linked
+port: {{ .Values.port }}
+linkConfig:
+  primary:
+    url: {{ required "Must provide a primary Unisphere HTTPS endpoint." .Values.primary.unisphere }}
+    skipCertificateValidation: {{ .Values.primary.skipCertificateValidation }}
+    certSecret: {{ .Values.primary.certSecret | default "" }}
+  {{- if .Values.backup }}
+  backup:
+    url: {{  .Values.backup.unisphere }}
+    skipCertificateValidation: {{ .Values.backup.skipCertificateValidation }}
+    certSecret: {{ .Values.backup.certSecret | default "" }}
+  {{- end }}
+

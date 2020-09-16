@@ -87,7 +87,6 @@ const (
 	MaxSnapIdentifierLength         = 32
 	SnapDelPrefix                   = "DEL"
 	delSrcTag                       = "DS"
-	SnapLock                        = "snapshot_lock"
 )
 
 // Keys for parameters to CreateVolume
@@ -150,6 +149,7 @@ var (
 
 	// Quickly fail if there is too much load
 	controllerPendingState pendingState
+	snapshotPendingState   pendingState
 
 	// Retry delay for retrying GetMaskingViewConnections
 	getMVConnectionsDelay = 30 * time.Second
@@ -484,7 +484,7 @@ func (s *service) CreateVolume(
 	}
 
 	// Let's create the volume
-	vol, err := s.adminClient.CreateVolumeInStorageGroup(symmetrixID, storageGroupName, volumeIdentifier, requiredCylinders)
+	vol, err := s.adminClient.CreateVolumeInStorageGroupS(symmetrixID, storageGroupName, volumeIdentifier, requiredCylinders)
 	if err != nil {
 		log.Error(fmt.Sprintf("Could not create volume: %s: %s", volumeName, err.Error()))
 		return nil, status.Errorf(codes.Internal, "Could not create volume: %s: %s", volumeName, err.Error())
@@ -499,6 +499,11 @@ func (s *service) CreateVolume(
 				return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
 			}
 		} else if srcSnapID != "" {
+			//Unlink all previous targets from this snapshot if the link is in defined state
+			err = s.UnlinkTargets(symID, SrcDevID)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "Failed unlink existing target from snapshot (%s)", err.Error())
+			}
 			err = s.LinkVolumeToSnapshot(symID, srcVol.VolumeID, vol.VolumeID, snapID, reqID)
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
@@ -1240,10 +1245,47 @@ func (s *service) GetHostSGAndMVIDFromNodeID(nodeID string, isISCSI bool) (strin
 	return s.GetFCHostSGAndMVIDFromNodeID(nodeID)
 }
 
+func (s *service) GetHostIDFromTemplate(nodeID string) string {
+	if s.opts.NodeNameTemplate != "" {
+		hostID, err := s.buildHostIDFromTemplate(nodeID)
+		if err == nil {
+			return hostID
+		}
+		log.Infof("%s. Using default naming for host ", err.Error())
+	}
+	return CsiHostPrefix + s.getClusterPrefix() + "-" + nodeID
+}
+
+func (s *service) buildHostIDFromTemplate(nodeID string) (
+	hostID string, err error) {
+	// get the Device ID and Array ID
+	tmpltComponents := strings.Split(s.opts.NodeNameTemplate, "%")
+	// Protect against mal-formed component
+	numOfComponents := len(tmpltComponents)
+
+	if numOfComponents < 3 {
+		// Not well formed
+		err = fmt.Errorf("The node name template %s is not formed correctly", s.opts.NodeNameTemplate)
+		return "", err
+	}
+
+	nodePrefix := tmpltComponents[0]
+	nodeSuffix := tmpltComponents[2]
+	hostID = nodePrefix + nodeID + nodeSuffix
+
+	// Check if the hostname has any invalid characters
+	if !isValidHostID(hostID) {
+		err = fmt.Errorf("Character in hostID (%s) is not acceptable", hostID)
+		return "", err
+	}
+
+	return hostID, nil
+}
+
 // GetISCSIHostSGAndMVIDFromNodeID - Forms HostID, StorageGroupID, MaskingViewID
 // using the NodeID and returns them
 func (s *service) GetISCSIHostSGAndMVIDFromNodeID(nodeID string) (string, string, string) {
-	hostID := CsiHostPrefix + s.getClusterPrefix() + "-" + nodeID
+	hostID := s.GetHostIDFromTemplate(nodeID)
 	storageGroupID := CsiNoSrpSGPrefix + s.getClusterPrefix() + "-" + nodeID
 	maskingViewID := CsiMVPrefix + s.getClusterPrefix() + "-" + nodeID
 	return hostID, storageGroupID, maskingViewID
@@ -1704,6 +1746,13 @@ func (s *service) ControllerGetCapabilities(
 					},
 				},
 			},
+			{
+				Type: &csi.ControllerServiceCapability_Rpc{
+					Rpc: &csi.ControllerServiceCapability_RPC{
+						Type: csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
+					},
+				},
+			},
 		},
 	}, nil
 }
@@ -1749,10 +1798,12 @@ func (s *service) requireProbe(ctx context.Context) error {
 	// If we're using the proxy, the throttling is in the proxy in front of U4V.
 	// so we can handle a large number of pending requests.
 	// Otherwise a small number since there's no protection for U4V.
-	if s.opts.UseProxy {
-		controllerPendingState.maxPending = 25
+	if s.opts.UseProxy || s.opts.IsReverseProxyEnabled {
+		controllerPendingState.maxPending = 50
+		snapshotPendingState.maxPending = 50
 	} else {
-		controllerPendingState.maxPending = 6
+		controllerPendingState.maxPending = s.opts.GrpcMaxThreads
+		snapshotPendingState.maxPending = s.opts.GrpcMaxThreads
 	}
 	if s.adminClient == nil {
 		if !s.opts.AutoProbe {
@@ -1960,6 +2011,12 @@ func (s *service) CreateSnapshot(
 		resp := &csi.CreateSnapshotResponse{Snapshot: snapshot}
 		return resp, nil
 	}
+	symDevID := fmt.Sprintf("%s-%s", symID, devID)
+	var stateID = volumeIDType(symDevID)
+	if err := stateID.checkAndUpdatePendingState(&snapshotPendingState); err != nil {
+		return nil, err
+	}
+	defer stateID.clearPending(&snapshotPendingState)
 
 	// log all parameters used in CreateSnapshot call
 	fields := map[string]interface{}{
@@ -1971,10 +2028,11 @@ func (s *service) CreateSnapshot(
 	log.WithFields(fields).Info("Executing CreateSnapshot with following fields")
 
 	// Create snapshot
-	lockNumber := RequestLock(SnapLock, reqID)
 	snap, err := s.CreateSnapshotFromVolume(symID, vol, snapID, 0, reqID)
-	ReleaseLock(SnapLock, reqID, lockNumber)
 	if err != nil {
+		if strings.Contains(err.Error(), "The maximum number of sessions has been exceeded for the specified Source device") {
+			return nil, status.Errorf(codes.FailedPrecondition, "Failed to create snapshot: %s", err.Error())
+		}
 		return nil, status.Errorf(codes.Internal, "Failed to create snapshot: %s", err.Error())
 	}
 
@@ -2046,6 +2104,13 @@ func (s *service) DeleteSnapshot(
 		return &csi.DeleteSnapshotResponse{}, nil
 	}
 
+	symDevID := fmt.Sprintf("%s-%s", symID, devID)
+	var stateID = volumeIDType(symDevID)
+	if err := stateID.checkAndUpdatePendingState(&snapshotPendingState); err != nil {
+		return nil, err
+	}
+	defer stateID.clearPending(&snapshotPendingState)
+
 	// log all parameters used in DeleteSnapshot call
 	fields := map[string]interface{}{
 		"SymmetrixID":    symID,
@@ -2097,8 +2162,82 @@ func mergeStringMaps(base map[string]string, additional map[string]string) map[s
 	return result
 }
 
-func (s *service) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+//ControllerExpandVolume expands a CSI volume on the Pmax array
+func (s *service) ControllerExpandVolume(
+	ctx context.Context, req *csi.ControllerExpandVolumeRequest) (
+	*csi.ControllerExpandVolumeResponse, error) {
+	// Requires probe
+	if err := s.requireProbe(ctx); err != nil {
+		return nil, err
+	}
+
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+
+	id := req.GetVolumeId()
+	symID, devID, vol, err := s.GetVolumeByID(id)
+	if err != nil {
+		log.Errorf("GetVolumeByID failed with (%s) for devID (%s)", err.Error(), devID)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	volName := vol.VolumeIdentifier
+
+	// Check if ExpandVolume request has CapacityRange set
+	if req.CapacityRange == nil {
+		err = fmt.Errorf("Invalid argument - CapacityRange not set")
+		log.Error(err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	// Get the required capacity in cylinders
+	requestedSize, err := s.validateVolSize(req.CapacityRange, "", "")
+	if err != nil {
+		log.Errorf("Failed to validate volume size (%s). Error(%s)", devID, err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// log all parameters used in CreateVolume call
+	fields := map[string]interface{}{
+		"RequestID":     reqID,
+		"SymmetrixID":   symID,
+		"VolumeName":    volName,
+		"DeviceID":      devID,
+		"RequestedSize": requestedSize,
+	}
+	log.WithFields(fields).Info("Executing ExpandVolume with following fields")
+
+	allocatedSize := vol.CapacityCYL
+
+	if requestedSize < allocatedSize {
+		log.Errorf("Attempting to shrink size of volume (%s) from (%d) CYL to (%d) CYL",
+			volName, allocatedSize, requestedSize)
+		return nil, status.Error(codes.InvalidArgument,
+			"Attempting to shrink the volume size - unsupported operation")
+	}
+	if requestedSize == allocatedSize {
+		log.Infof("Idempotent call detected for volume (%s) with requested size (%d) CYL and allocated size (%d) CYL",
+			volName, requestedSize, allocatedSize)
+		return &csi.ControllerExpandVolumeResponse{CapacityBytes: int64(allocatedSize) * cylinderSizeInBytes,
+			NodeExpansionRequired: true}, nil
+	}
+
+	//Expand the volume
+	vol, err = s.adminClient.ExpandVolume(symID, devID, requestedSize)
+	if err != nil {
+		log.Errorf("Failed to execute ExpandVolume() with error (%s)", err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	//return the response with NodeExpansionRequired = true, so that CO could call
+	// NodeExpandVolume subsequently
+	csiResp := &csi.ControllerExpandVolumeResponse{
+		CapacityBytes:         int64(vol.CapacityCYL) * cylinderSizeInBytes,
+		NodeExpansionRequired: true,
+	}
+	return csiResp, nil
 }
 
 //MarkVolumeForDeletion renames the volume with deletion prefix and sends a

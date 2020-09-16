@@ -11,3 +11,4 @@ semver.mk
 
 # files created by IDEs
 .vscode
+.idea/
