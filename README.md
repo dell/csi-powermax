@@ -8,6 +8,13 @@ It supports CSI specification version 1.1
 
 This project may be compiled as a stand-alone binary using Golang that, when run, provides a valid CSI endpoint. This project can also be built as a Golang plug-in in order to extend the functionality of other programs.
 
+## Support
+The CSI Driver for Dell EMC PowerMax image, which is the built driver code, is available on Dockerhub and is officially supported by Dell EMC.  
+
+The source code for CSI Driver for Dell EMC PowerMax available on Github is unsupported and provided solely under the terms of the license attached to the source code. For clarity, Dell EMC does not provide support for any source code modifications.  
+
+For any CSI driver issues, questions or feedback, join the [Dell EMC Container community](https://www.dell.com/community/Containers/bd-p/Containers).
+
 ## Building
 This project is a Go module (see golang.org Module information for explanation). 
 The dependencies for this project are in the go.mod file.
@@ -26,11 +33,9 @@ Both the Controller and the Node portions of the driver can only be run on nodes
 If you are using ISCSI, then the Node portion of the driver can only be run on nodes that have the iscsi-initiator-utils package installed.
 
 ## Installation
-Installation in a Kubernetes cluster should be done using the `install.powermax` script and accompanying Helm chart in the helm directory. 
+Installation in a Kubernetes cluster should be done using the scripts within the `dell-csi-helm-installer` directory. 
 
-For more information, please refer to the `CSI Driver for Dell EMC PowerMax Product Guide` and `CSI Driver for Dell EMC PowerMax Release Notes`. 
-
-The driver will be started in Kubernetes as a result of executing the installation script.
+For more information, consult the [README.md](dell-csi-helm-installer/README.md)
 
 ## Using driver
 A number of test helm charts and scripts are found in the directory test/helm. Product Guide provides descriptions of how to run these and explains how they work.
@@ -61,11 +66,7 @@ This means that volumes can be mounted to a single node at a time, with read-wri
 
 In general, volumes should be formatted with xfs or ext4.
 
-## Support
-The CSI Driver for Dell EMC PowerMax image available on Dockerhub is officially supported by Dell EMC.
- 
-The source code available on Github is unsupported and provided solely under the terms of the license attached to the source code. For clarity, Dell EMC does not provide support for any source code modifications.
- 
-For any CSI driver setup, configuration issues, questions or feedback, join the Dell EMC Container community at https://www.dell.com/community/Containers/bd-p/Containers
- 
-For any Dell EMC storage issues, please contact Dell support at: https://www.dell.com/support.
+CSI Driver for Dell EMC PowerMax supports the following modes for block volumes:
+* ReadWriteOnce
+* ReadWriteMany
+* ReadOnlyMany (for block Volumes which have been previously initialized)

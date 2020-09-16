@@ -24,10 +24,13 @@ rules:
     verbs: ["get", "list", "watch", "create", "delete", "update", "patch" ]
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
-    verbs: ["get", "list", "watch", "update"]
+    verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: ["storage.k8s.io"]
     resources: ["storageclasses"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims/status"]
+    verbs: ["update", "patch"]
   - apiGroups: ["storage.k8s.io"]
     resources: ["volumeattachments"]
     verbs: ["get", "list", "watch", "update", "patch" ]
@@ -44,6 +47,9 @@ rules:
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotcontents"]
     verbs: ["get", "list", "watch", "update", "create", "delete"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotcontents/status"]
+    verbs: ["update"]
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotclasses"]
     verbs: ["get", "list", "watch"]
@@ -152,6 +158,17 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi
+        - name: resizer
+          image: {{ required "Must provide the CSI resizer container image." .Values.images.resizer }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--v=5"
+          env:
+            - name: ADDRESS
+              value: /var/run/csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/csi
         - name: driver
           image: {{ required "Must provide the PowerMax driver container image." .Values.images.driver }}
           imagePullPolicy: Always
@@ -190,21 +207,31 @@ spec:
             - name: X_CSI_POWERMAX_INSECURE
               value: {{ .Values.powerMaxInsecure | default "none" | lower | quote }}
             - name: X_CSI_POWERMAX_PROXY_SERVICE_NAME
-              value: {{ .Values.proxy | default "none" }}
-            - name: X_CSI_ENABLE_BLOCK
-              value: {{ .Values.enableBlock | default "false" | lower | quote }}
+            {{- if eq .Values.csireverseproxy.enabled true }}
+              value: {{ .Release.Name }}-reverseproxy
+            {{- else }}
+              value: "none"
+            {{- end }}
             - name: X_CSI_POWERMAX_PORTGROUPS
-              value:  {{ required "Must provide list of Port Groups." .Values.portGroups | toJson }}
+              value: {{ .Values.portGroups | toJson }}
             - name: X_CSI_K8S_CLUSTER_PREFIX
-              value:  {{ required "Must provide a Cluster Prefix." .Values.clusterPrefix }}
+              value: {{ required "Must provide a Cluster Prefix." .Values.clusterPrefix }}
             - name: X_CSI_POWERMAX_ARRAYS
-              value:  {{ .Values.arrayWhitelist | default "" | toJson }}
+              value: {{ .Values.arrayWhitelist | default "" | toJson }}
             - name: X_CSI_GRPC_MAX_THREADS
-              value: {{ .Values.grpcMaxThreads | default "4" | toJson }}
+            {{- if eq .Values.csireverseproxy.enabled true }}
+              value: "50"
+            {{- else }}
+              value: "4"
+            {{- end }}
             - name: X_CSI_TRANSPORT_PROTOCOL
               value: {{ .Values.transportProtocol | default "" }}
             - name: SSL_CERT_DIR
               value: /certs
+            - name: X_CSI_IG_NODENAME_TEMPLATE
+              value: {{ .Values.nodeNameTemplate | default "" }}
+            - name: X_CSI_IG_MODIFY_HOSTNAME
+              value: {{ .Values.modifyHostName | default "false" | lower | quote }}
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi

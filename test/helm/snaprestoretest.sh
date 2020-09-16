@@ -8,7 +8,7 @@ kubectl exec -n test powermaxtest-0 -- ls -l /data0
 kubectl exec -n test powermaxtest-0 -- sync
 kubectl exec -n test powermaxtest-0 -- sync
 echo "creating snap1 of pvol0"
-kubectl create -f snap1.yaml
+kubectl create -f betaSnap1.yaml
 sleep 10
 kubectl get volumesnapshot -n test
 echo "updating container to add a volume sourced from snapshot"

@@ -25,15 +25,18 @@ import (
 
 	types "github.com/dell/gopowermax/types/v90"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // The follow constants are for internal use within the pmax library.
 const (
-	TempSnap = "CSI_TEMP_SNAP"
-	Defined  = "Defined"
-	Link     = "Link"
-	Unlink   = "Unlink"
-	Rename   = "Rename"
+	TempSnap       = "CSI_TEMP_SNAP"
+	Defined        = "Defined"
+	Link           = "Link"
+	Unlink         = "Unlink"
+	Rename         = "Rename"
+	MaxUnlinkCount = 5
 )
 
 var cleanupStarted = false
@@ -148,6 +151,24 @@ func (scw *snapCleanupWorker) removeItem() *snapCleanupRequest {
 	return &req
 }
 
+//UnlinkTargets unlinks all the target devices from the snapshot
+func (s *service) UnlinkTargets(symID, srcDevID string) error {
+	//Get all the snapshot relation on the volume
+	SrcSession, _, err := s.GetSnapSessions(symID, srcDevID)
+	if err != nil {
+		return err
+	}
+	//unlink the target from snapshot
+	if SrcSession != nil {
+		err := s.UnlinkSnapshot(symID, &SrcSession[0], MaxUnlinkCount)
+		if err != nil {
+			log.Error("UnlinkSnapshot failed for target session:" + srcDevID)
+			return err
+		}
+	}
+	return nil
+}
+
 //IsSnapshotLicensed return true if the symmetrix array has
 // SnapVX license
 func (s *service) IsSnapshotLicensed(symID string) (err error) {
@@ -203,7 +224,7 @@ func (s *service) UnlinkAndTerminate(symID, deviceID, snapID string) error {
 	}
 
 	if TgtSession != nil {
-		err = s.UnlinkSnapshot(symID, TgtSession)
+		err = s.UnlinkSnapshot(symID, TgtSession, 0)
 		if err != nil {
 			log.Error("UnlinkSnapshot failed for target session" + TgtSession.Source)
 			return err
@@ -224,7 +245,7 @@ func (s *service) UnlinkAndTerminate(symID, deviceID, snapID string) error {
 		//Take a note if we terminated all the snapshots from source volume
 		for i := range SrcSessions {
 			if SrcSessions[i].Name == snapID || snapID == "" {
-				err = s.UnlinkSnapshot(symID, &SrcSessions[i])
+				err = s.UnlinkSnapshot(symID, &SrcSessions[i], 0)
 				if err != nil {
 					log.Error("UnlinkSnapshot failed for source session: " + SrcSessions[i].Source)
 					return err
@@ -264,24 +285,36 @@ func (s *service) UnlinkAndTerminate(symID, deviceID, snapID string) error {
 	return nil
 }
 
-// UnlinkSnapshot unlinks all targets of the snapshot session
-func (s *service) UnlinkSnapshot(symID string, snapSession *SnapSession) (err error) {
+// UnlinkSnapshot unlinks all targets of the snapshot session.
+// parameter maxUnlinkCount is to throttle the number of target it should
+// unlink in one go. A value of 0 means, it unlinks all the targets else specified
+// by number of targets in maxUnlinkCount
+func (s *service) UnlinkSnapshot(symID string, snapSession *SnapSession, maxUnlinkCount int) (err error) {
 	if snapSession.Target == nil {
 		return
 	}
-
+	var counter int
+	var TargetList []types.VolumeList
+	var SourceList []types.VolumeList
 	for _, target := range snapSession.Target {
 		if target.Defined {
-			TargetList := []types.VolumeList{{Name: target.Target}}
-			SourceList := []types.VolumeList{{Name: snapSession.Source}}
-			log.Debugf("Executing Unlink on (%s) with source (%s) target (%s)", snapSession.Name, snapSession.Source, target.Target)
-			err = s.adminClient.ModifySnapshot(symID, SourceList, TargetList, snapSession.Name, Unlink, "", snapSession.Generation)
-			if err != nil {
-				return err
+			TargetList = append(TargetList, types.VolumeList{Name: target.Target})
+			SourceList = append(SourceList, types.VolumeList{Name: snapSession.Source})
+
+			if maxUnlinkCount != 0 {
+				counter++
+				if counter == maxUnlinkCount {
+					break
+				}
 			}
 		} else {
 			return fmt.Errorf("Not all the targets are in Defined state")
 		}
+	}
+	log.Debugf("Executing Unlink on (%s) with source (%v) target (%v)", snapSession.Name, SourceList, TargetList)
+	err = s.adminClient.ModifySnapshotS(symID, SourceList, TargetList, snapSession.Name, Unlink, "", snapSession.Generation)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -310,7 +343,7 @@ func (s *service) RemoveSnapshot(symID string, srcDev string, snapID string, Gen
 
 	sourceVolumes := []types.VolumeList{}
 	sourceVolumes = append(sourceVolumes, types.VolumeList{Name: srcDev})
-	err = s.adminClient.DeleteSnapshot(symID, snapID, sourceVolumes, Generation)
+	err = s.adminClient.DeleteSnapshotS(symID, snapID, sourceVolumes, Generation)
 	if err != nil {
 		return fmt.Errorf("DeleteSnapshot failed with error (%s)", err.Error())
 	}
@@ -378,9 +411,6 @@ func (s *service) GetSnapSessions(symID, deviceID string) (srcSession []SnapSess
 			}
 		}
 	}
-	if snapInfo.VolumeSnapshotSource == nil && snapInfo.VolumeSnapshotLink == nil {
-		err = fmt.Errorf("Volume is neither a source nor target for any snapshot")
-	}
 	return
 }
 
@@ -402,8 +432,11 @@ func (s *service) LinkVolumeToSnapshot(symID, srcDevID, tgtDevID, snapID string,
 	targetList = append(targetList, types.VolumeList{Name: tgtDevID})
 
 	// Link the newly created volume as a target of the snapshot
-	err = s.adminClient.ModifySnapshot(symID, sourceList, targetList, snapID, Link, "", 0)
+	err = s.adminClient.ModifySnapshotS(symID, sourceList, targetList, snapID, Link, "", 0)
 	if err != nil {
+		if strings.Contains(err.Error(), "The maximum number of sessions has been exceeded for the specified Source device") {
+			return status.Errorf(codes.FailedPrecondition, "Failed to link volumes: %s", err.Error())
+		}
 		return err
 	}
 	return nil
@@ -414,9 +447,13 @@ func (s *service) LinkVolumeToSnapshot(symID, srcDevID, tgtDevID, snapID string,
 func (s *service) LinkVolumeToVolume(symID string, vol *types.Volume, tgtDevID, snapID string, reqID string) error {
 	// Create a snapshot from the Source
 	// Set max 1 hr life time for the temporary snapshot
+	log.Debugf("Creating snapshot %s on %s and linking it to %s", snapID, vol.VolumeID, tgtDevID)
 	var TTL int64 = 1
 	snapInfo, err := s.CreateSnapshotFromVolume(symID, vol, snapID, TTL, reqID)
 	if err != nil {
+		if strings.Contains(err.Error(), "The maximum number of sessions has been exceeded for the specified Source device") {
+			return status.Errorf(codes.FailedPrecondition, "Failed to create snapshot: %s", err.Error())
+		}
 		return err
 	}
 	// Link the Target to the created snapshot
@@ -440,6 +477,7 @@ func (s *service) CreateSnapshotFromVolume(symID string, vol *types.Volume, snap
 	lockNum := RequestLock(lockHandle, reqID)
 	defer ReleaseLock(lockHandle, reqID, lockNum)
 
+	log.Debugf("Creating snapshot %s on %s", snapID, vol.VolumeID)
 	deviceID := vol.VolumeID
 	// Unlink this device if it is a target of another snapshot
 	if vol.SnapSource || vol.SnapTarget {
@@ -475,7 +513,7 @@ func (s *service) CreateSnapshotFromVolume(symID string, vol *types.Volume, snap
 					sourceList = append(sourceList, types.VolumeList{Name: tgtSession.Source})
 					targetList = append(targetList, types.VolumeList{Name: tgtSession.Target[0].Target})
 					// Unlink the source device which is a target of another snapshot
-					err = s.adminClient.ModifySnapshot(symID, sourceList, targetList, tgtSession.Name, Unlink, "", tgtSession.Generation)
+					err = s.adminClient.ModifySnapshotS(symID, sourceList, targetList, tgtSession.Name, Unlink, "", tgtSession.Generation)
 					if err != nil {
 						return nil, err
 					}
@@ -507,22 +545,25 @@ func (s *service) MarkSnapshotForDeletion(symID, snapID, devID string) (string, 
 	if err != nil {
 		return "", err
 	}
-	if len(srcSessions) > 0 {
-		for _, session := range srcSessions {
-			if session.Name == snapID {
-				if session.Target != nil {
-					for _, target := range session.Target {
-						targetList = append(targetList, types.VolumeList{Name: target.Target})
-					}
-				} else {
-					targetList = sourceList
+	if len(srcSessions) == 0 {
+		return "", fmt.Errorf("There is no snapshot on device (%s)", devID)
+	}
+
+	for _, session := range srcSessions {
+		if session.Name == snapID {
+			if session.Target != nil {
+				for _, target := range session.Target {
+					targetList = append(targetList, types.VolumeList{Name: target.Target})
 				}
-				break
+			} else {
+				targetList = sourceList
 			}
+			break
 		}
 	}
+
 	newSnapID := fmt.Sprintf("%s-%s", SnapDelPrefix, snapID)
-	err = s.adminClient.ModifySnapshot(symID, sourceList, targetList, snapID, Rename, newSnapID, srcSessions[0].Generation)
+	err = s.adminClient.ModifySnapshotS(symID, sourceList, targetList, snapID, Rename, newSnapID, srcSessions[0].Generation)
 	if err != nil {
 		return "", fmt.Errorf("Renaming snapshot failed from OldSnapID(%s) to NewSnapID(%s), Error(%s)", snapID, newSnapID, err.Error())
 	}

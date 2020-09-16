@@ -10,8 +10,7 @@ fi
 echo "******************Begin Test*********************"
 echo "creating snapshot of pvol1 (xfs volume)"
 echo "************************************************"
-echo 'kubectl create -f snap2.yaml'
-kubectl create -f snap2.yaml
+kubectl create -f betaSnap2.yaml
 echo "Sleeping for 25 seconds to allow creation of snapshot"
 sleep 25
 kubectl get volumesnapshot -n test
@@ -33,8 +32,7 @@ kubectl delete pvc restorepvc -n test
 echo "************************************************"
 echo "Deleting the snapshot"
 echo "************************************************"
-echo 'kubectl delete -f snap2.yaml'
-kubectl delete -f snap2.yaml
+kubectl delete -f betaSnap2.yaml
 echo "************************************************"
 echo "Deleting the original pod"
 echo "************************************************"

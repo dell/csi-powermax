@@ -13,12 +13,12 @@ import (
 )
 
 const (
-	storageGroupSvcQueueDepth = 50
+	storageGroupSvcQueueDepth = 200
 )
 
 var (
-	maxAddGroupSize                      = 10
-	maxRemoveGroupSize                   = 10
+	maxAddGroupSize                      = 100
+	maxRemoveGroupSize                   = 100
 	enableBatchGetMaskingViewConnections = true
 )
 
@@ -515,12 +515,11 @@ func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtM
 	if maskingViewExists {
 		// We just need to confirm if all the other entities are in order
 		if tgtMaskingView.HostID == hostID && tgtMaskingView.StorageGroupID == tgtStorageGroupID {
-
 			// Add the volumes to masking view, if any to be added
 			if len(devIDs) > 0 {
 				log.WithFields(f).Info("Calling AddVolumesToStorageGroup")
 				start := time.Now()
-				err := g.svc.adminClient.AddVolumesToStorageGroup(symID, tgtStorageGroupID, devIDs...)
+				err := g.svc.adminClient.AddVolumesToStorageGroupS(symID, tgtStorageGroupID, devIDs...)
 				if err != nil {
 					log.WithFields(f).Errorf("ControllerPublishVolume: Failed to add devices %s to storage group: %s", devIDs, err)
 					return status.Error(codes.Internal, "Failed to add volume to storage group: "+err.Error())

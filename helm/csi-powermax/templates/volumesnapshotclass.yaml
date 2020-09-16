@@ -1,9 +1,10 @@
-apiVersion: snapshot.storage.k8s.io/v1alpha1
+apiVersion: snapshot.storage.k8s.io/v1beta1
+deletionPolicy: Delete
 kind: VolumeSnapshotClass
 metadata:
   name: {{ required "Must provide a storage class name." .Values.snapshotClass.name}}
 {{- if eq .Values.customDriverName.enabled true}}
-snapshotter: {{ printf "%s.%s.dellemc.com" .Release.Namespace .Values.customDriverName.value }}
+driver: {{ printf "%s.%s.dellemc.com" .Release.Namespace .Values.customDriverName.value }}
 {{- else }}
-snapshotter: csi-powermax.dellemc.com
+driver: csi-powermax.dellemc.com
 {{- end }}

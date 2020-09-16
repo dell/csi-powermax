@@ -58,7 +58,8 @@ const (
 	defaultU4PVersion = "91"
 	csiPrefix         = "csi-"
 
-	logFields = "logFields"
+	logFields                 = "logFields"
+	maxAuthenticateRetryCount = 4
 )
 
 type contextKey string // specific string type used for context keys
@@ -108,6 +109,9 @@ type Opts struct {
 	EnableListVolumesSnapshots bool   // when listing volumes, include snapshots and volumes
 	GrpcMaxThreads             int    // Maximum threads configured in grpc
 	NonDefaultRetries          bool   // Indicates if non-default retry values to be used for deletion worker, only for unit testing
+	NodeNameTemplate           string
+	ModifyHostName             bool
+	IsReverseProxyEnabled      bool
 }
 
 type service struct {
@@ -176,6 +180,8 @@ func (s *service) BeforeServe(
 			"drivername":        s.opts.DriverName,
 			"iscsichapuser":     s.opts.CHAPUserName,
 			"iscsichappassword": "",
+			"nodenametemplate":  s.opts.NodeNameTemplate,
+			"modifyHostName":    s.opts.ModifyHostName,
 		}
 
 		if s.opts.Password != "" {
@@ -223,6 +229,9 @@ func (s *service) BeforeServe(
 	if pw, ok := csictx.LookupEnv(ctx, EnvISCSICHAPPassword); ok {
 		opts.CHAPPassword = pw
 	}
+	if nt, ok := csictx.LookupEnv(ctx, EnvNodeNameTemplate); ok {
+		opts.NodeNameTemplate = nt
+	}
 	if vs, ok := csictx.LookupEnv(ctx, EnvVersion); ok {
 		opts.Version = vs
 	}
@@ -245,6 +254,7 @@ func (s *service) BeforeServe(
 	} else {
 		opts.AllowedArrays = []string{}
 	}
+
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
 	opts.ProxyServiceHost, opts.ProxyServicePort, opts.UseProxy = s.getProxySettingsFromEnv()
 	opts.GrpcMaxThreads = 4
@@ -309,8 +319,18 @@ func (s *service) BeforeServe(
 	}
 	opts.Thick = pb(EnvThick)
 	opts.AutoProbe = pb(EnvAutoProbe)
-	opts.EnableBlock = pb(EnvEnableBlock)
+	if isBoolEnvVar(EnvEnableBlock) {
+		opts.EnableBlock = pb(EnvEnableBlock)
+	} else { // defaults to EnableBlock true
+		opts.EnableBlock = true
+	}
 	opts.EnableCHAP = pb(EnvEnableCHAP)
+	opts.ModifyHostName = pb(EnvModifyHostName)
+	if !opts.UseProxy {
+		// If proxy is not set, then check if the env indicating that
+		// reverseproxy is enabled is set
+		opts.IsReverseProxyEnabled = pb(EnvProxyEnabled)
+	}
 	s.opts = opts
 
 	// setup the iscsi client
@@ -467,7 +487,7 @@ func (s *service) createPowerMaxClient() error {
 
 	// Create our PowerMax API client, if needed
 	if s.adminClient == nil {
-		applicationName := ApplicationName + " v" + core.SemVer
+		applicationName := ApplicationName + "/" + "v" + core.SemVer
 		c, err := pmax.NewClientWithArgs(
 			endPoint, defaultU4PVersion, applicationName, s.opts.Insecure, !s.opts.DisableCerts)
 		if err != nil {
@@ -477,12 +497,18 @@ func (s *service) createPowerMaxClient() error {
 		s.adminClient = c
 		s.adminClient.SetAllowedArrays(s.getArrayWhitelist())
 
-		err = s.adminClient.Authenticate(&pmax.ConfigConnect{
-			Endpoint: endPoint,
-			Username: s.opts.User,
-			Password: s.opts.Password,
-			Version:  defaultU4PVersion,
-		})
+		for i := 0; i < maxAuthenticateRetryCount; i++ {
+			err = s.adminClient.Authenticate(&pmax.ConfigConnect{
+				Endpoint: endPoint,
+				Username: s.opts.User,
+				Password: s.opts.Password,
+				Version:  defaultU4PVersion,
+			})
+			if err == nil {
+				break
+			}
+			time.Sleep(delayBetweenRetries)
+		}
 		if err != nil {
 			s.adminClient = nil
 			return status.Errorf(codes.FailedPrecondition,

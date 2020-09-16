@@ -76,8 +76,8 @@ Feature: PowerMax CSI interface
      | "GetStoragePoolListError"           | "Error retrieving StoragePools"                    |
      | "GetVolumeIteratorError"            | "Error looking up volume for idempotence check"    |
      | "GetVolumeError"                    | "Failed to find newly created volume"              |
-     | "GetJobError"                       | "Could not create volume"                          |
-     | "UpdateStorageGroupError"           | "A job was not returned from UpdateStorageGroup"   |
+#      | "GetJobError"                       | "Could not create volume"                          |
+#      | "UpdateStorageGroupError"           | "A job was not returned from UpdateStorageGroup"   |
      | "InvalidSymID"                      | "A SYMID parameter is required"                    |
      | "InvalidStoragePool"                | "Storage Pool invalid not found"                   |
      | "InvalidServiceLevel"               | "An invalid Service Level parameter was specified" |
@@ -130,6 +130,8 @@ Feature: PowerMax CSI interface
       And the error clears after <numberOfSeconds> seconds
       And I queue "volume7" for deletion
       Then deletion worker processes "volume7" which results in <errormsg>
+      Then I ensure the error is cleared
+      And no error was received
 
      Examples:
      | induced                             | numberOfSeconds   | errormsg                                                                       |
@@ -504,6 +506,8 @@ Feature: PowerMax CSI interface
       And the error clears after 10 seconds
       When I invoke nodeHostSetup with a "node" service
       Then the error contains "none"
+      Then I ensure the error is cleared
+      And no error was received
 
 @v1.0.0
     Scenario Outline: Validate ensureLoggedIntoEveryArray
@@ -578,22 +582,67 @@ Feature: PowerMax CSI interface
       And I call validateStoragePoolID <numberOfTimes> in parallel
       And I wait for the execution to complete
       Then no error was received
+      
+      Examples:
+      | numberOfTimes               |
+      | 2000                        |
 
-       Examples:
-       | numberOfTimes               |
-       | 2000                        |
-
-@v1.1.0
-     Scenario: Call ControllerExpandVolume, should get unimplemented
+@v1.4.0
+     Scenario Outline: Call ControllerExpandVolume
       Given a PowerMax service
-      When I call ControllerExpandVolume
-      Then the error contains "Unimplemented"
+      And I induce error <induced>
+      And a valid volume with size of 30 CYL
+      When I call ControllerExpandVolume with Capacity Range set to <nCYL>
+      Then the error contains <errormsg>
+      
+      Examples:
+      | induced              | nCYL          | errormsg                                  |
+      | "none"               | 0             | "Invalid argument"                        |
+      | "none"               | 2             | "bad capacity"                            |
+      | "none"               | 29            | "Attempting to shrink the volume size"    |
+      | "none"               | 30            | "none"                                    |
+      | "none"               | 24            | "bad capacity"                            |
+      | "none"               | 559242        | "bad capacity"                            |
+      | "none"               | 559241        | "none"                                    |
+      | "none"               | 32            | "none"                                    |
+      | "NoVolumeID"         | 2             | "malformed"                               |
+      | "ExpandVolumeError"  | 32            | "induced error"                           |
+      
 
-@v1.1.0
-     Scenario: Call NodeExpandVolume, should get unimplemented
+@v1.4.0
+  Scenario: Controller Expand without Probe 
+    Given a PowerMax service
+    And  a valid volume with size of 30 CYL
+    When I invalidate the Probe cache
+    When I call ControllerExpandVolume with Capacity Range set to 32
+    Then the error contains "Controller Service has not been probed"
+
+@v1.4.0
+     Scenario Outline: Call NodeExpandVolume
       Given a PowerMax service
-      When I call NodeExpandVolume
-      Then the error contains "Unimplemented"
+      And a valid volume
+      And I induce error <induced>
+      When I call NodeExpandVolume with volumePath as <volPath>
+      Then the error contains <errormsg>
+      
+      Examples:
+      | induced                                  | volPath                                          | errormsg                                   |
+      | "none"                                   | ""                                               | "Volume path required"                     |
+      | "none"                                   | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "none"                                     |
+      | "GOFSInduceGetMountInfoFromDeviceError"  | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to find mount information"         |
+      | "GOFSInduceDeviceRescanError"            | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to rescan device"                  |
+      | "GOFSInduceResizeMultipathError"         | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to resize multipath mount device"  |
+      | "GOFSInduceFSTypeError"                  | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to fetch filesystem"               |
+      | "GOFSInduceResizeFSError"                | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to resize device"                  |      
+      | "NoVolumeID"                             | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "malformed"                                |
+
+@v1.4.0
+  Scenario: Node Expand with a failed NodeProbe
+    Given a PowerMax service
+    And a valid volume
+    When I invalidate the NodeID
+    And I call NodeExpandVolume with volumePath as "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"
+    Then the error contains "Error getting NodeName from the environment"
 
 @v1.1.0
     Scenario: Create a block volume and block not enabled
@@ -608,10 +657,10 @@ Feature: PowerMax CSI interface
       And I call GetPortIdentifier <numberOfTimes> in parallel
       And I wait for the execution to complete
       Then no error was received
-
-       Examples:
-       | numberOfTimes               |
-       | 2000                        |
+      
+      Examples:
+      | numberOfTimes               |
+      | 2000                        |
 
 @v1.3.0
     Scenario Outline: Test ensureISCSIDaemonStarted function
@@ -674,3 +723,13 @@ Feature: PowerMax CSI interface
       And I have a Node "node1" with MaskingView
       When I call getAndConfigureArrayISCSITargets
       Then 2 targets are returned
+
+@v1.4.0
+    Scenario: Validate nodeHostSetup with temporary failure
+      Given a PowerMax service
+      And I set transport protocol to "FC"
+      And I induce error "GetHostError"
+      And I induce error "CreateHostError"
+      And I have a Node "Node1" with MaskingView
+      When I invoke nodeHostSetup with a "node" service
+      Then no error was received
