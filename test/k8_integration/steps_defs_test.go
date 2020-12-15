@@ -18,7 +18,7 @@ import (
 	"math/rand"
 	"strings"
 
-	"github.com/DATA-DOG/godog"
+	"github.com/cucumber/godog"
 )
 
 type feature struct {

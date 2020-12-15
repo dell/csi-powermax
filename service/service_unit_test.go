@@ -38,33 +38,6 @@ var mockedExitStatus = 0
 var mockedStdout string
 var debugUnitTest = false
 
-func TestDeletionQueue(t *testing.T) {
-	if delWorker == nil {
-		delWorker = new(deletionWorker)
-	}
-	cnt := 100
-	for i := 0; i < cnt; i++ {
-		var req deletionWorkerRequest
-		req.volumeID = fmt.Sprintf("ID %d", i)
-		req.volumeName = fmt.Sprintf("Name %d", i)
-		req.volumeSizeInCylinders = int64(rand.Int31() / 100)
-		delWorker.requestDeletion(&req)
-		req2 := req
-		req2.volumeID += fmt.Sprintf("%d", i)
-		req2.volumeName = req.volumeName + "XX"
-		delWorker.requestDeletion(&req2)
-	}
-	prev := int64(0)
-	for i := 0; i < cnt; i++ {
-		req := delWorker.removeItem()
-		//fmt.Printf("%d %d %s %s\n", req.volumeSizeInCylinders, req.priority, req.volumeID, req.volumeName)
-		if req.priority < prev {
-			t.Error(fmt.Sprintf("expected %d to be smaller than %d", req.priority, prev))
-		}
-		prev = req.priority
-	}
-}
-
 var counters = [60]int{}
 var testwg sync.WaitGroup
 

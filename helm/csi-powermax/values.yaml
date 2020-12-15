@@ -5,6 +5,45 @@ customDriverName:
   value: csi-powermax
   enabled: false
 
+# "defaultFsType" is used to set the default FS type which will be used
+# for mount volumes if FsType is not specified in the storage class
+defaultFsType: ext4
+
+# "controller" allows to configure controller specific parameters
+controller:
+  # "controller.nodeSelector" defines what nodes would be selected for pods of controller deployment
+  # Leave as blank to use all nodes
+  nodeSelector:
+  #   node-role.kubernetes.io/master: ""
+
+  # "controller.tolerations" defines tolerations that would be applied to controller deployment
+  # Leave as blank to install controller on worker nodes
+  tolerations:
+  #  - key: "node-role.kubernetes.io/master"
+  #    operator: "Exists"
+  #    effect: "NoSchedule"
+
+# "node" allows to configure node specific parameters
+node:
+  # "node.nodeSelector" defines what nodes would be selected for pods of node daemonset
+  # Leave as blank to use all nodes
+  nodeSelector:
+  #   node-role.kubernetes.io/master: ""
+
+  # "node.tolerations" defines tolerations that would be applied to node daemonset
+  # Add/Remove tolerations as per requirement
+  # Leave as blank if you wish to not apply any tolerations
+  tolerations:
+    - key: "node.kubernetes.io/memory-pressure"
+      operator: "Exists"
+      effect: "NoExecute"
+    - key: "node.kubernetes.io/disk-pressure"
+      operator: "Exists"
+      effect: "NoExecute"
+    - key: "node.kubernetes.io/network-unavailable"
+      operator: "Exists"
+      effect: "NoExecute"
+
 # "enableCHAP" determines if the driver is going to configure
 # ISCSI node databases on the nodes with the CHAP credentials
 # If enabled, the CHAP secret must be provided in the credentials secret
@@ -49,7 +88,7 @@ snapNamePrefix: pmsn
 
 # "controllerCount" defines the number of PowerMax controller nodes to deploy to
 # the Kubernetes release
-controllerCount: 1
+controllerCount: 2
 
 # "portGroups" defines the set of existing port groups that the driver will use.
 # It is a comma separated list of portgroup names.
@@ -108,3 +147,6 @@ storageClass:
 snapshotClass:
   name: powermax-snapclass
 
+# openshift tells the Helm chart that the installation is being done on a Red Hat OpenShift cluster
+# Don't modify this value as this value is overridden by the install script
+openshift: false
