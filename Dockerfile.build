@@ -52,7 +52,7 @@ ONBUILD RUN echo "Not a UBI minimal image"
 
 FROM trivy-${IMAGE_TYPE} as trivy
 RUN curl https://raw.githubusercontent.com/aquasecurity/trivy/master/contrib/install.sh | sh
-RUN GITHUB_TOKEN=e2e0f199299a9074d0a402d907418d8e1ec40846 trivy fs -s CRITICAL --exit-code 1 / && \
+RUN trivy fs -s CRITICAL --exit-code 1 / && \
     trivy fs -s HIGH /
 
 # final stage
