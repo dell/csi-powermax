@@ -59,7 +59,7 @@ unisphere: https://127.0.0.1:8443
 csireverseproxy:
   # Set enabled to true if you want to use proxy
   # the only supported mode is "Linked"
-  image: dellemc/csipowermax-reverseproxy:v1.0.0.000R
+  image: dellemc/csipowermax-reverseproxy:v1.1.0.000R
   enabled: false
   port: 2222
   primary:
