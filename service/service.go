@@ -120,8 +120,9 @@ type service struct {
 	// amount of time to retry unisphere calls
 	pmaxTimeoutSeconds int64
 	// replace this with Unisphere client
-	adminClient pmax.Pmax
-	iscsiClient goiscsi.ISCSIinterface
+	adminClient    pmax.Pmax
+	deletionWorker *deletionWorker
+	iscsiClient    goiscsi.ISCSIinterface
 	// replace this with Unisphere system if needed
 	system            *interface{}
 	privDir           string
@@ -150,6 +151,7 @@ func New() Service {
 		loggedInArrays: map[string]bool{},
 	}
 	svc.sgSvc = newStorageGroupService(svc)
+	svc.pmaxTimeoutSeconds = defaultPmaxTimeout
 	return svc
 }
 
@@ -202,9 +204,8 @@ func (s *service) BeforeServe(
 	if lockWorker == nil {
 		lockWorker = new(lockWorkers)
 	}
-	s.pmaxTimeoutSeconds = defaultPmaxTimeout
 	s.storagePoolCacheDuration = StoragePoolCacheDuration
-	// Get the SP's operating mode.
+	// get the SP's operating mode.
 	s.mode = csictx.Getenv(ctx, gocsi.EnvVarMode)
 
 	opts := Opts{}
@@ -369,10 +370,11 @@ func (s *service) BeforeServe(
 	// Start the deletion worker thread
 	log.Printf("s.mode: %s\n", s.mode)
 	if !strings.EqualFold(s.mode, "node") {
-		s.startDeletionWorker(!opts.NonDefaultRetries)
-		if delWorker == nil {
-			delWorker = new(deletionWorker)
+		symIDs, err := s.adminClient.GetSymmetrixIDList()
+		if err != nil {
+			return err
 		}
+		s.NewDeletionWorker(s.opts.ClusterPrefix, symIDs.SymmetrixIDs, s.adminClient)
 	}
 
 	// Start the snapshot housekeeping worker thread
@@ -507,7 +509,7 @@ func (s *service) createPowerMaxClient() error {
 			if err == nil {
 				break
 			}
-			time.Sleep(delayBetweenRetries)
+			time.Sleep(10 * time.Second)
 		}
 		if err != nil {
 			s.adminClient = nil

@@ -20,10 +20,11 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/DATA-DOG/godog"
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/cucumber/godog"
 	service "github.com/dell/csi-powermax/service"
 	pmax "github.com/dell/gopowermax"
 	ptypes "github.com/golang/protobuf/ptypes"
@@ -64,6 +65,7 @@ type feature struct {
 	serviceLevel             string
 	pmaxClient               pmax.Pmax
 	publishVolumeContextMap  map[string]map[string]string
+	lockMutex                sync.Mutex
 	idempotentTest           bool
 	snapIDList               []string
 }
@@ -417,6 +419,8 @@ func (f *feature) controllerPublishVolume(id string, nodeIDEnvVar string) error 
 		fmt.Printf("Controller PublishVolume retry: %s\n", err.Error())
 		time.Sleep(RetrySleepTime)
 	}
+	f.lockMutex.Lock()
+	defer f.lockMutex.Unlock()
 	f.publishVolumeContextMap[id] = resp.GetPublishContext()
 	f.publishVolumeResponse = resp
 	return err
@@ -563,6 +567,8 @@ func (f *feature) nodeStageVolume(id string, path string) error {
 	}
 	req := &csi.NodeStageVolumeRequest{}
 	req.VolumeId = id
+	f.lockMutex.Lock()
+	defer f.lockMutex.Unlock()
 	req.PublishContext = f.publishVolumeContextMap[id]
 	req.StagingTargetPath = path
 	req.VolumeCapability = f.capability
@@ -611,6 +617,8 @@ func (f *feature) nodePublishVolume(id string, path string) error {
 		}
 	}
 	req.VolumeId = id
+	f.lockMutex.Lock()
+	defer f.lockMutex.Unlock()
 	req.PublishContext = f.publishVolumeContextMap[id]
 	ctx := context.Background()
 	client := csi.NewNodeClient(grpcClient)

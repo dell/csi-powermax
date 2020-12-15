@@ -1,3 +1,46 @@
+{{- if eq .Values.openshift true }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-node
+  namespace: {{ .Release.Namespace }}
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  {{- if eq .Values.customDriverName.enabled true}}
+  name: {{ printf "%s-%s-node" .Release.Namespace .Values.customDriverName.value }}
+  {{- else }}
+  name: {{ .Release.Name }}-node
+  {{- end }}
+rules:
+  - apiGroups: ["security.openshift.io"]
+    resources: ["securitycontextconstraints"]
+    resourceNames: ["privileged"]
+    verbs: ["use"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  {{- if eq .Values.customDriverName.enabled true}}
+  name: {{ printf "%s-%s-node" .Release.Namespace .Values.customDriverName.value }}
+  {{- else }}
+  name: {{ .Release.Name }}-node
+  {{- end }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-node
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  {{- if eq .Values.customDriverName.enabled true}}
+  name: {{ printf "%s-%s-node" .Release.Namespace .Values.customDriverName.value }}
+  {{- else }}
+  name: {{ .Release.Name }}-node
+  {{- end }}
+  apiGroup: rbac.authorization.k8s.io
+---
+{{ end}}
 kind: DaemonSet
 apiVersion: apps/v1
 metadata:
@@ -12,19 +55,20 @@ spec:
       labels:
         app: {{ .Release.Name }}-node
     spec:
+      {{- if eq .Values.openshift true }}
+      serviceAccountName: {{ .Release.Name }}-node
+      {{ end }}
+      {{ if .Values.node.nodeSelector }}
+      nodeSelector:
+      {{- toYaml .Values.node.nodeSelector | nindent 8 }}
+      {{ end }}
+      {{ if .Values.node.tolerations }}
       tolerations:
-        - key: "node.kubernetes.io/memory-pressure"
-          operator: "Exists"
-          effect: "NoExecute"
-        - key: "node.kubernetes.io/disk-pressure"
-          operator: "Exists"
-          effect: "NoExecute"
-        - key: "node.kubernetes.io/network-unavailable"
-          operator: "Exists"
-          effect: "NoExecute"
+      {{- toYaml .Values.node.tolerations | nindent 6 }}
+      {{ end }}
       hostIPC: true
       hostNetwork: true
-      containers:  
+      containers:
         - name: driver
           securityContext:
             privileged: true
@@ -112,6 +156,8 @@ spec:
               value: {{ .Values.nodeNameTemplate | default "" }}
             - name: X_CSI_IG_MODIFY_HOSTNAME
               value: {{ .Values.modifyHostName | default "false" | lower | quote }}
+            - name: X_CSI_POWERMAX_PORTGROUPS
+              value: {{ .Values.portGroups | toJson }}
           volumeMounts:
             - name: driver-path
               mountPath: /var/lib/kubelet/plugins/powermax.emc.dell.com

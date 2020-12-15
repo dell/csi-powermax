@@ -18,7 +18,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/DATA-DOG/godog"
+	"github.com/cucumber/godog"
 )
 
 func TestMain(m *testing.M) {

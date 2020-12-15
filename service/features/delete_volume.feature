@@ -86,11 +86,11 @@ Feature: PowerMax CSI interface
 
 	Examples:
 	| induced                      | errormsg                                                         |
+	| "NoVolumeID"                 | "none"                                                           |
+	| "InvalidVolumeID"            | "none"                                                           |
 	| "UpdateVolumeError"          | "Failed to rename volume"                                        |
 	| "GetStorageGroupError"       | "Unable to find storage group"                                   |
 	| "GetVolumeError"             | "Could not retrieve volume"                                      |
-	| "NoVolumeID"                 | "none"                                                           |
-	| "InvalidVolumeID"            | "none"                                                           |
 
 @delete
 @v1.0.0
@@ -117,6 +117,21 @@ Feature: PowerMax CSI interface
 
 	Examples:
 	| num  |induced                                | errormsg                                     |
-	| 5    |"GetSymmetrixError"                    | "Could not retrieve SymmetrixID list"        |
 	| 5    |"GetVolumeIteratorError"               | "none"                                       |
 	| 5    |"GetVolumeError"                       | "none"                                       |
+
+@delete
+@v1.5.0
+	Scenario: Deletion Worker deletes a Volume with Temp Snapshot
+	Given a PowerMax service
+	Given a PowerMax service
+	And I call CreateVolume "volume1"
+	And a valid CreateVolumeResponse is returned
+	And I call CreateSnapshot "snapshot1" on "volume1"
+	And a valid CreateSnapshotResponse is returned
+	And I call CreateVolume "volume2"
+	And a valid CreateVolumeResponse is returned
+	And I call ExecSnapAction to "Link" snapshot "snapshot1" to "volume2"
+	When I queue "volume1" for deletion
+	And I queue "volume2" for deletion
+	Then deletion worker processes "volume1" which results in "none"

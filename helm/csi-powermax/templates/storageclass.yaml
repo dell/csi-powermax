@@ -4,6 +4,7 @@ metadata:
   name: {{ required "Must provide a storage class name." .Values.storageClass.name}}
   annotations:
     storageclass.beta.kubernetes.io/is-default-class: {{ .Values.storageClass.isDefault | quote }}
+    "helm.sh/resource-policy": keep
 {{- if eq .Values.customDriverName.enabled true}}
 provisioner: {{ printf "%s.%s.dellemc.com" .Release.Namespace .Values.customDriverName.value }}
 {{- else }}

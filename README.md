@@ -1,4 +1,9 @@
 # CSI Driver for Dell EMC PowerMax
+[![Go Report Card](https://goreportcard.com/badge/github.com/dell/csi-powermax)](https://goreportcard.com/report/github.com/dell/csi-powermax)
+[![License](https://img.shields.io/github/license/dell/csi-powermax)](https://github.com/dell/csi-powermax/blob/master/LICENSE)
+[![Docker](https://img.shields.io/docker/pulls/dellemc/csi-powermax.svg?logo=docker)](https://hub.docker.com/r/dellemc/csi-powermax)
+[![Last Release](https://img.shields.io/github/v/release/dell/csi-powermax?label=latest&style=flat-square)](https://github.com/dell/csi-powermax/releases)
+
 **Repository for CSI Driver for Dell EMC PowerMax development project**
 
 ## Description

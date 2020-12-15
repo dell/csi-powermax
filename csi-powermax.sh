@@ -10,4 +10,4 @@ else
     fi
     [ -e $socket_file ] && rm $socket_file
 fi
-exec "/csi-powermax"
+exec "/csi-powermax" "$@"
