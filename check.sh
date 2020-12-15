@@ -15,7 +15,7 @@ fmt_count() {
 }
 
 fmt() {
-    gofmt -d ./service ./csireverseproxy ./test/k8_integration | tee $FMT_TMPFILE
+    gofmt -d ./service ./csireverseproxy ./k8sutils ./test/k8_integration | tee $FMT_TMPFILE
     cat $FMT_TMPFILE | wc -l > $FMT_COUNT_TMPFILE
     if [ ! `cat $FMT_COUNT_TMPFILE` -eq "0" ]; then
         echo Found `cat $FMT_COUNT_TMPFILE` formatting issue\(s\).
@@ -29,7 +29,7 @@ FMT_RETURN_CODE=$?
 echo === Finished
 
 echo === Vetting csi-powermax
-CGO_ENABLED=0 go vet ${MOD_FLAGS} ./service/... ./test/k8_integration/...
+CGO_ENABLED=0 go vet ${MOD_FLAGS} ./service/... ./k8sutils/... ./test/k8_integration/...
 VET_RETURN_CODE=$?
 echo === Finished
 

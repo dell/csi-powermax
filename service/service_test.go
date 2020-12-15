@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DATA-DOG/godog"
+	"github.com/cucumber/godog"
 )
 
 var (
@@ -51,7 +51,7 @@ func TestGoDog(t *testing.T) {
 	}, godog.Options{
 		Format: "pretty",
 		Paths:  []string{"features"},
-		Tags:   "v1.0.0, v1.1.0, v1.2.0, v1.3.0, v1.4.0",
+		Tags:   "v1.0.0, v1.1.0, v1.2.0, v1.3.0, v1.4.0, v1.5.0",
 		//Tags:   "wip",
 	})
 	fmt.Printf("godog finished\n")

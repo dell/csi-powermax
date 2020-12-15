@@ -31,9 +31,9 @@ import (
 	pmax "github.com/dell/gopowermax"
 	mock "github.com/dell/gopowermax/mock"
 
-	"github.com/DATA-DOG/godog"
-	"github.com/DATA-DOG/godog/gherkin"
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/cucumber/godog"
+	"github.com/cucumber/messages-go/v10"
 	"github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
 	ptypes "github.com/golang/protobuf/ptypes"
@@ -161,6 +161,7 @@ type feature struct {
 	maxRetryCount                        int
 	failedSnaps                          map[string]failedSnap
 	doneChan                             chan bool
+	fcArray                              string
 }
 
 var inducedErrors struct {
@@ -195,7 +196,7 @@ func (f *feature) checkGoRoutines(tag string) {
 }
 
 func (f *feature) aPowerMaxService() error {
-	// Print the duration of the last operation so we can tell which tests are slow
+	// print the duration of the last operation so we can tell which tests are slow
 	now := time.Now()
 	if f.lastTime.IsZero() {
 		dur := now.Sub(testStartTime)
@@ -333,7 +334,7 @@ func (f *feature) aPowerMaxService() error {
 	// configure variables in the driver
 	getMappedVolMaxRetry = 1
 
-	// Get or reuse the cached service
+	// get or reuse the cached service
 	f.getService()
 	f.service.storagePoolCacheDuration = 4 * time.Hour
 	f.service.SetPmaxTimeoutSeconds(3)
@@ -347,7 +348,7 @@ func (f *feature) aPowerMaxService() error {
 	goiscsi.GOISCSIMock.InduceRescanError = false
 	goiscsi.GOISCSIMock.InduceSetCHAPError = false
 
-	// Get the httptest mock handler. Only set
+	// get the httptest mock handler. Only set
 	// a new server if there isn't one already.
 	handler := mock.GetHandler()
 	if handler != nil {
@@ -366,10 +367,13 @@ func (f *feature) aPowerMaxService() error {
 	// Start the lock workers
 	f.service.StartLockManager(1 * time.Minute)
 	// Make sure the deletion worker is started.
-	f.service.startDeletionWorker(false)
+	//f.service.startDeletionWorker(false)
 	f.checkGoRoutines("end aPowerMaxService")
-	delWorker.Queue = make(deletionWorkerQueue, 0)
-	delWorker.CompletedRequests = make(deletionWorkerQueue, 0)
+	symIDs, err := f.service.adminClient.GetSymmetrixIDList()
+	if err != nil {
+		return err
+	}
+	f.service.NewDeletionWorker(f.service.opts.ClusterPrefix, symIDs.SymmetrixIDs, f.service.adminClient)
 	f.errType = ""
 	return nil
 }
@@ -851,8 +855,6 @@ func (f *feature) iInduceError(errtype string) error {
 		mock.InducedErrors.CreateSnapshotError = true
 	case "DeleteSnapshotError":
 		mock.InducedErrors.DeleteSnapshotError = true
-	case "RenameSnapshotError":
-		mock.InducedErrors.RenameSnapshotError = true
 	case "LinkSnapshotError":
 		mock.InducedErrors.LinkSnapshotError = true
 	case "SnapshotNotLicensed":
@@ -1486,6 +1488,13 @@ func (f *feature) aValidNodeGetInfoResponseIsReturned() error {
 	if f.nodeGetInfoResponse.MaxVolumesPerNode != 0 {
 		return errors.New("expected NodeGetInfoResponse MaxVolumesPerNode to be 0")
 	}
+	if f.nodeGetInfoResponse.AccessibleTopology == nil {
+		return errors.New("no topology keys created")
+	} else if f.fcArray != "" {
+		if _, ok := f.nodeGetInfoResponse.AccessibleTopology.Segments[f.service.getDriverName()+"/"+f.fcArray+"."+strings.ToLower(FcTransportProtocol)]; !ok {
+			return errors.New("toplogy keys not created properly")
+		}
+	}
 	fmt.Printf("NodeID %s\n", f.nodeGetInfoResponse.NodeId)
 	return nil
 }
@@ -1633,7 +1642,7 @@ func (f *feature) iCallControllerGetCapabilities() error {
 // format:
 // | max_entries | starting_token |
 // | <number>    | <string>       |
-func parseListVolumesTable(dt *gherkin.DataTable) (int32, string, error) {
+func parseListVolumesTable(dt *messages.PickleStepArgument_PickleTable) (int32, string, error) {
 	if c := len(dt.Rows); c != 2 {
 		return 0, "", fmt.Errorf("expected table with header row and single value row, got %d row(s)", c)
 	}
@@ -1664,12 +1673,12 @@ func parseListVolumesTable(dt *gherkin.DataTable) (int32, string, error) {
 // iCallListVolumesAgainWith nils out the previous request before delegating
 // to iCallListVolumesWith with the same table data.  This simulates multiple
 // calls to ListVolume for the purpose of testing the pagination token.
-func (f *feature) iCallListVolumesAgainWith(dt *gherkin.DataTable) error {
+func (f *feature) iCallListVolumesAgainWith(dt *messages.PickleStepArgument_PickleTable) error {
 	f.listVolumesRequest = nil
 	return f.iCallListVolumesWith(dt)
 }
 
-func (f *feature) iCallListVolumesWith(dt *gherkin.DataTable) error {
+func (f *feature) iCallListVolumesWith(dt *messages.PickleStepArgument_PickleTable) error {
 	maxEntries, startingToken, err := parseListVolumesTable(dt)
 	if err != nil {
 		return err
@@ -2577,69 +2586,63 @@ func (f *feature) iQueueForDeletion(volumeName string) error {
 	if volumeID == "" {
 		return fmt.Errorf("Could not find volumeID for volume %s", volumeName)
 	}
-	_, arrayID, devID, _ := f.service.parseCsiID(volumeID)
-	var volumeSize float64
-	if vol, ok := mock.Data.VolumeIDToVolume[devID]; ok {
-		volumeSize = vol.CapacityGB
-	} else {
-		return fmt.Errorf("Could not find devID for volume %s", volumeName)
-	}
-	// Fetch the uCode version details
-	isPostElmSR, err := f.service.isPostElmSR(arrayID)
-	if err != nil {
-		log.Error("Failed to get symmetrix uCode version details")
-		return fmt.Errorf("Failed to fetch uCode version details")
-	}
-	//volumeSize := mock.Data.VolumeIDToVolume[devID].CapacityGB
-	req := &deletionWorkerRequest{
-		symmetrixID:           arrayID,
-		volumeID:              devID,
-		volumeName:            "csi-" + f.service.opts.ClusterPrefix + "-" + volumeName,
-		volumeSizeInCylinders: int64(volumeSize),
-		skipDeallocate:        isPostElmSR,
-	}
-	delWorker.requestDeletion(req)
+	_, arrayID, _, _ := f.service.parseCsiID(volumeID)
+	_, _, vol, _ := f.service.GetVolumeByID(volumeID)
+	_ = f.service.MarkVolumeForDeletion(arrayID, vol)
+	// go f.service.deletionWorker.deletionWorker()
 	return nil
 }
 
 func (f *feature) deletionWorkerProcessesWhichResultsIn(volumeName, errormsg string) error {
-	volumeName = "csi-" + f.service.opts.ClusterPrefix + "-" + volumeName
+	volumeID := f.volumeNameToID[volumeName]
+	if volumeID == "" {
+		return fmt.Errorf("Could not find volumeID for volume %s", volumeName)
+	}
+	volumeName = DeletionPrefix + "csi-" + f.service.opts.ClusterPrefix + "-" + volumeName
+	_, arrayID, _, _ := f.service.parseCsiID(volumeID)
 	// wait until the job completes
 	for i := 1; i < 20; i++ {
-		if delWorker == nil {
+		if f.service.deletionWorker == nil {
 			return fmt.Errorf("delWorker nil")
 		}
-		// Look for the volumeName in the CompletedRequests
-		for _, req := range delWorker.CompletedRequests {
-			fmt.Printf("CompletedRequest: %#v\n", req)
-			if req != nil && req.volumeName == volumeName {
-				// Found the volume
+		for _, vol := range f.service.deletionWorker.DeletionQueues[arrayID].DeviceList {
+			if volumeName == vol.VolumeIdentifier {
+				// We expected an error
 				if errormsg == "none" {
-					if req.err == nil {
+					if vol.Status.ErrorMsgs == nil {
 						return nil
 					}
-					return fmt.Errorf("Expected no error but got: %s", req.err.Error())
+					return fmt.Errorf("Expected no error but got: %v", vol.Status.ErrorMsgs)
 				}
 				// We expected an error
-				if req.err == nil {
+				if vol.Status.ErrorMsgs == nil {
 					return fmt.Errorf("Expected error %s but got none", errormsg)
 				}
-				if !strings.Contains(req.err.Error(), errormsg) {
-					return fmt.Errorf("Expected error to contain %s: but got: %s", errormsg, req.err.Error())
+				if !hasError(vol.Status.ErrorMsgs, errormsg) {
+					return fmt.Errorf("Expected error to contain %s: but got: %s", errormsg, vol.Status.ErrorMsgs)
 				}
 				return nil
 			}
 		}
 		time.Sleep(3 * time.Second)
 	}
-	return fmt.Errorf("timed out looking for CompletedRequest for volume: %s", volumeName)
+	return fmt.Errorf("timed out looking for status for volume: %s", volumeName)
+}
+
+func hasError(errors []string, expectedErrormsg string) bool {
+	for _, msg := range errors {
+		if strings.EqualFold(expectedErrormsg, msg) {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *feature) existingVolumesToBeDeleted(nvols int) error {
 	mock.AddStorageGroup(defaultStorageGroup, "SRP_1", "Diamond")
 	for i := 0; i < nvols; i++ {
 		id := fmt.Sprintf("0000%d", i)
-		mock.AddOneVolumeToStorageGroup(id, volDeleteKey+"-"+f.service.getClusterPrefix()+id, defaultStorageGroup, 8)
+		mock.AddOneVolumeToStorageGroup(id, DeletionPrefix+"csi"+"-"+f.service.getClusterPrefix()+id, defaultStorageGroup, 8)
 		resourceLink := fmt.Sprintf("sloprovisioning/system/%s/volume/%s", f.symmetrixID, id)
 		job := mock.NewMockJob("job"+id, types.JobStatusRunning, types.JobStatusRunning, resourceLink)
 		job.Job.Status = types.JobStatusRunning
@@ -2648,34 +2651,45 @@ func (f *feature) existingVolumesToBeDeleted(nvols int) error {
 }
 
 func (f *feature) iRepopulateTheDeletionQueues() error {
-	// Add a goroutine to the wait group as populateDeletionQueuesThread calls a "Done" on the waitgroup
-	f.service.waitGroup.Add(1)
-	f.err = f.service.runPopulateDeletionQueuesThread()
+	f.service.deletionWorker.populateDeletionQueue()
 	return nil
 }
 
 func (f *feature) iRestartTheDeletionWorker() error {
-	f.err = f.service.startDeletionWorker(false)
+	f.service.deletionWorker = nil
+	symIDs, err := f.service.adminClient.GetSymmetrixIDList()
+	if err != nil {
+		return err
+	}
+	f.service.NewDeletionWorker(f.service.opts.ClusterPrefix, symIDs.SymmetrixIDs, f.service.adminClient)
 	return nil
+
 }
 
 func (f *feature) volumesAreBeingProcessedForDeletion(nVols int) error {
 	if f.err != nil {
 		return nil
 	}
-	// Wait for the goroutine which populates the deletion queue
-	f.service.waitGroup.Wait()
+	retry := 5
 	// Count the number of volumes in the delWorker queue
 	cnt := 0
-	for i := 0; i < len(delWorker.Queue); i++ {
-		fmt.Printf("%s\n", delWorker.Queue[i].symmetrixID)
-		if delWorker.Queue[i].symmetrixID == f.symmetrixID {
-			cnt++
+	for retryno := 0; retryno < retry; retryno++ {
+		for _, dQ := range f.service.deletionWorker.DeletionQueues {
+			if dQ.DeviceList != nil {
+				dQ.Print()
+				cnt = cnt + len(dQ.DeviceList)
+				break
+			}
 		}
+		if cnt > 0 {
+			break
+		}
+		time.Sleep(time.Second * 1)
 	}
 	if cnt < (nVols-2) || cnt > nVols {
 		return fmt.Errorf("Expected at least %d volumes and not more than %d volumes in deletion queue but got %d", nVols-2, nVols, cnt)
 	}
+	fmt.Println("Expected count reached")
 	return nil
 }
 
@@ -2768,7 +2782,7 @@ func (f *feature) iInvokeNodeHostSetupWithAService(mode string) error {
 	fcInitiators := []string{defaultFcInitiator}
 	symmetrixIDs := []string{f.symmetrixID}
 	f.service.mode = mode
-	f.service.SetPmaxTimeoutSeconds(30)
+	f.service.SetPmaxTimeoutSeconds(10)
 	f.err = f.service.nodeHostSetup(fcInitiators, iscsiInitiators, symmetrixIDs)
 	return nil
 }
@@ -3329,49 +3343,6 @@ func (f *feature) iResetTheLicenseCache() error {
 	return nil
 }
 
-func (f *feature) iCallMarkSnapshotForDeletion() error {
-	snapshotName, arrayID, deviceID, err := f.service.parseCsiID(f.createSnapshotResponse.GetSnapshot().GetSnapshotId())
-	if err != nil {
-		f.err = err
-		return nil
-	}
-	newSnapID, err := f.service.MarkSnapshotForDeletion(arrayID, snapshotName, deviceID)
-	f.createSnapshotResponse.Snapshot.SnapshotId = newSnapID
-	if err != nil {
-		f.err = err
-		return nil
-	}
-	fmt.Printf("Snapshot(%s) marked for deletion as %s \n", snapshotName, newSnapID)
-	return nil
-}
-
-func (f *feature) iCheckIfTheSnapshotHasBeenDeleted() error {
-	MAXRETRIES := 5
-	var snapshot *types.VolumeSnapshot
-	for i := 0; i < MAXRETRIES; i++ {
-		_, symID, deviceID, err := f.service.parseCsiID(f.createVolumeResponse.Volume.VolumeId)
-		if err != nil {
-			f.err = err
-			return nil
-		}
-		snapshot, err = f.service.adminClient.GetSnapshotInfo(symID, deviceID, f.createSnapshotResponse.Snapshot.SnapshotId)
-		if err != nil {
-			f.err = err
-			return nil
-		}
-		if snapshot.VolumeSnapshotSource == nil {
-			return nil
-		}
-		if i < MAXRETRIES-1 {
-			time.Sleep(time.Second * 1)
-		}
-	}
-	if snapshot.VolumeSnapshotSource != nil {
-		f.err = fmt.Errorf("Snapshot not deleted by the worker")
-	}
-	return nil
-}
-
 func (f *feature) iCallIsSnapshotSource() error {
 	var arrayID, deviceID string
 	if f.createSnapshotResponse != nil {
@@ -3693,6 +3664,18 @@ func (f *feature) iCallBuildHostIDFromTemplateForNodeHost(node string) error {
 	return nil
 }
 
+func (f *feature) iAddFCArrayToProtocolMap() error {
+	arrays, err := f.service.retryableGetSymmetrixIDList()
+	if err != nil {
+		return err
+	}
+	if len(arrays.SymmetrixIDs) > 0 {
+		f.fcArray = arrays.SymmetrixIDs[0]
+	}
+	f.service.arrayTransportProtocolMap[f.fcArray] = FcTransportProtocol
+	return nil
+}
+
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -3863,8 +3846,6 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^a non-existent volume$`, f.aNonexistentVolume)
 	s.Step(`^no volume source$`, f.noVolumeSource)
 	s.Step(`^I reset the license cache$`, f.iResetTheLicenseCache)
-	s.Step(`^I call MarkSnapshotForDeletion$`, f.iCallMarkSnapshotForDeletion)
-	s.Step(`^I check if the snapshot has been deleted$`, f.iCheckIfTheSnapshotHasBeenDeleted)
 	s.Step(`^I call IsSnapshotSource$`, f.iCallIsSnapshotSource)
 	s.Step(`^I call DeleteSnapshot with "([^"]*)"$`, f.iCallDeleteSnapshotWith)
 	s.Step(`^IsSnapshotSource returns "([^"]*)"$`, f.isSnapshotSourceReturns)
@@ -3888,4 +3869,6 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I set ModifyHostName to true$`, f.iSetModifyHostNameToTrue)
 	s.Step(`^I have a NodeNameTemplate "([^"]*)"$`, f.iHaveANodeNameTemplate)
 	s.Step(`^I call buildHostIDFromTemplate for node "([^"]*)"$`, f.iCallBuildHostIDFromTemplateForNodeHost)
+	s.Step(`^I add FC array to ProtocolMap$`, f.iAddFCArrayToProtocolMap)
+
 }

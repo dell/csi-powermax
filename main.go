@@ -17,6 +17,11 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
+	"github.com/dell/csi-powermax/k8sutils"
+	"os"
+	"strings"
 
 	"github.com/dell/csi-powermax/provider"
 	"github.com/dell/csi-powermax/service"
@@ -25,12 +30,27 @@ import (
 
 // main is ignored when this package is built as a go plug-in
 func main() {
-	gocsi.Run(
-		context.Background(),
-		service.Name,
-		"A PowerMax Container Storage Interface (CSI) Plugin",
-		usage,
-		provider.New())
+	enableLeaderElection := flag.Bool("leader-election", false, "boolean to enable leader election")
+	leaderElectionNamespace := flag.String("leader-election-namespace", "", "namespace where leader election lease will be created")
+	kubeconfig := flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+	flag.Parse()
+	run := func(ctx context.Context) {
+		gocsi.Run(ctx, service.Name, "A PowerMax Container Storage Interface (CSI) Plugin",
+			usage, provider.New())
+	}
+	if !*enableLeaderElection {
+		run(context.TODO())
+	} else {
+		driverName := strings.Replace(service.Name, ".", "-", -1)
+		lockName := fmt.Sprintf("driver-%s", driverName)
+		k8sclientset, err := k8sutils.CreateKubeClientSet(*kubeconfig)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "failed to initialize leader election: %v", err)
+			os.Exit(1)
+		}
+		// Attempt to become leader and start the driver
+		k8sutils.LeaderElection(k8sclientset, lockName, *leaderElectionNamespace, run)
+	}
 }
 
 const usage = `    X_CSI_POWERMAX_ENDPOINT

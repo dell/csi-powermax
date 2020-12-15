@@ -83,7 +83,6 @@ Feature: PowerMax CSI interface
      | "InvalidServiceLevel"               | "An invalid Service Level parameter was specified" |
 
 @delete
-@v1.0.0
      Scenario Outline: Delete volume worker scenarios
       Given a PowerMax service
       And I call CreateVolumeSize "volume7" "50"
@@ -102,49 +101,7 @@ Feature: PowerMax CSI interface
      | "DeleteVolumeError"                 | "Error deleting Volume: induced error"             |
 
 @delete
-@v1.1.0
-     Scenario Outline: Delete volume worker scenarios for post ELM SR arrays
-      Given a PowerMax service
-      And a PostELMSR Array
-      And I call CreateVolumeSize "volume7" "50"
-      And I induce error <induced>
-      And I queue "volume7" for deletion
-      Then deletion worker processes "volume7" which results in <errormsg>
-
-     Examples:
-     | induced                             | errormsg                                                                       |
-     | "none"                              | "none"                                                                         |
-     | "GetVolumeError"                    | "Error retrieving Volume: induced error"                                       |
-     | "GetStorageGroupError"              | "Error retrieving Storage Group(s): induced error"                             |
-     | "UpdateStorageGroupError"           | "Error updating Storage Group: induced error"                                  |
-     | "DeleteVolumeError"                 | "Error deleting Volume: induced error"                                         |
-     | "DeviceInSGError"                   | "Error deleting Volume: induced error - device is a member of a storage group" |
-
-@delete
-@v1.1.0
-     Scenario Outline: Delete volume worker scenarios for post ELM SR arrays
-      Given a PowerMax service
-      And a PostELMSR Array
-      And I call CreateVolumeSize "volume7" "50"
-      And I induce error <induced>
-      And the error clears after <numberOfSeconds> seconds
-      And I queue "volume7" for deletion
-      Then deletion worker processes "volume7" which results in <errormsg>
-      Then I ensure the error is cleared
-      And no error was received
-
-     Examples:
-     | induced                             | numberOfSeconds   | errormsg                                                                       |
-     | "GetStorageGroupError"              | 3                 | "none"                                                                         |
-     | "GetStorageGroupError"              | 10                | "Error retrieving Storage Group(s): induced error"                             |
-     | "UpdateStorageGroupError"           | 3                 | "none"                                                                         |
-     | "DeleteVolumeError"                 | 5                 | "none"                                                                         |
-     | "DeleteVolumeError"                 | 18                | "Error deleting Volume: induced error"                                         |
-     | "DeviceInSGError"                   | 5                 | "none"                                                                         |
-     | "DeviceInSGError"                   | 15                | "Error deleting Volume: induced error - device is a member of a storage group" |
-
-@delete
-@v1.0.0
+#@v1.0.0
    Scenario: Deletion worker receives volume in masking view
      Given a PowerMax service
      And I call CreateVolume "volume1"
@@ -268,6 +225,13 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Call NodeGetInfo and validate NodeId
       Given a PowerMax service
+      When I call NodeGetInfo
+      Then a valid NodeGetInfoResponse is returned
+
+@v1.5.0
+     Scenario: Call NodeGetInfo and validate NodeId
+      Given a PowerMax service
+      And I add FC array to ProtocolMap
       When I call NodeGetInfo
       Then a valid NodeGetInfoResponse is returned
 

@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DATA-DOG/godog"
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/cucumber/godog"
 	"github.com/dell/csi-powermax/provider"
 	"github.com/dell/csi-powermax/service"
 	"github.com/rexray/gocsi/utils"
@@ -69,11 +69,12 @@ func TestMain(m *testing.M) {
 	if st := m.Run(); st > exitVal {
 		exitVal = st
 	}
-
+	write, err := os.Create("powermax_integration_testresults.xml")
 	godogExit := godog.RunWithOptions("godog", func(s *godog.Suite) {
 		FeatureContext(s)
 	}, godog.Options{
-		Format: "pretty",
+		Output: write,
+		Format: "junit",
 		Paths:  []string{"features"},
 		Tags:   "@v1.0.0,@v1.1.0,@v1.2.0,@v1.4.0",
 	})
@@ -94,6 +95,22 @@ func TestIdentityGetPluginInfo(t *testing.T) {
 		t.Error("GetPluginInfo failed")
 	} else {
 		fmt.Printf("testing GetPluginInfo passed: %s\n", info.GetName())
+	}
+}
+
+func TestNodeGetInfo(t *testing.T) {
+	ctx := context.Background()
+	fmt.Printf("testing NodeGetInfo\n")
+	client := csi.NewNodeClient(grpcClient)
+	info, err := client.NodeGetInfo(ctx, &csi.NodeGetInfoRequest{})
+	if err != nil {
+		fmt.Printf("NodeGetInfo %s:\n", err.Error())
+		t.Error("NodeGetInfo failed")
+	} else {
+		if info.AccessibleTopology == nil {
+			t.Error("NodeGetInfo failed, no topology keys found")
+		}
+		fmt.Printf("testing NodeGetInfo passed:\n %+v\n", info)
 	}
 }
 

@@ -75,6 +75,7 @@ const (
 	PublishContextLUNAddress        = "LUN_ADDRESS"
 	PortIdentifiers                 = "PORT_IDENTIFIERS"
 	PortIdentifierKeyCount          = "PORT_IDENTIFIER_KEYS"
+	MaxPortIdentifierLength         = 128
 	FCSuffix                        = "-FC"
 	PGSuffix                        = "PG"
 	notFound                        = "not found"       // error message from s.GetVolumeByID when volume not found
@@ -527,6 +528,7 @@ func (s *service) CreateVolume(
 	csiResp := &csi.CreateVolumeResponse{
 		Volume: volResp,
 	}
+	log.WithFields(fields).Infof("Created volume with ID: %s", volResp.VolumeId)
 	return csiResp, nil
 }
 
@@ -1086,36 +1088,33 @@ func (s *service) updatePublishContext(publishContext map[string]string, symID, 
 	}
 
 	portIdentifiers := ""
-	portIdsToTrace := ""
-	keyCount := 1
-	portCount := 0
-	portIdentifierKey := fmt.Sprintf("%s_%d", PortIdentifiers, keyCount)
+
 	for _, dirPortKey := range dirPorts {
 		portIdentifier, err := s.GetPortIdentifier(symID, dirPortKey)
 		if err != nil {
 			log.Errorf("PublishContext: Failed to fetch port details %s %s", symID, dirPortKey)
 			continue
 		}
-		//Each context key holds 3 portIdentifiers
-		if portCount == 3 {
-			portCount = 0
-			keyCount++
-			portIdentifiers = ""
-			//Create portIdentifierKey, e.g. PORT_IDENTIFIERS_2
-			portIdentifierKey = fmt.Sprintf("%s_%d", PortIdentifiers, keyCount)
-
-		}
 		portIdentifiers += portIdentifier + ","
-		portIdsToTrace += portIdentifiers
-		publishContext[portIdentifierKey] = portIdentifiers
-		portCount++
 	}
-	if portIdsToTrace == "" {
+	if portIdentifiers == "" {
 		log.Errorf("PublishContext: Failed to fetch port details for %s %s which are part of masking view: %s", symID, deviceID, tgtMaskingViewID)
 		return nil, status.Errorf(codes.Internal,
 			"PublishContext: Failed to fetch port details for any director ports which are part of masking view: %s", tgtMaskingViewID)
 	}
-	log.Debugf("Port identifiers in publish context: %s", portIdsToTrace)
+	// Each context key holds upto 128 characters of portIdentifiers. If one Identifier is more than
+	// 128, it gets overlayed to next key.
+	keyCount := int(len(portIdentifiers)/MaxPortIdentifierLength) + 1
+	for i := 1; i <= keyCount; i++ {
+		portIdentifierKey := fmt.Sprintf("%s_%d", PortIdentifiers, i)
+		start := (i - 1) * MaxPortIdentifierLength
+		end := i * MaxPortIdentifierLength
+		if end > len(portIdentifiers) {
+			end = len(portIdentifiers)
+		}
+		publishContext[portIdentifierKey] = portIdentifiers[start:end]
+	}
+	log.Debugf("Port identifiers in publish context: %s", portIdentifiers)
 	publishContext[PortIdentifierKeyCount] = strconv.Itoa(keyCount)
 	publishContext[PublishContextLUNAddress] = lunid
 	return &csi.ControllerPublishVolumeResponse{PublishContext: publishContext}, nil
@@ -1790,7 +1789,6 @@ func (s *service) controllerProbe(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -2123,24 +2121,10 @@ func (s *service) DeleteSnapshot(
 	lockHandle := fmt.Sprintf("%s%s", devID, symID)
 	lockNum := RequestLock(lockHandle, reqID)
 	defer ReleaseLock(lockHandle, reqID, lockNum)
-	// mark the snapshot for deletion by changing the snapshot name to mark for deletion
-	newSnapID, err := s.MarkSnapshotForDeletion(symID, snapID, devID)
+	err = s.UnlinkAndTerminate(symID, devID, snapID)
 	if err != nil {
-		log.Errorf("Failed to rename snapshot (%s) error (%s)", snapID, err.Error())
-		return nil, status.Errorf(codes.Internal, "Failed to rename snapshot - Error(%s)", err.Error())
-	}
-	err = s.UnlinkAndTerminate(symID, devID, newSnapID)
-	if err != nil {
-		//Push the undeleted snapshot for cleanup
-		var cleanReq snapCleanupRequest
-		cleanReq.snapshotID = newSnapID
-		cleanReq.symmetrixID = symID
-		cleanReq.volumeID = devID
-		cleanReq.requestID = reqID
-		snapCleaner.requestCleanup(&cleanReq)
-		log.Errorf("Returning success though it failed to terminate snapshot (%s) with error (%s)",
-			snapID, err.Error())
-		return &csi.DeleteSnapshotResponse{}, nil
+		log.Error("Error - " + err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 	log.Debugf("Deleted snapshot for SnapshotId (%s) and SourceVolumeId (%s)", snapID, devID)
 	return &csi.DeleteSnapshotResponse{}, nil
@@ -2256,21 +2240,17 @@ func (s *service) MarkVolumeForDeletion(symID string, vol *types.Volume) error {
 	if err != nil || vol == nil {
 		return fmt.Errorf("MarkVolumeForDeletion: Failed to rename volume %s", oldVolName)
 	}
-
-	// Fetch the uCode version details
-	isPostElmSR, err := s.isPostElmSR(symID)
+	/*
+		// Fetch the uCode version details
+		isPostElmSR, err := s.isPostElmSR(symID)
+		if err != nil {
+			return fmt.Errorf("Failed to get symmetrix uCode version details")
+		}
+	*/
+	err = s.deletionWorker.QueueDeviceForDeletion(vol.VolumeID, vol.VolumeIdentifier, symID)
 	if err != nil {
-		return fmt.Errorf("Failed to get symmetrix uCode version details")
+		return err
 	}
-
-	// Create a delete worker request for this volume
-	var delReq deletionWorkerRequest
-	delReq.volumeID = vol.VolumeID
-	delReq.volumeName = vol.VolumeIdentifier
-	delReq.symmetrixID = symID
-	delReq.volumeSizeInCylinders = int64(vol.CapacityCYL)
-	delReq.skipDeallocate = isPostElmSR
-	delWorker.requestDeletion(&delReq)
 	log.Infof("Request dispatched to delete worker thread for %s/%s", vol.VolumeID, symID)
 	return nil
 }

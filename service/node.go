@@ -454,7 +454,6 @@ func (s *service) NodePublishVolume(
 	} else {
 		targetIdentifiers = publishContext[PortIdentifiers]
 	}
-
 	log.WithField("CSIRequestID", reqID).Infof("node publishing volume: %s lun: %s", deviceWWN, volumeLUNAddress)
 
 	var symlinkPath string
@@ -657,6 +656,89 @@ func (s *service) NodeGetCapabilities(
 	}, nil
 }
 
+func (s *service) getIPInterfaces(symID string, portGroups []string) ([]string, error) {
+	ipInterfaces := make([]string, 0)
+	for _, pg := range portGroups {
+		portGroup, err := s.adminClient.GetPortGroupByID(symID, pg)
+		if err != nil {
+			return nil, err
+		}
+		for _, portKey := range portGroup.SymmetrixPortKey {
+			port, err := s.adminClient.GetPort(symID, portKey.DirectorID, portKey.PortID)
+			if err != nil {
+				return nil, err
+			}
+			ipInterfaces = append(ipInterfaces, port.SymmetrixPort.IPAddresses...)
+		}
+	}
+	return ipInterfaces, nil
+}
+
+func (s *service) createTopologyMap() (map[string]string, error) {
+	topology := map[string]string{}
+	iscsiArrays := make([]string, 0)
+
+	arrays, err := s.retryableGetSymmetrixIDList()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, id := range arrays.SymmetrixIDs {
+		if s.arrayTransportProtocolMap != nil {
+			if protocol, ok := s.arrayTransportProtocolMap[id]; ok && protocol == FcTransportProtocol {
+				continue
+			}
+		}
+		if s.loggedInArrays != nil {
+			if isLoggedIn, ok := s.loggedInArrays[id]; ok && isLoggedIn {
+				iscsiArrays = append(iscsiArrays, id)
+				continue
+			}
+		}
+		ipInterfaces, err := s.getIPInterfaces(id, s.opts.PortGroups)
+		if err != nil {
+			log.Errorf("unable to fetch ip interfaces for %s: %s", id, err.Error())
+			continue
+		}
+		if len(ipInterfaces) == 0 {
+			log.Errorf("Couldn't find any ip interfaces on any of the port-groups")
+		}
+		for _, ip := range ipInterfaces {
+			isArrayConnected := false
+			_, err := s.iscsiClient.DiscoverTargets(ip, false)
+			if err != nil {
+				if !strings.Contains(err.Error(), "exit status 4") {
+					isArrayConnected = true
+				} else {
+					log.Errorf("Failed to connect to the IP interface(%s) of array(%s)", ip, id)
+				}
+			} else {
+				isArrayConnected = true
+			}
+			if isArrayConnected {
+				iscsiArrays = append(iscsiArrays, id)
+				break
+			}
+		}
+	}
+
+	for array, protocol := range s.arrayTransportProtocolMap {
+		if protocol == FcTransportProtocol {
+			topology[s.getDriverName()+"/"+array] = s.getDriverName()
+			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(FcTransportProtocol)] = s.getDriverName()
+		}
+	}
+
+	for _, array := range iscsiArrays {
+		if _, ok := topology[s.getDriverName()+"/"+array]; !ok {
+			topology[s.getDriverName()+"/"+array] = s.getDriverName()
+			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(IscsiTransportProtocol)] = s.getDriverName()
+		}
+	}
+
+	return topology, nil
+}
+
 // Minimal version of NodeGetInfo. Returns the NodeId
 // MaxVolumesPerNode (optional) is left as 0 which means unlimited, and AccessibleTopology is left nil.
 func (s *service) NodeGetInfo(
@@ -670,7 +752,24 @@ func (s *service) NodeGetInfo(
 		return nil, status.Error(codes.FailedPrecondition,
 			"Unable to get Node Name from the environment")
 	}
-	return &csi.NodeGetInfoResponse{NodeId: s.opts.NodeName}, nil
+
+	topology, err := s.createTopologyMap()
+	if err != nil {
+		log.Errorf("Unable to get the list of symmetrix ids. (%s)\n", err.Error())
+		return nil, status.Error(codes.FailedPrecondition,
+			"Unable to get the list of symmetrix ids")
+	}
+	if len(topology) == 0 {
+		log.Errorf("No topology keys could be generated")
+		return nil, status.Error(codes.FailedPrecondition, "no topology keys could be generate")
+	}
+
+	return &csi.NodeGetInfoResponse{
+		NodeId: s.opts.NodeName,
+		AccessibleTopology: &csi.Topology{
+			Segments: topology,
+		},
+	}, nil
 }
 
 func (s *service) NodeGetVolumeStats(
@@ -731,7 +830,7 @@ func (s *service) nodeStartup() error {
 	symmetrixIDs := arrays.SymmetrixIDs
 	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
 
-	go s.nodeHostSetup(portWWNs, IQNs, symmetrixIDs)
+	s.nodeHostSetup(portWWNs, IQNs, symmetrixIDs)
 
 	return err
 }
@@ -1390,6 +1489,7 @@ func (s *service) NodeExpandVolume(
 	//Locate and fetch all (multipath/regular) mounted paths using this volume
 	devMnt, err := gofsutil.GetMountInfoFromDevice(ctx, volName)
 	if err != nil {
+		var devName string
 		// No mounts were found. Perhaps it is a raw block device, which would not be mounted.
 		deviceNames, _ := gofsutil.GetSysBlockDevicesForVolumeWWN(context.Background(), volumeWWN)
 		if len(deviceNames) > 0 {
@@ -1399,6 +1499,19 @@ func (s *service) NodeExpandVolume(
 				err = gofsutil.DeviceRescan(context.Background(), devicePath)
 				if err != nil {
 					log.Errorf("Failed to rescan device (%s) with error (%s)", devicePath, err.Error())
+					return nil, status.Error(codes.Internal, err.Error())
+				}
+				devName = deviceName
+			}
+			mpathDev, err := gofsutil.GetMpathNameFromDevice(ctx, devName)
+			if err != nil {
+				log.Errorf("Failed to fetch mpath name for device (%s) with error (%s)", devName, err.Error())
+				return nil, status.Error(codes.Internal, err.Error())
+			}
+			if mpathDev != "" {
+				err = gofsutil.ResizeMultipath(context.Background(), mpathDev)
+				if err != nil {
+					log.Errorf("Failed to resize filesystem: device  (%s) with error (%s)", mpathDev, err.Error())
 					return nil, status.Error(codes.Internal, err.Error())
 				}
 			}

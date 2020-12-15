@@ -509,15 +509,6 @@ Feature: PowerMax CSI Interface
         When I invalidate the Probe cache
         And I call DeleteSnapshot
         Then the error contains "Controller Service has not been probed"
-@v1.4.0
-    Scenario: Delete a snapshot but receive error
-        Given a PowerMax service
-        And I call CreateVolume "volume1"
-        And a valid CreateVolumeResponse is returned
-        And I call CreateSnapshot "snapshot1" on "volume1"
-        And I induce error "RenameSnapshotError"
-        When I call DeleteSnapshot
-        Then the error contains "Renaming snapshot failed"
 @1.4.0
     Scenario: Delete a snapshot but receive error in UnlinkAndTerminate and add it to queue
         Given a PowerMax service
@@ -527,35 +518,6 @@ Feature: PowerMax CSI Interface
         And I induce error "DeleteSnapshotError"
         When I call DeleteSnapshot
         Then no error was received
-@v1.2.0
-    Scenario: Mark snapshots for deletion
-        Given a PowerMax service
-        And I call CreateVolume "volume1"
-        And I call CreateVolume "volume2"
-        And a valid CreateVolumeResponse is returned
-        And I call CreateSnapshot "snapshot1" on "volume1"
-        And a valid CreateSnapshotResponse is returned
-        And I call ExecSnapAction to "Link" snapshot "snapshot1" to "volume2"
-        And no error was received
-        When I call MarkSnapshotForDeletion
-        Then no error was received
-@v1.4.0
-    Scenario Outline: Mark snapshots for but get an error
-        Given a PowerMax service
-        And I call CreateVolume "volume1"
-        And I call CreateVolume "volume2"
-        And a valid CreateVolumeResponse is returned
-        And I call CreateSnapshot "snapshot1" on "volume1"
-        And a valid CreateSnapshotResponse is returned
-        And I call ExecSnapAction to "Link" snapshot "snapshot1" to "volume2"
-        And no error was received
-        And I induce error <induced>
-        When I call MarkSnapshotForDeletion
-        Then the error contains <errormsg>
-    Examples:
-        | induced               | errormsg        |
-        | "GetVolSnapsError"    | "induced error" |
-        | "RenameSnapshotError" | "induced error" |
 @v1.2.0
     Scenario: Validate snapshot for deletion
         Given a PowerMax service
@@ -583,39 +545,6 @@ Feature: PowerMax CSI Interface
         When I call IsSnapshotSource
         Then IsSnapshotSource returns "false"
         Then the error contains "induced error"
-@v1.2.0
-    Scenario: Snapshot cleanup thread but fetching symmetrix ids fails
-        Given a PowerMax service
-        And I call CreateVolume "volume1"
-        And a valid CreateVolumeResponse is returned
-        And I call CreateSnapshot "snapshot1" on "volume1"
-        And a valid CreateSnapshotResponse is returned
-        And I induce error "GetSymmetrixError"
-        And I call MarkSnapshotForDeletion
-        When I check if the snapshot has been deleted
-        Then the error contains "Snapshot not deleted by the worker"
-@v1.2.0
-    Scenario: Snapshot cleanup thread but fetching volumes with snapshot fails
-        Given a PowerMax service
-        And I call CreateVolume "volume1"
-        And a valid CreateVolumeResponse is returned
-        And I call CreateSnapshot "snapshot1" on "volume1"
-        And a valid CreateSnapshotResponse is returned
-        And I induce error "GetSymVolumeError"
-        And I call MarkSnapshotForDeletion
-        When I check if the snapshot has been deleted
-        Then the error contains "Snapshot not deleted by the worker"
-@v1.2.0
-    Scenario: Snapshot cleanup thread but the snapshots are returned with invalid names
-        Given a PowerMax service
-        And I call CreateVolume "volume1"
-        And a valid CreateVolumeResponse is returned
-        And I call CreateSnapshot "snapshot1" on "volume1"
-        And a valid CreateSnapshotResponse is returned
-        And I induce error "InvalidSnapshotName"
-        And I call MarkSnapshotForDeletion
-        When I check if the snapshot has been deleted
-        Then the error contains "Snapshot not deleted by the worker"
 @v1.2.0
     Scenario: Soft Deleting a volume
         Given a PowerMax service

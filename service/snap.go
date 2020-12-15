@@ -294,27 +294,29 @@ func (s *service) UnlinkSnapshot(symID string, snapSession *SnapSession, maxUnli
 		return
 	}
 	var counter int
-	var TargetList []types.VolumeList
-	var SourceList []types.VolumeList
 	for _, target := range snapSession.Target {
 		if target.Defined {
-			TargetList = append(TargetList, types.VolumeList{Name: target.Target})
-			SourceList = append(SourceList, types.VolumeList{Name: snapSession.Source})
-
+			TargetList := []types.VolumeList{{Name: target.Target}}
+			SourceList := []types.VolumeList{{Name: snapSession.Source}}
+			log.Debugf("Executing Unlink on (%s) with source (%v) target (%v)", snapSession.Name, SourceList, TargetList)
+			err = s.adminClient.ModifySnapshotS(symID, SourceList, TargetList, snapSession.Name, Unlink, "", snapSession.Generation)
+			if err != nil {
+				if strings.Contains(err.Error(), "The Device(s) is (are) already in the desired state or mode") {
+					log.Debugf("Unlink on (%s) with source (%v) target (%v) is already done", snapSession.Name, SourceList, TargetList)
+					return nil
+				}
+				return err
+			}
 			if maxUnlinkCount != 0 {
 				counter++
 				if counter == maxUnlinkCount {
+					log.Debugf("Max Unlink count reached")
 					break
 				}
 			}
 		} else {
 			return fmt.Errorf("Not all the targets are in Defined state")
 		}
-	}
-	log.Debugf("Executing Unlink on (%s) with source (%v) target (%v)", snapSession.Name, SourceList, TargetList)
-	err = s.adminClient.ModifySnapshotS(symID, SourceList, TargetList, snapSession.Name, Unlink, "", snapSession.Generation)
-	if err != nil {
-		return err
 	}
 	return nil
 }
@@ -533,41 +535,6 @@ func (s *service) CreateSnapshotFromVolume(symID string, vol *types.Volume, snap
 	}
 	log.Info(fmt.Sprintf("Snapshot (%s) created successfully", snapID))
 	return s.adminClient.GetSnapshotInfo(symID, deviceID, snapID)
-}
-
-// MarkSnapshotForDeletion changes name of the snapshot to mark it for deletion
-func (s *service) MarkSnapshotForDeletion(symID, snapID, devID string) (string, error) {
-	sourceList := []types.VolumeList{}
-	targetList := []types.VolumeList{}
-	sourceList = append(sourceList, types.VolumeList{Name: devID})
-
-	srcSessions, _, err := s.GetSnapSessions(symID, devID)
-	if err != nil {
-		return "", err
-	}
-	if len(srcSessions) == 0 {
-		return "", fmt.Errorf("There is no snapshot on device (%s)", devID)
-	}
-
-	for _, session := range srcSessions {
-		if session.Name == snapID {
-			if session.Target != nil {
-				for _, target := range session.Target {
-					targetList = append(targetList, types.VolumeList{Name: target.Target})
-				}
-			} else {
-				targetList = sourceList
-			}
-			break
-		}
-	}
-
-	newSnapID := fmt.Sprintf("%s-%s", SnapDelPrefix, snapID)
-	err = s.adminClient.ModifySnapshotS(symID, sourceList, targetList, snapID, Rename, newSnapID, srcSessions[0].Generation)
-	if err != nil {
-		return "", fmt.Errorf("Renaming snapshot failed from OldSnapID(%s) to NewSnapID(%s), Error(%s)", snapID, newSnapID, err.Error())
-	}
-	return newSnapID, nil
 }
 
 // IsSnapshotSource returns true if the volume is a snapshots source
