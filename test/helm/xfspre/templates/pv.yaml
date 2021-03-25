@@ -13,4 +13,4 @@ spec:
   volumeMode: Filesystem
   accessModes:
   - ReadWriteOnce
-  storageClassName: powermax
+  storageClassName: {{ .Values.sc }}

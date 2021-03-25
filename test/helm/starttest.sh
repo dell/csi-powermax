@@ -2,18 +2,22 @@
 
 TEST=""
 NAMESPACE="test"
+DEFAULT_SC="powermax"
+DEFAULT_SC_SUFFIX="xfs"
 
 # Usage information
 function usage {
    echo
    echo "`basename ${0}`"
-   echo "    -t test         - Test to run. Should be the name of a directory holding a Helm Chart"
-   echo "    -n namespace    - Namespace in which to place the test. Default is: ${NAMESPACE}"
-   exit 1
+   echo "    -t test          - Test to run. Should be the name of a directory holding a Helm Chart"
+   echo "    -n namespace     - Namespace in which to place the test. Default is: ${NAMESPACE}"
+   echo "    -s storageclass  - Storage Class to be used for creating PVCs. Default is ${DEFAULT_SC}"
+   echo "                     - XFS storage class should also exist with a suffix $DEFAULT_SC_SUFFIX"
+   echo "    -h help          - Help"
 }
 
 # Parse the options passed on the command line
-while getopts "t:n:" opt; do
+while getopts "t:n:s:h" opt; do
   case $opt in
     t)
       TEST="${OPTARG}"
@@ -21,13 +25,22 @@ while getopts "t:n:" opt; do
     n)
       NAMESPACE="${OPTARG}"
       ;;
+    s)
+      STORAGE_CLASS="${OPTARG}"
+      ;;
+    h)
+      usage
+      exit 0
+      ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
       usage
+      exit 1
       ;;
     :)
       echo "Option -$OPTARG requires an argument." >&2
       usage
+      exit 1
       ;;
   esac
 done
@@ -72,6 +85,25 @@ if [ $NUM -ne 1 ]; then
   exit 1
 fi
 
+# Validate that the storage class exists
+if [ "${STORAGE_CLASS}" == "" ]; then
+  echo "Storage Class not specified. Defaulting to $DEFAULT_SC"
+  STORAGE_CLASS=$DEFAULT_SC
+fi
+STORAGE_CLASS_XFS="$STORAGE_CLASS-$DEFAULT_SC_SUFFIX"
+
+SC=`kubectl get sc $STORAGE_CLASS`
+if [ $? -ne 0 ]; then
+  echo "Error in fetching storage class $STORAGE_CLASS. Make sure it exists"
+  exit 1
+fi
+
+SC=`kubectl get sc $STORAGE_CLASS_XFS`
+if [ $? -ne 0 ]; then
+  echo "Error in fetching storage class $STORAGE_CLASS_XFS. Make sure it exists"
+  exit 1
+fi
+
 # the helm release name will be the basename of the test
 RELEASE=`basename "${TEST}"`
 
@@ -87,7 +119,7 @@ echo "namespace: ${NAMESPACE}" >> "${VALUES}"
 echo "release: ${RELEASE}" >> "${VALUES}"
 
 # Start the tests
-helm install -n ${NAMESPACE} "${RELEASE}" -f "${VALUES}" "${TEST}"
+helm install -n ${NAMESPACE} "${RELEASE}" -f "${VALUES}" "${TEST}" --set sc=$STORAGE_CLASS --set scxfs=$STORAGE_CLASS_XFS
 echo "waiting 60 seconds on pod to initialize"
 sleep 60
 kubectl describe pods -n "${NAMESPACE}"

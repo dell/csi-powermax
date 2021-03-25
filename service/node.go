@@ -30,9 +30,9 @@ import (
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/coreos/go-systemd/dbus"
 	"github.com/dell/gobrick"
+	csictx "github.com/dell/gocsi/context"
 	"github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
-	csictx "github.com/rexray/gocsi/context"
 	log "github.com/sirupsen/logrus"
 
 	"google.golang.org/grpc/codes"
@@ -674,6 +674,15 @@ func (s *service) getIPInterfaces(symID string, portGroups []string) ([]string, 
 	return ipInterfaces, nil
 }
 
+func (s *service) isISCSIConnected(err error) bool {
+	errMsg := err.Error()
+	if strings.Contains(errMsg, "exit status 24") || // ISCSI_ERR_LOGIN_AUTH_FAILED - login failed due to authorization failure
+		strings.Contains(errMsg, "exit status 15") { // ISCSI_ERR_SESS_EXISTS - session is logged in
+		return true
+	}
+	return false
+}
+
 func (s *service) createTopologyMap() (map[string]string, error) {
 	topology := map[string]string{}
 	iscsiArrays := make([]string, 0)
@@ -707,7 +716,7 @@ func (s *service) createTopologyMap() (map[string]string, error) {
 			isArrayConnected := false
 			_, err := s.iscsiClient.DiscoverTargets(ip, false)
 			if err != nil {
-				if !strings.Contains(err.Error(), "exit status 4") {
+				if s.isISCSIConnected(err) {
 					isArrayConnected = true
 				} else {
 					log.Errorf("Failed to connect to the IP interface(%s) of array(%s)", ip, id)

@@ -519,7 +519,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtM
 			if len(devIDs) > 0 {
 				log.WithFields(f).Info("Calling AddVolumesToStorageGroup")
 				start := time.Now()
-				err := g.svc.adminClient.AddVolumesToStorageGroupS(symID, tgtStorageGroupID, devIDs...)
+				err := g.svc.adminClient.AddVolumesToStorageGroupS(symID, tgtStorageGroupID, true, devIDs...)
 				if err != nil {
 					log.WithFields(f).Errorf("ControllerPublishVolume: Failed to add devices %s to storage group: %s", devIDs, err)
 					return status.Error(codes.Internal, "Failed to add volume to storage group: "+err.Error())
@@ -577,7 +577,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtM
 		if len(devIDs) > 0 {
 			log.WithFields(f).Info("calling AddVolumesToStorageGroup")
 			start := time.Now()
-			err = g.svc.adminClient.AddVolumesToStorageGroup(symID, tgtStorageGroupID, devIDs...)
+			err = g.svc.adminClient.AddVolumesToStorageGroup(symID, tgtStorageGroupID, true, devIDs...)
 			if err != nil {
 				log.WithFields(f).Errorf("ControllerPublishVolume: Failed to add device - %s to storage group", devIDs)
 				return status.Error(codes.Internal, "Failed to add volume to storage group: "+err.Error())
@@ -636,7 +636,7 @@ func (g *storageGroupSvc) removeVolumesFromSGMV(tgtStorageGroupID, tgtMaskingVie
 	}
 	// Remove the volume from SG
 	start := time.Now()
-	_, err = g.svc.adminClient.RemoveVolumesFromStorageGroup(symID, tgtStorageGroupID, devIDs...)
+	_, err = g.svc.adminClient.RemoveVolumesFromStorageGroup(symID, tgtStorageGroupID, true, devIDs...)
 	if err != nil {
 		log.Errorf("Failed to remove volume from SG (Volumes: %s, Array: %s, SG: %s) status %s", devIDs, symID, tgtStorageGroupID, err.Error())
 		return status.Errorf(codes.Internal,

@@ -59,7 +59,7 @@ unisphere: https://127.0.0.1:8443
 csireverseproxy:
   # Set enabled to true if you want to use proxy
   # the only supported mode is "Linked"
-  image: dellemc/csipowermax-reverseproxy:v1.1.0.000R
+  image: dellemc/csipowermax-reverseproxy:v1.2.0
   enabled: false
   port: 2222
   primary:
@@ -122,31 +122,19 @@ nodeNameTemplate: ""
 
 modifyHostName: "false"
 
-# The installation process will generate multiple storageclasses based on these parameters.
-# Only the primary storageclass for the driver will be marked default if specified.
-storageClass:
-  # "storageClass.name" defines the name of the storage class to be defined.
-  name: powermax
-
-  # "storageClass.symmetrixID" must be set to the default Symmetrix ID to be used
-  symmetrixID: "000000000000"
-
-  # "storageClass.storageResourcePool" must be set to the default Storage Resource Pool to be used
-  storageResourcePool: SRP_1
-
-  # "storageClass.serviceLevel" must be set to the default Service Level to be used"
-  serviceLevel: Bronze
-
-  # "storageClass.isDefault" defines whether the primary storage class should be the # default.
-  isDefault: "true"
-
-  # "storageClass.reclaimPolicy" defines what will happen when a volume is
-  # removed from the Kubernetes API. Valid values are "Retain" and "Delete".
-  reclaimPolicy: Delete
-
 snapshotClass:
   name: powermax-snapclass
 
 # openshift tells the Helm chart that the installation is being done on a Red Hat OpenShift cluster
 # Don't modify this value as this value is overridden by the install script
 openshift: false
+
+replication:
+  enabled: false
+  # Change this to use any specific version of the dell-csi-replicator sidecar
+  image: localhost:5000/dell-csi-replicator:v0.0.1
+  # replicationContextPrefix enables side cars to read required information from the volume context
+  replicationContextPrefix: "powermax/"
+  # replicationPrefix is used to find out if replication is enabled
+  replicationPrefix: "replication.storage.dell.com/"
+  

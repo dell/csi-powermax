@@ -26,6 +26,7 @@ import (
 	wrappers "github.com/golang/protobuf/ptypes/wrappers"
 
 	"github.com/dell/csi-powermax/core"
+	csiext "github.com/dell/dell-csi-extensions/replication"
 )
 
 func (s *service) GetPluginInfo(
@@ -108,5 +109,64 @@ func (s *service) Probe(
 	rep.Ready = ready
 	log.Debug(fmt.Sprintf("Probe returning: %v", rep.Ready.GetValue()))
 
+	return rep, nil
+}
+
+func (s *service) ProbeController(ctx context.Context,
+	req *csiext.ProbeControllerRequest) (
+	*csiext.ProbeControllerResponse, error) {
+
+	if !strings.EqualFold(s.mode, "node") {
+		log.Debug("controllerProbe")
+		if err := s.controllerProbe(ctx); err != nil {
+			log.Printf("error in controllerProbe: %s", err.Error())
+			return nil, err
+		}
+	}
+
+	ready := new(wrappers.BoolValue)
+	ready.Value = true
+	rep := new(csiext.ProbeControllerResponse)
+	rep.Ready = ready
+	rep.Name = s.getDriverName()
+	rep.VendorVersion = core.SemVer
+	rep.Manifest = Manifest
+
+	log.Debug(fmt.Sprintf("ProbeController returning: %v", rep.Ready.GetValue()))
+
+	return rep, nil
+}
+
+func (s *service) GetReplicationCapabilities(
+	ctx context.Context,
+	req *csiext.GetReplicationCapabilityRequest) (
+	*csiext.GetReplicationCapabilityResponse, error) {
+
+	var rep = new(csiext.GetReplicationCapabilityResponse)
+	if !strings.EqualFold(s.mode, "node") {
+		rep.Capabilities = []*csiext.ReplicationCapability{
+			{
+				Type: &csiext.ReplicationCapability_Rpc{
+					Rpc: &csiext.ReplicationCapability_RPC{
+						Type: csiext.ReplicationCapability_RPC_DISCOVER_REMOTE_VOLUME,
+					},
+				},
+			},
+			{
+				Type: &csiext.ReplicationCapability_Rpc{
+					Rpc: &csiext.ReplicationCapability_RPC{
+						Type: csiext.ReplicationCapability_RPC_DISCOVER_PROTECTION_GROUPS,
+					},
+				},
+			},
+			{
+				Type: &csiext.ReplicationCapability_Rpc{
+					Rpc: &csiext.ReplicationCapability_RPC{
+						Type: csiext.ReplicationCapability_RPC_DELETE_PROTECTION_GROUP,
+					},
+				},
+			},
+		}
+	}
 	return rep, nil
 }

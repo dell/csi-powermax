@@ -25,7 +25,7 @@ import (
 
 	"github.com/dell/csi-powermax/provider"
 	"github.com/dell/csi-powermax/service"
-	"github.com/rexray/gocsi"
+	"github.com/dell/gocsi"
 )
 
 // main is ignored when this package is built as a go plug-in
