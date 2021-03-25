@@ -26,4 +26,3 @@ allowedTopologies:
   - key: csi-powermax.dellemc.com/<SYMID>.iscsi
     values:
     - csi-powermax.dellemc.com
-

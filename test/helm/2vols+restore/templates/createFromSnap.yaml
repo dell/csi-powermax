@@ -4,7 +4,7 @@ metadata:
   name: restorepvc
   namespace: test
 spec:
-  storageClassName: powermax
+  storageClassName: {{ .Values.sc }}
   dataSource:
     name: pvol0-snap1
     kind: VolumeSnapshot

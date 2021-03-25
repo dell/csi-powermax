@@ -450,7 +450,21 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(adminClient pmax.Pmax)
 			// We failed to get SG details. This could be a transient error
 			// Proceed with the removal of volumes
 		}
-		_, err = adminClient.RemoveVolumesFromStorageGroup(queue.SymID, sgID, volumeIDs...)
+		_, rdfNo, _, err := GetRDFInfoFromSGID(sgID)
+		if err != nil {
+			log.Debugf("GetRDFInfoFromSGID failed for (%s) on symID (%s). Proceeding for RemoveVolumesFromStorageGroup", sgID, queue.SymID)
+			// This is the default SG in which all the volumes are replicated
+			_, err = adminClient.RemoveVolumesFromStorageGroup(queue.SymID, sgID, true, volumeIDs...)
+		} else {
+			log.Debugf("RDF No: (%s)", rdfNo)
+			var rdfInfo *types.RDFGroup
+			rdfInfo, err = adminClient.GetRDFGroup(queue.SymID, rdfNo)
+			if err != nil {
+				log.Errorf("GetRDFGroup failed for (%s) on symID (%s)", sgID, queue.SymID)
+				return false
+			}
+			_, err = adminClient.RemoveVolumesFromProtectedStorageGroup(queue.SymID, sgID, rdfInfo.RemoteSymmetrix, sgID, true, volumeIDs...)
+		}
 		for _, volumeID := range volumeIDs {
 			device := getDevice(volumeID, queue.DeviceList)
 			if device != nil {
@@ -537,16 +551,21 @@ func (queue *deletionQueue) deleteVolumes(adminClient pmax.Pmax) bool {
 		err := adminClient.DeleteVolume(queue.SymID, deviceRangeToBeDeleted.get())
 		if err != nil {
 			log.Error(err.Error())
-		} else {
-			volumeIDs := deviceRangeToBeDeleted.getDeviceIDs()
-			log.Infof("Number of devices deleted: %d\n", len(volumeIDs))
-			for _, volumeID := range volumeIDs {
-				for _, dev := range queue.DeviceList {
-					if volumeID == dev.SymDeviceID.DeviceID {
+		}
+		volumeIDs := deviceRangeToBeDeleted.getDeviceIDs()
+		for _, volumeID := range volumeIDs {
+			for _, dev := range queue.DeviceList {
+				if volumeID == dev.SymDeviceID.DeviceID {
+					if err != nil {
+						dev.updateStatus(dev.Status.State, err.Error())
+					} else {
 						dev.updateStatus(deleted, "")
 					}
 				}
 			}
+		}
+		if err == nil {
+			log.Infof("Number of devices deleted: %d\n", len(volumeIDs))
 		}
 	} else {
 		return false
@@ -661,6 +680,7 @@ func (worker *deletionWorker) deletionRequestHandler() {
 			volume:     vol,
 			lastUpdate: currentTime,
 		}
+
 		initialState := deletionStateDisAssociateSG
 		if len(vol.StorageGroupIDList) == 0 {
 			if vol.SnapSource || vol.SnapTarget {

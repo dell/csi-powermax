@@ -10,12 +10,17 @@ ARG BUILD_TYPE=R
 ENV BUILD_NUMBER=$BUILD_NUMBER
 ENV BUILD_TYPE=$BUILD_TYPE
 RUN mkdir -p /go/src
+COPY csi-powermax/go.mod /go/src/csi-powermax/go.mod
 COPY csi-powermax/ /go/src/csi-powermax
 COPY goiscsi/ /go/src/goiscsi
 COPY gofsutil/ /go/src/gofsutil
 COPY gopowermax /go/src/gopowermax
 COPY gobrick /go/src/gobrick
+COPY gocsi /go/src/gocsi
+COPY dell-csi-extensions /go/src/dell-csi-extensions
+
 WORKDIR /go/src/csi-powermax
+RUN go mod download
 # Run check.sh to make sure there are no linting errors
 RUN ./check.sh
 RUN go generate
@@ -31,9 +36,15 @@ ONBUILD RUN yum install -y e2fsprogs which xfsprogs device-mapper-multipath \
     rm -rf /var/cache/run
 
 FROM ${SOURCE_REPO}:${SOURCE_IMAGE_TAG} as driver-ubim
-ONBUILD RUN microdnf install -y --enablerepo=rhel-7-server-rpms e2fsprogs which xfsprogs device-mapper-multipath \
+ONBUILD RUN microdnf update -y \
+    && \
+    microdnf install -y e2fsprogs which xfsprogs device-mapper-multipath \
     && \
     microdnf clean all
+
+FROM driver-${IMAGE_TYPE} as verify
+RUN which mkfs.ext4
+RUN which mkfs.xfs
 
 FROM driver-${IMAGE_TYPE} as driver
 COPY --from=builder /go/src/csi-powermax/csi-powermax .
@@ -62,6 +73,6 @@ LABEL vendor="Dell Inc." \
       name="csi-powermax" \
       summary="CSI Driver for Dell EMC PowerMax" \
       description="CSI Driver for provisioning persistent storage from Dell EMC PowerMax" \
-      version="1.5.0" \
+      version="1.6.0" \
       license="Apache-2.0"
 COPY csi-powermax/licenses /licenses

@@ -4,7 +4,7 @@ metadata:
   name: clonedpvc
   namespace: {{ .Values.namespace }}
 spec:
-  storageClassName: powermax
+  storageClassName: {{ .Values.sc }}
   dataSource:
     name: pvol0
     kind: PersistentVolumeClaim

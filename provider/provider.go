@@ -15,7 +15,7 @@ package provider
 
 import (
 	"github.com/dell/csi-powermax/service"
-	"github.com/rexray/gocsi"
+	"github.com/dell/gocsi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 	"os"
@@ -44,11 +44,12 @@ func New() gocsi.StoragePluginProvider {
 
 	svc := service.New()
 	return &gocsi.StoragePlugin{
-		Controller:  svc,
-		Identity:    svc,
-		Node:        svc,
-		BeforeServe: svc.BeforeServe,
-		ServerOpts:  serverOptions,
+		Controller:                svc,
+		Identity:                  svc,
+		Node:                      svc,
+		BeforeServe:               svc.BeforeServe,
+		ServerOpts:                serverOptions,
+		RegisterAdditionalServers: svc.RegisterAdditionalServers,
 
 		EnvVars: []string{
 			// Enable request validation

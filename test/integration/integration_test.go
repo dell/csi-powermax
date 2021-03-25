@@ -24,7 +24,7 @@ import (
 	"github.com/cucumber/godog"
 	"github.com/dell/csi-powermax/provider"
 	"github.com/dell/csi-powermax/service"
-	"github.com/rexray/gocsi/utils"
+	"github.com/dell/gocsi/utils"
 	"google.golang.org/grpc"
 )
 

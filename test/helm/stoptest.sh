@@ -1,4 +1,4 @@
-#/bin/bash
+#!/bin/bash
 
 TEST=""
 NAMESPACE="test"
@@ -9,11 +9,11 @@ function usage {
    echo "`basename ${0}`"
    echo "    -t test         - Test to stop"
    echo "    -n namespace    - Namespace in which the release is running. Default is: ${NAMESPACE}"
-   exit 1
+   echo "    -h help          - Help"
 }
 
 # Parse the options passed on the command line
-while getopts "t:n:" opt; do
+while getopts "t:n:h" opt; do
   case $opt in
     t)
       TEST="${OPTARG}"
@@ -21,13 +21,19 @@ while getopts "t:n:" opt; do
     n)
       NAMESPACE="${OPTARG}"
       ;;
+    h)
+      usage
+      exit 0
+      ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
       usage
+      exit 1
       ;;
     :)
       echo "Option -$OPTARG requires an argument." >&2
       usage
+      exit 1
       ;;
   esac
 done

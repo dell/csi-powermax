@@ -24,6 +24,8 @@ import (
 	"sync"
 	"time"
 
+	csiext "github.com/dell/dell-csi-extensions/replication"
+
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -88,6 +90,9 @@ const (
 	MaxSnapIdentifierLength         = 32
 	SnapDelPrefix                   = "DEL"
 	delSrcTag                       = "DS"
+	StorageGroup                    = "StorageGroup"
+	Async                           = "ASYNC"
+	Sync                            = "SYNC"
 )
 
 // Keys for parameters to CreateVolume
@@ -103,6 +108,20 @@ const (
 	CapacityGB             = "CapacityGB"
 	uCode5978              = 5978
 	uCodeELMSR             = 221
+	// These params will be in replication enabled storage class
+	RepEnabledParam              = "isReplicationEnabled"
+	LocalRDFGroupParam           = "RdfGroup"
+	RemoteRDFGroupParam          = "RemoteRDFGroup"
+	RemoteSymIDParam             = "RemoteSYMID"
+	ReplicationModeParam         = "RdfMode"
+	CSIPVCNamespace              = "csi.storage.k8s.io/pvc/namespace"
+	CSIPersistentVolumeName      = "csi.storage.k8s.io/pv/name"
+	CSIPersistentVolumeClaimName = "csi.storage.k8s.io/pvc/name"
+	// These map to the above fields in the form of HTTP header names.
+	HeaderPersistentVolumeName           = "x-csi-pv-name"
+	HeaderPersistentVolumeClaimName      = "x-csi-pv-claimname"
+	HeaderPersistentVolumeClaimNamespace = "x-csi-pv-namespace"
+	RemoteServiceLevelParam              = "RemoteServiceLevel"
 )
 
 //Pair - structure which holds a pair
@@ -285,12 +304,27 @@ func (s *service) CreateVolume(
 		storageGroupName = params[StorageGroupParam]
 	}
 
-	// AccessibleTopology not currently supported
-	accessibility := req.GetAccessibilityRequirements()
-	if accessibility != nil {
-		log.Error("Volume AccessibilityRequirements is not supported")
-		return nil, status.Errorf(codes.InvalidArgument, "Volume AccessibilityRequirements is not supported")
+	// Remote Replication based params
+	var replicationEnabled string
+	var remoteSymID string
+	var localRDFGrpNo string
+	var repMode string
+	var namespace string
+	repEnabledParam := s.opts.ReplicationPrefix + RepEnabledParam
+	if params[repEnabledParam] == "true" {
+		replicationEnabled = params[repEnabledParam]
+		// remote symmetrix ID and rdf group name are mandatory params when replication is enabled
+		remoteSymID = params[RemoteSymIDParam]
+		localRDFGrpNo = params[LocalRDFGroupParam]
+		repMode = params[ReplicationModeParam]
+		namespace = params[CSIPVCNamespace]
+		if repMode != "ASYNC" {
+			log.Errorf("Unsupported Replication Mode: (%s)" + repMode)
+			return nil, status.Errorf(codes.InvalidArgument, "Unsupported Replication Mode: (%s)", repMode)
+		}
 	}
+
+	accessibility := req.GetAccessibilityRequirements()
 
 	// Get the required capacity
 	cr := req.GetCapacityRange()
@@ -309,6 +343,10 @@ func (s *service) CreateVolume(
 	// greater than or equal to the size of snapshot source
 	contentSource := req.GetVolumeContentSource()
 	if contentSource != nil {
+		if replicationEnabled == "true" {
+			log.Error("VolumeContentSource:Clone Volume is not supported with replication")
+			return nil, status.Errorf(codes.InvalidArgument, "VolumeContentSource:Clone Volume is not supported with replication")
+		}
 		switch req.GetVolumeContentSource().GetType().(type) {
 		case *csi.VolumeContentSource_Volume:
 			srcVolID = req.GetVolumeContentSource().GetVolume().GetVolumeId()
@@ -397,22 +435,54 @@ func (s *service) CreateVolume(
 				applicationPrefix, serviceLevel, storagePoolID)
 		}
 	}
+	// localProtectionGroupID refers to name of Storage Group which has protected local volumes
+	var localProtectionGroupID string
+	if replicationEnabled == "true" {
+		localProtectionGroupID = s.buildProtectionGroupID(namespace, localRDFGrpNo, repMode)
+	}
 
 	// log all parameters used in CreateVolume call
 	fields := map[string]interface{}{
-		"SymmetrixID":       symmetrixID,
-		"SRP":               storagePoolID,
-		"Accessibility":     accessibility,
-		"ApplicationPrefix": applicationPrefix,
-		"volumeIdentifier":  volumeIdentifier,
-		"requiredCylinders": requiredCylinders,
-		"storageGroupName":  storageGroupName,
-		"CSIRequestID":      reqID,
-		"SourceVolume":      srcVolID,
-		"SourceSnapshot":    srcSnapID,
+		"SymmetrixID":                        symmetrixID,
+		"SRP":                                storagePoolID,
+		"Accessibility":                      accessibility,
+		"ApplicationPrefix":                  applicationPrefix,
+		"volumeIdentifier":                   volumeIdentifier,
+		"requiredCylinders":                  requiredCylinders,
+		"storageGroupName":                   storageGroupName,
+		"CSIRequestID":                       reqID,
+		"SourceVolume":                       srcVolID,
+		"SourceSnapshot":                     srcSnapID,
+		"ReplicationEnabled":                 replicationEnabled,
+		"RemoteSymmID":                       remoteSymID,
+		"LocalRDFGroup":                      localRDFGrpNo,
+		"SRDFMode":                           repMode,
+		"PVCNamespace":                       namespace,
+		"LocalProtectionGroupID":             localProtectionGroupID,
+		HeaderPersistentVolumeName:           params[CSIPersistentVolumeName],
+		HeaderPersistentVolumeClaimName:      params[CSIPersistentVolumeClaimName],
+		HeaderPersistentVolumeClaimNamespace: params[CSIPVCNamespace],
 	}
 	log.WithFields(fields).Info("Executing CreateVolume with following fields")
 
+	// isSGUnprotected is set to true only if SG has a replica, eg if the SG is new
+	isSGUnprotected := false
+	if replicationEnabled == "true" {
+		sg, err := s.getOrCreateProtectedStorageGroup(symmetrixID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "Error in getOrCreateProtectedStorageGroup: (%s)", err.Error())
+		}
+		if sg != nil && sg.Rdf == true {
+			// Check the direction of SG
+			// Creation of replicated volume is allowed in an SG of type R1
+			err := s.VerifyProtectedGroupDirection(symmetrixID, localProtectionGroupID, localRDFGrpNo)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			isSGUnprotected = true
+		}
+	}
 	// Check existence of the Storage Group and create if necessary.
 	sg, err := s.adminClient.GetStorageGroup(symmetrixID, storageGroupName)
 	if err != nil || sg == nil {
@@ -424,7 +494,7 @@ func (s *service) CreateVolume(
 			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
 		}
 	}
-
+	var vol *types.Volume
 	// Idempotency test. We will read the volume and check for:
 	// 1. Existence of a volume with matching volume name
 	// 2. Matching cylinderSize
@@ -437,15 +507,21 @@ func (s *service) CreateVolume(
 		return nil, status.Errorf(codes.Internal, "Error looking up volume for idempotence check: %s", err.Error())
 	}
 	alreadyExists := false
+	// isLocalVolumePresent restrict CreateVolumeInProtectedSG call if the volume is present in local SG but not in remote SG
+	isLocalVolumePresent := false
 	// Look up the volume(s), if any, returned for the idempotency check to see if there are any matches
 	// We ignore any volume not in the desired storage group (even though they have the same name).
 	for _, volumeID := range volumeIDList {
 		// Fetch the volume
 		log.WithFields(fields).Info("Calling GetVolumeByID for idempotence check")
-		vol, err := s.adminClient.GetVolumeByID(symmetrixID, volumeID)
+		vol, err = s.adminClient.GetVolumeByID(symmetrixID, volumeID)
 		if err != nil {
 			log.Error("Error fetching volume for idempotence check: " + err.Error())
 			return nil, status.Errorf(codes.Internal, "Error fetching volume for idempotence check: %s", err.Error())
+		}
+		if len(vol.StorageGroupIDList) < 1 {
+			log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
+			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): "+volumeID)
 		}
 		matchesStorageGroup := false
 		for _, sgid := range vol.StorageGroupIDList {
@@ -459,6 +535,17 @@ func (s *service) CreateVolume(
 				alreadyExists = true
 				continue
 			}
+			if replicationEnabled == "true" {
+				remoteVolumeID, _ := s.GetRemoteVolumeID(symmetrixID, localRDFGrpNo, vol.VolumeID)
+				if remoteVolumeID == "" {
+					// Missing corresponding Remote Volume Name for existing local volume
+					// The SG is unprotected as Local volume and Local SG exists but missing corresponding SRDF info
+					// If the SG was protected, there must exist a corresponding remote replica volume
+					log.Debugf("Local Volume already exist, skipping creation (%s)", vol.VolumeID)
+					isLocalVolumePresent = true
+					continue
+				}
+			}
 			log.WithFields(fields).Info("Idempotent volume detected, returning success")
 			vol.VolumeID = fmt.Sprintf("%s-%s-%s", volumeIdentifier, symmetrixID, vol.VolumeID)
 			volResp := s.getCSIVolume(vol)
@@ -468,6 +555,8 @@ func (s *service) CreateVolume(
 				StoragePoolParam:  storagePoolID,
 				CapacityGB:        fmt.Sprintf("%.2f", vol.CapacityGB),
 				ContentSource:     volContent,
+				StorageGroup:      storageGroupName,
+				RemoteSymIDParam:  remoteSymID,
 				//Format the time output
 				"CreationTime": time.Now().Format("20060102150405"),
 			}
@@ -476,6 +565,9 @@ func (s *service) CreateVolume(
 				Volume: volResp,
 			}
 			volResp.ContentSource = contentSource
+			if accessibility != nil {
+				volResp.AccessibleTopology = accessibility.Preferred
+			}
 			return csiResp, nil
 		}
 	}
@@ -484,11 +576,40 @@ func (s *service) CreateVolume(
 		return nil, status.Errorf(codes.AlreadyExists, "A volume with the same name %s exists but has a different size than requested. Use a different name.", volumeName)
 	}
 
+	//CSI specific metada for authorization
+	var headerMetadata = addMetaData(params)
+
 	// Let's create the volume
-	vol, err := s.adminClient.CreateVolumeInStorageGroupS(symmetrixID, storageGroupName, volumeIdentifier, requiredCylinders)
-	if err != nil {
-		log.Error(fmt.Sprintf("Could not create volume: %s: %s", volumeName, err.Error()))
-		return nil, status.Errorf(codes.Internal, "Could not create volume: %s: %s", volumeName, err.Error())
+	if !isLocalVolumePresent {
+		vol, err = s.adminClient.CreateVolumeInStorageGroupS(symmetrixID, storageGroupName, volumeIdentifier, requiredCylinders, headerMetadata)
+		if err != nil {
+			log.Error(fmt.Sprintf("Could not create volume: %s: %s", volumeName, err.Error()))
+			return nil, status.Errorf(codes.Internal, "Could not create volume: %s: %s", volumeName, err.Error())
+		}
+	}
+
+	if replicationEnabled == "true" {
+		log.Debugf("RDF: Found Rdf enabled")
+		// remote storage group name is kept same as local storage group name
+		// Check if volume is already added in SG, else add it
+		protectedSGID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
+		if protectedSGID == "" {
+			// Volume is not present in Protected Storage Group, Add
+			err = s.adminClient.AddVolumesToProtectedStorageGroup(symmetrixID, localProtectionGroupID, remoteSymID, localProtectionGroupID, true, vol.VolumeID)
+			if err != nil {
+				log.Error(fmt.Sprintf("Could not add volume in protected SG: %s: %s", volumeName, err.Error()))
+				return nil, status.Errorf(codes.Internal, "Could not add volume in protected SG: %s: %s", volumeName, err.Error())
+			}
+		}
+		if isSGUnprotected {
+			// If the required SG is still unprotected, protect the local SG with RDF info
+			// If valid RDF group is supplied this will create a remote SG, a RDF pair and add the vol in respective SG created
+			// Remote storage group name is kept same as local storage group name
+			err := s.ProtectStorageGroup(symmetrixID, remoteSymID, localProtectionGroupID, localProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	// If volume content source is specified, initiate no_copy to newly created volume
 	if contentSource != nil {
@@ -511,6 +632,7 @@ func (s *service) CreateVolume(
 			}
 		}
 	}
+
 	// Formulate the return response
 	vol.VolumeID = fmt.Sprintf("%s-%s-%s", volumeIdentifier, symmetrixID, vol.VolumeID)
 	volResp := s.getCSIVolume(vol)
@@ -521,15 +643,81 @@ func (s *service) CreateVolume(
 		StoragePoolParam:  storagePoolID,
 		CapacityGB:        fmt.Sprintf("%.2f", vol.CapacityGB),
 		ContentSource:     volContent,
+		StorageGroup:      storageGroupName,
+		RemoteSymIDParam:  remoteSymID,
 		//Format the time output
 		"CreationTime": time.Now().Format("20060102150405"),
 	}
 	volResp.VolumeContext = attributes
+	if accessibility != nil {
+		volResp.AccessibleTopology = accessibility.Preferred
+	}
 	csiResp := &csi.CreateVolumeResponse{
 		Volume: volResp,
 	}
 	log.WithFields(fields).Infof("Created volume with ID: %s", volResp.VolumeId)
 	return csiResp, nil
+}
+func (s *service) getOrCreateProtectedStorageGroup(symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID string) (*types.RDFStorageGroup, error) {
+	var lockHandle string
+	if repMode == Async {
+		lockHandle = fmt.Sprintf("%s%s", localRDFGrpNo, symID)
+	} else {
+		//Mode is SYNC
+		lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
+	}
+	lockNum := RequestLock(lockHandle, reqID)
+	defer ReleaseLock(lockHandle, reqID, lockNum)
+	sg, err := s.adminClient.GetProtectedStorageGroup(symID, localProtectionGroupID)
+	if err != nil || sg == nil {
+		// Verify the creation of new protected storage group is valid
+		err = s.verifyProtectionGroupID(symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode)
+		if err != nil {
+			log.Errorf("VerifyProtectionGroupID failed:(%s)", err.Error())
+			return nil, status.Errorf(codes.Internal, "VerifyProtectionGroupID failed:(%s)", err.Error())
+		}
+		// this SG is valid, new and will need protection if working in replication mode
+		// Create protected SG
+		_, err := s.adminClient.CreateStorageGroup(symID, localProtectionGroupID, "None", "", false)
+		if err != nil {
+			log.Errorf("Error creating protected storage group (%s): (%s)", localProtectionGroupID, err.Error())
+			return nil, status.Errorf(codes.Internal, "Error creating protected storage group (%s): (%s)", localProtectionGroupID, err.Error())
+		}
+	}
+	return sg, nil
+}
+
+func (s *service) buildProtectionGroupID(namespace, localRdfGrpNo, repMode string) string {
+	protectionGrpID := CsiNoSrpSGPrefix + namespace + "-" + localRdfGrpNo + "-" + repMode
+	return protectionGrpID
+}
+
+// verifyProtectionGroupID verify's the ProtectionGroupID's uniqueness w.r.t the srdf mode
+// For sync mode, one srdf group can have rdf pairing from many namespaces
+// For async mode, one srdf group can only have rdf pairing from one namespace
+// All rdf volume pairs of a namespace should be of one rdf mode
+// In async rdf mode there should be One to One correspondence between namespace and srdf group
+func (s *service) verifyProtectionGroupID(symID, storageGroupName, namespace, localRdfGrpNo, repMode string) error {
+	sgList, err := s.adminClient.GetStorageGroupIDList(symID)
+	if err != nil {
+		return err
+	}
+	for _, value := range sgList.StorageGroupIDs {
+		// Is it trying to create a new SG for with same namespace in multiple rdf groups?
+		if strings.Contains(value, storageGroupName+"-"+namespace) {
+			return fmt.Errorf("RDF pairs for Namespace (%s) are already in protection group (%s)", namespace, value)
+		}
+		// Is it trying to create more than one SG in async mode for one rdf group
+		if repMode == Async &&
+			strings.Contains(value, localRdfGrpNo+"-"+Async) || strings.Contains(value, localRdfGrpNo+"-"+Sync) {
+			return fmt.Errorf("RDF group (%s) is already a part of ReplicationGroup (%s) in Sync/Async mode", localRdfGrpNo, value)
+		}
+		// Is it trying to create a SG with a rdf group which is already used in Async mode
+		if repMode == Sync && strings.Contains(value, localRdfGrpNo+"-"+Async) {
+			return fmt.Errorf("RDF group (%s) is already part of another Async mode ReplicationGroup (%s)", localRdfGrpNo, value)
+		}
+	}
+	return nil
 }
 
 // validateVolSize uses the CapacityRange range params to determine what size
@@ -793,7 +981,7 @@ func (s *service) DeleteVolume(
 		return nil, err
 	}
 
-	// log all parameters used in CreateVolume call
+	// log all parameters used in DeleteVolume call
 	fields := map[string]interface{}{
 		"SymmetrixID":  symID,
 		"VolumeName":   volName,
@@ -1998,6 +2186,11 @@ func (s *service) CreateSnapshot(
 			"Could not find source volume on the array")
 	}
 
+	if strings.Contains(vol.Type, "RDF") {
+		log.Error("Snapshot on RDF enabled volume is not supported")
+		return nil, status.Errorf(codes.InvalidArgument, "Snapshot on RDF enabled volume is not supported")
+	}
+
 	// Is it an idempotent request?
 	snapInfo, err := s.adminClient.GetSnapshotInfo(symID, devID, snapID)
 	if err == nil && snapInfo.VolumeSnapshotSource != nil {
@@ -2184,7 +2377,7 @@ func (s *service) ControllerExpandVolume(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// log all parameters used in CreateVolume call
+	// log all parameters used in ExpandVolume call
 	fields := map[string]interface{}{
 		"RequestID":     reqID,
 		"SymmetrixID":   symID,
@@ -2253,4 +2446,260 @@ func (s *service) MarkVolumeForDeletion(symID string, vol *types.Volume) error {
 	}
 	log.Infof("Request dispatched to delete worker thread for %s/%s", vol.VolumeID, symID)
 	return nil
+}
+
+// GetProtectedStorageGroupID returns selected protected SG based on filter and a list of SG
+func (s *service) GetProtectedStorageGroupID(storageGroupIDList []string, filter string) string {
+	var protectionGroupID string
+	for _, sg := range storageGroupIDList {
+		if strings.Contains(sg, csiPrefix) && strings.Contains(sg, filter) {
+			protectionGroupID = sg
+			break
+		}
+	}
+	return protectionGroupID
+}
+
+func (s *service) DiscoverStorageProtectionGroup(ctx context.Context, req *csiext.DiscoverStorageProtectionGroupRequest) (*csiext.DiscoverStorageProtectionGroupResponse, error) {
+	// Requires probe
+	if err := s.requireProbe(ctx); err != nil {
+		return nil, err
+	}
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+	id := req.GetVolumeHandle()
+	symID, devID, vol, err := s.GetVolumeByID(id)
+	if err != nil {
+		log.Errorf("GetVolumeByID failed with (%s) for devID (%s)", err.Error(), devID)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	// Get the parameters
+	params := req.GetParameters()
+	localRDFGroup := params[LocalRDFGroupParam]
+	remoteRDFGroup := params[RemoteRDFGroupParam]
+	remoteSymID := params[RemoteSymIDParam]
+	repMode := params[ReplicationModeParam]
+	remoteVolumeID, err := s.GetRemoteVolumeID(symID, localRDFGroup, devID)
+	if err != nil {
+		log.Errorf("GetRemoteVolumeID failed with (%s) for devID (%s)", err.Error(), devID)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	// log all parameters used in DiscoverStorageProtectionGroup call
+	fields := map[string]interface{}{
+		"RequestID":         reqID,
+		"SymmetrixID":       symID,
+		"VolumeName":        vol.VolumeIdentifier,
+		"DeviceID":          devID,
+		"RemoteDeviceID":    remoteVolumeID,
+		"LocalSRDFG":        localRDFGroup,
+		"RemoteSymmetrixID": remoteSymID,
+		"ReplicationMode":   repMode,
+	}
+	log.WithFields(fields).Info("Executing DiscoverStorageProtectionGroup with following fields")
+
+	// localProtectionGroupID refers to local protected storage group having local volume
+	localProtectionGroupID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGroup+"-"+repMode)
+	if localProtectionGroupID == "" {
+		errorMsg := fmt.Sprintf("DiscoverStorageProtectionGroup failed with (%s) for devID (%s)", "Failed to find protected local storage group", devID)
+		log.Error(errorMsg)
+		return nil, status.Error(codes.InvalidArgument, errorMsg)
+	}
+	remoteVol, err := s.adminClient.GetVolumeByID(remoteSymID, remoteVolumeID)
+	if err != nil {
+		if strings.Contains(err.Error(), cannotBeFound) {
+			return nil, status.Errorf(codes.NotFound,
+				"Volume not found (Array: %s, Volume: %s)status %s",
+				remoteSymID, remoteVolumeID, err.Error())
+		}
+		return nil, status.Errorf(codes.Internal,
+			"failure checking volume (Array: %s, Volume: %s)status %s",
+			remoteSymID, remoteVolumeID, err.Error())
+	}
+	// remoteProtectionGroupID refers to remote protected storage group having remote volume
+	remoteProtectionGroupID := s.GetProtectedStorageGroupID(remoteVol.StorageGroupIDList, localRDFGroup+"-"+repMode)
+	if remoteProtectionGroupID == "" {
+		errorMsg := fmt.Sprintf("DiscoverStorageProtectionGroup failed with (%s) for devID (%s)", "Failed to find protected remote storage group", remoteVolumeID)
+		log.Error(errorMsg)
+		return nil, status.Error(codes.InvalidArgument, errorMsg)
+	}
+
+	localParams := map[string]string{
+		s.opts.ReplicationContextPrefix + SymmetrixIDParam:    symID,
+		s.opts.ReplicationContextPrefix + LocalRDFGroupParam:  localRDFGroup,
+		s.opts.ReplicationContextPrefix + RemoteSymIDParam:    remoteSymID,
+		s.opts.ReplicationContextPrefix + RemoteRDFGroupParam: remoteRDFGroup,
+		s.opts.ReplicationContextPrefix + "ReplicationMode":   repMode,
+	}
+	remoteParams := map[string]string{
+		s.opts.ReplicationContextPrefix + SymmetrixIDParam:    remoteSymID,
+		s.opts.ReplicationContextPrefix + LocalRDFGroupParam:  remoteRDFGroup,
+		s.opts.ReplicationContextPrefix + RemoteSymIDParam:    symID,
+		s.opts.ReplicationContextPrefix + RemoteRDFGroupParam: localRDFGroup,
+		s.opts.ReplicationContextPrefix + "ReplicationMode":   repMode,
+	}
+	// found both SGs, return response
+	csiExtResp := &csiext.DiscoverStorageProtectionGroupResponse{
+		LocalProtectionGroupId:          localProtectionGroupID,
+		RemoteProtectionGroupId:         remoteProtectionGroupID,
+		LocalProtectionGroupAttributes:  localParams,
+		RemoteProtectionGroupAttributes: remoteParams,
+	}
+	return csiExtResp, nil
+}
+
+func (s *service) DiscoverRemoteVolume(ctx context.Context, req *csiext.DiscoverRemoteVolumeRequest) (*csiext.DiscoverRemoteVolumeResponse, error) {
+	// Requires probe
+	if err := s.requireProbe(ctx); err != nil {
+		return nil, err
+	}
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+	id := req.GetVolumeHandle()
+	symID, devID, vol, err := s.GetVolumeByID(id)
+	if err != nil {
+		log.Errorf("GetVolumeByID failed with (%s) for devID (%s)", err.Error(), devID)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	// Get the parameters
+	params := req.GetParameters()
+	localRDFGroup := params[LocalRDFGroupParam]
+	remoteSymID := params[RemoteSymIDParam]
+	repMode := params[ReplicationModeParam]
+	remoteServiceLevel := params[RemoteServiceLevelParam]
+	remoteRDFGroup := params[RemoteRDFGroupParam]
+	remoteVolumeID, err := s.GetRemoteVolumeID(symID, localRDFGroup, devID)
+	if err != nil {
+		log.Errorf("GetRemoteVolumeID failed with (%s) for devID (%s)", err.Error(), devID)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	// log all parameters used in DiscoverRemoteVolume call
+	fields := map[string]interface{}{
+		"RequestID":         reqID,
+		"SymmetrixID":       symID,
+		"VolumeName":        vol.VolumeIdentifier,
+		"DeviceID":          devID,
+		"RemoteDeviceID":    remoteVolumeID,
+		"LocalSRDFG":        localRDFGroup,
+		"RemoteSymmetrixID": remoteSymID,
+		"ReplicationMode":   repMode,
+	}
+	log.WithFields(fields).Info("Executing DiscoverRemoteVolume with following fields")
+
+	remoteVol, err := s.adminClient.GetVolumeByID(remoteSymID, remoteVolumeID)
+	if err != nil {
+		if strings.Contains(err.Error(), cannotBeFound) {
+			return nil, status.Errorf(codes.NotFound,
+				"Volume not found (Array: %s, Volume: %s)status %s",
+				remoteSymID, remoteVolumeID, err.Error())
+		}
+		return nil, status.Errorf(codes.Internal,
+			"failure checking volume (Array: %s, Volume: %s)status %s",
+			remoteSymID, remoteVolumeID, err.Error())
+	}
+	// Set the volume identifier on the remote volume to be same as local volume
+	if remoteVol.VolumeIdentifier == "" {
+		remoteVol, err = s.adminClient.RenameVolume(remoteSymID, remoteVol.VolumeID, vol.VolumeIdentifier)
+		if err != nil || vol == nil {
+			return nil, status.Errorf(codes.InvalidArgument, "RenameRemoteVolume: Failed to rename volume %s %s", remoteVolumeID, err.Error())
+		}
+	}
+	remoteProtectionGroupID := s.GetProtectedStorageGroupID(remoteVol.StorageGroupIDList, localRDFGroup+"-"+repMode)
+	if remoteProtectionGroupID == "" {
+		errorMsg := fmt.Sprintf("DiscoverRemoteVolume failed with (%s) for devID (%s)", "Failed to find protected remote storage group", remoteVolumeID)
+		log.Error(errorMsg)
+		return nil, status.Error(codes.InvalidArgument, errorMsg)
+	}
+	// Set the volume context for the response
+	volContext := map[string]string{
+		CapacityGB:   fmt.Sprintf("%.2f", vol.CapacityGB),
+		StorageGroup: remoteProtectionGroupID,
+		s.opts.ReplicationContextPrefix + SymmetrixIDParam: remoteSymID,
+		ServiceLevelParam:  remoteServiceLevel,
+		LocalRDFGroupParam: remoteRDFGroup,
+		s.opts.ReplicationContextPrefix + RemoteSymIDParam: symID,
+		RemoteRDFGroupParam: localRDFGroup,
+		s.opts.ReplicationContextPrefix + ReplicationModeParam: repMode,
+	}
+
+	csiExtResp := &csiext.DiscoverRemoteVolumeResponse{
+		RemoteVolume: &csiext.Volume{
+			CapacityBytes: int64(remoteVol.CapacityCYL * cylinderSizeInBytes),
+			VolumeId:      fmt.Sprintf("%s-%s-%s", remoteVol.VolumeIdentifier, remoteSymID, remoteVol.VolumeID),
+			VolumeContext: volContext,
+		},
+	}
+	return csiExtResp, nil
+}
+
+func (s *service) DeleteStorageProtectionGroup(ctx context.Context, req *csiext.DeleteStorageProtectionGroupRequest) (*csiext.DeleteStorageProtectionGroupResponse, error) {
+	// Requires probe
+	if err := s.requireProbe(ctx); err != nil {
+		return nil, err
+	}
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+	protectionGroupID := req.GetProtectionGroupId()
+	localParams := req.GetProtectionGroupAttributes()
+	symID := localParams[SymmetrixIDParam]
+	sg, err := s.adminClient.GetProtectedStorageGroup(symID, protectionGroupID)
+	if err != nil {
+		if strings.Contains(err.Error(), cannotBeFound) || strings.Contains(err.Error(), ignoredViaAWhitelist) {
+			// The protected storage group is already deleted
+			log.Info(fmt.Sprintf("DeleteStorageProtectionGroup: Could not find protected SG: %s/%s so assume it's already deleted", symID, protectionGroupID))
+			return &csiext.DeleteStorageProtectionGroupResponse{}, nil
+		}
+		log.Errorf("GetProtectedStorageGroup failed for (%s):(%s)", protectionGroupID, err.Error())
+		return nil, status.Errorf(codes.Internal, "GetProtectedStorageGroup failed for (%s):(%s)", protectionGroupID, err.Error())
+	}
+	if sg.NumDevicesNonGk > 0 {
+		log.Errorf("(%s) has got device, failed deletion", protectionGroupID)
+		return nil, status.Errorf(codes.FailedPrecondition, "(%s) has got device, failed deletion", protectionGroupID)
+	}
+	// log all parameters used in DeleteStorageProtectionGroup call
+	fields := map[string]interface{}{
+		"RequestID":         reqID,
+		"SymmetrixID":       symID,
+		"ProtectionGroupID": protectionGroupID,
+	}
+	log.WithFields(fields).Info("Executing DeleteStorageGroup with following fields")
+
+	err = s.adminClient.DeleteStorageGroup(symID, protectionGroupID)
+	if err != nil {
+		log.Errorf(" DeleteStorageGroup failed for (%s) with (%s)", protectionGroupID, err.Error())
+		return nil, status.Errorf(codes.Internal, " DeleteStorageGroup failed for (%s) with (%s)", protectionGroupID, err.Error())
+	}
+	return &csiext.DeleteStorageProtectionGroupResponse{}, nil
+}
+
+func addMetaData(params map[string]string) map[string][]string {
+	// CSI specific metadata header for authorization
+	log.Debug("Creating meta data for HTTP header")
+	var headerMetadata = make(map[string][]string)
+	if _, ok := params[CSIPersistentVolumeName]; ok {
+		headerMetadata[HeaderPersistentVolumeName] = []string{params[CSIPersistentVolumeName]}
+	}
+
+	if _, ok := params[CSIPersistentVolumeClaimName]; ok {
+		headerMetadata[HeaderPersistentVolumeClaimName] = []string{params[CSIPersistentVolumeClaimName]}
+	}
+
+	if _, ok := params[CSIPVCNamespace]; ok {
+		headerMetadata[HeaderPersistentVolumeClaimNamespace] = []string{params[CSIPVCNamespace]}
+	}
+	return headerMetadata
 }
