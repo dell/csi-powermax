@@ -10,4 +10,4 @@ spec:
   resources:
     requests:
       storage: 8Ti
-  storageClassName: powermax
+  storageClassName: {{ .Values.sc }}

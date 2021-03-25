@@ -22,19 +22,22 @@ import (
 	"strconv"
 	"strings"
 
+	"google.golang.org/grpc"
+
 	"sync"
 	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	gocsi "github.com/dell/gocsi"
+	csictx "github.com/dell/gocsi/context"
 	"github.com/dell/goiscsi"
 	types "github.com/dell/gopowermax/types/v90"
-	gocsi "github.com/rexray/gocsi"
-	csictx "github.com/rexray/gocsi/context"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/dell/csi-powermax/core"
+	csiext "github.com/dell/dell-csi-extensions/replication"
 	pmax "github.com/dell/gopowermax"
 )
 
@@ -77,7 +80,9 @@ type Service interface {
 	csi.ControllerServer
 	csi.IdentityServer
 	csi.NodeServer
+	csiext.ReplicationServer
 	BeforeServe(context.Context, *gocsi.StoragePlugin, net.Listener) error
+	RegisterAdditionalServers(server *grpc.Server)
 }
 
 // Opts defines service configuration options.
@@ -112,6 +117,8 @@ type Opts struct {
 	NodeNameTemplate           string
 	ModifyHostName             bool
 	IsReverseProxyEnabled      bool
+	ReplicationContextPrefix   string // Enables sidecars to read required information from volume context
+	ReplicationPrefix          string // Used as a prefix to find out if replication is enabled
 }
 
 type service struct {
@@ -160,30 +167,31 @@ func (s *service) BeforeServe(
 
 	defer func() {
 		fields := map[string]interface{}{
-			"endpoint":          s.opts.Endpoint,
-			"useProxy":          s.opts.UseProxy,
-			"ProxyServiceHost":  s.opts.ProxyServiceHost,
-			"ProxyServicePort":  s.opts.ProxyServicePort,
-			"user":              s.opts.User,
-			"password":          "",
-			"systemname":        s.opts.SystemName,
-			"nodename":          s.opts.NodeName,
-			"insecure":          s.opts.Insecure,
-			"thickprovision":    s.opts.Thick,
-			"privatedir":        s.privDir,
-			"autoprobe":         s.opts.AutoProbe,
-			"enableblock":       s.opts.EnableBlock,
-			"enablechap":        s.opts.EnableCHAP,
-			"portgroups":        s.opts.PortGroups,
-			"clusterprefix":     s.opts.ClusterPrefix,
-			"arrays":            s.opts.AllowedArrays,
-			"transport":         s.opts.TransportProtocol,
-			"mode":              s.mode,
-			"drivername":        s.opts.DriverName,
-			"iscsichapuser":     s.opts.CHAPUserName,
-			"iscsichappassword": "",
-			"nodenametemplate":  s.opts.NodeNameTemplate,
-			"modifyHostName":    s.opts.ModifyHostName,
+			"endpoint":                s.opts.Endpoint,
+			"useProxy":                s.opts.UseProxy,
+			"ProxyServiceHost":        s.opts.ProxyServiceHost,
+			"ProxyServicePort":        s.opts.ProxyServicePort,
+			"user":                    s.opts.User,
+			"password":                "",
+			"systemname":              s.opts.SystemName,
+			"nodename":                s.opts.NodeName,
+			"insecure":                s.opts.Insecure,
+			"thickprovision":          s.opts.Thick,
+			"privatedir":              s.privDir,
+			"autoprobe":               s.opts.AutoProbe,
+			"enableblock":             s.opts.EnableBlock,
+			"enablechap":              s.opts.EnableCHAP,
+			"portgroups":              s.opts.PortGroups,
+			"clusterprefix":           s.opts.ClusterPrefix,
+			"arrays":                  s.opts.AllowedArrays,
+			"transport":               s.opts.TransportProtocol,
+			"mode":                    s.mode,
+			"drivername":              s.opts.DriverName,
+			"iscsichapuser":           s.opts.CHAPUserName,
+			"iscsichappassword":       "",
+			"nodenametemplate":        s.opts.NodeNameTemplate,
+			"modifyHostName":          s.opts.ModifyHostName,
+			"replicationContextPreix": s.opts.ReplicationContextPrefix,
 		}
 
 		if s.opts.Password != "" {
@@ -254,6 +262,13 @@ func (s *service) BeforeServe(
 		opts.AllowedArrays, _ = s.parseCommaSeperatedList(arrays)
 	} else {
 		opts.AllowedArrays = []string{}
+	}
+
+	if replicationContextPrefix, ok := csictx.LookupEnv(ctx, ReplicationContextPrefix); ok {
+		opts.ReplicationContextPrefix = replicationContextPrefix
+	}
+	if replicationPrefix, ok := csictx.LookupEnv(ctx, ReplicationPrefix); ok {
+		opts.ReplicationPrefix = replicationPrefix
 	}
 
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
@@ -374,6 +389,11 @@ func (s *service) BeforeServe(
 		if err != nil {
 			return err
 		}
+		if len(symIDs.SymmetrixIDs) == 0 {
+			errMsg := "no arrays connected to the unisphere"
+			log.Println(errMsg)
+			return fmt.Errorf("%s", errMsg)
+		}
 		s.NewDeletionWorker(s.opts.ClusterPrefix, symIDs.SymmetrixIDs, s.adminClient)
 	}
 
@@ -386,6 +406,10 @@ func (s *service) BeforeServe(
 	}
 
 	return nil
+}
+
+func (s *service) RegisterAdditionalServers(server *grpc.Server) {
+	csiext.RegisterReplicationServer(server, s)
 }
 
 func (s *service) getProxySettingsFromEnv() (string, string, bool) {

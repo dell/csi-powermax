@@ -121,4 +121,10 @@ const (
 	// is pointing to the reverse proxy
 	// Only used for testing
 	EnvProxyEnabled = "X_CSI_REVERSE_PROXY_ENABLED"
+
+	// ReplicationContextPrefix enables sidecars to read required information from volume context
+	ReplicationContextPrefix = "X_CSI_ReplicationContextPrefix"
+
+	// ReplicationPrefix is used as a prefix to find out if replication is enabled
+	ReplicationPrefix = "X_CSI_ReplicationPrefix"
 )

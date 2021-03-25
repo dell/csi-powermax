@@ -150,6 +150,7 @@ Feature: PowerMax CSI interface
      | "GetVolumeError"            | "none"                           | "Error fetching volume for idempotence check"      |
      | "GetStorageGroupError"      | "none"                           | "none"                                             |
      | "GetStorageGroupError"      | "CreateStorageGroupError"        | "Error creating storage group"                     |
+     | "InvalidLocalVolumeError"   | "none"                           | "Idempotence check: StorageGroupIDList is empty"   |
 
 @v1.0.0
      Scenario: Create volume with application prefix
@@ -182,12 +183,20 @@ Feature: PowerMax CSI interface
       And I call CreateVolume "volume4" 
       Then the error contains "Couldn't find storage pool"
 
-@v1.0.0
+@v1.6.0
      Scenario: Create volume with Accessibility Requirements
       Given a PowerMax service
       And I specify AccessibilityRequirements
       And I call CreateVolume "accessibility"
-      Then the error contains "Volume AccessibilityRequirements is not supported"
+      Then a valid CreateVolumeResponse is returned
+
+@v1.6.0
+     Scenario: Idempotent create volume with Accessibility Requirements
+      Given a PowerMax service
+      And I specify AccessibilityRequirements
+      And I call CreateVolume "accessibility"
+      And I call CreateVolume "accessibility"
+      Then a valid CreateVolumeResponse is returned
 
 @v1.0.0
      Scenario: Create volume with AccessMode_MULTINODE_WRITER

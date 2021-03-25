@@ -27,7 +27,7 @@ rules:
     verbs: ["get", "list", "watch", "create", "delete", "update", "patch" ]
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
-    verbs: ["get", "list", "watch", "update", "patch"]
+    verbs: ["create", "delete", "get", "list", "watch", "update", "patch"]
   - apiGroups: ["storage.k8s.io"]
     resources: ["storageclasses"]
     verbs: ["get", "list", "watch"]
@@ -68,6 +68,18 @@ rules:
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
     verbs: ["create", "list", "watch", "delete"]
+# below for dell-csi-replicator
+  {{- if eq .Values.replication.enabled true}}
+  - apiGroups: ["replication.storage.dell.com"]
+    resources: ["dellcsireplicationgroups"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["replication.storage.dell.com"]
+    resources: ["dellcsireplicationgroups/status"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete", "get", "list", "watch", "update", "patch"]
+  {{- end}}
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -150,6 +162,8 @@ spec:
             - "--v=5"
             - "--default-fstype={{ .Values.defaultFsType | default "ext4" }}"
             - "--leader-election"
+            - "--extra-create-metadata"
+            - "--feature-gates=Topology=true"
           env:
             - name: ADDRESS
               value: /var/run/csi/csi.sock
@@ -171,6 +185,27 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi
+        {{- if eq .Values.replication.enabled true}}
+        - name: dell-csi-replicator
+          image: {{ required "Must provide the Dell CSI Replicator Resizer image." .Values.replication.image}}
+          imagePullPolicy: Always
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--leader-election=true"
+            - "--worker-threads=2"
+            - "--retry-interval-start=1s"
+            - "--retry-interval-max=300s"
+            - "--timeout=10s"
+            - "--context-prefix=$(ReplicationContextPrefix)"
+          env:
+            - name: ADDRESS
+              value: /var/run/csi/csi.sock
+            - name: ReplicationContextPrefix
+              value: {{ .Values.replicationContextPrefix | default "powermax/" }}
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/csi
+        {{- end }}
         - name: resizer
           image: {{ required "Must provide the CSI resizer container image." .Values.images.resizer }}
           args:
@@ -249,6 +284,10 @@ spec:
               value: {{ .Values.nodeNameTemplate | default "" }}
             - name: X_CSI_IG_MODIFY_HOSTNAME
               value: {{ .Values.modifyHostName | default "false" | lower | quote }}
+            - name: X_CSI_ReplicationContextPrefix
+              value: {{ .Values.replicationContextPrefix | default "powermax/"}}
+            - name: X_CSI_ReplicationPrefix
+              value: {{ .Values.replicationPrefix | default "replication.storage.dell.com/"}}
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi

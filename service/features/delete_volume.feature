@@ -24,7 +24,7 @@ Feature: PowerMax CSI interface
 
 @delete
 @v1.0.0
-    Scenario: Delete volume with valid CapacityRange capabilities BlockVolume,  MULTI_NODE_READER_ONLY null VolumeContentSource.
+    Scenario: Delete volume with valid CapacityRange capabilities BlockVolume,  MULTI_NODE_READER_ONLY and null VolumeContentSource.
 	Given a PowerMax service
 	And a valid volume
 	When I call Probe
@@ -33,7 +33,7 @@ Feature: PowerMax CSI interface
 
 @delete
 @v1.0.0
-    Scenario: Delete volume with valid CapacityRange capabilities BlockVolume, MULTI_NODE_WRITE null VolumeContentSource.
+    Scenario: Delete volume with valid CapacityRange capabilities BlockVolume, MULTI_NODE_WRITE and null VolumeContentSource.
 	Given a PowerMax service
 	And a valid volume
 	When I call Probe

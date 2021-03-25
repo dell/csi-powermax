@@ -36,3 +36,7 @@ The error message is: " rpc error: code = OutOfRange desc = bad capacity: size i
 7. A test to create a snapshot with maximum-length name. Same problem as 2.
 
 8. A test to delete a snapshot with an invalid name. The test fails because the csi-powermax driver follows a certain naming convention and the passed invalid snapshot name doesn't comply with that.
+
+9. A test to create a volume from an existing source volume. Same problem as 2.
+
+10. A test to expand volume fails because the returned expanded byte size is approximate size in cylinder bytes. Whereas the test expects the volume size to be same as requested size. 

@@ -1,7 +1,7 @@
 Feature: PowerMax CSI Interface
     As a consumer of the CSI interface
     I want to test snapshot interfaces
-    So that they are know to work
+    So that they are known to work
 @v1.2.0
     Scenario: Snapshot license
         Given a PowerMax service

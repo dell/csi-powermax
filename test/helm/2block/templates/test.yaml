@@ -36,7 +36,7 @@ spec:
         accessModes:
         - ReadWriteOnce
         volumeMode: Block
-        storageClassName: powermax
+        storageClassName: {{ .Values.sc }}
         resources:
           requests:
             storage: 1Gi
@@ -46,7 +46,7 @@ spec:
         accessModes:
         - ReadWriteOnce
         volumeMode: Block
-        storageClassName: powermax
+        storageClassName: {{ .Values.sc }}
         resources:
           requests:
             storage: 1Gi
