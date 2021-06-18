@@ -148,14 +148,14 @@ func (s *service) GetReplicationCapabilities(
 			{
 				Type: &csiext.ReplicationCapability_Rpc{
 					Rpc: &csiext.ReplicationCapability_RPC{
-						Type: csiext.ReplicationCapability_RPC_DISCOVER_REMOTE_VOLUME,
+						Type: csiext.ReplicationCapability_RPC_CREATE_REMOTE_VOLUME,
 					},
 				},
 			},
 			{
 				Type: &csiext.ReplicationCapability_Rpc{
 					Rpc: &csiext.ReplicationCapability_RPC{
-						Type: csiext.ReplicationCapability_RPC_DISCOVER_PROTECTION_GROUPS,
+						Type: csiext.ReplicationCapability_RPC_CREATE_PROTECTION_GROUP,
 					},
 				},
 			},

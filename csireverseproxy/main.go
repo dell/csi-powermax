@@ -32,6 +32,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
+
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 
@@ -318,7 +320,7 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 	return server, nil
 }
 
-func main() {
+func run(ctx context.Context) {
 	signal.Ignore()
 
 	// Get the server opts
@@ -328,13 +330,11 @@ func main() {
 	k8sUtils, err := k8sutils.Init(opts.NameSpace, opts.CertDir, opts.InCluster, time.Second*30)
 	if err != nil {
 		log.Fatal(err.Error())
-		return
 	}
 
 	server, err := startServer(k8sUtils, opts)
 	if err != nil {
 		log.Fatalln("Server start failed")
-		return
 	}
 
 	// Wait for the server to exit gracefully
@@ -342,4 +342,22 @@ func main() {
 
 	// Sleep for sometime to allow all goroutines to finish logging
 	time.Sleep(100 * time.Millisecond)
+}
+
+func main() {
+	if isLEEnabled := getEnv(common.EnvIsLeaderElectionEnabled, "false"); isLEEnabled == "true" {
+		isInCluster := getEnv(common.EnvInClusterConfig, "false")
+		kubeClient := k8sutils.KubernetesClient{}
+		if err := kubeClient.CreateKubeClient(isInCluster == "true"); err != nil {
+			log.Fatalf("Failed to create kube client: [%s]", err.Error())
+		}
+		le := leaderelection.NewLeaderElection(kubeClient.Clientset, "csi-powermax-reverse-proxy-dellemc-com", run)
+		defaultNamespace := getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace)
+		le.WithNamespace(defaultNamespace)
+		if err := le.Run(); err != nil {
+			log.Fatalf("Failed to initialize leader election: [%s]", err.Error())
+		}
+	} else {
+		run(context.TODO())
+	}
 }

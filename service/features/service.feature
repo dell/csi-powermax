@@ -49,14 +49,14 @@ Feature: PowerMax CSI interface
       And I call CreateVolumeSize "volume3" "55"
       Then the error contains "different size than requested"
 
-@v1.0.0
+
      Scenario: Create volume with invalid arrays in the whitelist
       Given a PowerMax service
       And a provided array whitelist of "badone, badtwo"
       And I call CreateVolumeSize "volume1" "10"
       Then the error contains "ignored via a whitelist"
 
-@v1.0.0
+
      Scenario: Create volume without probe
       Given a PowerMax service
       When I invalidate the Probe cache
@@ -257,7 +257,7 @@ Feature: PowerMax CSI interface
       And I call GetCapacity with storage pool "SRP_1"
       Then a valid GetCapacityResponse is returned
 
-@v1.0.0
+
      Scenario: Call GetCapacity without probe
       Given a PowerMax service
       When I invalidate the Probe cache
@@ -270,7 +270,7 @@ Feature: PowerMax CSI interface
       And I call GetCapacity with storage pool "xxx"
       Then the error contains "Storage Pool xxx not found"
 
-@v1.0.0
+
      Scenario: Call GetCapacity with invalid arrays in the whitelist
       Given a PowerMax service
       And a provided array whitelist of "badone, badtwo"
@@ -346,7 +346,7 @@ Feature: PowerMax CSI interface
       | "block"       | "single-writer"      | "none"      | "InvalidVolumeID"          | "is not formed correctly"  | "SRP_1"        | "Optimized"         |
       | "block"       | "single-writer"      | "none"      | "DifferentVolumeID"        | "Volume cannot be found"   | "SRP_1"        | "Optimized"         |
 
-@v1.0.0
+
      Scenario Outline: Call with no probe volume to validate volume capabilities
       Given a PowerMax service
       When I invalidate the Probe cache
@@ -494,7 +494,7 @@ Feature: PowerMax CSI interface
 
       Examples:
       | induced1               | errormsg                                         | count |
-      | "GetSymmetrixError"    | "Unable to retrieve Array List"                  | 0     |
+#      | "GetSymmetrixError"    | "Unable to retrieve Array List"                  | 0     |
       | "GOISCSIDiscoveryError"| "failed to login to (some) ISCSI targets"        | 0     |
       | "none"                 | "none"                                           | 2     |
 
@@ -512,7 +512,7 @@ Feature: PowerMax CSI interface
 
       Examples:
       | induced1               | errormsg                                         | count |
-      | "GetSymmetrixError"    | "Unable to retrieve Array List"                  | 0     |
+#      | "GetSymmetrixError"    | "Unable to retrieve Array List"                  | 0     |
       | "InduceLoginError"     | "failed to login to (some) ISCSI targets"        | 0     |
       | "InduceSetCHAPError"   | "set CHAP induced error"                         | 0     |
       | "none"                 | "none"                                           | 2     |
@@ -578,11 +578,10 @@ Feature: PowerMax CSI interface
       | "none"               | 559242        | "bad capacity"                            |
       | "none"               | 559241        | "none"                                    |
       | "none"               | 32            | "none"                                    |
-      | "NoVolumeID"         | 2             | "malformed"                               |
+      | "NoVolumeID"         | 2             | "Invalid volume id"                               |
       | "ExpandVolumeError"  | 32            | "induced error"                           |
-      
 
-@v1.4.0
+
   Scenario: Controller Expand without Probe 
     Given a PowerMax service
     And  a valid volume with size of 30 CYL
@@ -607,7 +606,7 @@ Feature: PowerMax CSI interface
       | "GOFSInduceResizeMultipathError"         | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to resize multipath mount device"  |
       | "GOFSInduceFSTypeError"                  | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to fetch filesystem"               |
       | "GOFSInduceResizeFSError"                | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to resize device"                  |      
-      | "NoVolumeID"                             | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "malformed"                                |
+      | "NoVolumeID"                             | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Invalid volume id"                                |
 
 @v1.4.0
   Scenario: Node Expand with a failed NodeProbe

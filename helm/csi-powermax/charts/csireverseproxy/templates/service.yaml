@@ -9,5 +9,9 @@ spec:
       protocol: TCP
       targetPort: 2222
   selector:
+    {{- if eq .Values.deployAsSidecar true}}
+    name: {{ .Release.Name }}-controller
+    {{- else }}
     name: {{ .Release.Name }}-reverseproxy
+    {{- end }}
   type: ClusterIP

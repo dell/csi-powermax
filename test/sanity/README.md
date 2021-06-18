@@ -1,13 +1,13 @@
 # Kubernetes Sanity Script Test
 
 This test runs the Kubernetes sanity test at https://github.com/kubernetes-csi/csi-test.
-The driver was qualified with test version v2.0.1 earlier.
-The driver was most recently qualified with v2.3.0 on 11/8/2019
+The driver was qualified with test version v3.1.1 earlier with CSI v1.2 spec.
+The driver was most recently qualified with v4.1.0 with CSI v1.3 spec.
 
 To run the test, follow these steps:
 
 1. "go get github.com/kubernetes-csi/csi-test"
-2. Build and install the executable, csi-sanity,  in a directory in your $PATH.
+2. Build and install the executable, csi-sanity, in a directory in your $PATH.
 3. Make sure your env.sh is up to date so the CSI driver can be run.
 4. Edit the secrets.yaml to have the correct SYMID, ServiceLevel, SRP, and ApplicationPrefix.
 5. Use the start_driver.sh to start the driver. USE AN OTHERWISE IDLE ARRAY FOR THE TEST.
@@ -39,4 +39,6 @@ The error message is: " rpc error: code = OutOfRange desc = bad capacity: size i
 
 9. A test to create a volume from an existing source volume. Same problem as 2.
 
-10. A test to expand volume fails because the returned expanded byte size is approximate size in cylinder bytes. Whereas the test expects the volume size to be same as requested size. 
+10. A test to expand volume fails because the returned expanded byte size is approximate size in cylinder bytes. Whereas the test expects the volume size to be same as requested size.
+
+11. A volume lifecycle test, the cleanup section of this test fails because the csi-powermax driver is getting DeleteVolume call before ControllerUnpublishVolume call, which is not a supported scenario for a published volume.

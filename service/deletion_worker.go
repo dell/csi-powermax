@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dell/csi-powermax/pkg/symmetrix"
+
 	pmax "github.com/dell/gopowermax"
 	"github.com/dell/gopowermax/types/v90"
 	log "github.com/sirupsen/logrus"
@@ -84,7 +86,6 @@ type deletionQueue struct {
 type deletionWorker struct {
 	DeletionQueues      map[string]*deletionQueue
 	lock                sync.Mutex
-	adminClient         pmax.Pmax
 	SymmetrixIDs        []string
 	ClusterPrefix       string
 	DeletionRequestChan chan deletionRequest
@@ -108,7 +109,7 @@ func (req *deletionRequest) isValid(clusterPrefix string) error {
 	return nil
 }
 
-func (vol *symVolumeCache) getOrUpdateVolume(symID, volumeID string, adminClient pmax.Pmax, forceUpdate bool) (*types.Volume, error) {
+func (vol *symVolumeCache) getOrUpdateVolume(symID, volumeID string, pmaxClient pmax.Pmax, forceUpdate bool) (*types.Volume, error) {
 	updateCache := false
 	if vol.volume == nil {
 		updateCache = true
@@ -116,7 +117,7 @@ func (vol *symVolumeCache) getOrUpdateVolume(symID, volumeID string, adminClient
 		updateCache = true
 	}
 	if updateCache {
-		volume, err := adminClient.GetVolumeByID(symID, volumeID)
+		volume, err := pmaxClient.GetVolumeByID(symID, volumeID)
 		if err != nil {
 			vol.volume = nil
 			return nil, err
@@ -197,11 +198,11 @@ func (queue *deletionQueue) print() {
 
 // expectation is that if you know the snapshot id, you also know the generation
 // otherwise snapshot should be left blank
-func unlinkTarget(tgtVol *types.Volume, snapID, srcDevID, symID string, snapGeneration int64, adminClient pmax.Pmax) error {
+func unlinkTarget(tgtVol *types.Volume, snapID, srcDevID, symID string, snapGeneration int64, pmaxClient pmax.Pmax) error {
 	if tgtVol != nil {
 		isDefined := false
 		if snapID == "" {
-			snapInfo, err := adminClient.GetVolumeSnapInfo(symID, tgtVol.VolumeID)
+			snapInfo, err := pmaxClient.GetVolumeSnapInfo(symID, tgtVol.VolumeID)
 			if err != nil {
 				return fmt.Errorf("failed to find snapshot info for tgt vol. error: %s", err.Error())
 			}
@@ -213,7 +214,7 @@ func unlinkTarget(tgtVol *types.Volume, snapID, srcDevID, symID string, snapGene
 					// Overwrite whatever source device id information was sent
 					srcDevID = snapInfo.VolumeSnapshotLink[0].LinkSource
 					// get source details
-					srcSnapInfo, err := adminClient.GetVolumeSnapInfo(symID, srcDevID)
+					srcSnapInfo, err := pmaxClient.GetVolumeSnapInfo(symID, srcDevID)
 					if err != nil {
 						return fmt.Errorf("failed to obtain snapshot info for source device")
 					}
@@ -238,7 +239,7 @@ func unlinkTarget(tgtVol *types.Volume, snapID, srcDevID, symID string, snapGene
 			sourceList = append(sourceList, types.VolumeList{Name: srcDevID})
 			tgtList := make([]types.VolumeList, 0)
 			tgtList = append(tgtList, types.VolumeList{Name: tgtVol.VolumeID})
-			err := adminClient.ModifySnapshotS(symID, sourceList, tgtList, snapID,
+			err := pmaxClient.ModifySnapshotS(symID, sourceList, tgtList, snapID,
 				"Unlink", "", snapGeneration)
 			if err != nil {
 				return fmt.Errorf("failed to unlink snapshot. error: %s", err.Error())
@@ -250,13 +251,13 @@ func unlinkTarget(tgtVol *types.Volume, snapID, srcDevID, symID string, snapGene
 	return fmt.Errorf("target volume details can't be nil")
 }
 
-func unlinkTargetsAndTerminateSnapshot(srcVol *types.Volume, symID string, adminClient pmax.Pmax) error {
+func unlinkTargetsAndTerminateSnapshot(srcVol *types.Volume, symID string, pmaxClient pmax.Pmax) error {
 	// If we got a source device here, it can mean 2 things
 	// 1. Device has snapshots which were marked for deletion
 	// 2. Device has temporary snapshots
 	// deletion_worker will never unlink/terminate any other types of snapshot
 	if srcVol != nil {
-		snapInfo, err := adminClient.GetVolumeSnapInfo(symID, srcVol.VolumeID)
+		snapInfo, err := pmaxClient.GetVolumeSnapInfo(symID, srcVol.VolumeID)
 		if err != nil {
 			return err
 		}
@@ -280,14 +281,14 @@ func unlinkTargetsAndTerminateSnapshot(srcVol *types.Volume, symID string, admin
 					sourceVolumes := make([]types.VolumeList, 0)
 					sourceVolumes = append(sourceVolumes, types.VolumeList{Name: srcVol.VolumeID})
 					if len(tgtVolumes) != 0 {
-						err := adminClient.ModifySnapshotS(symID, sourceVolumes, tgtVolumes, snapName,
+						err := pmaxClient.ModifySnapshotS(symID, sourceVolumes, tgtVolumes, snapName,
 							"Unlink", "", snapSrcInfo.Generation)
 						if err != nil {
 							return fmt.Errorf("failed to unlink snapshot. error: %s", err.Error())
 						}
 						if allLinksDefined {
 							// Terminate the snapshot generation
-							err = adminClient.DeleteSnapshotS(symID, snapName, sourceVolumes, snapSrcInfo.Generation)
+							err = pmaxClient.DeleteSnapshotS(symID, snapName, sourceVolumes, snapSrcInfo.Generation)
 							if err != nil {
 								return fmt.Errorf("failed to terminate the snapshot. error: %s", err.Error())
 							}
@@ -295,7 +296,7 @@ func unlinkTargetsAndTerminateSnapshot(srcVol *types.Volume, symID string, admin
 					} else {
 						// we just need to terminate the snapshot
 						// Terminate the snapshot generation
-						err = adminClient.DeleteSnapshotS(symID, snapName, sourceVolumes, snapSrcInfo.Generation)
+						err = pmaxClient.DeleteSnapshotS(symID, snapName, sourceVolumes, snapSrcInfo.Generation)
 						if err != nil {
 							return fmt.Errorf("failed to terminate the snapshot. error: %s", err.Error())
 						}
@@ -310,7 +311,7 @@ func unlinkTargetsAndTerminateSnapshot(srcVol *types.Volume, symID string, admin
 	return nil
 }
 
-func (queue *deletionQueue) cleanupSnapshots(adminClient pmax.Pmax) bool {
+func (queue *deletionQueue) cleanupSnapshots(pmaxClient pmax.Pmax) bool {
 	queue.lock.Lock()
 	defer queue.lock.Unlock()
 	if len(queue.DeviceList) == 0 {
@@ -326,7 +327,7 @@ func (queue *deletionQueue) cleanupSnapshots(adminClient pmax.Pmax) bool {
 			// Deletion worker should only process volumes which are
 			// 1. Source for temporary snapshots
 			// 2. Targets (the links exist because of clone from vol or clone from snap operation)
-			symVol, err := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, volumeID, adminClient, false)
+			symVol, err := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, volumeID, pmaxClient, false)
 			if err != nil {
 				device.updateStatus(device.Status.State, err.Error())
 				return false
@@ -336,9 +337,9 @@ func (queue *deletionQueue) cleanupSnapshots(adminClient pmax.Pmax) bool {
 					continue
 				}
 				// If device is target (or both target & source), unlink it from source
-				err = unlinkTarget(symVol, "", "", queue.SymID, 0, adminClient)
+				err = unlinkTarget(symVol, "", "", queue.SymID, 0, pmaxClient)
 				device.updateStatus(device.Status.State, errorMsg(err))
-				_, _ = device.SymVolumeCache.getOrUpdateVolume(queue.SymID, volumeID, adminClient, true)
+				_, _ = device.SymVolumeCache.getOrUpdateVolume(queue.SymID, volumeID, pmaxClient, true)
 				count++
 				continue
 			} else if symVol.SnapSource {
@@ -346,9 +347,9 @@ func (queue *deletionQueue) cleanupSnapshots(adminClient pmax.Pmax) bool {
 					continue
 				}
 				// if device is only source
-				err = unlinkTargetsAndTerminateSnapshot(symVol, queue.SymID, adminClient)
+				err = unlinkTargetsAndTerminateSnapshot(symVol, queue.SymID, pmaxClient)
 				device.updateStatus(device.Status.State, errorMsg(err))
-				_, _ = device.SymVolumeCache.getOrUpdateVolume(queue.SymID, volumeID, adminClient, true)
+				_, _ = device.SymVolumeCache.getOrUpdateVolume(queue.SymID, volumeID, pmaxClient, true)
 				count++
 				continue
 			} else { // device is neither a source or target
@@ -369,7 +370,7 @@ func (queue *deletionQueue) cleanupSnapshots(adminClient pmax.Pmax) bool {
 	return false
 }
 
-func (queue *deletionQueue) removeVolumesFromStorageGroup(adminClient pmax.Pmax) bool {
+func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) bool {
 	queue.lock.Lock()
 	defer queue.lock.Unlock()
 	if len(queue.DeviceList) == 0 {
@@ -379,12 +380,12 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(adminClient pmax.Pmax)
 	volumeIDs := make([]string, 0)
 	count := 0
 	for _, device := range queue.DeviceList {
-		// If state is disassociatesg
+		// If state is disassociateSG
 		if device.Status.State != deletionStateDisAssociateSG {
 			continue
 		} else {
 			// First get the volume from cache
-			symVol, err := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, device.SymDeviceID.DeviceID, adminClient, false)
+			symVol, err := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, device.SymDeviceID.DeviceID, pmaxClient, false)
 			if err != nil {
 				device.updateStatus(device.Status.State, err.Error())
 				continue
@@ -393,7 +394,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(adminClient pmax.Pmax)
 				if sgID == "" {
 					// Iterate through the SG list to find a SG which we can process
 					for _, storageGroupID := range symVol.StorageGroupIDList {
-						sg, err := adminClient.GetStorageGroup(queue.SymID, storageGroupID)
+						sg, err := pmaxClient.GetStorageGroup(queue.SymID, storageGroupID)
 						if err != nil {
 							// failed to fetch the SG details
 							// update error for this device
@@ -440,7 +441,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(adminClient pmax.Pmax)
 	}
 	// Remove the volumes from SG
 	if len(volumeIDs) > 0 {
-		sg, err := adminClient.GetStorageGroup(queue.SymID, sgID)
+		sg, err := pmaxClient.GetStorageGroup(queue.SymID, sgID)
 		if err == nil {
 			if sg.NumOfMaskingViews > 0 {
 				log.Errorf("SG: %s in masking view. Can't proceed with deletion of devices\n", sgID)
@@ -454,21 +455,21 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(adminClient pmax.Pmax)
 		if err != nil {
 			log.Debugf("GetRDFInfoFromSGID failed for (%s) on symID (%s). Proceeding for RemoveVolumesFromStorageGroup", sgID, queue.SymID)
 			// This is the default SG in which all the volumes are replicated
-			_, err = adminClient.RemoveVolumesFromStorageGroup(queue.SymID, sgID, true, volumeIDs...)
+			_, err = pmaxClient.RemoveVolumesFromStorageGroup(queue.SymID, sgID, true, volumeIDs...)
 		} else {
 			log.Debugf("RDF No: (%s)", rdfNo)
 			var rdfInfo *types.RDFGroup
-			rdfInfo, err = adminClient.GetRDFGroup(queue.SymID, rdfNo)
+			rdfInfo, err = pmaxClient.GetRDFGroup(queue.SymID, rdfNo)
 			if err != nil {
 				log.Errorf("GetRDFGroup failed for (%s) on symID (%s)", sgID, queue.SymID)
 				return false
 			}
-			_, err = adminClient.RemoveVolumesFromProtectedStorageGroup(queue.SymID, sgID, rdfInfo.RemoteSymmetrix, sgID, true, volumeIDs...)
+			_, err = pmaxClient.RemoveVolumesFromProtectedStorageGroup(queue.SymID, sgID, rdfInfo.RemoteSymmetrix, sgID, true, volumeIDs...)
 		}
 		for _, volumeID := range volumeIDs {
 			device := getDevice(volumeID, queue.DeviceList)
 			if device != nil {
-				symVol, updateErr := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, volumeID, adminClient, true)
+				symVol, updateErr := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, volumeID, pmaxClient, true)
 				if updateErr != nil {
 					device.updateStatus(device.Status.State, updateErr.Error())
 					continue
@@ -499,7 +500,7 @@ func getDevice(deviceID string, deviceList []*csiDevice) *csiDevice {
 	return nil
 }
 
-func (queue *deletionQueue) deleteVolumes(adminClient pmax.Pmax) bool {
+func (queue *deletionQueue) deleteVolumes(pmaxClient pmax.Pmax) bool {
 	// Go through all the volumes in the queue which are in deletevol state and then form device ranges and delete them
 	queue.lock.Lock()
 	defer queue.lock.Unlock()
@@ -510,7 +511,7 @@ func (queue *deletionQueue) deleteVolumes(adminClient pmax.Pmax) bool {
 	for _, device := range queue.DeviceList {
 		if device.Status.State == deletionStateDeleteVol {
 			// Check once more if volume is part of any storage groups
-			vol, err := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, device.SymDeviceID.DeviceID, adminClient, false)
+			vol, err := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, device.SymDeviceID.DeviceID, pmaxClient, false)
 			if err != nil {
 				device.updateStatus(device.Status.State, err.Error())
 				continue
@@ -548,7 +549,7 @@ func (queue *deletionQueue) deleteVolumes(adminClient pmax.Pmax) bool {
 			}
 		}
 		log.Info("Deleting device range: " + deviceRangeToBeDeleted.get())
-		err := adminClient.DeleteVolume(queue.SymID, deviceRangeToBeDeleted.get())
+		err := pmaxClient.DeleteVolume(queue.SymID, deviceRangeToBeDeleted.get())
 		if err != nil {
 			log.Error(err.Error())
 		}
@@ -660,7 +661,13 @@ func (worker *deletionWorker) deletionRequestHandler() {
 			req.errChan <- fmt.Errorf("unable to process device deletion request as sym id is not managed by deletion worker")
 			continue
 		}
-		vol, err := worker.adminClient.GetVolumeByID(req.SymID, req.DeviceID)
+		pmaxClient, err := symmetrix.GetPowerMaxClient(req.SymID)
+		if err != nil {
+			log.Error(err.Error())
+			req.errChan <- fmt.Errorf("unable to process device deletion request as sym id is not managed by deletion worker")
+			continue
+		}
+		vol, err := pmaxClient.GetVolumeByID(req.SymID, req.DeviceID)
 		if err != nil {
 			req.errChan <- err
 			continue
@@ -714,19 +721,36 @@ func (worker *deletionWorker) deletionWorker() {
 		worker.nextStep()
 		switch worker.State {
 		case cleanupSnapshotStep:
-			updated = worker.DeletionQueues[worker.SymmetrixIDs[symIndex]].cleanupSnapshots(worker.adminClient)
+			symID := worker.SymmetrixIDs[symIndex]
+			pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+			if err != nil {
+				log.Error(err.Error())
+				continue
+			}
+			updated = worker.DeletionQueues[symID].cleanupSnapshots(pmaxClient)
 			if updated {
 				worker.updateDeletionQueues(MinPollingInterval)
 			}
 		case removeVolumesFromSGStep:
-			updated = worker.DeletionQueues[worker.SymmetrixIDs[symIndex]].removeVolumesFromStorageGroup(
-				worker.adminClient)
+			symID := worker.SymmetrixIDs[symIndex]
+			pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+			if err != nil {
+				log.Error(err.Error())
+				continue
+			}
+			updated = worker.DeletionQueues[symID].removeVolumesFromStorageGroup(pmaxClient)
 			if updated {
 				worker.updateDeletionQueues(MinPollingInterval)
 			}
 		case deleteVolumeStep:
 			for i := 0; i < 5; i++ {
-				updated := worker.DeletionQueues[worker.SymmetrixIDs[symIndex]].deleteVolumes(worker.adminClient)
+				symID := worker.SymmetrixIDs[symIndex]
+				pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+				if err != nil {
+					log.Error(err.Error())
+					continue
+				}
+				updated := worker.DeletionQueues[symID].deleteVolumes(pmaxClient)
 				if updated {
 					worker.updateDeletionQueues(time.Millisecond * 500)
 				} else {
@@ -736,11 +760,11 @@ func (worker *deletionWorker) deletionWorker() {
 			worker.updateDeletionQueues(MinPollingInterval)
 		case pruneDeletionQueuesStep:
 			worker.pruneDeletionQueues()
-		}
-		if symIndex < numOfArrays-1 {
-			symIndex++
-		} else {
-			symIndex = 0
+			if symIndex < numOfArrays-1 {
+				symIndex++
+			} else {
+				symIndex = 0
+			}
 		}
 	}
 }
@@ -750,7 +774,12 @@ func (worker *deletionWorker) populateDeletionQueue() {
 		log.Infof("Processing symmetrix %s for volumes to be deleted with cluster prefix: %s", symID, worker.ClusterPrefix)
 		volDeletePrefix := DeletionPrefix + CSIPrefix + "-" + worker.ClusterPrefix
 		log.Infof("Deletion Prefix: " + volDeletePrefix)
-		volList, err := worker.adminClient.GetVolumeIDList(symID, volDeletePrefix, true)
+		pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+		if err != nil {
+			log.Error(err.Error())
+			continue
+		}
+		volList, err := pmaxClient.GetVolumeIDList(symID, volDeletePrefix, true)
 		if err != nil {
 			log.Errorf("Could not retrieve volume IDs to be deleted. Error: %s", err.Error())
 			continue
@@ -760,7 +789,7 @@ func (worker *deletionWorker) populateDeletionQueue() {
 				log.Infof("Volumes with the prefix: %s - %v\n", volDeletePrefix, volList)
 			}
 			for _, id := range volList {
-				volume, err := worker.adminClient.GetVolumeByID(symID, id)
+				volume, err := pmaxClient.GetVolumeByID(symID, id)
 				if err != nil {
 					log.Warningf("Could not retrieve details for volume: %s. Ignoring it", id)
 					continue
@@ -783,13 +812,12 @@ func (worker *deletionWorker) populateDeletionQueue() {
 }
 
 // NewDeletionWorker - Creates an instance of the deletion worker
-func (s *service) NewDeletionWorker(clusterPrefix string, symIDs []string, adminClient pmax.Pmax) {
+func (s *service) NewDeletionWorker(clusterPrefix string, symIDs []string) {
 	if s.deletionWorker == nil {
 		delWorker := new(deletionWorker)
 		delWorker.DeletionQueueChan = make(chan csiDevice, DeletionQueueLength)
 		delWorker.State = initialStep
 		delWorker.ClusterPrefix = clusterPrefix
-		delWorker.adminClient = adminClient
 		delWorker.SymmetrixIDs = symIDs
 		delWorker.DeletionRequestChan = make(chan deletionRequest, DeletionQueueLength)
 		delWorker.DeletionQueues = make(map[string]*deletionQueue, 0)

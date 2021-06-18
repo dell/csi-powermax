@@ -1,3 +1,4 @@
+{{- if ne .Values.deployAsSidecar true }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -46,3 +47,4 @@ spec:
             secretName: {{ .Values.tlsSecret }}
         - name: cert-dir
           emptyDir:
+{{- end }}

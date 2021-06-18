@@ -757,3 +757,94 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
   | 10 |
   | 20 |
   | 35 |
+
+@v1.6.0
+  Scenario: Create and delete replication volume
+    Given a Powermax service
+    And a basic block volume request "integration1" "100"
+    And adds replication capability with mode "ASYNC" namespace "INT"
+    When I call CreateVolume
+    And I receive a valid volume
+    And I call CreateStorageProtectionGroup with mode "ASYNC"
+    And there are no errors
+    And I call CreateRemoteVolume with mode "ASYNC"
+    And there are no errors
+    And when I call DeleteVolume
+    Then there are no errors
+    And I call DeleteTargetVolume
+    Then there are no errors
+    And all volumes are deleted successfully
+    And I call Delete LocalStorageProtectionGroup
+    And there are no errors
+    And I call Delete RemoteStorageProtectionGroup
+    And there are no errors
+
+@v1.6.0
+  Scenario: Idempotent create and delete replication volume
+    Given a Powermax service
+    And a basic block volume request "integration1" "100"
+    And adds replication capability with mode "ASYNC" namespace "INT"
+    When I call CreateVolume
+    And I call CreateVolume
+    And I receive a valid volume
+    And I call CreateStorageProtectionGroup with mode "ASYNC"
+    And there are no errors
+    And I call CreateRemoteVolume with mode "ASYNC"
+    And there are no errors
+    And when I call DeleteVolume
+    And when I call DeleteVolume
+    Then there are no errors
+    And I call DeleteTargetVolume
+    Then there are no errors
+    And all volumes are deleted successfully
+    And I call Delete LocalStorageProtectionGroup
+    And there are no errors
+    And I call Delete RemoteStorageProtectionGroup
+    And there are no errors
+
+@v1.6.0
+  Scenario: Create, publish, unpublish and delete replication volume
+    Given a Powermax service
+    And a basic block volume request "integration1" "100"
+    And adds replication capability with mode "ASYNC" namespace "INT"
+    When I call CreateVolume
+    And there are no errors
+    And when I call PublishVolume "Node1"
+    And there are no errors
+    And when I call UnpublishVolume "Node1"
+    And there are no errors
+    And I call CreateStorageProtectionGroup with mode "ASYNC"
+    And there are no errors
+    And I call CreateRemoteVolume with mode "ASYNC"
+    And there are no errors
+    And when I call DeleteVolume
+    Then there are no errors
+    And I call DeleteTargetVolume
+    Then there are no errors
+    And all volumes are deleted successfully
+    And I call Delete LocalStorageProtectionGroup
+    And there are no errors
+    And I call Delete RemoteStorageProtectionGroup
+    And there are no errors
+
+@v1.6.0
+  Scenario: Create and delete replication mount volume
+    Given a Powermax service
+    And a mount volume request "integration5"
+    And adds replication capability with mode "ASYNC" namespace "INT"
+    When I call CreateVolume
+    And there are no errors
+    And I call CreateStorageProtectionGroup with mode "ASYNC"
+    And there are no errors
+    And I call CreateRemoteVolume with mode "ASYNC"
+    And there are no errors
+    And when I call DeleteVolume
+    Then there are no errors
+    And I call DeleteTargetVolume
+    Then there are no errors
+    And all volumes are deleted successfully
+    And I call Delete LocalStorageProtectionGroup
+    And there are no errors
+    And I call Delete RemoteStorageProtectionGroup
+    And there are no errors
+

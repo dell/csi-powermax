@@ -217,6 +217,6 @@ Feature: PowerMax CSI Interface
     Examples:
       | induced                           | errormsg                          |
       | "GetProtectedStorageGroupError"   | "none"                            |
-      | "RDFGroupHasPairError"            | "has got device, failed deletion" |
+      | "RDFGroupHasPairError"            | "it is not empty"                 |
       | "DeleteStorageGroupError"         | "Error deleting storage group"    |
       | "FetchResponseError"              | "GetProtectedStorageGroup failed" |

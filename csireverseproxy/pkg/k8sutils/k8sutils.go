@@ -15,14 +15,16 @@
 package k8sutils
 
 import (
+	"context"
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"k8s.io/client-go/tools/clientcmd"
 	"os"
 	"path/filepath"
 	"revproxy/pkg/common"
 	"strconv"
 	"time"
+
+	log "github.com/sirupsen/logrus"
+	"k8s.io/client-go/tools/clientcmd"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -57,7 +59,7 @@ var k8sUtils *K8sUtils
 
 // KubernetesClient - client connection
 type KubernetesClient struct {
-	clientset *kubernetes.Clientset
+	Clientset *kubernetes.Clientset
 }
 
 func getKubeConfigPathFromEnv() string {
@@ -82,12 +84,12 @@ func (c *KubernetesClient) CreateInClusterKubeClient() error {
 	if err != nil {
 		return err
 	}
-	// creates the clientset
+	// creates the Clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return err
 	}
-	c.clientset = clientset
+	c.Clientset = clientset
 	return nil
 }
 
@@ -105,18 +107,18 @@ func (c *KubernetesClient) CreateOutOfClusterKubeClient() error {
 	if err != nil {
 		return err
 	}
-	// create the clientset
+	// create the Clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return err
 	}
-	c.clientset = clientset
+	c.Clientset = clientset
 	return nil
 }
 
 // GetSecret - Given a namespace and secret name, returns a pointer to the secret object
 func (c *KubernetesClient) GetSecret(namespace, secretName string) (*corev1.Secret, error) {
-	secret, err := c.clientset.CoreV1().Secrets(namespace).Get(secretName, metav1.GetOptions{})
+	secret, err := c.Clientset.CoreV1().Secrets(namespace).Get(context.TODO(), secretName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +137,7 @@ func Init(namespace, certDirectory string, inCluster bool, resyncPeriod time.Dur
 		return nil, err
 	}
 
-	informerFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient.clientset, resyncPeriod, informers.WithNamespace(namespace))
+	informerFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient.Clientset, resyncPeriod, informers.WithNamespace(namespace))
 
 	secretInformer := informerFactory.Core().V1().Secrets()
 
@@ -210,7 +212,11 @@ func (utils *K8sUtils) createFile(fileName string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Errorf("failed to close file: %s, error: %s", fileName, err.Error())
+		}
+	}()
 	_, err = file.Write(data)
 	if err != nil {
 		return err

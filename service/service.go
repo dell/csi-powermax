@@ -19,8 +19,11 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"os"
 	"strconv"
 	"strings"
+
+	"github.com/dell/csi-powermax/pkg/symmetrix"
 
 	"google.golang.org/grpc"
 
@@ -108,6 +111,7 @@ type Opts struct {
 	PortGroups                 []string
 	ClusterPrefix              string
 	AllowedArrays              []string
+	ManagedArrays              []string
 	DisableCerts               bool   // used for unit testing only
 	Lsmod                      string // used for unit testing only
 	EnableSnapshotCGDelete     bool   // when snapshot deleted, enable deleting of all snaps in the CG of the snapshot
@@ -192,6 +196,7 @@ func (s *service) BeforeServe(
 			"nodenametemplate":        s.opts.NodeNameTemplate,
 			"modifyHostName":          s.opts.ModifyHostName,
 			"replicationContextPreix": s.opts.ReplicationContextPrefix,
+			"replicationPrefix":       s.opts.ReplicationPrefix,
 		}
 
 		if s.opts.Password != "" {
@@ -258,16 +263,25 @@ func (s *service) BeforeServe(
 		}
 		opts.PortGroups = tempList
 	}
-	if arrays, ok := csictx.LookupEnv(ctx, EnvArrayWhitelist); ok {
+
+	/* Use of array whitelist is depreciated.*/
+	/*if arrays, ok := csictx.LookupEnv(ctx, EnvArrayWhitelist); ok {
 		opts.AllowedArrays, _ = s.parseCommaSeperatedList(arrays)
+	} else {*/
+	opts.AllowedArrays = []string{}
+	//}
+
+	if arrays, ok := csictx.LookupEnv(ctx, EnvManagedArrays); ok {
+		opts.ManagedArrays, _ = s.parseCommaSeperatedList(arrays)
 	} else {
-		opts.AllowedArrays = []string{}
+		log.Error("No managed arrays specified")
+		os.Exit(1)
 	}
 
-	if replicationContextPrefix, ok := csictx.LookupEnv(ctx, ReplicationContextPrefix); ok {
+	if replicationContextPrefix, ok := csictx.LookupEnv(ctx, EnvReplicationContextPrefix); ok {
 		opts.ReplicationContextPrefix = replicationContextPrefix
 	}
-	if replicationPrefix, ok := csictx.LookupEnv(ctx, ReplicationPrefix); ok {
+	if replicationPrefix, ok := csictx.LookupEnv(ctx, EnvReplicationPrefix); ok {
 		opts.ReplicationPrefix = replicationPrefix
 	}
 
@@ -385,7 +399,7 @@ func (s *service) BeforeServe(
 	// Start the deletion worker thread
 	log.Printf("s.mode: %s\n", s.mode)
 	if !strings.EqualFold(s.mode, "node") {
-		symIDs, err := s.adminClient.GetSymmetrixIDList()
+		/*symIDs, err := s.adminClient.GetSymmetrixIDList()
 		if err != nil {
 			return err
 		}
@@ -393,8 +407,8 @@ func (s *service) BeforeServe(
 			errMsg := "no arrays connected to the unisphere"
 			log.Println(errMsg)
 			return fmt.Errorf("%s", errMsg)
-		}
-		s.NewDeletionWorker(s.opts.ClusterPrefix, symIDs.SymmetrixIDs, s.adminClient)
+		}*/
+		s.NewDeletionWorker(s.opts.ClusterPrefix, s.opts.ManagedArrays)
 	}
 
 	// Start the snapshot housekeeping worker thread
@@ -415,6 +429,11 @@ func (s *service) RegisterAdditionalServers(server *grpc.Server) {
 func (s *service) getProxySettingsFromEnv() (string, string, bool) {
 	serviceHost := ""
 	servicePort := ""
+	if proxySidecarPort, ok := csictx.LookupEnv(context.Background(), EnvSidecarProxyPort); ok {
+		serviceHost = "0.0.0.0"
+		servicePort = proxySidecarPort
+		return serviceHost, servicePort, true
+	}
 	if proxyServiceName, ok := csictx.LookupEnv(context.Background(), EnvUnisphereProxyServiceName); ok {
 		if proxyServiceName != "none" {
 			// Change it to uppercase
@@ -501,7 +520,7 @@ func (s *service) getArrayWhitelist() []string {
 	return s.opts.AllowedArrays
 }
 
-func (s *service) createPowerMaxClient() error {
+func (s *service) createPowerMaxClients() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	endPoint := ""
@@ -540,6 +559,26 @@ func (s *service) createPowerMaxClient() error {
 			return status.Errorf(codes.FailedPrecondition,
 				"unable to login to Unisphere: %s", err.Error())
 		}
+
+		// Filter out a list of locally connected list of arrays, and
+		// initialize the PowerMax client for those array only
+		managedArrays := make([]string, 0, len(s.opts.ManagedArrays))
+		for _, array := range s.opts.ManagedArrays {
+			symmetrix, err := s.adminClient.GetSymmetrixByID(array)
+			if err != nil {
+				log.Errorf("Failed to fetch details for array: %s. [%s]", array, err.Error())
+			} else {
+				if symmetrix.Local {
+					managedArrays = append(managedArrays, array)
+				}
+			}
+		}
+		if len(managedArrays) == 0 {
+			log.Error("None of the managed arrays specified are locally connected")
+			os.Exit(1)
+		}
+		s.opts.ManagedArrays = managedArrays
+		symmetrix.Initialize(s.opts.ManagedArrays, s.adminClient)
 	}
 
 	return nil

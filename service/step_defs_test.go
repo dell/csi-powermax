@@ -374,11 +374,11 @@ func (f *feature) aPowerMaxService() error {
 	// Make sure the deletion worker is started.
 	//f.service.startDeletionWorker(false)
 	f.checkGoRoutines("end aPowerMaxService")
-	symIDs, err := f.service.adminClient.GetSymmetrixIDList()
+	symIDs, err := f.service.retryableGetSymmetrixIDList()
 	if err != nil {
 		return err
 	}
-	f.service.NewDeletionWorker(f.service.opts.ClusterPrefix, symIDs.SymmetrixIDs, f.service.adminClient)
+	f.service.NewDeletionWorker(f.service.opts.ClusterPrefix, symIDs.SymmetrixIDs)
 	f.errType = ""
 	return nil
 }
@@ -410,6 +410,7 @@ func (f *feature) getService() *service {
 	mock.AddPortGroup("portgroup1", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 	mock.AddPortGroup("portgroup2", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 	opts.AllowedArrays = []string{}
+	opts.ManagedArrays = []string{"000197900046", "000197900047"}
 	opts.EnableSnapshotCGDelete = true
 	opts.EnableListVolumesSnapshots = true
 	opts.ClusterPrefix = "TST"
@@ -594,7 +595,7 @@ func (f *feature) getSRDFCreateVolumeRequest() *csi.CreateVolumeRequest {
 	params := make(map[string]string)
 	params[SymmetrixIDParam] = f.symmetrixID
 	params[RemoteSymIDParam] = f.remoteSymID
-	params[RepEnabledParam] = "true"
+	params["/"+RepEnabledParam] = "true"
 	params[LocalRDFGroupParam] = "13"
 	params[ReplicationModeParam] = Async
 	params[CSIPVCNamespace] = Namespace
@@ -1202,7 +1203,7 @@ func (f *feature) getControllerPublishVolumeRequest(accessType, nodeID string) *
 	fmt.Printf("capability.AccessMode %v\n", capability.AccessMode)
 	req := new(csi.ControllerPublishVolumeRequest)
 	if !inducedErrors.noVolumeID {
-		if inducedErrors.invalidVolumeID || f.createVolumeResponse == nil {
+		if inducedErrors.invalidVolumeID {
 			req.VolumeId = "000-000"
 		} else {
 			req.VolumeId = f.volumeID
@@ -1712,6 +1713,9 @@ func (f *feature) iCallGetCapacityWithInvalidCapabilities() error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 	req := getTypicalCapacityRequest(false)
+	parameters := make(map[string]string)
+	parameters[SymmetrixIDParam] = f.symmetrixID
+	req.Parameters = parameters
 	f.getCapacityResponse, f.err = f.service.GetCapacity(ctx, req)
 	if f.err != nil {
 		log.Printf("GetCapacity call failed: %s\n", f.err.Error())
@@ -2304,6 +2308,7 @@ func (f *feature) getTypicalEnviron() []string {
 	stringSlice = append(stringSlice, EnvThick+"=bad")
 	stringSlice = append(stringSlice, EnvInsecure+"=true")
 	stringSlice = append(stringSlice, EnvGrpcMaxThreads+"=1")
+	stringSlice = append(stringSlice, EnvManagedArrays+"=000197900046,000197900047")
 	stringSlice = append(stringSlice, "X_CSI_PRIVATE_MOUNT_DIR=/csi")
 	return stringSlice
 }
@@ -2530,7 +2535,7 @@ func (f *feature) iCallRemoveSnapshot(snapshotName string) error {
 		f.err = err
 		return nil
 	}
-	f.err = f.service.RemoveSnapshot(arrayID, deviceID, snapshotName, int64(0))
+	f.err = f.service.RemoveSnapshot(arrayID, deviceID, snapshotName, int64(0), f.service.adminClient)
 	return nil
 }
 
@@ -2696,8 +2701,8 @@ func (f *feature) iQueueForDeletion(volumeName string) error {
 		return fmt.Errorf("Could not find volumeID for volume %s", volumeName)
 	}
 	_, arrayID, _, _ := f.service.parseCsiID(volumeID)
-	_, _, vol, _ := f.service.GetVolumeByID(volumeID)
-	_ = f.service.MarkVolumeForDeletion(arrayID, vol)
+	_, _, vol, _ := f.service.GetVolumeByID(volumeID, f.service.adminClient)
+	_ = f.service.MarkVolumeForDeletion(arrayID, vol, f.service.adminClient)
 	// go f.service.deletionWorker.deletionWorker()
 	return nil
 }
@@ -2718,6 +2723,9 @@ func (f *feature) deletionWorkerProcessesWhichResultsIn(volumeName, errormsg str
 			if volumeName == vol.VolumeIdentifier {
 				// We expected an error
 				if errormsg == "none" {
+					if vol.Status.State != "deleted" {
+						continue
+					}
 					if vol.Status.ErrorMsgs == nil {
 						return nil
 					}
@@ -2766,11 +2774,11 @@ func (f *feature) iRepopulateTheDeletionQueues() error {
 
 func (f *feature) iRestartTheDeletionWorker() error {
 	f.service.deletionWorker = nil
-	symIDs, err := f.service.adminClient.GetSymmetrixIDList()
+	symIDs, err := f.service.retryableGetSymmetrixIDList()
 	if err != nil {
 		return err
 	}
-	f.service.NewDeletionWorker(f.service.opts.ClusterPrefix, symIDs.SymmetrixIDs, f.service.adminClient)
+	f.service.NewDeletionWorker(f.service.opts.ClusterPrefix, symIDs.SymmetrixIDs)
 	return nil
 
 }
@@ -2843,7 +2851,7 @@ func (f *feature) iInvokeCreateOrUpdateIscsiHost(hostName string) error {
 	if inducedErrors.noIQNs {
 		initiators = initiators[:0]
 	}
-	f.host, f.err = f.service.createOrUpdateIscsiHost(symID, hostID, initiators)
+	f.host, f.err = f.service.createOrUpdateIscsiHost(symID, hostID, initiators, f.service.adminClient)
 	f.initiators = f.host.Initiators
 	return nil
 }
@@ -2872,7 +2880,7 @@ func (f *feature) iInvokeCreateOrUpdateFCHost(hostName string) error {
 	if inducedErrors.noIQNs {
 		initiators = initiators[:0]
 	}
-	f.host, f.err = f.service.createOrUpdateFCHost(symID, hostID, initiators)
+	f.host, f.err = f.service.createOrUpdateFCHost(symID, hostID, initiators, f.service.adminClient)
 	if f.host != nil {
 		f.initiators = f.host.Initiators
 	}
@@ -2968,7 +2976,7 @@ func (f *feature) iCallGetVolumeByID() error {
 			}
 		}
 	}
-	sym, dev, vol, err := f.service.GetVolumeByID(id)
+	sym, dev, vol, err := f.service.GetVolumeByID(id, f.service.adminClient)
 	resp := &GetVolumeByIDResponse{
 		sym: sym,
 		dev: dev,
@@ -3046,6 +3054,7 @@ func (f *feature) thereAreNoArraysLoggedIn() error {
 
 func (f *feature) iInvokeEnsureLoggedIntoEveryArray() error {
 	f.service.SetPmaxTimeoutSeconds(3)
+	isSymConnFC = make(map[string]bool) // Ensure none of the other test marked the array as FC
 	f.err = f.service.ensureLoggedIntoEveryArray(false)
 	return nil
 }
@@ -3069,7 +3078,7 @@ func (f *feature) iCallGetTargetsForMaskingView() error {
 	if view == nil {
 		f.err = fmt.Errorf("view is nil")
 	}
-	f.iscsiTargets, f.err = f.service.getIscsiTargetsForMaskingView(symID, view)
+	f.iscsiTargets, f.err = f.service.getIscsiTargetsForMaskingView(symID, view, f.service.adminClient)
 	return nil
 }
 
@@ -3085,7 +3094,7 @@ func (f *feature) theResultHasPorts(expected string) error {
 }
 
 func (f *feature) runValidateStoragePoolID(symID, storagePool string) {
-	_ = f.service.validateStoragePoolID(symID, storagePool)
+	_ = f.service.validateStoragePoolID(symID, storagePool, f.service.adminClient)
 	f.poolcachewg.Done()
 }
 
@@ -3105,7 +3114,7 @@ func (f *feature) iWaitForTheExecutionToComplete() error {
 }
 
 func (f *feature) runGetPortIdentifier(symID, dirPortKey string) {
-	_, _ = f.service.GetPortIdentifier(symID, dirPortKey)
+	_, _ = f.service.GetPortIdentifier(symID, dirPortKey, f.service.adminClient)
 	f.poolcachewg.Done()
 }
 
@@ -3232,7 +3241,7 @@ func (f *feature) iHaveAPortCacheEntryForPort(portKey string) error {
 }
 
 func (f *feature) iCallGetPortIdenfierFor(portKey string) error {
-	f.response, f.err = f.service.GetPortIdentifier(f.symmetrixID, portKey)
+	f.response, f.err = f.service.GetPortIdentifier(f.symmetrixID, portKey, f.service.adminClient)
 	return nil
 }
 
@@ -3286,7 +3295,7 @@ func (f *feature) iCallverifyAndUpdateInitiatorsInADiffHostForNode(nodeID string
 	initiators = append(initiators, defaultIscsiInitiator)
 	symID := f.symmetrixID
 	hostID, _, _ := f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
-	f.ninitiators, f.err = f.service.verifyAndUpdateInitiatorsInADiffHost(symID, initiators, hostID)
+	f.ninitiators, f.err = f.service.verifyAndUpdateInitiatorsInADiffHost(symID, initiators, hostID, f.service.adminClient)
 	return nil
 }
 
@@ -3298,7 +3307,7 @@ func (f *feature) validInitiatorsAreReturned(expected int) error {
 }
 
 func (f *feature) iCheckTheSnapshotLicense() error {
-	f.err = f.service.IsSnapshotLicensed(f.symmetrixID)
+	f.err = f.service.IsSnapshotLicensed(f.symmetrixID, f.service.adminClient)
 	return nil
 }
 
@@ -3313,7 +3322,7 @@ func (f *feature) iCallIsVolumeInSnapSessionOn(volumeName string) error {
 	if err != nil {
 		return fmt.Errorf("Error parsing the CSI VolumeID: %s", err.Error())
 	}
-	isSource, isTarget, err := f.service.IsVolumeInSnapSession(arrayID, deviceID)
+	isSource, isTarget, err := f.service.IsVolumeInSnapSession(arrayID, deviceID, f.service.adminClient)
 	if err != nil {
 		f.err = err
 	} else {
@@ -3347,7 +3356,7 @@ func (f *feature) iCallUnlinkAndTerminate(volumeName string) error {
 		f.err = err
 		return nil
 	}
-	f.err = f.service.UnlinkAndTerminate(arrayID, deviceID, "")
+	f.err = f.service.UnlinkAndTerminate(arrayID, deviceID, "", f.service.adminClient)
 	return nil
 }
 
@@ -3357,7 +3366,7 @@ func (f *feature) iCallGetSnapSessionsOn(volumeName string) error {
 		f.err = err
 		return nil
 	}
-	sourceSessions, targetSession, err := f.service.GetSnapSessions(arrayID, deviceID)
+	sourceSessions, targetSession, err := f.service.GetSnapSessions(arrayID, deviceID, f.service.adminClient)
 	if err != nil {
 		f.err = err
 	}
@@ -3371,24 +3380,24 @@ func (f *feature) iCallRemoveTempSnapshotOn(volumeName string) error {
 		f.err = err
 		return nil
 	}
-	_, targetSession, err := f.service.GetSnapSessions(arrayID, deviceID)
+	_, targetSession, err := f.service.GetSnapSessions(arrayID, deviceID, f.service.adminClient)
 	if err != nil {
 		f.err = err
 		return nil
 	}
-	f.err = f.service.UnlinkSnapshot(arrayID, targetSession, MaxUnlinkCount)
+	f.err = f.service.UnlinkSnapshot(arrayID, targetSession, MaxUnlinkCount, f.service.adminClient)
 	return nil
 }
 
 func (f *feature) iCallCreateSnapshotFromVolume(snapshotName string) error {
-	arrayID, _, volume, err := f.service.GetVolumeByID(f.volumeID)
+	arrayID, _, volume, err := f.service.GetVolumeByID(f.volumeID, f.service.adminClient)
 	if err != nil {
 		f.err = err
 		return nil
 	}
 	reqID := strconv.Itoa(time.Now().Nanosecond())
 	reqID = "req:" + reqID
-	snapshot, err := f.service.CreateSnapshotFromVolume(arrayID, volume, snapshotName, int64(0), reqID)
+	snapshot, err := f.service.CreateSnapshotFromVolume(arrayID, volume, snapshotName, int64(0), reqID, f.service.adminClient)
 	if err != nil {
 		f.err = err
 		return nil
@@ -3406,7 +3415,7 @@ func (f *feature) iCallCreateVolumeFrom(volumeName, snapshotName string) error {
 	reqID := strconv.Itoa(time.Now().Nanosecond())
 	reqID = "req:" + reqID
 	_, _, targetDevice, err := f.service.parseCsiID(f.volumeNameToID[volumeName])
-	f.err = f.service.LinkVolumeToSnapshot(arrayID, sourceDevice, targetDevice, snapshotName, reqID)
+	f.err = f.service.LinkVolumeToSnapshot(arrayID, sourceDevice, targetDevice, snapshotName, reqID, f.service.adminClient)
 	return nil
 }
 
@@ -3416,7 +3425,7 @@ func (f *feature) iCallTerminateSnapshot() error {
 		f.err = err
 		return nil
 	}
-	f.err = f.service.TerminateSnapshot(arrayID, deviceID, snapshotName)
+	f.err = f.service.TerminateSnapshot(arrayID, deviceID, snapshotName, f.service.adminClient)
 	return nil
 }
 
@@ -3426,7 +3435,7 @@ func (f *feature) iCallUnlinkAndTerminateSnapshot() error {
 		f.err = err
 		return nil
 	}
-	f.err = f.service.UnlinkAndTerminate(arrayID, deviceID, snapshotName)
+	f.err = f.service.UnlinkAndTerminate(arrayID, deviceID, snapshotName, f.service.adminClient)
 	return nil
 }
 
@@ -3464,7 +3473,7 @@ func (f *feature) iCallIsSnapshotSource() error {
 		_, arrayID, deviceID, f.err = f.service.parseCsiID(f.createVolumeResponse.GetVolume().GetVolumeId())
 	}
 
-	f.isSnapSrc, f.err = f.service.IsSnapshotSource(arrayID, deviceID)
+	f.isSnapSrc, f.err = f.service.IsSnapshotSource(arrayID, deviceID, f.service.adminClient)
 	return nil
 }
 
@@ -3563,9 +3572,9 @@ func (f *feature) iCallRequestAddVolumeToSGMVMv(nodeID, maskingViewName string) 
 	deviceID := deviceIDComponents[len(deviceIDComponents)-1]
 	fmt.Printf("deviceID %s\n", deviceID)
 	if maskingViewName != "" && maskingViewName != "default" {
-		f.addVolumeToSGMVResponse2, f.lockChan, f.err = f.service.sgSvc.requestAddVolumeToSGMV(f.sgID, maskingViewName, f.hostID, "0001", mock.DefaultSymmetrixID, deviceID, accessMode)
+		f.addVolumeToSGMVResponse2, f.lockChan, f.err = f.service.sgSvc.requestAddVolumeToSGMV(f.sgID, maskingViewName, f.hostID, "0001", mock.DefaultSymmetrixID, mock.DefaultSymmetrixID, deviceID, accessMode)
 	} else {
-		f.addVolumeToSGMVResponse1, f.lockChan, f.err = f.service.sgSvc.requestAddVolumeToSGMV(f.sgID, f.mvID, f.hostID, "0001", mock.DefaultSymmetrixID, deviceID, accessMode)
+		f.addVolumeToSGMVResponse1, f.lockChan, f.err = f.service.sgSvc.requestAddVolumeToSGMV(f.sgID, f.mvID, f.hostID, "0001", mock.DefaultSymmetrixID, mock.DefaultSymmetrixID, deviceID, accessMode)
 	}
 	return nil
 }
@@ -3581,9 +3590,9 @@ func (f *feature) iCallRequestRemoveVolumeFromSGMVMv(nodeID, maskingViewName str
 	deviceID := deviceIDComponents[len(deviceIDComponents)-1]
 	fmt.Printf("deviceID %s\n", deviceID)
 	if maskingViewName != "" && maskingViewName != "default" {
-		f.removeVolumeFromSGMVResponse2, f.lockChan, f.err = f.service.sgSvc.requestRemoveVolumeFromSGMV(f.sgID, maskingViewName, "0001", mock.DefaultSymmetrixID, deviceID)
+		f.removeVolumeFromSGMVResponse2, f.lockChan, f.err = f.service.sgSvc.requestRemoveVolumeFromSGMV(f.sgID, maskingViewName, "0001", mock.DefaultSymmetrixID, mock.DefaultSymmetrixID, deviceID)
 	} else {
-		f.removeVolumeFromSGMVResponse1, f.lockChan, f.err = f.service.sgSvc.requestRemoveVolumeFromSGMV(f.sgID, f.mvID, "0001", mock.DefaultSymmetrixID, deviceID)
+		f.removeVolumeFromSGMVResponse1, f.lockChan, f.err = f.service.sgSvc.requestRemoveVolumeFromSGMV(f.sgID, f.mvID, "0001", mock.DefaultSymmetrixID, mock.DefaultSymmetrixID, deviceID)
 	}
 	return nil
 }
@@ -3681,6 +3690,7 @@ func (f *feature) iCallHandleAddVolumeToSGMVError() error {
 		hostID:            f.hostID,
 		reqID:             "0002",
 		symID:             mock.DefaultSymmetrixID,
+		clientSymID:       mock.DefaultSymmetrixID,
 		devID:             deviceID,
 		accessMode:        accessMode,
 		respChan:          make(chan addVolumeToSGMVResponse, 1),
@@ -3699,6 +3709,7 @@ func (f *feature) iCallHandleRemoveVolumeFromSGMVError() error {
 		tgtMaskingViewID:  f.mvID,
 		reqID:             "0002",
 		symID:             mock.DefaultSymmetrixID,
+		clientSymID:       mock.DefaultSymmetrixID,
 		devID:             deviceID,
 		respChan:          make(chan removeVolumeFromSGMVResponse, 1),
 	}
@@ -3711,7 +3722,7 @@ func (f *feature) iCallHandleRemoveVolumeFromSGMVError() error {
 func (f *feature) iCallGetAndConfigureArrayISCSITargets() error {
 	arrayTargets := make([]string, 0)
 	arrayTargets = append(arrayTargets, defaultArrayTargetIQN)
-	f.iscsiTargetInfo = f.service.getAndConfigureArrayISCSITargets(arrayTargets, mock.DefaultSymmetrixID)
+	f.iscsiTargetInfo = f.service.getAndConfigureArrayISCSITargets(arrayTargets, mock.DefaultSymmetrixID, f.service.adminClient)
 	fmt.Println(f.iscsiTargetInfo)
 	return nil
 }
@@ -3795,13 +3806,13 @@ func (f *feature) iCallGetRDFInfoFromSGIDWith(protectionGroupID string) error {
 }
 
 func (f *feature) iCallProtectStorageGroupOn(sgName string) error {
-	f.err = f.service.ProtectStorageGroup(mock.DefaultSymmetrixID, mock.DefaultRemoteSymID, sgName, sgName, "", "", "", "", "")
+	f.err = f.service.ProtectStorageGroup(mock.DefaultSymmetrixID, mock.DefaultRemoteSymID, sgName, sgName, "", "", "", "", "", f.service.adminClient)
 	return nil
 }
 func (f *feature) iCallDiscoverStorageProtectionGroup() error {
 	header := metadata.New(map[string]string{"csi.requestid": "2"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
-	req := &csiext.DiscoverStorageProtectionGroupRequest{
+	req := &csiext.CreateStorageProtectionGroupRequest{
 		VolumeHandle: f.createVolumeResponse.GetVolume().VolumeId,
 		Parameters: map[string]string{
 			LocalRDFGroupParam:   f.createVolumeRequest.Parameters[LocalRDFGroupParam],
@@ -3810,13 +3821,13 @@ func (f *feature) iCallDiscoverStorageProtectionGroup() error {
 			ReplicationModeParam: f.createVolumeRequest.Parameters[ReplicationModeParam],
 		},
 	}
-	_, f.err = f.service.DiscoverStorageProtectionGroup(ctx, req)
+	_, f.err = f.service.CreateStorageProtectionGroup(ctx, req)
 	return nil
 }
 func (f *feature) iCallDiscoverRemoteVolume() error {
 	header := metadata.New(map[string]string{"csi.requestid": "2"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
-	req := &csiext.DiscoverRemoteVolumeRequest{
+	req := &csiext.CreateRemoteVolumeRequest{
 		VolumeHandle: f.createVolumeResponse.GetVolume().VolumeId,
 		Parameters: map[string]string{
 			RemoteServiceLevelParam: mock.DefaultServiceLevel,
@@ -3826,7 +3837,7 @@ func (f *feature) iCallDiscoverRemoteVolume() error {
 			ReplicationModeParam:    f.createVolumeRequest.Parameters[ReplicationModeParam],
 		},
 	}
-	_, f.err = f.service.DiscoverRemoteVolume(ctx, req)
+	_, f.err = f.service.CreateRemoteVolume(ctx, req)
 	return nil
 }
 
@@ -3836,11 +3847,19 @@ func (f *feature) iCallDeleteStorageProtectionGroup(protectedSGID string) error 
 	req := &csiext.DeleteStorageProtectionGroupRequest{
 		ProtectionGroupId: protectedSGID,
 		ProtectionGroupAttributes: map[string]string{
-			SymmetrixIDParam: mock.DefaultRemoteSymID,
+			SymmetrixIDParam: mock.DefaultSymmetrixID,
 		},
 	}
 	_, f.err = f.service.DeleteStorageProtectionGroup(ctx, req)
 	return nil
+}
+
+func (f *feature) deletionWorkerTimedOutFor(volID string) error {
+	err := f.deletionWorkerProcessesWhichResultsIn(volID, "none")
+	if strings.Contains(err.Error(), "timed out") {
+		return nil
+	}
+	return err
 }
 
 func FeatureContext(s *godog.Suite) {
@@ -4043,4 +4062,5 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call DiscoverStorageProtectionGroup$`, f.iCallDiscoverStorageProtectionGroup)
 	s.Step(`^I call DiscoverRemoteVolume$`, f.iCallDiscoverRemoteVolume)
 	s.Step(`^I call DeleteStorageProtectionGroup on "([^"]*)"$`, f.iCallDeleteStorageProtectionGroup)
+	s.Step(`^deletion worker timed out for "([^"]*)"$`, f.deletionWorkerTimedOutFor)
 }
