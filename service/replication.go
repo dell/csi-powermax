@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"strings"
 
+	pmax "github.com/dell/gopowermax"
+
 	"github.com/dell/gopowermax/types/v90"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -25,8 +27,8 @@ import (
 )
 
 // GetRDFDevicePairInfo returns the RDF informtaion of a volume
-func (s *service) GetRDFDevicePairInfo(symID, rdfGrpNo, localVolID string) (*types.RDFDevicePair, error) {
-	rdfPair, err := s.adminClient.GetRDFDevicePairInfo(symID, rdfGrpNo, localVolID)
+func (s *service) GetRDFDevicePairInfo(symID, rdfGrpNo, localVolID string, pmaxClient pmax.Pmax) (*types.RDFDevicePair, error) {
+	rdfPair, err := pmaxClient.GetRDFDevicePairInfo(symID, rdfGrpNo, localVolID)
 	if err != nil {
 		log.Error(fmt.Sprintf("Failed to fetch rdf pair information for (%s) - Error (%s)", localVolID, err.Error()))
 		return nil, status.Errorf(codes.Internal, "Failed to fetch rdf pair information for (%s) - Error (%s)", localVolID, err.Error())
@@ -36,11 +38,11 @@ func (s *service) GetRDFDevicePairInfo(symID, rdfGrpNo, localVolID string) (*typ
 
 // ProtectStorageGroup protects a local SG based on the given RDF Information
 // This will create a remote storage group, RDF pairs and add the volumes in their respective SG
-func (s *service) ProtectStorageGroup(symID, remoteSymID, storageGroupName, remoteStorageGroupName, remoteServiceLevel, rdfGrpNo, rdfMode, localVolID, reqID string) error {
+func (s *service) ProtectStorageGroup(symID, remoteSymID, storageGroupName, remoteStorageGroupName, remoteServiceLevel, rdfGrpNo, rdfMode, localVolID, reqID string, pmaxClient pmax.Pmax) error {
 	lockHandle := fmt.Sprintf("%s%s", storageGroupName, symID)
 	lockNum := RequestLock(lockHandle, reqID)
 	defer ReleaseLock(lockHandle, reqID, lockNum)
-	sg, err := s.adminClient.GetProtectedStorageGroup(symID, storageGroupName)
+	sg, err := pmaxClient.GetProtectedStorageGroup(symID, storageGroupName)
 	if err != nil {
 		log.Errorf("ProtectStorageGroup: GetProtectedStorageGroup failed for (%s) SG: (%s)", symID, storageGroupName)
 		return status.Errorf(codes.Internal, "ProtectStorageGroup: GetProtectedStorageGroup failed for (%s) SG: (%s). Error (%s)", symID, storageGroupName, err.Error())
@@ -51,7 +53,7 @@ func (s *service) ProtectStorageGroup(symID, remoteSymID, storageGroupName, remo
 		return nil
 	}
 	// Proceed to Protect the SG
-	rdfg, err := s.adminClient.GetRDFGroup(symID, rdfGrpNo)
+	rdfg, err := pmaxClient.GetRDFGroup(symID, rdfGrpNo)
 	if err != nil {
 		log.Errorf("Could not get rdf group (%s) information on symID (%s)", symID, rdfGrpNo)
 		return status.Errorf(codes.Internal, "Could not get rdf group (%s) information on symID (%s). Error (%s)", symID, rdfGrpNo, err.Error())
@@ -61,12 +63,12 @@ func (s *service) ProtectStorageGroup(symID, remoteSymID, storageGroupName, remo
 		return status.Errorf(codes.Internal, "RDF group (%s) cannot be used for ASYNC, as it already has volume pairing", rdfGrpNo)
 	}
 	log.Debugf("RDF: rdfg has 0 device ! vol(%s)", localVolID)
-	err = s.verifyAndDeleteRemoteStorageGroup(remoteSymID, remoteStorageGroupName)
+	err = s.verifyAndDeleteRemoteStorageGroup(remoteSymID, remoteStorageGroupName, pmaxClient)
 	if err != nil {
 		log.Error(fmt.Sprintf("Could not verify remote storage group (%s)", storageGroupName))
 		return status.Errorf(codes.Internal, "Could not verify remote storage group (%s) - Error (%s)", storageGroupName, err.Error())
 	}
-	cr, err := s.adminClient.CreateSGReplica(symID, remoteSymID, rdfMode, rdfGrpNo, storageGroupName, remoteStorageGroupName, remoteServiceLevel)
+	cr, err := pmaxClient.CreateSGReplica(symID, remoteSymID, rdfMode, rdfGrpNo, storageGroupName, remoteStorageGroupName, remoteServiceLevel)
 	if err != nil {
 		log.Error(fmt.Sprintf("Could not create storage group replica for (%s)", storageGroupName))
 		return status.Errorf(codes.Internal, "Could not create storage group replica for (%s) - Error (%s)", storageGroupName, err.Error())
@@ -78,8 +80,8 @@ func (s *service) ProtectStorageGroup(symID, remoteSymID, storageGroupName, remo
 // verifyAndDeleteRemoteStorageGroup verifies the existence of remote storage group.
 // As CreateSGReplica needs that no storage group should be present on remote sym.
 // So we delete the remote SG only if it has zero volumes.
-func (s *service) verifyAndDeleteRemoteStorageGroup(remoteSymID, remoteStorageGroupName string) error {
-	sg, err := s.adminClient.GetStorageGroup(remoteSymID, remoteStorageGroupName)
+func (s *service) verifyAndDeleteRemoteStorageGroup(remoteSymID, remoteStorageGroupName string, pmaxClient pmax.Pmax) error {
+	sg, err := pmaxClient.GetStorageGroup(remoteSymID, remoteStorageGroupName)
 	if err != nil || sg == nil {
 		log.Debug("Can not found Remote storage group, proceed")
 		return nil
@@ -89,7 +91,7 @@ func (s *service) verifyAndDeleteRemoteStorageGroup(remoteSymID, remoteStorageGr
 		return fmt.Errorf("Remote Storage Group (%s) has devices, can not protect SG", remoteStorageGroupName)
 	}
 	// remote SG is present with no volumes, proceed to delete
-	err = s.adminClient.DeleteStorageGroup(remoteSymID, remoteStorageGroupName)
+	err = pmaxClient.DeleteStorageGroup(remoteSymID, remoteStorageGroupName)
 	if err != nil {
 		log.Errorf("Delete Remote Storage Group (%s) failed (%s)", remoteStorageGroupName, err.Error())
 		return fmt.Errorf("Delete Remote Storage Group (%s) failed (%s)", remoteStorageGroupName, err.Error())
@@ -98,70 +100,17 @@ func (s *service) verifyAndDeleteRemoteStorageGroup(remoteSymID, remoteStorageGr
 }
 
 // GetRemoteVolumeID returns a remote volume ID for give local volume
-func (s *service) GetRemoteVolumeID(symID, rdfGrpNo, localVolID string) (string, error) {
-	rdfPair, err := s.GetRDFDevicePairInfo(symID, rdfGrpNo, localVolID)
+func (s *service) GetRemoteVolumeID(symID, rdfGrpNo, localVolID string, pmaxClient pmax.Pmax) (string, error) {
+	rdfPair, err := s.GetRDFDevicePairInfo(symID, rdfGrpNo, localVolID, pmaxClient)
 	if err != nil {
 		return "", err
 	}
 	return rdfPair.RemoteVolumeName, nil
 }
 
-/*
-// Failover validates current state of replication & executes failover action on storage group replication link
-func (s *service) Failover(symID, sgName, rdfGrpNo string) error {
-	// validate appropriateness of current link state to Failover
-}
-
-// Failback validates current state of replication & executes failback on storage group
-// replication link
-func (s *service) Failback(symID, sgName, rdfGrpNo string) error {
-	// validate appropriateness of current link state to Failback
-}
-*/
-
-// Suspend validates current state of replication & executes Suspend on storage group replication link
-func (s *service) Suspend(symID, sgName, rdfGrpNo string) error {
-	err := s.ValidateRDFState(symID, "Suspend", sgName, rdfGrpNo)
-	if err != nil {
-		return err
-	}
-	err = s.adminClient.ExecuteReplicationActionOnSG(symID, "Suspend", sgName, rdfGrpNo, false, true)
-	if err != nil {
-		log.Error(fmt.Sprintf("Suspend: Failed to modify SG (%s) - Error (%s)", sgName, err.Error()))
-		return status.Errorf(codes.Internal, "Suspend: Failed to modify SG (%s) - Error (%s)", sgName, err.Error())
-	}
-	return nil
-}
-
-// Resume validates current state of replication & executes Resume on storage group replication link
-func (s *service) Resume(symID, sgName, rdfGrpNo string) error {
-	err := s.ValidateRDFState(symID, "Resume", sgName, rdfGrpNo)
-	if err != nil {
-		return err
-	}
-	err = s.adminClient.ExecuteReplicationActionOnSG(symID, "Resume", sgName, rdfGrpNo, false, true)
-	if err != nil {
-		log.Error(fmt.Sprintf("Resume: Failed to modify SG (%s) - Error (%s)", sgName, err.Error()))
-		return status.Errorf(codes.Internal, "Resume: Failed to modify SG (%s) - Error (%s)", sgName, err.Error())
-	}
-	return nil
-}
-
-// ValidateRDFState checks if the given action is permissible on the protected storage group based on its current state
-func (s *service) ValidateRDFState(symID, action, sgName, rdfGrpNo string) error {
-	// validate appropriateness of current link state to the action
-	_, err := s.adminClient.GetStorageGroupRDFInfo(symID, rdfGrpNo, sgName)
-	if err != nil {
-		log.Error(fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error()))
-		return status.Errorf(codes.Internal, "Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
-	}
-	//TODO: Validate current state to perform specific action
-	return nil
-}
-
 // VerifyProtectedGroupDirection returns the direction of protected SG
-func (s *service) VerifyProtectedGroupDirection(symID, localProtectionGroupID, localRdfGrpNo string) error {
-	sgRDFInfo, err := s.adminClient.GetStorageGroupRDFInfo(symID, localProtectionGroupID, localRdfGrpNo)
+func (s *service) VerifyProtectedGroupDirection(symID, localProtectionGroupID, localRdfGrpNo string, pmaxClient pmax.Pmax) error {
+	sgRDFInfo, err := pmaxClient.GetStorageGroupRDFInfo(symID, localProtectionGroupID, localRdfGrpNo)
 	if err != nil {
 		log.Errorf("GetStorageGroupRDFInfo failed:(%s)", err.Error())
 		return status.Errorf(codes.Internal, "GetStorageGroupRDFInfo failed:(%s)", err.Error())
@@ -187,3 +136,56 @@ func GetRDFInfoFromSGID(storageGroupID string) (namespace string, rDFGno string,
 	repMode = sgComponents[compLength-1]
 	return
 }
+
+/*
+// Failover validates current state of replication & executes failover action on storage group replication link
+func (s *service) Failover(symID, sgName, rdfGrpNo string) error {
+	// validate appropriateness of current link state to Failover
+}
+
+// Failback validates current state of replication & executes failback on storage group
+// replication link
+func (s *service) Failback(symID, sgName, rdfGrpNo string) error {
+	// validate appropriateness of current link state to Failback
+}
+*/
+
+// Suspend validates current state of replication & executes Suspend on storage group replication link
+//func (s *service) Suspend(symID, sgName, rdfGrpNo string) error {
+//	err := s.ValidateRDFState(symID, "Suspend", sgName, rdfGrpNo)
+//	if err != nil {
+//		return err
+//	}
+//	err = pmaxClient.ExecuteReplicationActionOnSG(symID, "Suspend", sgName, rdfGrpNo, false, true)
+//	if err != nil {
+//		log.Error(fmt.Sprintf("Suspend: Failed to modify SG (%s) - Error (%s)", sgName, err.Error()))
+//		return status.Errorf(codes.Internal, "Suspend: Failed to modify SG (%s) - Error (%s)", sgName, err.Error())
+//	}
+//	return nil
+//}
+
+// Resume validates current state of replication & executes Resume on storage group replication link
+//func (s *service) Resume(symID, sgName, rdfGrpNo string) error {
+//	err := s.ValidateRDFState(symID, "Resume", sgName, rdfGrpNo)
+//	if err != nil {
+//		return err
+//	}
+//	err = pmaxClient.ExecuteReplicationActionOnSG(symID, "Resume", sgName, rdfGrpNo, false, true)
+//	if err != nil {
+//		log.Error(fmt.Sprintf("Resume: Failed to modify SG (%s) - Error (%s)", sgName, err.Error()))
+//		return status.Errorf(codes.Internal, "Resume: Failed to modify SG (%s) - Error (%s)", sgName, err.Error())
+//	}
+//	return nil
+//
+
+// ValidateRDFState checks if the given action is permissible on the protected storage group based on its current state
+//func (s *service) ValidateRDFState(symID, action, sgName, rdfGrpNo string) error {
+//	// validate appropriateness of current link state to the action
+//	_, err := pmaxClient.GetStorageGroupRDFInfo(symID, rdfGrpNo, sgName)
+//	if err != nil {
+//		log.Error(fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error()))
+//		return status.Errorf(codes.Internal, "Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
+//	}
+//	//TODO: Validate current state to perform specific action
+//	return nil
+//}

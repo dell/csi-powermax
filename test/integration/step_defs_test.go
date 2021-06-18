@@ -26,6 +26,7 @@ import (
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cucumber/godog"
 	service "github.com/dell/csi-powermax/service"
+	csiext "github.com/dell/dell-csi-extensions/replication"
 	pmax "github.com/dell/gopowermax"
 	ptypes "github.com/golang/protobuf/ptypes"
 )
@@ -40,34 +41,44 @@ const (
 )
 
 type feature struct {
-	errs                     []error
-	createVolumeRequest      *csi.CreateVolumeRequest
-	createVolumeResponse     *csi.CreateVolumeResponse
-	publishVolumeRequest     *csi.ControllerPublishVolumeRequest
-	expandVolumeRequest      *csi.ControllerExpandVolumeRequest
-	expandVolumeResponse     *csi.ControllerExpandVolumeResponse
-	nodeExpandVolumeRequest  *csi.NodeExpandVolumeRequest
-	nodeExpandVolumeResponse *csi.NodeExpandVolumeResponse
-	publishVolumeResponse    *csi.ControllerPublishVolumeResponse
-	nodePublishVolumeRequest *csi.NodePublishVolumeRequest
-	listVolumesResponse      *csi.ListVolumesResponse
-	listSnapshotsResponse    *csi.ListSnapshotsResponse
-	capability               *csi.VolumeCapability
-	capabilities             []*csi.VolumeCapability
-	getCapacityRequest       *csi.GetCapacityRequest
-	getCapacityResponse      *csi.GetCapacityResponse
-	volID                    string
-	snapshotID               string
-	volIDList                []string
-	maxRetryCount            int
-	symID                    string
-	srpID                    string
-	serviceLevel             string
-	pmaxClient               pmax.Pmax
-	publishVolumeContextMap  map[string]map[string]string
-	lockMutex                sync.Mutex
-	idempotentTest           bool
-	snapIDList               []string
+	errs                        []error
+	createVolumeRequest         *csi.CreateVolumeRequest
+	createVolumeResponse        *csi.CreateVolumeResponse
+	publishVolumeRequest        *csi.ControllerPublishVolumeRequest
+	expandVolumeRequest         *csi.ControllerExpandVolumeRequest
+	expandVolumeResponse        *csi.ControllerExpandVolumeResponse
+	nodeExpandVolumeRequest     *csi.NodeExpandVolumeRequest
+	nodeExpandVolumeResponse    *csi.NodeExpandVolumeResponse
+	publishVolumeResponse       *csi.ControllerPublishVolumeResponse
+	nodePublishVolumeRequest    *csi.NodePublishVolumeRequest
+	listVolumesResponse         *csi.ListVolumesResponse
+	listSnapshotsResponse       *csi.ListSnapshotsResponse
+	capability                  *csi.VolumeCapability
+	capabilities                []*csi.VolumeCapability
+	getCapacityRequest          *csi.GetCapacityRequest
+	getCapacityResponse         *csi.GetCapacityResponse
+	volID                       string
+	remotevolID                 string
+	snapshotID                  string
+	volIDList                   []string
+	maxRetryCount               int
+	symID                       string
+	remotesymID                 string
+	srpID                       string
+	serviceLevel                string
+	remoteServiceLevel          string
+	localRdfGrpNo               string
+	remoteRdfGrpNo              string
+	localProtectedStorageGroup  string
+	remoteProtectedStorageGroup string
+	pmaxClient                  pmax.Pmax
+	publishVolumeContextMap     map[string]map[string]string
+	lockMutex                   sync.Mutex
+	idempotentTest              bool
+	snapIDList                  []string
+	replicationPrefix           string
+	replicationContextPrefix    string
+	symmetrixIDParam            string
 }
 
 func (f *feature) addError(err error) {
@@ -91,6 +102,9 @@ func (f *feature) aPowermaxService() error {
 	f.capability = nil
 	f.volID = ""
 	f.snapshotID = ""
+	f.localProtectedStorageGroup = ""
+	f.remoteProtectedStorageGroup = ""
+	f.symmetrixIDParam = "SYMID"
 	f.volIDList = f.volIDList[:0]
 	f.snapIDList = f.snapIDList[:0]
 	f.maxRetryCount = MaxRetries
@@ -118,7 +132,13 @@ func (f *feature) aPowermaxService() error {
 	}
 	f.symID = os.Getenv("SYMID")
 	f.srpID = os.Getenv("SRPID")
+	f.remotesymID = os.Getenv("REMOTESYMID")
 	f.serviceLevel = os.Getenv("SERVICELEVEL")
+	f.remoteServiceLevel = os.Getenv("REMOTESERVICELEVEL")
+	f.localRdfGrpNo = os.Getenv("LOCALRDFGROUP")
+	f.remoteRdfGrpNo = os.Getenv("REMOTERDFGROUP")
+	f.replicationPrefix = os.Getenv("X_CSI_REPLICATION_PREFIX")
+	f.replicationContextPrefix = os.Getenv("X_CSI_REPLICATION_CONTEXT_PREFIX")
 	return nil
 }
 
@@ -163,6 +183,107 @@ func (f *feature) iUseThickProvisioning() error {
 
 func (f *feature) anAlternateServiceLevel(serviceLevel string) error {
 	f.createVolumeRequest.Parameters[service.ServiceLevelParam] = serviceLevel
+	return nil
+}
+func (f *feature) addsReplicationCapability(replicationMode string, namespace string) error {
+	f.createVolumeRequest.Parameters[f.replicationPrefix+"/"+service.RepEnabledParam] = "true"
+	f.createVolumeRequest.Parameters[service.LocalRDFGroupParam] = f.localRdfGrpNo
+	f.createVolumeRequest.Parameters[service.RemoteRDFGroupParam] = f.remoteRdfGrpNo
+	f.createVolumeRequest.Parameters[service.RemoteSymIDParam] = f.remotesymID
+	f.createVolumeRequest.Parameters[service.ReplicationModeParam] = replicationMode
+	f.createVolumeRequest.Parameters[service.CSIPVCNamespace] = namespace
+	return nil
+}
+
+func (f *feature) iCallCreateStorageProtectionGroup(replicationMode string) error {
+	req := new(csiext.CreateStorageProtectionGroupRequest)
+	params := make(map[string]string)
+	params[service.LocalRDFGroupParam] = f.localRdfGrpNo
+	params[service.RemoteSymIDParam] = f.remotesymID
+	params[service.ReplicationModeParam] = replicationMode
+	params[service.RemoteRDFGroupParam] = f.remoteRdfGrpNo
+	req.Parameters = params
+	req.VolumeHandle = f.volID
+	var err error
+	ctx := context.Background()
+	client := csiext.NewReplicationClient(grpcClient)
+	resp, err := client.CreateStorageProtectionGroup(ctx, req)
+	if err != nil {
+		fmt.Printf("CreateStorageProtectionGroup error %s:\n", err.Error())
+		f.addError(err)
+	}
+	fmt.Printf("CreateStorageProtectionGroup succeeded \n")
+	if resp.LocalProtectionGroupAttributes[f.replicationContextPrefix+"/"+f.symmetrixIDParam] != f.symID {
+		fmt.Printf("CreateStorageProtectionGroup validation failed")
+		err := errors.New("Validation failed for CreateStorageProtectionGroup, context prefix is missing")
+		f.addError(err)
+	}
+	fmt.Printf("CreateStorageProtectionGroup validation succeeded \n")
+	f.localProtectedStorageGroup = resp.LocalProtectionGroupId
+	f.remoteProtectedStorageGroup = resp.RemoteProtectionGroupId
+	return nil
+}
+
+func (f *feature) iCallCreateRemoteVolume(replicationMode string) error {
+	req := new(csiext.CreateRemoteVolumeRequest)
+	params := make(map[string]string)
+	params[service.LocalRDFGroupParam] = f.localRdfGrpNo
+	params[service.RemoteSymIDParam] = f.remotesymID
+	params[service.ReplicationModeParam] = replicationMode
+	params[service.RemoteRDFGroupParam] = f.remoteRdfGrpNo
+	req.Parameters = params
+	req.VolumeHandle = f.volID
+	var err error
+	ctx := context.Background()
+	client := csiext.NewReplicationClient(grpcClient)
+	resp, err := client.CreateRemoteVolume(ctx, req)
+	if err != nil {
+		fmt.Printf("CreateRemoteVolume error %s:\n", err.Error())
+		f.addError(err)
+	}
+	remoteVolume := resp.RemoteVolume.GetVolumeId()
+	fmt.Printf("Remote Volume retrieved %s:\n", remoteVolume)
+	if resp.RemoteVolume.VolumeContext[f.replicationContextPrefix+"/"+f.symmetrixIDParam] != f.remotesymID {
+		fmt.Printf("CreateRemoteVolume validation failed \n")
+		err := errors.New("Validation failed for CreateRemoteVolume, context prefix is missing")
+		f.addError(err)
+	}
+	fmt.Printf("CreateRemoteVolume validation succeeded\n")
+	f.volIDList = append(f.volIDList, remoteVolume)
+	return nil
+}
+
+func (f *feature) iCallDeleteLocalStorageProtectionGroup() error {
+	req := new(csiext.DeleteStorageProtectionGroupRequest)
+	params := make(map[string]string)
+	params[f.replicationContextPrefix+"/"+service.SymmetrixIDParam] = f.symID
+	req.ProtectionGroupAttributes = params
+	req.ProtectionGroupId = f.localProtectedStorageGroup
+	var err error
+	ctx := context.Background()
+	client := csiext.NewReplicationClient(grpcClient)
+	_, err = client.DeleteStorageProtectionGroup(ctx, req)
+	if err != nil {
+		fmt.Printf("CreateRemoteVolume error %s:\n", err.Error())
+		f.addError(err)
+	}
+	return nil
+}
+
+func (f *feature) iCallDeleteRemoteStorageProtectionGroup() error {
+	req := new(csiext.DeleteStorageProtectionGroupRequest)
+	params := make(map[string]string)
+	params[f.replicationContextPrefix+"/"+service.SymmetrixIDParam] = f.remotesymID
+	req.ProtectionGroupAttributes = params
+	req.ProtectionGroupId = f.remoteProtectedStorageGroup
+	var err error
+	ctx := context.Background()
+	client := csiext.NewReplicationClient(grpcClient)
+	_, err = client.DeleteStorageProtectionGroup(ctx, req)
+	if err != nil {
+		fmt.Printf("CreateRemoteVolume error %s:\n", err.Error())
+		f.addError(err)
+	}
 	return nil
 }
 
@@ -250,7 +371,7 @@ func (f *feature) deleteVolume(id string) error {
 			// no need for retry
 			break
 		}
-		fmt.Printf("DeleteVOlume retry: %s\n", err.Error())
+		fmt.Printf("DeleteVolume retry: %s\n", err.Error())
 		time.Sleep(RetrySleepTime)
 	}
 	return err
@@ -318,6 +439,7 @@ func (f *feature) getMountVolumeRequest(name string) *csi.CreateVolumeRequest {
 	f.createVolumeRequest = req
 	return req
 }
+
 func (f *feature) aVolumeRequestFileSystem(name, fstype, access, voltype string) error {
 	req := f.getVolumeRequestFileSystem(name, fstype, access, voltype)
 	f.createVolumeRequest = req
@@ -1254,13 +1376,14 @@ func (f *feature) allVolumesAreDeletedSuccessfully() error {
 		deleted := false
 		idComponents := strings.Split(id, "-")
 		symVolumeID := idComponents[len(idComponents)-1]
+		symID := idComponents[len(idComponents)-2]
 		fmt.Printf("Waiting for volume %s %s to be deleted\n", id, symVolumeID)
 		max := 40 * nVols
 		if 300 > max {
 			max = 300
 		}
 		for i := 0; i < max; i++ {
-			vol, err := f.pmaxClient.GetVolumeByID(f.symID, symVolumeID)
+			vol, err := f.pmaxClient.GetVolumeByID(symID, symVolumeID)
 			if vol == nil {
 				deleted = strings.Contains(err.Error(), "cannot be found")
 				fmt.Printf("volume deleted?: %s\n", err)
@@ -1700,7 +1823,6 @@ func (f *feature) iCallDeleteTargetVolume() error {
 		fmt.Printf("DeleteVolume %s:\n", err.Error())
 		f.addError(err)
 	} else {
-		f.volIDList = f.volIDList[:tgtID]
 		fmt.Printf("DeleteVolume %s completed successfully\n", targetVolID)
 	}
 	return nil
@@ -1870,6 +1992,7 @@ func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a Powermax service$`, f.aPowermaxService)
 	s.Step(`^a basic block volume request "([^"]*)" "(\d+)"$`, f.aBasicBlockVolumeRequest)
+	s.Step(`^adds replication capability with mode "([^"]*)" namespace "([^"]*)"$`, f.addsReplicationCapability)
 	s.Step(`^I call CreateVolume$`, f.iCallCreateVolume)
 	s.Step(`^when I call DeleteVolume$`, f.whenICallDeleteVolume)
 	s.Step(`^there are no errors$`, f.thereAreNoErrors)
@@ -1931,6 +2054,10 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call CreateVolume from new volume$`, f.iCallCreateVolumeFromNewVolume)
 	s.Step(`^I call DeleteSnapshot and CreateSnapshot in parallel$`, f.iCallDeleteSnapshotAndCreateSnapshotInParallel)
 	s.Step(`^I call DeleteTargetVolume$`, f.iCallDeleteTargetVolume)
+	s.Step(`^I call CreateStorageProtectionGroup with mode "([^"]*)"$`, f.iCallCreateStorageProtectionGroup)
+	s.Step(`^I call CreateRemoteVolume with mode "([^"]*)"$`, f.iCallCreateRemoteVolume)
+	s.Step(`^I call Delete LocalStorageProtectionGroup$`, f.iCallDeleteLocalStorageProtectionGroup)
+	s.Step(`^I call Delete RemoteStorageProtectionGroup$`, f.iCallDeleteRemoteStorageProtectionGroup)
 	s.Step(`^I check if volume exist$`, f.iCheckIfVolumeExist)
 	s.Step(`^I check if volume is deleted$`, f.iCheckIfVolumeIsDeleted)
 	s.Step(`^I delete a snapshot$`, f.iDeleteASnapshot)

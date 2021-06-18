@@ -24,7 +24,7 @@ clean:
 	rm -f core/core_generated.go
 	go clean
 
-build: check
+build: golint check
 	go generate
 	CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build
 

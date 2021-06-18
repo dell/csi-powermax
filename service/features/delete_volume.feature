@@ -50,8 +50,7 @@ Feature: PowerMax CSI interface
 	And I call DeleteVolume with "single-writer"
 	Then a valid DeleteVolumeResponse is returned
 
-@delete
-@v1.0.0
+
 	Scenario: Test deletion without Probe
 	 Given a PowerMax service
 	 And a valid volume
@@ -103,8 +102,8 @@ Feature: PowerMax CSI interface
 	And <numrecvd> volumes are being processed for deletion
 
 	Examples:
-	| num  | numrecvd |induced                                | errormsg                                     |
-	| 5    | 5        |"none"                                 | "none"                                       |
+	| num  | numrecvd |induced                   | errormsg                                     |
+	| 5    | 5        |"none"                    | "none"                                       |
 
 @delete
 @v1.1.0
@@ -122,16 +121,24 @@ Feature: PowerMax CSI interface
 
 @delete
 @v1.5.0
-	Scenario: Deletion Worker deletes a Volume with Temp Snapshot
-	Given a PowerMax service
-	Given a PowerMax service
-	And I call CreateVolume "volume1"
-	And a valid CreateVolumeResponse is returned
-	And I call CreateSnapshot "snapshot1" on "volume1"
-	And a valid CreateSnapshotResponse is returned
-	And I call CreateVolume "volume2"
-	And a valid CreateVolumeResponse is returned
-	And I call ExecSnapAction to "Link" snapshot "snapshot1" to "volume2"
-	When I queue "volume1" for deletion
-	And I queue "volume2" for deletion
-	Then deletion worker processes "volume1" which results in "none"
+	Scenario: Deletion Worker deletes a source volume with Temp Snapshot
+		Given a PowerMax service
+		And I call CreateVolume "volume1"
+		And a valid CreateVolumeResponse is returned
+		And I call CreateSnapshot "DEL_CSI_TEMP_SNAP1" on "volume1"
+		And a valid CreateSnapshotResponse is returned
+		When I queue "volume1" for deletion
+		Then deletion worker processes "volume1" which results in "none"
+@1.6.0
+	Scenario: Deletion Worker timed out deleting a target volume with Temp Snapshot
+		Given a PowerMax service
+		And I call CreateVolume "volume1"
+		And a valid CreateVolumeResponse is returned
+		And I call CreateSnapshot "snapshot1" on "volume1"
+		And a valid CreateSnapshotResponse is returned
+		And I call CreateVolume "volume2"
+		And a valid CreateVolumeResponse is returned
+		And I call ExecSnapAction to "Link" snapshot "snapshot1" to "volume2"
+		And I queue "volume2" for deletion
+		Then deletion worker timed out for "volume2"
+

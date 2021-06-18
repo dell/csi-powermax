@@ -46,12 +46,12 @@ Feature: PowerMax CSI interface
     | transport | error                                   | errormsg                                                          |
     | "FC"      | "InduceOverloadError"                   | "overload"                                                        |
     | "FC"      | "TargetNotCreatedForNodePublish"        | "none"                                                            |
-    | "FC"      | "BadVolumeIdentifier"                   | "The CSI ID bad volume identifier is not formed correctly" |
+    | "FC"      | "BadVolumeIdentifier"                   | "bad volume identifier" |
     | "FC"      | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"                     |
     | "FC"      | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
     | "FC"      | "GobrickConnectError"                   | "induced ConnectVolumeError"                                      |
     | "ISCSI"   | "TargetNotCreatedForNodePublish"        | "none"                                                            |
-    | "ISCSI"   | "BadVolumeIdentifier"                   | "The CSI ID bad volume identifier is not formed correctly" |
+    | "ISCSI"   | "BadVolumeIdentifier"                   | "bad volume identifier" |
     | "ISCSI"   | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"                     |
     | "ISCSI"   | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
     | "ISCSI"   | "GobrickConnectError"                   | "induced ConnectVolumeError"                                      |
@@ -125,7 +125,7 @@ Feature: PowerMax CSI interface
     | "NodePublishNoAccessType"               | "none"                        | "Volume Access Type is required"                                          |
     | "NodePublishFileTargetNotDir"           | "none"                        | "existing path is not a directory"                                        |
     | "NodePublishRequestReadOnly"            | "none"                        | "none"                                                                    |
-    | "BadVolumeIdentifier"                   | "none"                        | "volume identifier malformed"                                             |
+    | "BadVolumeIdentifier"                   | "none"                        | "bad volume identifier"                                             |
     | "PrivMountAlreadyMounted"               | "none"                        | "none"                                                                    |
     | "PrivMountByDifferentDev"               | "none"                        | "mounted by different device"                                             |
     | "PrivMountByDifferentDev"               | "GOFSMockGetMountsError"      | "could not reliably determine existing mount status"                      |
@@ -239,8 +239,8 @@ Feature: PowerMax CSI interface
     | "GOFSMockUnmountError"     | "none"                     | "none"                             |
     | "GobrickDisconnectError"   | "none"                     | "disconnectVolume exceeded retry limit"             |
     | "NodeUnpublishNoTargetPath"| "none"                     | "Staging Target argument is required"               |
-    | "InvalidVolumeID"          | "none"                     | "is not formed correctly"                           |
-    | "InvalidVolumeID"          | "InvalidateNodeID"         | "Error getting NodeName from the environment"       |
+    | "InvalidVolumeID"          | "none"                     | "badVolumeID"                           |
+#    | "InvalidVolumeID"          | "InvalidateNodeID"         | "Error getting NodeName from the environment"       |
 
 @nodePublish
 @v1.0.0

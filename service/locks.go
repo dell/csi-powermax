@@ -173,7 +173,7 @@ func RequestLock(resourceID string, requestID string) int {
 		log.Debugf("Requesting a lock for %s with requestID: %s at: %v", resourceID, requestID, time.Now())
 	}
 	// Get a random number between 1,000,000 and 10,000,000
-	lockNum := rand.Intn(10000000-1000000) + 1000000
+	lockNum := rand.Intn(10000000-1000000) + 1000000 // #nosec G404
 	ch := make(chan int, 1)
 	lockReq := LockRequest{ResourceID: resourceID, WaitChannel: ch, LockNumber: lockNum, Unlock: false}
 	lockRequestsQueue <- lockReq

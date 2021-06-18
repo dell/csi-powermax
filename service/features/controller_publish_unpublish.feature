@@ -54,7 +54,7 @@ Feature: PowerMax CSI interface
       Given a PowerMax service
       And I have a Node "node1" with MaskingView
       And I call PublishVolume with "single-writer" to "node1"
-      Then the error contains "malformed"
+      Then the error contains "Volume not found"
 
 @controllerPublish
 @v1.0.0
@@ -299,7 +299,7 @@ Feature: PowerMax CSI interface
      Scenario: Publish volume with an invalid volumeID
       Given a PowerMax service
       And I call PublishVolume with "single-writer" to "node1"
-      Then the error contains "not formed correctly"
+      Then the error contains "Volume not found"
 
 @controllerPublish
 @v1.0.0
@@ -336,8 +336,6 @@ Feature: PowerMax CSI interface
       And I call PublishVolume with "single-writer" to "node1"
       Then the error contains "access mode is required"
 
-@controllerPublish
-@v1.0.0
      Scenario: Publish volume with no previous probe
       Given a PowerMax service
       And a valid volume
@@ -426,8 +424,6 @@ Feature: PowerMax CSI interface
       | "GetStorageGroupError"    | "Failed to fetch SG details"                     |
       | "DeleteStorageGroupError" | "none"                                           |
 
-@controllerPublish
-@v1.0.0
      Scenario: UnPublish volume with no previous probe
       Given a PowerMax service
       And a valid volume
@@ -451,7 +447,7 @@ Feature: PowerMax CSI interface
       Given a PowerMax service
       And an invalid volume
       And I call UnpublishVolume from "node1"
-      Then the error contains "not formed correctly"
+      Then the error contains "Invalid volume id"
 
 @controllerPublish
 @v1.0.0

@@ -52,7 +52,7 @@ rules:
 # below for snapshotter
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotcontents"]
     verbs: ["get", "list", "watch", "update", "create", "delete"]
@@ -196,12 +196,11 @@ spec:
             - "--retry-interval-start=1s"
             - "--retry-interval-max=300s"
             - "--timeout=10s"
-            - "--context-prefix=$(ReplicationContextPrefix)"
+            - "--context-prefix={{ .Values.replication.replicationContextPrefix}}"
+            - "--prefix={{ .Values.replication.replicationPrefix}}"
           env:
             - name: ADDRESS
               value: /var/run/csi/csi.sock
-            - name: ReplicationContextPrefix
-              value: {{ .Values.replicationContextPrefix | default "powermax/" }}
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi
@@ -226,29 +225,39 @@ spec:
           args:
             - "--leader-election"
           env:
+            {{- $_ := first .Values.global.storageArrays  }}
+            {{- $arraysStr := "" }}
+            {{- range $i, $array := .Values.global.storageArrays }}
+              {{- $arraysStr = trim (cat $arraysStr $array.storageArrayId) }}
+            {{- end }}
             - name: X_CSI_POWERMAX_DRIVER_NAME
               {{- if eq .Values.customDriverName.enabled true}}
               value: {{ required "Must provide a driver name" (printf "%s.%s.dellemc.com" .Release.Namespace .Values.customDriverName.value) }}
               {{- else }}
               value: csi-powermax.dellemc.com
-              {{- end }}  
+              {{- end }}
             - name: CSI_ENDPOINT
               value: /var/run/csi/csi.sock
             - name: X_CSI_MODE
               value: controller
             - name: X_CSI_DEBUG
               value: "true"
+            - name: X_CSI_MANAGED_ARRAYS
+              value: {{ $arraysStr | replace " " "," | quote }}
+            {{- if ne .Values.csireverseproxy.enabled true }}
+            {{- $managementServer := first .Values.global.managementServers }}
             - name: X_CSI_POWERMAX_ENDPOINT
-              value: {{ required "Must provide a Unisphere HTTPS endpoint." .Values.unisphere }}
+              value: {{ required "Must provide a Unisphere HTTPS endpoint." $managementServer.endpoint }}
+            {{- end }}
             - name: X_CSI_POWERMAX_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-creds
+                  name: {{ .Values.global.defaultCredentialsSecret }}
                   key: username
             - name: X_CSI_POWERMAX_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-creds
+                  name: {{ .Values.global.defaultCredentialsSecret }}
                   key: password
             - name: X_CSI_POWERMAX_VERSION
               value: "90"
@@ -258,10 +267,16 @@ spec:
               value: {{ .Values.skipCertificateValidation | default "true" | lower | quote }}
             - name: X_CSI_POWERMAX_INSECURE
               value: {{ .Values.powerMaxInsecure | default "none" | lower | quote }}
-            - name: X_CSI_POWERMAX_PROXY_SERVICE_NAME
             {{- if eq .Values.csireverseproxy.enabled true }}
+              {{- if eq .Values.csireverseproxy.deployAsSidecar true }}
+            - name: X_CSI_POWERMAX_SIDECAR_PROXY_PORT
+              value: {{ .Values.csireverseproxy.port | quote }}
+              {{- else }}
+            - name: X_CSI_POWERMAX_PROXY_SERVICE_NAME
               value: {{ .Release.Name }}-reverseproxy
+              {{- end }}
             {{- else }}
+            - name: X_CSI_POWERMAX_PROXY_SERVICE_NAME
               value: "none"
             {{- end }}
             - name: X_CSI_POWERMAX_PORTGROUPS
@@ -284,16 +299,43 @@ spec:
               value: {{ .Values.nodeNameTemplate | default "" }}
             - name: X_CSI_IG_MODIFY_HOSTNAME
               value: {{ .Values.modifyHostName | default "false" | lower | quote }}
-            - name: X_CSI_ReplicationContextPrefix
-              value: {{ .Values.replicationContextPrefix | default "powermax/"}}
-            - name: X_CSI_ReplicationPrefix
-              value: {{ .Values.replicationPrefix | default "replication.storage.dell.com/"}}
+            {{- if eq .Values.replication.enabled true}}
+            - name: X_CSI_REPLICATION_CONTEXT_PREFIX
+              value: {{ .Values.replication.replicationContextPrefix | default "powermax/"}}
+            - name: X_CSI_REPLICATION_PREFIX
+              value: {{ .Values.replication.replicationPrefix | default "replication.storage.dell.com/"}}
+            {{- end }}
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi
             - name: certs
               mountPath: /certs
               readOnly: true
+        {{- if and (eq .Values.csireverseproxy.enabled true) (eq .Values.csireverseproxy.deployAsSidecar true) }}
+        - name: reverseproxy
+          image: {{ required "Must provided an image for reverseproxy container." .Values.csireverseproxy.image }}
+          imagePullPolicy: Always
+          env:
+            - name: X_CSI_REVPROXY_CONFIG_DIR
+              value: /etc/config/configmap
+            - name: X_CSI_REVPROXY_CONFIG_FILE_NAME
+              value: config.yaml
+            - name: X_CSI_REVRPOXY_IN_CLUSTER
+              value: "true"
+            - name: X_CSI_REVPROXY_TLS_CERT_DIR
+              value: /app/tls
+            - name: X_CSI_REVPROXY_WATCH_NAMESPACE
+              value: {{ .Release.Namespace }}
+            - name: X_CSI_REVPROXY_IS_LEADER_ENABLED
+              value: "true"
+          volumeMounts:
+            - name: configmap-volume
+              mountPath: /etc/config/configmap
+            - name: tls-secret
+              mountPath: /app/tls
+            - name: cert-dir
+              mountPath: /app/certs
+        {{- end }}
       volumes:
         - name: socket-dir
           emptyDir:
@@ -301,3 +343,12 @@ spec:
           secret:
               secretName: {{ .Release.Name }}-certs
               optional: true 
+        - name: configmap-volume
+          configMap:
+            name: {{ .Release.Name }}-reverseproxy-config
+            optional: true
+        - name: tls-secret
+          secret:
+            secretName: {{ .Values.csireverseproxy.tlsSecret }}
+        - name: cert-dir
+          emptyDir:

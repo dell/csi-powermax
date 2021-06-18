@@ -36,13 +36,10 @@ import (
 
 // LinkedProxy represents a Linked Proxy
 type LinkedProxy struct {
-	Config      config.LinkedProxyConfig
-	requestID   uint64
-	active      int32
-	Primary     *common.Proxy
-	Backup      *common.Proxy
-	mutex       sync.Mutex
-	ProxyHealth common.ProxyHealth
+	Config    config.LinkedProxyConfig
+	requestID uint64
+	mutex     sync.Mutex
+	Envoy     common.Envoy
 }
 
 // NewLinkedProxy - Given a proxy config, creates a Linked Proxy
@@ -50,23 +47,24 @@ func NewLinkedProxy(proxyConfig config.LinkedProxyConfig) (*LinkedProxy, error) 
 	var linkedProxy LinkedProxy
 	var primaryProxy, backupProxy *common.Proxy
 	var err error
-	primaryProxy, err = newReverseProxy(proxyConfig.Primary, linkedProxy.HealthHandler)
+	primaryProxy, err = newReverseProxy(proxyConfig.Primary)
 	if err != nil {
 		return nil, err
 	}
+	linkedProxy.Envoy = common.NewEnvoy(primaryProxy)
 	if proxyConfig.Backup != nil {
-		backupProxy, err = newReverseProxy(proxyConfig.Backup, linkedProxy.HealthHandler)
+		backupProxy, err = newReverseProxy(proxyConfig.Backup)
 		if err != nil {
 			return nil, err
 		}
 	}
-	linkedProxy.updateConfig(proxyConfig, primaryProxy, backupProxy)
-	linkedProxy.ProxyHealth = common.NewProxyHealth()
+	linkedProxy.updateConfig(proxyConfig, nil, backupProxy)
 	return &linkedProxy, nil
 }
 
-func newReverseProxy(server *config.ManagementServer, callback func(bool)) (*common.Proxy, error) {
+func newReverseProxy(server *config.ManagementServer) (*common.Proxy, error) {
 	revProxy := httputil.NewSingleHostReverseProxy(&server.URL)
+	// #nosec G402
 	tlsConfig := tls.Config{
 		InsecureSkipVerify: server.SkipCertificateValidation,
 	}
@@ -79,14 +77,10 @@ func newReverseProxy(server *config.ManagementServer, callback func(bool)) (*com
 		caCertPool.AppendCertsFromPEM(caCert)
 		tlsConfig.RootCAs = caCertPool
 	}
-	revProxyTransport := &http.Transport{
+	revProxy.Transport = &http.Transport{
 		TLSClientConfig:     &tlsConfig,
 		MaxIdleConnsPerHost: 50,
 		MaxIdleConns:        100,
-	}
-	revProxy.Transport = &common.Transport{
-		RoundTripper:  revProxyTransport,
-		HealthHandler: callback,
 	}
 	proxy := common.Proxy{
 		ReverseProxy: revProxy,
@@ -96,30 +90,13 @@ func newReverseProxy(server *config.ManagementServer, callback func(bool)) (*com
 	return &proxy, nil
 }
 
-// HealthHandler - call back method which updates a proxy's health
-func (revProxy *LinkedProxy) HealthHandler(isSuccess bool) {
-	if isSuccess {
-		revProxy.ProxyHealth.ReportSuccess()
-	} else {
-		if revProxy.ProxyHealth.ReportFailure() {
-			if atomic.LoadInt32(&revProxy.active) == 0 {
-				atomic.AddInt32(&revProxy.active, 1)
-				log.Println("Switched to backup proxy")
-			} else {
-				atomic.AddInt32(&revProxy.active, -1)
-				log.Println("Switched back to primary proxy")
-			}
-		}
-	}
-}
-
 func (revProxy *LinkedProxy) setProxy(proxy *common.Proxy, isPrimary bool) {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
 	if isPrimary {
-		revProxy.Primary = proxy
+		revProxy.Envoy.SetPrimary(proxy)
 	} else {
-		revProxy.Backup = proxy
+		revProxy.Envoy.SetBackup(proxy)
 	}
 }
 
@@ -128,10 +105,10 @@ func (revProxy *LinkedProxy) updateConfig(proxyConfig config.LinkedProxyConfig, 
 	defer revProxy.mutex.Unlock()
 	revProxy.Config = proxyConfig
 	if primaryProxy != nil {
-		revProxy.Primary = primaryProxy
+		revProxy.Envoy.SetPrimary(primaryProxy)
 	}
 	if backupProxy != nil {
-		revProxy.Backup = backupProxy
+		revProxy.Envoy.SetBackup(backupProxy)
 	}
 }
 
@@ -173,7 +150,7 @@ func (revProxy *LinkedProxy) UpdateConfig(proxyConfig config.ProxyConfig) error 
 	if !reflect.DeepEqual(*newPrimary, *oldPrimary) {
 		log.Printf("Primary URL changed. New URL: %s, Old URL: %s ", newPrimary.URL.Host, oldPrimary.URL.Host)
 		// We need to setup new reverseproxy
-		newPrimaryProxy, err = newReverseProxy(linkedProxyConfig.Primary, revProxy.HealthHandler)
+		newPrimaryProxy, err = newReverseProxy(linkedProxyConfig.Primary)
 		if err != nil {
 			return err
 		}
@@ -183,14 +160,14 @@ func (revProxy *LinkedProxy) UpdateConfig(proxyConfig config.ProxyConfig) error 
 		oldBackup := revProxy.Config.Backup
 		if oldBackup == nil {
 			log.Printf("Backup URL added")
-			newBackupProxy, err = newReverseProxy(linkedProxyConfig.Backup, revProxy.HealthHandler)
+			newBackupProxy, err = newReverseProxy(linkedProxyConfig.Backup)
 			if err != nil {
 				return err
 			}
 		} else if !reflect.DeepEqual(*newBackup, *oldBackup) {
 			log.Printf("Backup URL changed. New URL: %s, Old URL: %s ", newBackup.URL.Host, oldBackup.URL.Host)
 			// We need to setup new reverseproxy
-			newBackupProxy, err = newReverseProxy(linkedProxyConfig.Backup, revProxy.HealthHandler)
+			newBackupProxy, err = newReverseProxy(linkedProxyConfig.Backup)
 			if err != nil {
 				return err
 			}
@@ -208,10 +185,7 @@ func (revProxy *LinkedProxy) getRequestID() string {
 func (revProxy *LinkedProxy) getProxy() common.Proxy {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
-	if revProxy.active == 0 || revProxy.Backup == nil {
-		return *revProxy.Primary
-	}
-	return *revProxy.Backup
+	return *(revProxy.Envoy.GetActiveProxy())
 }
 
 func (revProxy *LinkedProxy) modifyRequest(req *http.Request, targetURL url.URL) {
