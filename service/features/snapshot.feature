@@ -57,7 +57,7 @@ Feature: PowerMax CSI Interface
         And a valid CreateVolumeResponse is returned
         And I call CreateSnapshot "snapshot1" on "volume1"
         Then the error contains "Failed to create snapshot"
-@v1.2.0
+
     Scenario: Create snapshot with no probe
         Given a PowerMax service
         And an invalid volume
@@ -503,7 +503,7 @@ Feature: PowerMax CSI Interface
         And an invalid snapshot
         And I call DeleteSnapshot
         Then the error contains "Snapshot name is not in supported format"
-@v1.2.0
+
     Scenario: Delete a snapshot with no probe
         Given a PowerMax service
         When I invalidate the Probe cache

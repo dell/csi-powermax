@@ -70,7 +70,7 @@ func main() {
 		format = "ver"
 	} else {
 		if fileExists(format) {
-			buf, err := ioutil.ReadFile(format)
+			buf, err := ioutil.ReadFile(format) // #nosec G304
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: read tpl failed: %v\n", err)
 				os.Exit(1)
@@ -89,7 +89,11 @@ func main() {
 			os.Exit(1)
 		}
 		w = fout
-		defer fout.Close()
+		defer func() {
+			if err := fout.Close(); err != nil {
+				panic(err)
+			}
+		}()
 	}
 
 	gitdesc := chkErr(doExec("git", "describe", "--long", "--dirty"))
@@ -186,7 +190,7 @@ func main() {
 }
 
 func doExec(cmd string, args ...string) ([]byte, error) {
-	c := exec.Command(cmd, args...)
+	c := exec.Command(cmd, args...) // #nosec G204
 	c.Stderr = os.Stderr
 	return c.Output()
 }

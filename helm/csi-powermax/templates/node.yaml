@@ -70,6 +70,11 @@ spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       containers:
+        {{- $_ := first .Values.global.storageArrays  }}
+        {{- $arraysStr := "" }}
+        {{- range $i, $array := .Values.global.storageArrays }}
+          {{- $arraysStr = trim (cat $arraysStr $array.storageArrayId) }}
+        {{- end }}
         - name: driver
           securityContext:
             privileged: true
@@ -94,8 +99,13 @@ spec:
               value: "true"
             - name: X_CSI_PRIVATE_MOUNT_DIR
               value: "/var/lib/kubelet/plugins/powermax.emc.dell.com/disks"
+            - name: X_CSI_MANAGED_ARRAYS
+              value: {{ $arraysStr | replace " " "," | quote }}
+            {{- if ne .Values.csireverseproxy.enabled true }}
+            {{- $managementServer := first .Values.global.managementServers }}
             - name: X_CSI_POWERMAX_ENDPOINT
-              value: {{ required "Must provide a Unisphere HTTPS endpoint." .Values.unisphere }}
+              value: {{ required "Must provide a Unisphere HTTPS endpoint." $managementServer.endpoint }}
+            {{- end }}
             - name: X_CSI_POWERMAX_DEBUG
               value: {{ .Values.powerMaxDebug | default "false" | lower | quote }}
             - name: X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION
@@ -107,12 +117,12 @@ spec:
             - name: X_CSI_POWERMAX_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-creds
+                  name: {{ .Values.global.defaultCredentialsSecret }}
                   key: username
             - name: X_CSI_POWERMAX_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-creds
+                  name: {{ .Values.global.defaultCredentialsSecret }}
                   key: password
             - name: X_CSI_POWERMAX_NODENAME
               valueFrom:

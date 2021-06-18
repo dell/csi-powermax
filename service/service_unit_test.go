@@ -235,7 +235,7 @@ func TestGetVolSize(t *testing.T) {
 		t.Run("", func(st *testing.T) {
 			st.Parallel()
 			s := &service{}
-			num, err := s.validateVolSize(tt.cr, "", "")
+			num, err := s.validateVolSize(tt.cr, "", "", s.adminClient)
 			if tt.numOfCylinders == 0 {
 				// error is expected
 				assert.Error(st, err)

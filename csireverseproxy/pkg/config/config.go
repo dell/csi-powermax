@@ -70,6 +70,13 @@ type StorageArray struct {
 	ProxyCredentialSecrets map[string]ProxyCredentialSecret
 }
 
+// StorageArrayServer represents an array with its primary and backup management server
+type StorageArrayServer struct {
+	Array         StorageArray
+	PrimaryServer ManagementServer
+	BackupServer  *ManagementServer
+}
+
 // DeepCopy - used for deep copy of StorageArray
 func (sa *StorageArray) DeepCopy() *StorageArray {
 	if sa == nil {
@@ -267,6 +274,30 @@ func (proxy *StandAloneProxyConfig) GetManagementServers() []ManagementServer {
 	return mgmtServers
 }
 
+// GetManagedArraysAndServers returns a list of arrays with their corresponding management servers
+func (proxy *StandAloneProxyConfig) GetManagedArraysAndServers() map[string]StorageArrayServer {
+	arrayServers := make(map[string]StorageArrayServer)
+	for _, server := range proxy.managementServers {
+		for _, arrayID := range server.StorageArrayIdentifiers {
+			var (
+				arrayServer StorageArrayServer
+				ok          bool
+			)
+			if arrayServer, ok = arrayServers[arrayID]; !ok {
+				arrayServer = StorageArrayServer{}
+				arrayServer.Array = *(proxy.managedArrays[arrayID])
+			}
+			if server.URL == arrayServer.Array.PrimaryURL {
+				arrayServer.PrimaryServer = *(server)
+			} else if server.URL == arrayServer.Array.SecondaryURL {
+				arrayServer.BackupServer = server
+			}
+			arrayServers[arrayID] = arrayServer
+		}
+	}
+	return arrayServers
+}
+
 // IsSecretConfiguredForCerts - returns true if the given secret name is configured for certificates
 func (proxy *StandAloneProxyConfig) IsSecretConfiguredForCerts(secretName string) bool {
 	found := false
@@ -384,35 +415,35 @@ func (proxy *StandAloneProxyConfig) UpdateCertsAndCredentials(k8sUtils k8sutils.
 }
 
 // UpdateManagementServers - Updates the list of management servers
-func (proxy *StandAloneProxyConfig) UpdateManagementServers(config *StandAloneProxyConfig) ([]url.URL, []ManagementServer, error) {
-	deletedURLs := make([]url.URL, 0)
-	updatedMngmtServers := make([]ManagementServer, 0)
+func (proxy *StandAloneProxyConfig) UpdateManagementServers(config *StandAloneProxyConfig) ([]ManagementServer, []ManagementServer, error) {
+	deletedManagementServers := make([]ManagementServer, 0)
+	updatedManagemetServers := make([]ManagementServer, 0)
 	// Check for deleted management servers, if any delete the map entry for it
-	for urL := range proxy.managementServers {
-		if _, ok := config.managementServers[urL]; !ok {
+	for url, server := range proxy.managementServers {
+		if _, ok := config.managementServers[url]; !ok {
 			//the management server is not present in new config, delete its entry from active config
-			deletedURLs = append(deletedURLs, urL)
-			delete(proxy.managementServers, urL)
+			deletedManagementServers = append(deletedManagementServers, *server)
+			delete(proxy.managementServers, url)
 		}
 	}
 	// Check for adding/updating a new/existing management server, if any
-	for urL, mgmntServer := range config.managementServers {
-		if _, ok := proxy.managementServers[urL]; !ok {
+	for url, mgmntServer := range config.managementServers {
+		if _, ok := proxy.managementServers[url]; !ok {
 			//Not found, the management server is not present in active config so add its entry
-			updatedMngmtServers = append(updatedMngmtServers, *mgmntServer)
-			proxy.managementServers[urL] = config.managementServers[urL]
+			updatedManagemetServers = append(updatedManagemetServers, *mgmntServer)
+			proxy.managementServers[url] = config.managementServers[url]
 		} else {
 			// Found, update the map if management server is updated
-			if !reflect.DeepEqual(proxy.managementServers[urL], config.managementServers[urL]) {
-				updatedMngmtServers = append(updatedMngmtServers, *mgmntServer)
-				proxy.managementServers[urL] = config.managementServers[urL]
+			if !reflect.DeepEqual(proxy.managementServers[url], config.managementServers[url]) {
+				updatedManagemetServers = append(updatedManagemetServers, *mgmntServer)
+				proxy.managementServers[url] = config.managementServers[url]
 			}
 		}
 	}
 	if !reflect.DeepEqual(proxy.managementServers, config.managementServers) {
 		return nil, nil, fmt.Errorf("something wrong in adding/removing servers")
 	}
-	return deletedURLs, updatedMngmtServers, nil
+	return deletedManagementServers, updatedManagemetServers, nil
 }
 
 // UpdateManagedArrays - updates the set of managed arrays
@@ -474,6 +505,14 @@ func (proxy *StandAloneProxyConfig) GetStorageArray(storageArrayID string) []Sto
 		}
 	}
 	return storageArrays
+}
+
+// GetManagementServer returns a management server corresponding to a URL
+func (proxy *StandAloneProxyConfig) GetManagementServer(url url.URL) (ManagementServer, bool) {
+	if server, ok := proxy.managementServers[url]; ok {
+		return *server, ok
+	}
+	return ManagementServer{}, false
 }
 
 // ProxyConfig - represents the configuration of Proxy (formed using ProxyConfigMap)
@@ -593,9 +632,8 @@ func (proxyConfig *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUt
 			}
 			if array.BackupURL != "" {
 				if !utils.IsStringInSlice(ipAddresses, array.BackupURL) {
-					fmt.Printf("Backup URL: %s for array: %s is not in the list of management URL addresses. Ignoring it\n",
+					return fmt.Errorf("backup URL: %s for array: %s is not in the list of management URL addresses. Ignoring it",
 						array.BackupURL, array)
-					array.BackupURL = ""
 				}
 			}
 			primaryURL, err := url.Parse(array.PrimaryURL)

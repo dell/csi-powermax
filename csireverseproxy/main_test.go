@@ -21,8 +21,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"log"
 	"net"
 	"net/http"
@@ -40,6 +38,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"gopkg.in/yaml.v2"
 )
@@ -486,7 +487,7 @@ func TestSAHTTPRequest(t *testing.T) {
 
 func TestFailOver(t *testing.T) {
 	failureCount, successCount, duration := 50, 5, 1*time.Second
-	linkedServer.LinkedProxy.ProxyHealth.SetThreshold(failureCount, successCount, duration)
+	linkedServer.LinkedProxy.Envoy.ConfigureHealthParams(failureCount, successCount, duration)
 	// Trigger fail-over to primary URL.
 	err := runRequestLoop(failureCount, duration, linkedServer.Port, authenticationEndpoint)
 	if err != nil {
@@ -521,14 +522,14 @@ func TestFailOver(t *testing.T) {
 
 func TestProxyHealthReset(t *testing.T) {
 	failureCount, successCount, duration := 50, 5, 1*time.Second
-	linkedServer.LinkedProxy.ProxyHealth.SetThreshold(failureCount, successCount, duration)
+	linkedServer.LinkedProxy.Envoy.ConfigureHealthParams(failureCount, successCount, duration)
 	// Record failures
 	err := runRequestLoop(10, time.Nanosecond, linkedServer.Port, authenticationEndpoint)
 	if err != nil {
 		t.Errorf("Failed to make HTTP request. (%s)\n", err.Error())
 		return
 	}
-	if !linkedServer.LinkedProxy.ProxyHealth.HasDeteriorated() {
+	if !linkedServer.LinkedProxy.Envoy.HasHealthDeteriorated() {
 		t.Error("Health deterioration not recorded properly.")
 		return
 	}
@@ -537,7 +538,7 @@ func TestProxyHealthReset(t *testing.T) {
 		t.Errorf("Failed to make HTTP request. (%s)\n", err.Error())
 		return
 	}
-	if linkedServer.LinkedProxy.ProxyHealth.HasDeteriorated() {
+	if linkedServer.LinkedProxy.Envoy.HasHealthDeteriorated() {
 		t.Error("Proxy health not reset properly")
 	} else {
 		fmt.Printf("Proxy health reset successfully after %d successful HTTP requests.\n", successCount)

@@ -403,7 +403,7 @@ func contains(list []string, item string) bool {
 func mkfile(path string) (bool, error) {
 	st, err := os.Stat(path)
 	if os.IsNotExist(err) {
-		file, err := os.OpenFile(path, os.O_CREATE, 0600)
+		file, err := os.OpenFile(path, os.O_CREATE, 0600) // #nosec G304
 		if err != nil {
 			log.WithField("path", path).WithError(
 				err).Error("Unable to create file")

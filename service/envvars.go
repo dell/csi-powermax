@@ -28,6 +28,7 @@ const (
 
 	// EnvPassword is the name of the enviroment variable used to set the
 	// user's password when authenticating to Unisphere
+	// #nosec G101
 	EnvPassword = "X_CSI_POWERMAX_PASSWORD"
 
 	// EnvVersion is the name of the enviroment variable used to set the
@@ -94,6 +95,10 @@ const (
 	// If set to none, then the driver will connect to Unisphere
 	EnvUnisphereProxyServiceName = "X_CSI_POWERMAX_PROXY_SERVICE_NAME"
 
+	// EnvSidecarProxyPort is the port port on which the reverse proxy
+	// server run, if run as a sidecar container
+	EnvSidecarProxyPort = "X_CSI_POWERMAX_SIDECAR_PROXY_PORT"
+
 	// EnvEnableCHAP is the flag which determines if the driver is going
 	// to set the CHAP credentials in the ISCSI node database at the time
 	// of node plugin boot
@@ -106,6 +111,7 @@ const (
 
 	// EnvISCSICHAPPassword is the the password for the ISCSI CHAP
 	// authentication for the host initiator(s)
+	// #nosec G101
 	EnvISCSICHAPPassword = "X_CSI_POWERMAX_ISCSI_CHAP_PASSWORD"
 
 	// EnvNodeNameTemplate is the templatized name to construct node names
@@ -122,9 +128,12 @@ const (
 	// Only used for testing
 	EnvProxyEnabled = "X_CSI_REVERSE_PROXY_ENABLED"
 
-	// ReplicationContextPrefix enables sidecars to read required information from volume context
-	ReplicationContextPrefix = "X_CSI_ReplicationContextPrefix"
+	// EnvReplicationContextPrefix enables sidecars to read required information from volume context
+	EnvReplicationContextPrefix = "X_CSI_REPLICATION_CONTEXT_PREFIX"
 
-	// ReplicationPrefix is used as a prefix to find out if replication is enabled
-	ReplicationPrefix = "X_CSI_ReplicationPrefix"
+	// EnvReplicationPrefix is used as a prefix to find out if replication is enabled
+	EnvReplicationPrefix = "X_CSI_REPLICATION_PREFIX"
+
+	// EnvManagedArrays is an env variable with a list of space separated arrays.
+	EnvManagedArrays = "X_CSI_MANAGED_ARRAYS"
 )
