@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -28,8 +28,6 @@ import (
 	"time"
 
 	pmax "github.com/dell/gopowermax"
-
-	"github.com/dell/csi-powermax/pkg/symmetrix"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/coreos/go-systemd/dbus"
@@ -110,12 +108,12 @@ func (s *service) NodeStageVolume(
 
 	// Get the VolumeID and parse it, check if pending op for this volume ID
 	id := req.GetVolumeId()
-	_, symID, _, err := s.parseCsiID(id)
+	_, symID, _, remoteSymID, remoteVolID, err := s.parseCsiID(id)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", id)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID, remoteSymID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -135,7 +133,7 @@ func (s *service) NodeStageVolume(
 	}
 
 	// Parse the CSI VolumeId and validate against the volume
-	symID, devID, vol, err := s.GetVolumeByID(id, pmaxClient)
+	symID, devID, vol, err := s.GetVolumeByID(ctx, id, pmaxClient)
 	if err != nil {
 		// If the volume isn't found, we cannot stage it
 		return nil, err
@@ -176,22 +174,76 @@ func (s *service) NodeStageVolume(
 	log.WithFields(f).Info("NodeStageVolume")
 	ctx = setLogFields(ctx, f)
 
-	publishContextData := publishContextData{
+	localPublishContextData := publishContextData{
 		deviceWWN:        "0x" + volumeWWN,
 		volumeLUNAddress: volumeLUNAddress,
 	}
-	iscsiTargets, fcTargets, useFC := s.getArrayTargets(targetIdentifiers, symID, pmaxClient)
+	iscsiTargets, fcTargets, useFC := s.getArrayTargets(ctx, targetIdentifiers, symID, pmaxClient)
 	iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
 	if useFC {
 		s.initFCConnector(iscsiChroot)
-		publishContextData.fcTargets = fcTargets
+		localPublishContextData.fcTargets = fcTargets
 	} else {
 		s.initISCSIConnector(iscsiChroot)
-		publishContextData.iscsiTargets = iscsiTargets
+		localPublishContextData.iscsiTargets = iscsiTargets
 	}
-	devicePath, err := s.connectDevice(ctx, publishContextData, useFC)
+	devicePath, err := s.connectDevice(ctx, localPublishContextData, useFC)
 	if err != nil {
 		return nil, err
+	}
+	// Connect Remote Device
+	if remoteSymID != "" {
+		remDeviceWWN := publishContext[RemotePublishContextDeviceWWN]
+		remVolumeLUNAddress := publishContext[RemotePublishContextLUNAddress]
+		remotePublishContextData := publishContextData{
+			deviceWWN:        "0x" + remDeviceWWN,
+			volumeLUNAddress: remVolumeLUNAddress,
+		}
+		if remDeviceWWN == "" {
+			log.Error("Remote device WWN required to be in PublishContext")
+			return nil, status.Error(codes.InvalidArgument, "Remote device WWN required to be in PublishContext")
+		}
+		f := log.Fields{
+			"CSIRequestID":      reqID,
+			"DeviceID":          remoteVolID,
+			"ID":                req.VolumeId,
+			"LUNAddress":        remVolumeLUNAddress,
+			"PrivTgt":           privTgt,
+			"SymmetrixID":       symID,
+			"RemoteSymID":       remoteSymID,
+			"TargetIdentifiers": targetIdentifiers,
+			"WWN":               remDeviceWWN,
+		}
+		log.WithFields(f).Info("NodeStageVolume for Remote Device")
+		ctx = setLogFields(ctx, f)
+
+		remoteTargetIdentifiers := ""
+		if count, ok := publishContext[RemotePortIdentifierKeyCount]; ok {
+			keyCount, _ = strconv.Atoi(count)
+			for i := 1; i <= keyCount; i++ {
+				portIdentifierKey := fmt.Sprintf("%s_%d", RemotePortIdentifiers, i)
+				remoteTargetIdentifiers += publishContext[portIdentifierKey]
+			}
+		} else {
+			remoteTargetIdentifiers = publishContext[RemotePortIdentifiers]
+		}
+		remIscsiTargets, remFcTargets, remUseFC := s.getArrayTargets(ctx, remoteTargetIdentifiers, remoteSymID, pmaxClient)
+		log.Infof("Remote ISCSI Targets %v", remIscsiTargets)
+		if remUseFC {
+			s.initFCConnector(iscsiChroot)
+			remotePublishContextData.fcTargets = remFcTargets
+		} else {
+			s.initISCSIConnector(iscsiChroot)
+			remotePublishContextData.iscsiTargets = remIscsiTargets
+		}
+		remoteDevicePath, err := s.connectDevice(ctx, remotePublishContextData, remUseFC)
+		if err != nil {
+			return nil, err
+		}
+		f["RemoteDevicePath"] = remoteDevicePath
+		f["RemoteLUNAddress"] = remVolumeLUNAddress
+		f["TargetIdentifiers"] = remoteTargetIdentifiers
+		f["RemoteWWN"] = remDeviceWWN
 	}
 
 	log.WithFields(f).WithField("devPath", devicePath).Info("NodeStageVolume completed")
@@ -294,12 +346,12 @@ func (s *service) NodeUnstageVolume(
 
 	// Get the VolumeID and parse it, check if pending op for this volume ID
 	id := req.GetVolumeId()
-	_, symID, _, err := s.parseCsiID(id)
+	_, symID, _, _, _, err := s.parseCsiID(id)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", id)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -337,7 +389,7 @@ func (s *service) NodeUnstageVolume(
 		}
 
 		// Parse the CSI VolumeId and validate against the volume
-		_, _, vol, err := s.GetVolumeByID(id, pmaxClient)
+		_, _, vol, err := s.GetVolumeByID(ctx, id, pmaxClient)
 		if err != nil {
 			// If the volume isn't found, or we fail to validate the name/id, k8s will retry NodeUnstage forever so...
 			// Make it stop...
@@ -350,7 +402,7 @@ func (s *service) NodeUnstageVolume(
 	}
 
 	// Parse the volume ID to get the symID and devID
-	_, symID, devID, err := s.parseCsiID(id)
+	_, symID, devID, _, _, err := s.parseCsiID(id)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -438,12 +490,12 @@ func (s *service) NodePublishVolume(
 
 	// Get the VolumeID and parse it
 	id := req.GetVolumeId()
-	_, symID, _, err := s.parseCsiID(id)
+	_, symID, _, _, _, err := s.parseCsiID(id)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", id)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -457,7 +509,7 @@ func (s *service) NodePublishVolume(
 	}
 
 	// Parse the CSI VolumeId and validate against the volume
-	symID, devID, _, err := s.GetVolumeByID(id, pmaxClient)
+	symID, devID, _, err := s.GetVolumeByID(ctx, id, pmaxClient)
 	if err != nil {
 		return nil, err
 	}
@@ -649,7 +701,7 @@ func (s *service) nodeProbe(ctx context.Context) error {
 			"Error getting NodeName from the environment")
 	}
 
-	err := s.createPowerMaxClients()
+	err := s.createPowerMaxClients(ctx)
 	if err != nil {
 		return err
 	}
@@ -661,7 +713,7 @@ func (s *service) nodeProbe(ctx context.Context) error {
 			// Make sure that there is only discovery/login attempt at one time
 			s.nodeProbeMutex.Lock()
 			defer s.nodeProbeMutex.Unlock()
-			_ = s.ensureLoggedIntoEveryArray(false)
+			_ = s.ensureLoggedIntoEveryArray(ctx, false)
 		}
 	}
 	return nil
@@ -692,15 +744,15 @@ func (s *service) NodeGetCapabilities(
 	}, nil
 }
 
-func (s *service) getIPInterfaces(symID string, portGroups []string, pmaxClient pmax.Pmax) ([]string, error) {
+func (s *service) getIPInterfaces(ctx context.Context, symID string, portGroups []string, pmaxClient pmax.Pmax) ([]string, error) {
 	ipInterfaces := make([]string, 0)
 	for _, pg := range portGroups {
-		portGroup, err := pmaxClient.GetPortGroupByID(symID, pg)
+		portGroup, err := pmaxClient.GetPortGroupByID(ctx, symID, pg)
 		if err != nil {
 			return nil, err
 		}
 		for _, portKey := range portGroup.SymmetrixPortKey {
-			port, err := pmaxClient.GetPort(symID, portKey.DirectorID, portKey.PortID)
+			port, err := pmaxClient.GetPort(ctx, symID, portKey.DirectorID, portKey.PortID)
 			if err != nil {
 				return nil, err
 			}
@@ -719,7 +771,7 @@ func (s *service) isISCSIConnected(err error) bool {
 	return false
 }
 
-func (s *service) createTopologyMap() (map[string]string, error) {
+func (s *service) createTopologyMap(ctx context.Context) (map[string]string, error) {
 	topology := map[string]string{}
 	iscsiArrays := make([]string, 0)
 
@@ -729,7 +781,7 @@ func (s *service) createTopologyMap() (map[string]string, error) {
 	}
 
 	for _, id := range arrays.SymmetrixIDs {
-		pmaxClient, err := symmetrix.GetPowerMaxClient(id)
+		pmaxClient, err := s.GetPowerMaxClient(id)
 		if err != nil {
 			log.Error(err.Error())
 			continue
@@ -745,7 +797,7 @@ func (s *service) createTopologyMap() (map[string]string, error) {
 				continue
 			}
 		}
-		ipInterfaces, err := s.getIPInterfaces(id, s.opts.PortGroups, pmaxClient)
+		ipInterfaces, err := s.getIPInterfaces(ctx, id, s.opts.PortGroups, pmaxClient)
 		if err != nil {
 			log.Errorf("unable to fetch ip interfaces for %s: %s", id, err.Error())
 			continue
@@ -803,7 +855,7 @@ func (s *service) NodeGetInfo(
 			"Unable to get Node Name from the environment")
 	}
 
-	topology, err := s.createTopologyMap()
+	topology, err := s.createTopologyMap(ctx)
 	if err != nil {
 		log.Errorf("Unable to get the list of symmetrix ids. (%s)\n", err.Error())
 		return nil, status.Error(codes.FailedPrecondition,
@@ -833,7 +885,7 @@ func (s *service) NodeGetVolumeStats(
 // - invokes nodeHostSetup in a thread
 //
 // returns an error if unable to perform node startup tasks without error
-func (s *service) nodeStartup() error {
+func (s *service) nodeStartup(ctx context.Context) error {
 
 	if s.nodeIsInitialized {
 		return nil
@@ -880,7 +932,7 @@ func (s *service) nodeStartup() error {
 	symmetrixIDs := arrays.SymmetrixIDs
 	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
 
-	s.nodeHostSetup(portWWNs, IQNs, symmetrixIDs)
+	s.nodeHostSetup(ctx, portWWNs, IQNs, symmetrixIDs)
 
 	return err
 }
@@ -895,8 +947,8 @@ func isValidHostID(hostID string) bool {
 // These can be either FC initiators (hex numbers) or iSCSI initiators (starting with iqn.)
 // It returns the number of initiators for the host that were found.
 // Do not mix both FC and iSCSI initiators in a single call.
-func (s *service) verifyAndUpdateInitiatorsInADiffHost(symID string, nodeInitiators []string, hostID string, pmaxClient pmax.Pmax) (int, error) {
-	initList, err := pmaxClient.GetInitiatorList(symID, "", false, false)
+func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symID string, nodeInitiators []string, hostID string, pmaxClient pmax.Pmax) (int, error) {
+	initList, err := pmaxClient.GetInitiatorList(ctx, symID, "", false, false)
 	if err != nil {
 		log.Warning("Failed to fetch initiator list for the SYM :" + symID)
 		return 0, err
@@ -909,7 +961,7 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(symID string, nodeInitiat
 		for _, initiatorID := range initList.InitiatorIDs {
 			if initiatorID == nodeInitiator || strings.HasSuffix(initiatorID, nodeInitiator) {
 				log.Infof("Checking initiator %s against host %s\n", initiatorID, hostID)
-				initiator, err := pmaxClient.GetInitiatorByID(symID, initiatorID)
+				initiator, err := pmaxClient.GetInitiatorByID(ctx, symID, initiatorID)
 				if err != nil {
 					log.Warning("Failed to fetch initiator details for initiator: " + initiatorID)
 					continue
@@ -919,7 +971,7 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(symID string, nodeInitiat
 						s.opts.ModifyHostName {
 						// User has set ModifyHostName to modify host name in case of a mismatch
 						log.Infof("UpdateHostName processing: %s to %s", initiator.HostID, hostID)
-						_, err := pmaxClient.UpdateHostName(symID, initiator.HostID, hostID)
+						_, err := pmaxClient.UpdateHostName(ctx, symID, initiator.HostID, hostID)
 						if err != nil {
 							errormsg := fmt.Sprintf("Failed to change host name from %s to %s: %s", initiator.HostID, hostID, err)
 							log.Error(errormsg)
@@ -947,7 +999,7 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(symID string, nodeInitiat
 // - a Host exists within PowerMax, to identify this node
 // - The Host contains the discovered iSCSI initiators
 // - performs an iSCSI login
-func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs []string) error {
+func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []string, symmetrixIDs []string) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	log.Info("**************************\nnodeHostSetup executing...\n*******************************")
@@ -970,12 +1022,12 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 
 	// Loop through the symmetrix, looking for existing initiators
 	for _, symID := range symmetrixIDs {
-		pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+		pmaxClient, err := s.GetPowerMaxClient(symID)
 		if err != nil {
 			log.Error(err.Error())
 			continue
 		}
-		validFC, err := s.verifyAndUpdateInitiatorsInADiffHost(symID, portWWNs, hostIDFC, pmaxClient)
+		validFC, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, portWWNs, hostIDFC, pmaxClient)
 		if err != nil {
 			log.Error("Could not validate FC initiators " + err.Error())
 		}
@@ -984,7 +1036,7 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 			// We do have to have pre-existing initiators that were zoned for FC
 			useFC = true
 		}
-		validIscsi, err := s.verifyAndUpdateInitiatorsInADiffHost(symID, IQNs, hostIDIscsi, pmaxClient)
+		validIscsi, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, IQNs, hostIDIscsi, pmaxClient)
 		if err != nil {
 			log.Error("Could not validate iSCSI initiators" + err.Error())
 		} else if s.opts.TransportProtocol == "" || s.opts.TransportProtocol == IscsiTransportProtocol {
@@ -1003,7 +1055,7 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 		}
 		iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
 		if useFC {
-			err := s.setupArrayForFC(symID, portWWNs, pmaxClient)
+			err := s.setupArrayForFC(ctx, symID, portWWNs, pmaxClient)
 			if err != nil {
 				log.Errorf("Failed to do the FC setup the Array(%s). Error - %s", symID, err.Error())
 			}
@@ -1015,7 +1067,7 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 			if err != nil {
 				log.Errorf("Failed to start the ISCSI Daemon. Error - %s", err.Error())
 			}
-			err = s.setupArrayForIscsi(symID, IQNs, pmaxClient)
+			err = s.setupArrayForIscsi(ctx, symID, IQNs, pmaxClient)
 			if err != nil {
 				log.Errorf("Failed to do the ISCSI setup for the Array(%s). Error - %s", symID, err.Error())
 			}
@@ -1028,34 +1080,34 @@ func (s *service) nodeHostSetup(portWWNs []string, IQNs []string, symmetrixIDs [
 	return nil
 }
 
-func (s *service) setupArrayForFC(array string, portWWNs []string, pmaxClient pmax.Pmax) error {
+func (s *service) setupArrayForFC(ctx context.Context, array string, portWWNs []string, pmaxClient pmax.Pmax) error {
 	hostName, _, mvName := s.GetFCHostSGAndMVIDFromNodeID(s.opts.NodeName)
 	log.Infof("setting up array %s for Fibrechannel, host name: %s masking view: %s", array, hostName, mvName)
-	_, err := s.createOrUpdateFCHost(array, hostName, portWWNs, pmaxClient)
+	_, err := s.createOrUpdateFCHost(ctx, array, hostName, portWWNs, pmaxClient)
 	return err
 }
 
 // setupArrayForIscsi is called to set up a node for iscsi operation.
-func (s *service) setupArrayForIscsi(array string, IQNs []string, pmaxClient pmax.Pmax) error {
+func (s *service) setupArrayForIscsi(ctx context.Context, array string, IQNs []string, pmaxClient pmax.Pmax) error {
 	hostName, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
 	log.Infof("setting up array %s for Iscsi, host name: %s masking view ID: %s", array, hostName, mvName)
 
 	// Create or update the IscsiHost and Initiators
-	_, err := s.createOrUpdateIscsiHost(array, hostName, IQNs, pmaxClient)
+	_, err := s.createOrUpdateIscsiHost(ctx, array, hostName, IQNs, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
 		return err
 	}
-	_, err = s.getAndConfigureMaskingViewTargets(array, mvName, IQNs, pmaxClient)
+	_, err = s.getAndConfigureMaskingViewTargets(ctx, array, mvName, IQNs, pmaxClient)
 	return err
 }
 
 // getAndConfigureMaskingViewTargets - Returns a list of ISCSITargets for a given masking view
 // also update the node database with CHAP authentication (if required) and perform discovery/login
-func (s *service) getAndConfigureMaskingViewTargets(array, mvName string, IQNs []string, pmaxClient pmax.Pmax) ([]goiscsi.ISCSITarget, error) {
+func (s *service) getAndConfigureMaskingViewTargets(ctx context.Context, array, mvName string, IQNs []string, pmaxClient pmax.Pmax) ([]goiscsi.ISCSITarget, error) {
 	// Check the masking view
 	goISCSITargets := make([]goiscsi.ISCSITarget, 0)
-	view, err := pmaxClient.GetMaskingViewByID(array, mvName)
+	view, err := pmaxClient.GetMaskingViewByID(ctx, array, mvName)
 	if err != nil {
 		// masking view does not exist, not an error but no need to login
 		log.Debugf("Masking View %s does not exist for array %s, skipping login", mvName, array)
@@ -1064,7 +1116,7 @@ func (s *service) getAndConfigureMaskingViewTargets(array, mvName string, IQNs [
 	log.Infof("Masking View: %s exists for array id: %s", mvName, array)
 	// masking view exists, we need to log into some targets
 	// this will also update the cache
-	targets, err := s.getIscsiTargetsForMaskingView(array, view, pmaxClient)
+	targets, err := s.getIscsiTargetsForMaskingView(ctx, array, view, pmaxClient)
 	if err != nil {
 		log.Debugf(err.Error())
 		return goISCSITargets, err
@@ -1229,7 +1281,7 @@ func (s *service) ensureISCSIDaemonStarted() error {
 	return nil
 }
 
-func (s *service) ensureLoggedIntoEveryArray(skipLogin bool) error {
+func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, skipLogin bool) error {
 	arrays := &types.SymmetrixIDList{}
 	var err error
 
@@ -1246,7 +1298,7 @@ func (s *service) ensureLoggedIntoEveryArray(skipLogin bool) error {
 	_, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
 	// for each array known to unisphere, ensure we have performed ISCSI login for our masking views
 	for _, array := range arrays.SymmetrixIDs {
-		pmaxClient, err := symmetrix.GetPowerMaxClient(array)
+		pmaxClient, err := s.GetPowerMaxClient(array)
 		if err != nil {
 			log.Error(err.Error())
 			continue
@@ -1285,7 +1337,7 @@ func (s *service) ensureLoggedIntoEveryArray(skipLogin bool) error {
 		} else {
 			// Entry not in cache
 			// Configure MaskingView Targets - CHAP, Discovery/Login
-			_, tempErr := s.getAndConfigureMaskingViewTargets(array, mvName, IQNs, pmaxClient)
+			_, tempErr := s.getAndConfigureMaskingViewTargets(ctx, array, mvName, IQNs, pmaxClient)
 			if tempErr != nil {
 				if strings.Contains(tempErr.Error(), "does not exist") {
 					// Ignore this error
@@ -1306,7 +1358,7 @@ func (s *service) ensureLoggedIntoEveryArray(skipLogin bool) error {
 	return nil
 }
 
-func (s *service) getIscsiTargetsForMaskingView(array string, view *types.MaskingView, pmaxClient pmax.Pmax) ([]maskingViewTargetInfo, error) {
+func (s *service) getIscsiTargetsForMaskingView(ctx context.Context, array string, view *types.MaskingView, pmaxClient pmax.Pmax) ([]maskingViewTargetInfo, error) {
 	if array == "" {
 		return []maskingViewTargetInfo{}, fmt.Errorf("No array specified")
 	}
@@ -1314,7 +1366,7 @@ func (s *service) getIscsiTargetsForMaskingView(array string, view *types.Maskin
 		return []maskingViewTargetInfo{}, fmt.Errorf("Masking view contains no PortGroupID")
 	}
 	// get the PortGroup in the masking view
-	portGroup, err := pmaxClient.GetPortGroupByID(array, view.PortGroupID)
+	portGroup, err := pmaxClient.GetPortGroupByID(ctx, array, view.PortGroupID)
 	if err != nil {
 		return []maskingViewTargetInfo{}, err
 	}
@@ -1322,7 +1374,7 @@ func (s *service) getIscsiTargetsForMaskingView(array string, view *types.Maskin
 	// for each Port
 	for _, portKey := range portGroup.SymmetrixPortKey {
 		pID := portKey.PortID
-		port, err := pmaxClient.GetPort(array, portKey.DirectorID, pID)
+		port, err := pmaxClient.GetPort(ctx, array, portKey.DirectorID, pID)
 		if err != nil {
 			// unable to get port details
 			continue
@@ -1344,7 +1396,7 @@ func (s *service) getIscsiTargetsForMaskingView(array string, view *types.Maskin
 	return targets, nil
 }
 
-func (s *service) createOrUpdateFCHost(array string, nodeName string, portWWNs []string, pmaxClient pmax.Pmax) (*types.Host, error) {
+func (s *service) createOrUpdateFCHost(ctx context.Context, array string, nodeName string, portWWNs []string, pmaxClient pmax.Pmax) (*types.Host, error) {
 	log.Info(fmt.Sprintf("Processing FC Host array: %s, nodeName: %s, initiators: %v", array, nodeName, portWWNs))
 	if array == "" {
 		return &types.Host{}, fmt.Errorf("createOrUpdateHost: No array specified")
@@ -1358,7 +1410,7 @@ func (s *service) createOrUpdateFCHost(array string, nodeName string, portWWNs [
 
 	// Get the set of initiators to use
 	hostInitiators := make([]string, 0)
-	initList, err := pmaxClient.GetInitiatorList(array, "", false, false)
+	initList, err := pmaxClient.GetInitiatorList(ctx, array, "", false, false)
 	if err != nil {
 		log.Error("Could not get initiator list: " + err.Error())
 		return nil, err
@@ -1374,12 +1426,12 @@ func (s *service) createOrUpdateFCHost(array string, nodeName string, portWWNs [
 	log.Infof("hostInitiators: %s\n", hostInitiators)
 
 	// See if the host is present
-	host, err := pmaxClient.GetHostByID(array, nodeName)
+	host, err := pmaxClient.GetHostByID(ctx, array, nodeName)
 	log.Debug(fmt.Sprintf("GetHostById returned: %v, %v", host, err))
 	if err != nil {
 		// host does not exist, create it
 		log.Infof(fmt.Sprintf("Array %s FC Host %s does not exist. Creating it.", array, nodeName))
-		host, err = s.retryableCreateHost(array, nodeName, hostInitiators, nil, pmaxClient)
+		host, err = s.retryableCreateHost(ctx, array, nodeName, hostInitiators, nil, pmaxClient)
 		if err != nil {
 			return host, err
 		}
@@ -1390,7 +1442,7 @@ func (s *service) createOrUpdateFCHost(array string, nodeName string, portWWNs [
 		// host does exist, update it if necessary
 		if len(arrayInitiators) != 0 && !stringSlicesEqual(arrayInitiators, hostInitiators) {
 			log.Infof("updating host: %s initiators to: %s", nodeName, hostInitiators)
-			_, err := s.retryableUpdateHostInitiators(array, host, portWWNs, pmaxClient)
+			_, err := s.retryableUpdateHostInitiators(ctx, array, host, portWWNs, pmaxClient)
 			if err != nil {
 				return host, err
 			}
@@ -1399,7 +1451,7 @@ func (s *service) createOrUpdateFCHost(array string, nodeName string, portWWNs [
 	return host, nil
 }
 
-func (s *service) createOrUpdateIscsiHost(array string, nodeName string, IQNs []string, pmaxClient pmax.Pmax) (*types.Host, error) {
+func (s *service) createOrUpdateIscsiHost(ctx context.Context, array string, nodeName string, IQNs []string, pmaxClient pmax.Pmax) (*types.Host, error) {
 	log.Debug(fmt.Sprintf("Processing Iscsi Host array: %s, nodeName: %s, initiators: %v", array, nodeName, IQNs))
 	if array == "" {
 		return &types.Host{}, fmt.Errorf("createOrUpdateHost: No array specified")
@@ -1411,13 +1463,13 @@ func (s *service) createOrUpdateIscsiHost(array string, nodeName string, IQNs []
 		return &types.Host{}, fmt.Errorf("createOrUpdateHost: No IQNs specified")
 	}
 
-	host, err := pmaxClient.GetHostByID(array, nodeName)
+	host, err := pmaxClient.GetHostByID(ctx, array, nodeName)
 	log.Infof(fmt.Sprintf("GetHostById returned: %v, %v", host, err))
 
 	if err != nil {
 		// host does not exist, create it
 		log.Infof(fmt.Sprintf("ISCSI Host %s does not exist. Creating it.", nodeName))
-		host, err = s.retryableCreateHost(array, nodeName, IQNs, nil, pmaxClient)
+		host, err = s.retryableCreateHost(ctx, array, nodeName, IQNs, nil, pmaxClient)
 		if err != nil {
 			return &types.Host{}, fmt.Errorf("Unable to create Host: %v", err)
 		}
@@ -1427,7 +1479,7 @@ func (s *service) createOrUpdateIscsiHost(array string, nodeName string, IQNs []
 		// host does exist, update it if necessary
 		if len(hostInitiators) != 0 && !stringSlicesEqual(hostInitiators, IQNs) {
 			log.Infof("updating host: %s initiators to: %s", nodeName, IQNs)
-			if _, err := s.retryableUpdateHostInitiators(array, host, IQNs, pmaxClient); err != nil {
+			if _, err := s.retryableUpdateHostInitiators(ctx, array, host, IQNs, pmaxClient); err != nil {
 				return host, err
 			}
 		}
@@ -1437,12 +1489,12 @@ func (s *service) createOrUpdateIscsiHost(array string, nodeName string, IQNs []
 }
 
 // retryableCreateHost
-func (s *service) retryableCreateHost(array string, nodeName string, hostInitiators []string, flags *types.HostFlags, pmaxClient pmax.Pmax) (*types.Host, error) {
+func (s *service) retryableCreateHost(ctx context.Context, array string, nodeName string, hostInitiators []string, flags *types.HostFlags, pmaxClient pmax.Pmax) (*types.Host, error) {
 	var err error
 	var host *types.Host
 	deadline := time.Now().Add(time.Duration(s.GetPmaxTimeoutSeconds()) * time.Second)
 	for tries := 0; time.Now().Before(deadline); tries++ {
-		host, err = pmaxClient.CreateHost(array, nodeName, hostInitiators, nil)
+		host, err = pmaxClient.CreateHost(ctx, array, nodeName, hostInitiators, nil)
 		if err != nil {
 			// Retry on this error
 			log.Debug(fmt.Sprintf("failed to create Host; retrying..."))
@@ -1458,12 +1510,12 @@ func (s *service) retryableCreateHost(array string, nodeName string, hostInitiat
 }
 
 // retryableUpdateHostInitiators wraps UpdateHostInitiators in a retry loop
-func (s *service) retryableUpdateHostInitiators(array string, host *types.Host, initiators []string, pmaxClient pmax.Pmax) (*types.Host, error) {
+func (s *service) retryableUpdateHostInitiators(ctx context.Context, array string, host *types.Host, initiators []string, pmaxClient pmax.Pmax) (*types.Host, error) {
 	var err error
 	var updatedHost *types.Host
 	deadline := time.Now().Add(time.Duration(s.GetPmaxTimeoutSeconds()) * time.Second)
 	for tries := 0; time.Now().Before(deadline); tries++ {
-		updatedHost, err = pmaxClient.UpdateHostInitiators(array, host, initiators)
+		updatedHost, err = pmaxClient.UpdateHostInitiators(ctx, array, host, initiators)
 		if err != nil {
 			// Retry on this error
 			log.Debug(fmt.Sprintf("failed to update Host; retrying..."))
@@ -1527,12 +1579,12 @@ func (s *service) NodeExpandVolume(
 	}
 
 	id := req.GetVolumeId()
-	_, symID, _, err := s.parseCsiID(id)
+	_, symID, _, _, _, err := s.parseCsiID(id)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", id)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -1546,7 +1598,7 @@ func (s *service) NodeExpandVolume(
 	}
 
 	// Parse the CSI VolumeId and validate against the volume
-	_, _, vol, err := s.GetVolumeByID(id, pmaxClient)
+	_, _, vol, err := s.GetVolumeByID(ctx, id, pmaxClient)
 	if err != nil {
 		// If the volume isn't found, we cannot stage it
 		return nil, err
@@ -1653,7 +1705,7 @@ func (s *service) NodeExpandVolume(
 }
 
 // Gets the iscsi target iqn values that can be used for rescanning.
-func (s *service) getISCSITargets(symID string, pmaxClient pmax.Pmax) ([]ISCSITargetInfo, error) {
+func (s *service) getISCSITargets(ctx context.Context, symID string, pmaxClient pmax.Pmax) ([]ISCSITargetInfo, error) {
 	var targets []ISCSITargetInfo
 	var ips interface{}
 	var ok bool
@@ -1663,7 +1715,7 @@ func (s *service) getISCSITargets(symID string, pmaxClient pmax.Pmax) ([]ISCSITa
 		targets = ips.([]ISCSITargetInfo)
 		log.Infof("Found targets %v in cache", targets)
 	} else {
-		pmaxTargets, err := pmaxClient.GetISCSITargets(symID)
+		pmaxTargets, err := pmaxClient.GetISCSITargets(ctx, symID)
 		if err != nil {
 			return targets, status.Error(codes.Internal, fmt.Sprintf("Could not get iscsi target information: %s", err.Error()))
 		}
@@ -1686,7 +1738,7 @@ func (s *service) getISCSITargets(symID string, pmaxClient pmax.Pmax) ([]ISCSITa
 // Returns the array targets and a boolean that is true if Fibrechannel.
 // If the target is ISCSI, it also updates ISCSI node database if CHAP
 // authentication was requested
-func (s *service) getArrayTargets(targetIdentifiers string, symID string, pmaxClient pmax.Pmax) ([]ISCSITargetInfo, []FCTargetInfo, bool) {
+func (s *service) getArrayTargets(ctx context.Context, targetIdentifiers string, symID string, pmaxClient pmax.Pmax) ([]ISCSITargetInfo, []FCTargetInfo, bool) {
 	iscsiTargets := make([]ISCSITargetInfo, 0)
 	fcTargets := make([]FCTargetInfo, 0)
 	var isFC bool
@@ -1708,16 +1760,16 @@ func (s *service) getArrayTargets(targetIdentifiers string, symID string, pmaxCl
 			}
 		}
 		if !isFC {
-			iscsiTargets = s.getAndConfigureArrayISCSITargets(arrayTargets, symID, pmaxClient)
+			iscsiTargets = s.getAndConfigureArrayISCSITargets(ctx, arrayTargets, symID, pmaxClient)
 		}
 	}
 	log.Infof("Array targets: %s", arrayTargets)
 	return iscsiTargets, fcTargets, isFC
 }
 
-func (s *service) getAndConfigureArrayISCSITargets(arrayTargets []string, symID string, pmaxClient pmax.Pmax) []ISCSITargetInfo {
+func (s *service) getAndConfigureArrayISCSITargets(ctx context.Context, arrayTargets []string, symID string, pmaxClient pmax.Pmax) []ISCSITargetInfo {
 	iscsiTargets := make([]ISCSITargetInfo, 0)
-	allTargets, _ := s.getISCSITargets(symID, pmaxClient)
+	allTargets, _ := s.getISCSITargets(ctx, symID, pmaxClient)
 	IQNs, err := s.iscsiClient.GetInitiators("")
 	if err != nil {
 		log.Errorf("Failed to fetch initiators for the host. Error: %s", err.Error())
@@ -1791,7 +1843,7 @@ func (s *service) getAndConfigureArrayISCSITargets(arrayTargets []string, symID 
 	_, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
 	// Get the Masking View Targets and configure CHAP if required
 	// This call updates the cache as well
-	goISCSITargets, err := s.getAndConfigureMaskingViewTargets(symID, mvName, IQNs, pmaxClient)
+	goISCSITargets, err := s.getAndConfigureMaskingViewTargets(ctx, symID, mvName, IQNs, pmaxClient)
 	if err != nil {
 		log.Errorf("Failed to get and configure masking view targets. Error: %s", err.Error())
 	}

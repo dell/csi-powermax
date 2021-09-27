@@ -1,0 +1,19 @@
+---
+# This sample manifest file should be to create VolumeSnapshotClass
+# if you have v1beta1 VolumeSnapshotClass CRD installed in the cluster
+apiVersion: snapshot.storage.k8s.io/v1beta1
+kind: VolumeSnapshotClass
+metadata:
+  name: powermax-snapclass
+# If using custom driver name, change the following to point to the custom name
+# Optional: true, Default value: csi-powermax.dellemc.com
+# Examples: "csi-driver-powermax", "csi-powermax.dellemc.com"
+driver: csi-powermax.dellemc.com
+# Configure what happens to a VolumeSnapshotContent when VolumeSnapshot object
+# it is bound to is to be deleted
+# Allowed values:
+#   Delete: the underlying storage snapshot will be deleted
+#           along with the VolumeSnapshotContent object
+#   Retain: both the underlying snapshot and VolumeSnapshotContent remain
+# Optional: true, Default value: None
+deletionPolicy: Delete

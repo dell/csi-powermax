@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -20,16 +20,20 @@ import (
 	"flag"
 	"fmt"
 	"github.com/dell/csi-powermax/k8sutils"
-	"os"
-	"strings"
-
 	"github.com/dell/csi-powermax/provider"
 	"github.com/dell/csi-powermax/service"
 	"github.com/dell/gocsi"
+	"os"
+	"strings"
 )
 
 // main is ignored when this package is built as a go plug-in
 func main() {
+	// Always set X_CSI_DEBUG to false irrespective of what user has specified
+	_ = os.Setenv(gocsi.EnvVarDebug, "false")
+	// We always want to enable Request and Response logging (no reason for users to control this)
+	_ = os.Setenv(gocsi.EnvVarReqLogging, "true")
+	_ = os.Setenv(gocsi.EnvVarRepLogging, "true")
 	enableLeaderElection := flag.Bool("leader-election", false, "boolean to enable leader election")
 	leaderElectionNamespace := flag.String("leader-election-namespace", "", "namespace where leader election lease will be created")
 	kubeconfig := flag.String("kubeconfig", "", "absolute path to the kubeconfig file")

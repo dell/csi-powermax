@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -235,7 +235,7 @@ func TestGetVolSize(t *testing.T) {
 		t.Run("", func(st *testing.T) {
 			st.Parallel()
 			s := &service{}
-			num, err := s.validateVolSize(tt.cr, "", "", s.adminClient)
+			num, err := s.validateVolSize(context.Background(), tt.cr, "", "", s.adminClient)
 			if tt.numOfCylinders == 0 {
 				// error is expected
 				assert.Error(st, err)
@@ -252,7 +252,7 @@ func TestVolumeIdentifier(t *testing.T) {
 	volumeName := "Vol-Name"
 	symID := "123456789012"
 	csiDeviceID := s.createCSIVolumeID(volumePrefix, volumeName, symID, devID)
-	volumeNameT, symIDT, devIDT, err := s.parseCsiID(csiDeviceID)
+	volumeNameT, symIDT, devIDT, _, _, err := s.parseCsiID(csiDeviceID)
 	if err != nil {
 		t.Error()
 		t.Error(err.Error())
@@ -263,20 +263,40 @@ func TestVolumeIdentifier(t *testing.T) {
 		t.Error("createCSIVolumeID and parseCsiID doesn't match")
 	}
 	// Test for empty device id
-	_, _, _, err = s.parseCsiID("")
+	_, _, _, _, _, err = s.parseCsiID("")
 	if err == nil {
 		t.Error("Expected an error while parsing empty ID but recieved success")
 	}
 	// Test for malformed device id
 	malformedCSIDeviceID := "Vol1-Test"
-	volumeNameT, symIDT, devIDT, err = s.parseCsiID(malformedCSIDeviceID)
+	volumeNameT, symIDT, devIDT, _, _, err = s.parseCsiID(malformedCSIDeviceID)
 	if err == nil {
 		t.Error("Expected an error while parsing malformed ID but recieved success")
 	}
 	malformedCSIDeviceID = "-vol1-Test"
-	_, _, _, err = s.parseCsiID(malformedCSIDeviceID)
+	_, _, _, _, _, err = s.parseCsiID(malformedCSIDeviceID)
 	if err == nil {
 		t.Error("Expected an error while parsing malformed ID but recieved success")
+	}
+}
+
+func TestMetroCSIDeviceID(t *testing.T) {
+	volumePrefix := s.getClusterPrefix()
+	devID := "12345"
+	volumeName := "Vol-Name"
+	symID := "123456789012"
+	remoteDevID := "98765"
+	remoteSymID := "000000000012"
+	volumeName = fmt.Sprintf("csi-%s-%s", volumePrefix, volumeName)
+	csiDeviceID := fmt.Sprintf("%s-%s:%s-%s:%s", volumeName, symID, remoteSymID, devID, remoteDevID)
+	volumeNameT, symIDT, devIDT, remSymIDT, remoteDevIDT, err := s.parseCsiID(csiDeviceID)
+	if err != nil {
+		t.Error()
+		t.Error(err.Error())
+	}
+	if volumeNameT != volumeName ||
+		symIDT != symID || devIDT != devID || remoteDevIDT != remoteDevID || remSymIDT != remoteSymID {
+		t.Error("createCSIVolumeID and parseCsiID doesn't match")
 	}
 }
 

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export X_CSI_POWERMAX_CONFIG_PATH="deploy/config.yaml"
+
 # Comma separated list of array managed by the driver
 export X_CSI_MANAGED_ARRAYS="000000000001"
 
@@ -14,10 +16,10 @@ export X_CSI_POWERMAX_USER="username"
 # user's password when authenticating to Unisphere
 export X_CSI_POWERMAX_PASSWORD="password"
 
-# EnvInsecure is the name of the environment variable used to specify
+# EnvSkipCertificateValidation  is the name of the environment variable used to specify
 # that Unisphere's certificate chain and hostname should not
 # be verified
-export X_CSI_POWERMAX_INSECURE="true"
+export X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION="true"
 
 # EnvNodeName is the name of the environment variable used to set the
 # hostname where the node service is running
@@ -37,11 +39,6 @@ export X_CSI_POWERMAX_AUTOPROBE="true"
 # to specify a list of Port Groups that the driver can choose from
 # These Port Groups must exist and be populated
 export X_CSI_POWERMAX_PORTGROUPS="iscsi_ports"
-
-# EnvArrayWhitelist is the name of the environment variable that is used
-# to specify a list of arrays the driver can choose from.
-# An empty list will allow all arrays known to Unisphere to be used.
-export X_CSI_POWERMAX_ARRAYS=""
 
 # Enable/Disable CSI request and response logging
 # setting them to true sets X_CSI_REQ_ID_INJECTION to true 
@@ -70,3 +67,6 @@ export X_CSI_TRANSPORT_PROTOCOL=""
 export X_CSI_REVERSE_PROXY_ENABLED=""
 # Set this value to a higher number is a proxy is being used
 export X_CSI_GRPC_MAX_THREADS="50"
+# Set this value to the timeout as: "300ms", "1.5h" or "2h45m".
+# Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
+export X_CSI_UNISPHERE_TIMEOUT="5m"

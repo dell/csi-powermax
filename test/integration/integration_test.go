@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -20,6 +20,9 @@ import (
 	"testing"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc/backoff"
+
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cucumber/godog"
 	"github.com/dell/csi-powermax/provider"
@@ -29,21 +32,37 @@ import (
 )
 
 const (
-	datafile = "/tmp/datafile"
-	datadir  = "/tmp/datadir"
+	datafile       = "/tmp/datafile"
+	datadir        = "/tmp/datadir"
+	defaultTimeout = 5 * time.Minute
 )
 
 var grpcClient *grpc.ClientConn
+
+func readTimeoutFromEnv() time.Duration {
+	contextTimeout := defaultTimeout
+	if timeoutStr := os.Getenv("X_CSI_UNISPHERE_TIMEOUT"); timeoutStr != "" {
+		if timeout, err := time.ParseDuration(timeoutStr); err == nil {
+			contextTimeout = timeout
+		}
+	}
+	return contextTimeout
+}
 
 func TestMain(m *testing.M) {
 	var stop func()
 	// Block must be enabled for many tests to work
 	os.Setenv(service.EnvEnableBlock, "true")
-	ctx := context.Background()
-	fmt.Printf("calling startServer")
-	grpcClient, stop = startServer(ctx)
-	fmt.Printf("back from startServer")
-	time.Sleep(40 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), readTimeoutFromEnv())
+	defer cancel()
+	fmt.Println("*** calling startServer ***")
+	var err error
+	grpcClient, stop, err = startServer(ctx)
+	if err != nil {
+		log.Errorf("Failed to create a grpc client: %s", err.Error())
+		os.Exit(1)
+	}
+	fmt.Println("*** back from startServer ***")
 
 	// Make the directory and file needed for NodePublish, these are:
 	//  /tmp/datadir    -- for file system mounts
@@ -51,7 +70,7 @@ func TestMain(m *testing.M) {
 	fmt.Printf("Checking %s\n", datadir)
 	var fileMode os.FileMode
 	fileMode = 0777
-	err := os.Mkdir(datadir, fileMode)
+	err = os.Mkdir(datadir, fileMode)
 	if err != nil && !os.IsExist(err) {
 		fmt.Printf("%s: %s\n", datadir, err)
 	}
@@ -114,13 +133,13 @@ func TestNodeGetInfo(t *testing.T) {
 	}
 }
 
-func startServer(ctx context.Context) (*grpc.ClientConn, func()) {
+func startServer(ctx context.Context) (*grpc.ClientConn, func(), error) {
 	// Create a new SP instance and serve it with a piped connection.
 	sp := provider.New()
 	lis, err := utils.GetCSIEndpointListener()
 	if err != nil {
 		fmt.Printf("couldn't open listener: %s\n", err.Error())
-		return nil, nil
+		return nil, nil, err
 	}
 	go func() {
 		fmt.Printf("starting server\n")
@@ -130,24 +149,44 @@ func startServer(ctx context.Context) (*grpc.ClientConn, func()) {
 	}()
 	network, addr, err := utils.GetCSIEndpoint()
 	if err != nil {
-		return nil, nil
+		return nil, nil, err
 	}
 	fmt.Printf("network %v addr %v\n", network, addr)
 
 	clientOpts := []grpc.DialOption{
 		grpc.WithInsecure(),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff:           backoff.DefaultConfig,
+			MinConnectTimeout: 10 * time.Second,
+		}),
+		grpc.WithBlock(),
 	}
 
-	// Create a client for the piped connection.
-	fmt.Printf("calling gprc.DialContext, ctx %v, addr %s, clientOpts %v\n", ctx, addr, clientOpts)
-	client, err := grpc.DialContext(ctx, "unix:"+addr, clientOpts...)
-	if err != nil {
-		fmt.Printf("DialContext returned error: %s", err.Error())
-	}
-	fmt.Printf("grpc.DialContext returned ok\n")
+	var conn *grpc.ClientConn
+	ready := make(chan bool)
+	address := "unix:" + addr
+	go func() {
+		// Create a client for the piped connection.
+		fmt.Printf("calling gprc.DialContext, ctx %v, addr %s, clientOpts %v\n", ctx, addr, clientOpts)
+		conn, err = grpc.Dial(address, clientOpts...)
+		close(ready)
+	}()
 
-	return client, func() {
-		client.Close()
-		sp.GracefulStop(ctx)
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			log.Infof("Still connecting to %s", address)
+		case <-ready:
+			if err != nil {
+				return nil, nil, err
+			}
+			return conn, func() {
+				conn.Close()
+				sp.GracefulStop(ctx)
+			}, err
+		}
 	}
 }

@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -118,7 +118,7 @@ func (revProxy *LinkedProxy) loggingMiddleware(next http.Handler) http.Handler {
 		r.URL.Path = strings.TrimSuffix(r.URL.Path, "/")
 		r.Header.Set("RequestID", reqID)
 		logMsg := fmt.Sprintf("Request ID: %s - %s %s", reqID, r.Method, r.URL)
-		log.Println(logMsg)
+		log.Info(logMsg)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -138,7 +138,7 @@ func (revProxy *LinkedProxy) UpdateConfig(proxyConfig config.ProxyConfig) error 
 		return fmt.Errorf("LinkProxyConfig can't be nil")
 	}
 	if reflect.DeepEqual(revProxy.Config, *linkedProxyConfig) {
-		log.Println("No changes detected in the configuration")
+		log.Info("No changes detected in the configuration")
 		return nil
 	}
 	// Check for changes in primary
@@ -148,7 +148,7 @@ func (revProxy *LinkedProxy) UpdateConfig(proxyConfig config.ProxyConfig) error 
 	var newBackupProxy *common.Proxy
 	var err error
 	if !reflect.DeepEqual(*newPrimary, *oldPrimary) {
-		log.Printf("Primary URL changed. New URL: %s, Old URL: %s ", newPrimary.URL.Host, oldPrimary.URL.Host)
+		log.Infof("Primary URL changed. New URL: %s, Old URL: %s ", newPrimary.URL.Host, oldPrimary.URL.Host)
 		// We need to setup new reverseproxy
 		newPrimaryProxy, err = newReverseProxy(linkedProxyConfig.Primary)
 		if err != nil {
@@ -159,13 +159,13 @@ func (revProxy *LinkedProxy) UpdateConfig(proxyConfig config.ProxyConfig) error 
 		newBackup := linkedProxyConfig.Backup
 		oldBackup := revProxy.Config.Backup
 		if oldBackup == nil {
-			log.Printf("Backup URL added")
+			log.Infof("Backup URL added")
 			newBackupProxy, err = newReverseProxy(linkedProxyConfig.Backup)
 			if err != nil {
 				return err
 			}
 		} else if !reflect.DeepEqual(*newBackup, *oldBackup) {
-			log.Printf("Backup URL changed. New URL: %s, Old URL: %s ", newBackup.URL.Host, oldBackup.URL.Host)
+			log.Infof("Backup URL changed. New URL: %s, Old URL: %s ", newBackup.URL.Host, oldBackup.URL.Host)
 			// We need to setup new reverseproxy
 			newBackupProxy, err = newReverseProxy(linkedProxyConfig.Backup)
 			if err != nil {

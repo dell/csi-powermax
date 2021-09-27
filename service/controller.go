@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -25,9 +25,9 @@ import (
 	"sync"
 	"time"
 
-	pmax "github.com/dell/gopowermax"
-
 	"github.com/dell/csi-powermax/pkg/symmetrix"
+
+	pmax "github.com/dell/gopowermax"
 
 	csiext "github.com/dell/dell-csi-extensions/replication"
 
@@ -36,17 +36,14 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	types "github.com/dell/gopowermax/types/v90"
+	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/dell/gopowermax/types/v90"
 	"github.com/golang/protobuf/ptypes"
 	log "github.com/sirupsen/logrus"
 )
 
 // constants
 const (
-	// KeyStoragePool is the key used to get the storagepool name from the
-	// volume create parameters map
-	KeyStoragePool         = "storagepool"
 	cylinderSizeInBytes    = 1966080
 	DefaultVolumeSizeBytes = 1073741824
 	// MinVolumeSizeBytes - This is the minimum volume size in bytes. This is equal to
@@ -55,41 +52,35 @@ const (
 	MinVolumeSizeBytes = 51118080
 	// MaxVolumeSizeBytes - This is the maximum volume size in bytes. This is equal to
 	// the minimum number of bytes required to create a 1 TB volume on Powermax arrays
-	MaxVolumeSizeBytes = 1099512545280
-	// GiB is 1 Gibibyte in bytes
-	GiB                             = 1073741824
-	removeModeOnlyMe                = "ONLY_ME"
-	errNoMultiMap                   = "volume not enabled for mapping to multiple hosts"
+	MaxVolumeSizeBytes              = 1099512545280
 	errUnknownAccessType            = "unknown access type is not Block or Mount"
 	errUnknownAccessMode            = "access mode cannot be UNKNOWN"
 	errNoMultiNodeWriter            = "multi-node with writer(s) only supported for block access type"
-	TRUE                            = "TRUE"
-	FALSE                           = "FALSE"
 	StoragePoolCacheDuration        = 4 * time.Hour
 	MaxVolIdentifierLength          = 64
 	MaxPortGroupIdentifierLength    = 64
 	MaxClusterPrefixLength          = 3
-	NumOfVolIDAttributes            = 4
 	CSIPrefix                       = "csi"
 	DeletionPrefix                  = "_DEL"
-	SymmetricIDLength               = 12
-	DeviceIDLength                  = 5
 	CsiHostPrefix                   = "csi-node-"
 	CsiMVPrefix                     = "csi-mv-"
 	CsiNoSrpSGPrefix                = "csi-no-srp-sg-"
 	CsiVolumePrefix                 = "csi-"
+	CsiRepSGPrefix                  = "csi-rep-sg-"
 	PublishContextDeviceWWN         = "DEVICE_WWN"
+	RemotePublishContextDeviceWWN   = "REMOTE_DEVICE_WWN"
 	PublishContextLUNAddress        = "LUN_ADDRESS"
+	RemotePublishContextLUNAddress  = "REMOTE_LUN_ADDRESS"
 	PortIdentifiers                 = "PORT_IDENTIFIERS"
+	RemotePortIdentifiers           = "REMOTE_PORT_IDENTIFIERS"
 	PortIdentifierKeyCount          = "PORT_IDENTIFIER_KEYS"
+	RemotePortIdentifierKeyCount    = "REMOTE_PORT_IDENTIFIER_KEYS"
 	MaxPortIdentifierLength         = 128
 	FCSuffix                        = "-FC"
 	PGSuffix                        = "PG"
 	notFound                        = "not found"       // error message from s.GetVolumeByID when volume not found
 	cannotBeFound                   = "cannot be found" // error message from pmax when volume not found
-	ignoredViaAWhitelist            = "ignored via a whitelist"
 	failedToValidateVolumeNameAndID = "Failed to validate combination of Volume Name and Volume ID"
-	errDeviceInStorageGrp           = "device is a member of a storage group"
 	IscsiTransportProtocol          = "ISCSI"
 	FcTransportProtocol             = "FC"
 	MaxSnapIdentifierLength         = 32
@@ -99,6 +90,13 @@ const (
 	Async                           = "ASYNC"
 	Sync                            = "SYNC"
 	Metro                           = "METRO"
+	Consistent                      = "Consistent"
+	Synchronized                    = "Synchronized"
+	FailedOver                      = "Failed Over"
+	Suspended                       = "Suspended"
+	Invalid                         = "Invalid"
+	Split                           = "Split"
+	SyncInProgress                  = "SyncInProg"
 )
 
 // Keys for parameters to CreateVolume
@@ -119,6 +117,7 @@ const (
 	LocalRDFGroupParam           = "RdfGroup"
 	RemoteRDFGroupParam          = "RemoteRDFGroup"
 	RemoteSymIDParam             = "RemoteSYMID"
+	RemoteVolumeIDParam          = "RemoteVolumeID"
 	ReplicationModeParam         = "RdfMode"
 	CSIPVCNamespace              = "csi.storage.k8s.io/pvc/namespace"
 	CSIPersistentVolumeName      = "csi.storage.k8s.io/pv/name"
@@ -128,6 +127,8 @@ const (
 	HeaderPersistentVolumeClaimName      = "x-csi-pv-claimname"
 	HeaderPersistentVolumeClaimNamespace = "x-csi-pv-namespace"
 	RemoteServiceLevelParam              = "RemoteServiceLevel"
+	RemoteSRPParam                       = "RemoteSRP"
+	BiasParam                            = "Bias"
 )
 
 //Pair - structure which holds a pair
@@ -181,7 +182,7 @@ var (
 	getMVConnectionsDelay = 30 * time.Second
 )
 
-func (s *service) GetPortIdentifier(symID string, dirPortKey string, pmaxClient pmax.Pmax) (string, error) {
+func (s *service) GetPortIdentifier(ctx context.Context, symID string, dirPortKey string, pmaxClient pmax.Pmax) (string, error) {
 	s.cacheMutex.Lock()
 	defer s.cacheMutex.Unlock()
 	portIdentifier := ""
@@ -209,7 +210,7 @@ func (s *service) GetPortIdentifier(symID string, dirPortKey string, pmaxClient 
 	dirID := dirPortDetails[0]
 	portNumber := dirPortDetails[1]
 	// Fetch the port details
-	port, err := pmaxClient.GetPort(symID, dirID, portNumber)
+	port, err := pmaxClient.GetPort(ctx, symID, dirID, portNumber)
 	if err != nil {
 		log.Errorf("Couldn't get port details for %s. Error: %s", dirPortKey, err.Error())
 		return "", err
@@ -250,6 +251,14 @@ func (s *service) GetPortIdentifier(symID string, dirPortKey string, pmaxClient 
 	return portIdentifier, nil
 }
 
+// GetPowerMaxClient returns a valid client based on arrays
+func (s *service) GetPowerMaxClient(primarySymID string, arrayIDs ...string) (pmax.Pmax, error) {
+	if len(arrayIDs) > 0 && arrayIDs[0] != "" {
+		return symmetrix.GetPowerMaxClient(primarySymID, arrayIDs...)
+	}
+	return symmetrix.GetPowerMaxClient(primarySymID)
+}
+
 func (s *service) CreateVolume(
 	ctx context.Context,
 	req *csi.CreateVolumeRequest) (
@@ -270,7 +279,7 @@ func (s *service) CreateVolume(
 		log.Error("A SYMID parameter is required")
 		return nil, status.Errorf(codes.InvalidArgument, "A SYMID parameter is required")
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symmetrixID)
+	pmaxClient, err := s.GetPowerMaxClient(symmetrixID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -289,7 +298,7 @@ func (s *service) CreateVolume(
 
 	// Storage (resource) Pool. Validate it against exist Pools
 	storagePoolID := params[StoragePoolParam]
-	err = s.validateStoragePoolID(symmetrixID, storagePoolID, pmaxClient)
+	err = s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Errorf(codes.InvalidArgument, err.Error())
@@ -319,18 +328,29 @@ func (s *service) CreateVolume(
 	var replicationEnabled string
 	var remoteSymID string
 	var localRDFGrpNo string
+	var remoteRDFGrpNo string
+	var remoteServiceLevel string
+	var remoteSRPID string
 	var repMode string
 	var namespace string
-	repEnabledParam := s.opts.ReplicationPrefix + "/" + RepEnabledParam
-	if params[repEnabledParam] == "true" {
-		replicationEnabled = params[repEnabledParam]
+	var bias string
+
+	if params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)] == "true" {
+		replicationEnabled = params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)]
 		// remote symmetrix ID and rdf group name are mandatory params when replication is enabled
-		remoteSymID = params[RemoteSymIDParam]
-		localRDFGrpNo = params[LocalRDFGroupParam]
-		repMode = params[ReplicationModeParam]
+		remoteSymID = params[path.Join(s.opts.ReplicationPrefix, RemoteSymIDParam)]
+		localRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, LocalRDFGroupParam)]
+		remoteRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
+		repMode = params[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)]
+		remoteServiceLevel = params[path.Join(s.opts.ReplicationPrefix, RemoteServiceLevelParam)]
+		remoteSRPID = params[path.Join(s.opts.ReplicationPrefix, RemoteSRPParam)]
+		bias = params[path.Join(s.opts.ReplicationPrefix, BiasParam)]
 		namespace = params[CSIPVCNamespace]
-		if repMode != Async {
-			log.Errorf("Unsupported Replication Mode: (%s)" + repMode)
+		if repMode == Metro {
+			return s.createMetroVolume(ctx, req, reqID, storagePoolID, symmetrixID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias)
+		}
+		if repMode != Async && repMode != Sync {
+			log.Errorf("Unsupported Replication Mode: (%s)", repMode)
 			return nil, status.Errorf(codes.InvalidArgument, "Unsupported Replication Mode: (%s)", repMode)
 		}
 	}
@@ -339,7 +359,7 @@ func (s *service) CreateVolume(
 
 	// Get the required capacity
 	cr := req.GetCapacityRange()
-	requiredCylinders, err := s.validateVolSize(cr, symmetrixID, storagePoolID, pmaxClient)
+	requiredCylinders, err := s.validateVolSize(ctx, cr, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		return nil, err
 	}
@@ -354,15 +374,15 @@ func (s *service) CreateVolume(
 	// greater than or equal to the size of snapshot source
 	contentSource := req.GetVolumeContentSource()
 	if contentSource != nil {
-		if replicationEnabled == "true" {
-			log.Error("VolumeContentSource:Clone Volume is not supported with replication")
-			return nil, status.Errorf(codes.InvalidArgument, "VolumeContentSource:Clone Volume is not supported with replication")
-		}
 		switch req.GetVolumeContentSource().GetType().(type) {
 		case *csi.VolumeContentSource_Volume:
+			if replicationEnabled == "true" {
+				log.Error("VolumeContentSource:Clone Volume is not supported with replication")
+				return nil, status.Errorf(codes.InvalidArgument, "VolumeContentSource:Clone Volume is not supported with replication")
+			}
 			srcVolID = req.GetVolumeContentSource().GetVolume().GetVolumeId()
 			if srcVolID != "" {
-				_, symID, SrcDevID, err = s.parseCsiID(srcVolID)
+				_, symID, SrcDevID, _, _, err = s.parseCsiID(srcVolID)
 				if err != nil {
 					// We couldn't comprehend the identifier.
 					log.Error("Could not parse CSI VolumeId: " + srcVolID)
@@ -374,7 +394,7 @@ func (s *service) CreateVolume(
 		case *csi.VolumeContentSource_Snapshot:
 			srcSnapID = req.GetVolumeContentSource().GetSnapshot().GetSnapshotId()
 			if srcSnapID != "" {
-				snapID, symID, SrcDevID, err = s.parseCsiID(srcSnapID)
+				snapID, symID, SrcDevID, _, _, err = s.parseCsiID(srcSnapID)
 				if err != nil {
 					// We couldn't comprehend the identifier.
 					log.Error("Snapshot identifier not in supported format: " + srcSnapID)
@@ -387,7 +407,7 @@ func (s *service) CreateVolume(
 			return nil, status.Error(codes.InvalidArgument, "VolumeContentSource is missing volume and snapshot source")
 		}
 		// check snapshot is licensed
-		if err := s.IsSnapshotLicensed(symID, pmaxClient); err != nil {
+		if err := s.IsSnapshotLicensed(ctx, symID, pmaxClient); err != nil {
 			log.Error("Error - " + err.Error())
 			return nil, status.Error(codes.Internal, err.Error())
 		}
@@ -396,12 +416,12 @@ func (s *service) CreateVolume(
 	if SrcDevID != "" && symID != "" {
 		if symID != symmetrixID {
 			log.Error("The volume content source is in different PowerMax array")
-			return nil, status.Errorf(codes.Internal, "The volume content source is in different PowerMax array")
+			return nil, status.Errorf(codes.InvalidArgument, "The volume content source is in different PowerMax array")
 		}
-		srcVol, err = pmaxClient.GetVolumeByID(symmetrixID, SrcDevID)
+		srcVol, err = pmaxClient.GetVolumeByID(ctx, symmetrixID, SrcDevID)
 		if err != nil {
 			log.Error("Volume content source volume couldn't be found in the array: " + err.Error())
-			return nil, status.Errorf(codes.Internal, "Volume content source volume couldn't be found in the array: %s", err.Error())
+			return nil, status.Errorf(codes.InvalidArgument, "Volume content source volume couldn't be found in the array: %s", err.Error())
 		}
 		// reset the volume size to match with source
 		if requiredCylinders < srcVol.CapacityCYL {
@@ -447,9 +467,12 @@ func (s *service) CreateVolume(
 		}
 	}
 	// localProtectionGroupID refers to name of Storage Group which has protected local volumes
+	// remoteProtectionGroupID refers to name of Storage Group which has protected remote volumes
 	var localProtectionGroupID string
+	var remoteProtectionGroupID string
 	if replicationEnabled == "true" {
-		localProtectionGroupID = s.buildProtectionGroupID(namespace, localRDFGrpNo, repMode)
+		localProtectionGroupID = buildProtectionGroupID(namespace, localRDFGrpNo, repMode)
+		remoteProtectionGroupID = buildProtectionGroupID(namespace, remoteRDFGrpNo, repMode)
 	}
 
 	// log all parameters used in CreateVolume call
@@ -465,11 +488,13 @@ func (s *service) CreateVolume(
 		"SourceVolume":                       srcVolID,
 		"SourceSnapshot":                     srcSnapID,
 		"ReplicationEnabled":                 replicationEnabled,
-		"RemoteSymmID":                       remoteSymID,
+		"RemoteSymID":                        remoteSymID,
 		"LocalRDFGroup":                      localRDFGrpNo,
+		"RemoteRDFGroup":                     remoteRDFGrpNo,
 		"SRDFMode":                           repMode,
 		"PVCNamespace":                       namespace,
 		"LocalProtectionGroupID":             localProtectionGroupID,
+		"RemoteProtectionGroupID":            remoteProtectionGroupID,
 		HeaderPersistentVolumeName:           params[CSIPersistentVolumeName],
 		HeaderPersistentVolumeClaimName:      params[CSIPersistentVolumeClaimName],
 		HeaderPersistentVolumeClaimNamespace: params[CSIPVCNamespace],
@@ -479,14 +504,14 @@ func (s *service) CreateVolume(
 	// isSGUnprotected is set to true only if SG has a replica, eg if the SG is new
 	isSGUnprotected := false
 	if replicationEnabled == "true" {
-		sg, err := s.getOrCreateProtectedStorageGroup(symmetrixID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID, pmaxClient)
+		sg, err := s.getOrCreateProtectedStorageGroup(ctx, symmetrixID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID, pmaxClient)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "Error in getOrCreateProtectedStorageGroup: (%s)", err.Error())
 		}
 		if sg != nil && sg.Rdf == true {
 			// Check the direction of SG
 			// Creation of replicated volume is allowed in an SG of type R1
-			err := s.VerifyProtectedGroupDirection(symmetrixID, localProtectionGroupID, localRDFGrpNo, pmaxClient)
+			err := s.VerifyProtectedGroupDirection(ctx, symmetrixID, localProtectionGroupID, localRDFGrpNo, pmaxClient)
 			if err != nil {
 				return nil, err
 			}
@@ -495,10 +520,10 @@ func (s *service) CreateVolume(
 		}
 	}
 	// Check existence of the Storage Group and create if necessary.
-	sg, err := pmaxClient.GetStorageGroup(symmetrixID, storageGroupName)
+	sg, err := pmaxClient.GetStorageGroup(ctx, symmetrixID, storageGroupName)
 	if err != nil || sg == nil {
 		log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
-		_, err := pmaxClient.CreateStorageGroup(symmetrixID, storageGroupName, storagePoolID,
+		_, err := pmaxClient.CreateStorageGroup(ctx, symmetrixID, storageGroupName, storagePoolID,
 			serviceLevel, thick == "true")
 		if err != nil {
 			log.Error("Error creating storage group: " + err.Error())
@@ -512,7 +537,7 @@ func (s *service) CreateVolume(
 	// 3. Is a member of the storage group
 	log.Debug("Calling GetVolumeIDList for idempotency test")
 	// For now an exact match
-	volumeIDList, err := pmaxClient.GetVolumeIDList(symmetrixID, volumeIdentifier, false)
+	volumeIDList, err := pmaxClient.GetVolumeIDList(ctx, symmetrixID, volumeIdentifier, false)
 	if err != nil {
 		log.Error("Error looking up volume for idempotence check: " + err.Error())
 		return nil, status.Errorf(codes.Internal, "Error looking up volume for idempotence check: %s", err.Error())
@@ -525,7 +550,7 @@ func (s *service) CreateVolume(
 	for _, volumeID := range volumeIDList {
 		// Fetch the volume
 		log.WithFields(fields).Info("Calling GetVolumeByID for idempotence check")
-		vol, err = pmaxClient.GetVolumeByID(symmetrixID, volumeID)
+		vol, err = pmaxClient.GetVolumeByID(ctx, symmetrixID, volumeID)
 		if err != nil {
 			log.Error("Error fetching volume for idempotence check: " + err.Error())
 			return nil, status.Errorf(codes.Internal, "Error fetching volume for idempotence check: %s", err.Error())
@@ -546,8 +571,12 @@ func (s *service) CreateVolume(
 				alreadyExists = true
 				continue
 			}
+			var remoteVolumeID string
 			if replicationEnabled == "true" {
-				remoteVolumeID, _ := s.GetRemoteVolumeID(symmetrixID, localRDFGrpNo, vol.VolumeID, pmaxClient)
+				remoteVolumeID, err = s.GetRemoteVolumeID(ctx, symmetrixID, localRDFGrpNo, vol.VolumeID, pmaxClient)
+				if err != nil && !strings.Contains(err.Error(), "The device must be an RDF device") {
+					return nil, status.Errorf(codes.Internal, "Failed to fetch rdf pair information for (%s) - Error (%s)", vol.VolumeID, err.Error())
+				}
 				if remoteVolumeID == "" {
 					// Missing corresponding Remote Volume Name for existing local volume
 					// The SG is unprotected as Local volume and Local SG exists but missing corresponding SRDF info
@@ -572,7 +601,7 @@ func (s *service) CreateVolume(
 				"CreationTime": time.Now().Format("20060102150405"),
 			}
 			if replicationEnabled == "true" {
-				addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode)
+				addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID)
 			}
 			volResp.VolumeContext = attributes
 			csiResp := &csi.CreateVolumeResponse{
@@ -595,7 +624,7 @@ func (s *service) CreateVolume(
 
 	// Let's create the volume
 	if !isLocalVolumePresent {
-		vol, err = pmaxClient.CreateVolumeInStorageGroupS(symmetrixID, storageGroupName, volumeIdentifier, requiredCylinders, headerMetadata)
+		vol, err = pmaxClient.CreateVolumeInStorageGroupS(ctx, symmetrixID, storageGroupName, volumeIdentifier, requiredCylinders, headerMetadata)
 		if err != nil {
 			log.Error(fmt.Sprintf("Could not create volume: %s: %s", volumeName, err.Error()))
 			return nil, status.Errorf(codes.Internal, "Could not create volume: %s: %s", volumeName, err.Error())
@@ -609,7 +638,7 @@ func (s *service) CreateVolume(
 		protectedSGID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
 		if protectedSGID == "" {
 			// Volume is not present in Protected Storage Group, Add
-			err = pmaxClient.AddVolumesToProtectedStorageGroup(symmetrixID, localProtectionGroupID, remoteSymID, localProtectionGroupID, true, vol.VolumeID)
+			err = pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symmetrixID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, true, vol.VolumeID)
 			if err != nil {
 				log.Error(fmt.Sprintf("Could not add volume in protected SG: %s: %s", volumeName, err.Error()))
 				return nil, status.Errorf(codes.Internal, "Could not add volume in protected SG: %s: %s", volumeName, err.Error())
@@ -619,7 +648,7 @@ func (s *service) CreateVolume(
 			// If the required SG is still unprotected, protect the local SG with RDF info
 			// If valid RDF group is supplied this will create a remote SG, a RDF pair and add the vol in respective SG created
 			// Remote storage group name is kept same as local storage group name
-			err := s.ProtectStorageGroup(symmetrixID, remoteSymID, localProtectionGroupID, localProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID, pmaxClient)
+			err := s.ProtectStorageGroup(ctx, symmetrixID, remoteSymID, localProtectionGroupID, remoteProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID, false, pmaxClient)
 			if err != nil {
 				return nil, err
 			}
@@ -630,17 +659,17 @@ func (s *service) CreateVolume(
 		if srcVolID != "" {
 			//Build the temporary snapshot identifier
 			snapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
-			err = s.LinkVolumeToVolume(symID, srcVol, vol.VolumeID, snapID, reqID, pmaxClient)
+			err = s.LinkVolumeToVolume(ctx, symID, srcVol, vol.VolumeID, snapID, reqID, pmaxClient)
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
 			}
 		} else if srcSnapID != "" {
 			//Unlink all previous targets from this snapshot if the link is in defined state
-			err = s.UnlinkTargets(symID, SrcDevID, pmaxClient)
+			err = s.UnlinkTargets(ctx, symID, SrcDevID, pmaxClient)
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "Failed unlink existing target from snapshot (%s)", err.Error())
 			}
-			err = s.LinkVolumeToSnapshot(symID, srcVol.VolumeID, vol.VolumeID, snapID, reqID, pmaxClient)
+			err = s.LinkVolumeToSnapshot(ctx, symID, srcVol.VolumeID, vol.VolumeID, snapID, reqID, pmaxClient)
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
 			}
@@ -663,7 +692,11 @@ func (s *service) CreateVolume(
 		"CreationTime": time.Now().Format("20060102150405"),
 	}
 	if replicationEnabled == "true" {
-		addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode)
+		remoteVolumeID, err := s.GetRemoteVolumeID(ctx, symmetrixID, localRDFGrpNo, vol.VolumeID, pmaxClient)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "Failed to fetch rdf pair information for (%s) - Error (%s)", vol.VolumeID, err.Error())
+		}
+		addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID)
 	}
 	volResp.VolumeContext = attributes
 	if accessibility != nil {
@@ -676,32 +709,359 @@ func (s *service) CreateVolume(
 	return csiResp, nil
 }
 
-func addReplicationParamsToVolumeAttributes(attributes map[string]string, prefix, remoteSymID, repMode string) {
-	attributes[path.Join(prefix, RemoteSymIDParam)] = remoteSymID
-	attributes[path.Join(prefix, ReplicationModeParam)] = repMode
+func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRequest, reqID, storagePoolID, symID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias string) (*csi.CreateVolumeResponse, error) {
+	repMode := Metro
+	accessibility := req.GetAccessibilityRequirements()
+	pmaxClient, err := s.GetPowerMaxClient(symID, remoteSymID)
+	if err != nil {
+		log.Error(err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Get the required capacity
+	cr := req.GetCapacityRange()
+
+	// validate size on R1
+	requiredCylinders, err := s.validateVolSize(ctx, cr, symID, storagePoolID, pmaxClient)
+	if err != nil {
+		return nil, err
+	}
+
+	// validate size on R2
+	_, err = s.validateVolSize(ctx, cr, remoteSymID, remoteSRPID, pmaxClient)
+	if err != nil {
+		return nil, err
+	}
+
+	// Volume or Snapshot Clone is not supported
+	if req.GetVolumeContentSource() != nil {
+		log.Error("VolumeContentSource:Clone Volume is not supported with replication")
+		return nil, status.Errorf(codes.InvalidArgument, "VolumeContentSource:Clone Volume is not supported with replication")
+	}
+
+	// Validate volume capabilities
+	vcs := req.GetVolumeCapabilities()
+	if vcs != nil {
+		isBlock := accTypeIsBlock(vcs)
+		if isBlock && !s.opts.EnableBlock {
+			return nil, status.Error(codes.InvalidArgument, "Block Volume Capability is not supported")
+		}
+	}
+
+	// Get the volume name
+	volumeName := req.GetName()
+	if volumeName == "" {
+		log.Error("Name cannot be empty")
+		return nil, status.Error(codes.InvalidArgument,
+			"Name cannot be empty")
+	}
+
+	// Get the Volume prefix from environment
+	volumePrefix := s.getClusterPrefix()
+	maxLength := MaxVolIdentifierLength - len(volumePrefix) - len(s.getClusterPrefix()) - len(CsiVolumePrefix) - 1
+	//First get the short volume name
+	shortVolumeName := truncateString(volumeName, maxLength)
+	//Form the volume identifier using short volume name
+	volumeIdentifier := fmt.Sprintf("%s%s-%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName)
+
+	// Storage Group is required to be derived from the parameters (such as service level and storage resource pool which are supplied in parameters)
+	// Storage Group Name can optionally be supplied in the parameters (for testing) to over-ride the default.
+	var remoteStorageGroupName string
+	if storageGroupName == "" {
+		if applicationPrefix == "" {
+			storageGroupName = fmt.Sprintf("%s-%s-%s-%s-SG", CSIPrefix, s.getClusterPrefix(),
+				serviceLevel, storagePoolID)
+			remoteStorageGroupName = fmt.Sprintf("%s-%s-%s-%s-SG", CSIPrefix, s.getClusterPrefix(),
+				remoteServiceLevel, remoteSRPID)
+		} else {
+			storageGroupName = fmt.Sprintf("%s-%s-%s-%s-%s-SG", CSIPrefix, s.getClusterPrefix(),
+				applicationPrefix, serviceLevel, storagePoolID)
+			remoteStorageGroupName = fmt.Sprintf("%s-%s-%s-%s-%s-SG", CSIPrefix, s.getClusterPrefix(),
+				applicationPrefix, remoteServiceLevel, remoteSRPID)
+		}
+	}
+	// localProtectionGroupID refers to name of Storage Group which has protected local volumes
+	// remoteProtectionGroupID refers to name of Storage Group which has protected remote volumes
+	localProtectionGroupID := buildProtectionGroupID(namespace, localRDFGrpNo, repMode)
+	remoteProtectionGroupID := buildProtectionGroupID(namespace, remoteRDFGrpNo, repMode)
+
+	// log all parameters used in CreateVolume call
+	fields := map[string]interface{}{
+		"SymmetrixID":                        symID,
+		"SRP":                                storagePoolID,
+		"Accessibility":                      accessibility,
+		"ApplicationPrefix":                  applicationPrefix,
+		"volumeIdentifier":                   volumeIdentifier,
+		"requiredCylinders":                  requiredCylinders,
+		"storageGroupName":                   storageGroupName,
+		"CSIRequestID":                       reqID,
+		"ReplicationEnabled":                 "true",
+		"RemoteSymmID":                       remoteSymID,
+		"LocalRDFGroup":                      localRDFGrpNo,
+		"RemoteRDFGroup":                     remoteRDFGrpNo,
+		"SRDFMode":                           repMode,
+		"LocalProtectionGroupID":             localProtectionGroupID,
+		"RemoteProtectionGroupID":            remoteProtectionGroupID,
+		HeaderPersistentVolumeClaimNamespace: namespace,
+	}
+	log.WithFields(fields).Info("Executing CreateVolume with following fields")
+
+	// isSGUnprotected is set to true only if SG has a replica, eg if the SG is new
+	isSGUnprotected := false
+	psg, err := s.getOrCreateProtectedStorageGroup(ctx, symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID, pmaxClient)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "Error in getOrCreateProtectedStorageGroup: (%s)", err.Error())
+	}
+	if psg != nil && psg.Rdf == true {
+		// Check the direction of SG
+		// Creation of replicated volume is allowed in an SG of type R1
+		err := s.VerifyProtectedGroupDirection(ctx, symID, localProtectionGroupID, localRDFGrpNo, pmaxClient)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		isSGUnprotected = true
+	}
+
+	// Check existence of the Storage Group and create if necessary on R1.
+	sgOnR1, err := pmaxClient.GetStorageGroup(ctx, symID, storageGroupName)
+	if err != nil || sgOnR1 == nil {
+		log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
+		_, err := pmaxClient.CreateStorageGroup(ctx, symID, storageGroupName, storagePoolID,
+			serviceLevel, thick == "true")
+		if err != nil {
+			log.Error("Error creating storage group on R1: " + err.Error())
+			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
+		}
+	}
+	// Check existence of Storage Group and create if necessary on R2.
+	sgOnR2, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteStorageGroupName)
+	if err != nil || sgOnR2 == nil {
+		log.Debug(fmt.Sprintf("Unable to find storage group: %s", remoteStorageGroupName))
+		_, err := pmaxClient.CreateStorageGroup(ctx, remoteSymID, remoteStorageGroupName, remoteSRPID,
+			remoteServiceLevel, thick == "true")
+		if err != nil {
+			log.Error("Error creating storage group on R2: " + err.Error())
+			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
+		}
+	}
+
+	var vol *types.Volume
+	// Idempotency test. We will read the volume and check for:
+	// 1. Existence of a volume with matching volume name
+	// 2. Matching cylinderSize
+	// 3. Is a member of the storage group
+	log.Debug("Calling GetVolumeIDList for idempotency test")
+	// For now an exact match
+	volumeIDList, err := pmaxClient.GetVolumeIDList(ctx, symID, volumeIdentifier, false)
+	if err != nil {
+		log.Error("Error looking up volume for idempotence check: " + err.Error())
+		return nil, status.Errorf(codes.Internal, "Error looking up volume for idempotence check: %s", err.Error())
+	}
+	alreadyExists := false
+	// isLocalVolumePresent restrict CreateVolumeInProtectedSG call if the volume is present in local SG but not in remote SG
+	isLocalVolumePresent := false
+	// Look up the volume(s), if any, returned for the idempotency check to see if there are any matches
+	// We ignore any volume not in the desired storage group (even though they have the same name).
+	for _, volumeID := range volumeIDList {
+		// Fetch the volume
+		log.WithFields(fields).Info("Calling GetVolumeByID for idempotence check")
+		vol, err = pmaxClient.GetVolumeByID(ctx, symID, volumeID)
+		if err != nil {
+			log.Error("Error fetching volume for idempotence check: " + err.Error())
+			return nil, status.Errorf(codes.Internal, "Error fetching volume for idempotence check: %s", err.Error())
+		}
+		if len(vol.StorageGroupIDList) < 1 {
+			log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
+			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): "+volumeID)
+		}
+		matchesStorageGroup := false
+		for _, sgid := range vol.StorageGroupIDList {
+			if sgid == storageGroupName {
+				matchesStorageGroup = true
+			}
+		}
+		if matchesStorageGroup && vol.VolumeIdentifier == volumeIdentifier {
+			if vol.CapacityCYL != requiredCylinders {
+				log.Error("A volume with the same name exists but has a different size than required.")
+				alreadyExists = true
+				continue
+			}
+			var remoteVolumeID string
+			remoteVolumeID, err = s.GetRemoteVolumeID(ctx, symID, localRDFGrpNo, vol.VolumeID, pmaxClient)
+			if err != nil && !strings.Contains(err.Error(), "The device must be an RDF device") {
+				return nil, status.Errorf(codes.Internal, "Failed to fetch rdf pair information for (%s) - Error (%s)", vol.VolumeID, err.Error())
+			}
+			if remoteVolumeID == "" {
+				// Missing corresponding Remote Volume Name for existing local volume
+				// The SG is unprotected as Local volume and Local SG exists but missing corresponding SRDF info
+				// If the SG was protected, there must exist a corresponding remote replica volume
+				log.Debugf("Local Volume already exist, skipping creation (%s)", vol.VolumeID)
+				isLocalVolumePresent = true
+				continue
+			}
+			// Check if remote volume is present in default SG on R2
+			remoteVol, err := pmaxClient.GetVolumeByID(ctx, remoteSymID, remoteVolumeID)
+			if err != nil {
+				log.Error("Error fetching remote volume for idempotence check: " + err.Error())
+				return nil, status.Errorf(codes.Internal, "Error fetching remote volume for idempotence check: %s", err.Error())
+			}
+			if len(remoteVol.StorageGroupIDList) < 2 {
+				// remote volume is not added to default storage group on R2 and local volume is present
+				isLocalVolumePresent = true
+				continue
+			}
+
+			log.WithFields(fields).Info("Idempotent volume detected, returning success")
+			vol.VolumeID = fmt.Sprintf("%s-%s:%s-%s:%s", volumeIdentifier, symID, remoteSymID, vol.VolumeID, remoteVolumeID)
+			volResp := s.getCSIVolume(vol)
+			//Set the volume context
+			attributes := map[string]string{
+				ServiceLevelParam: serviceLevel,
+				StoragePoolParam:  storagePoolID,
+				path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam): symID,
+				CapacityGB:   fmt.Sprintf("%.2f", vol.CapacityGB),
+				StorageGroup: storageGroupName,
+				//Format the time output
+				"CreationTime": time.Now().Format("20060102150405"),
+			}
+			addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID)
+			volResp.VolumeContext = attributes
+			csiResp := &csi.CreateVolumeResponse{
+				Volume: volResp,
+			}
+
+			if accessibility != nil {
+				volResp.AccessibleTopology = accessibility.Preferred
+			}
+			return csiResp, nil
+		}
+	}
+	if alreadyExists {
+		log.Error("A volume with the same name " + volumeName + "exists but has a different size than requested. Use a different name.")
+		return nil, status.Errorf(codes.AlreadyExists, "A volume with the same name %s exists but has a different size than requested. Use a different name.", volumeName)
+	}
+
+	//CSI specific metada for authorization
+	var headerMetadata = addMetaData(req.GetParameters())
+
+	// Let's create the volume
+	if !isLocalVolumePresent {
+		vol, err = pmaxClient.CreateVolumeInStorageGroupS(ctx, symID, storageGroupName, volumeIdentifier, requiredCylinders, headerMetadata)
+		if err != nil {
+			log.Error(fmt.Sprintf("Could not create volume: %s: %s", volumeName, err.Error()))
+			return nil, status.Errorf(codes.Internal, "Could not create volume: %s: %s", volumeName, err.Error())
+		}
+	}
+
+	log.Debugf("RDF: Found Rdf enabled")
+	// remote storage group name is kept same as local storage group name
+	// Check if volume is already added in SG, else add it
+	protectedSGID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
+	if protectedSGID == "" {
+		// Volume is not present in Protected Storage Group, Add
+		err = pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, true, vol.VolumeID)
+		if err != nil {
+			log.Error(fmt.Sprintf("Could not add volume in protected SG: %s: %s", volumeName, err.Error()))
+			return nil, status.Errorf(codes.Internal, "Could not add volume in protected SG: %s: %s", volumeName, err.Error())
+		}
+	}
+	if isSGUnprotected {
+		// If the required SG is still unprotected, protect the local SG with RDF info
+		// If valid RDF group is supplied this will create a remote SG, a RDF pair and add the vol in respective SG created
+		err := s.ProtectStorageGroup(ctx, symID, remoteSymID, localProtectionGroupID, remoteProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID, bias == "true", pmaxClient)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	remoteVolumeID, err := s.GetRemoteVolumeID(ctx, symID, localRDFGrpNo, vol.VolumeID, pmaxClient)
+	if err != nil {
+		log.Errorf("Failed to fetch remote volume details: %s\n", err.Error())
+		return nil, err
+	}
+	// RESET SRP of Protected SG on remote array
+	r2PSG, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteProtectionGroupID)
+	if err != nil {
+		log.Errorf("Failed to fetch remote PSG details: %s\n", err.Error())
+		return nil, status.Errorf(codes.Internal, "Failed to fetch remote PSG details %s", err.Error())
+	}
+	if r2PSG.SRP != "" && r2PSG.SRP != "NONE" {
+		resetSRPPayload := &types.UpdateStorageGroupPayload{
+			EditStorageGroupActionParam: types.EditStorageGroupActionParam{
+				EditStorageGroupSRPParam: &types.EditStorageGroupSRPParam{
+					SRPID: "NONE",
+				},
+			},
+			ExecutionOption: types.ExecutionOptionSynchronous,
+		}
+		err = pmaxClient.UpdateStorageGroupS(ctx, remoteSymID, remoteProtectionGroupID, resetSRPPayload)
+		if err != nil {
+			log.Errorf("Failed to Update Remote SG SRP to NONE: %s\n", err.Error())
+			return nil, status.Errorf(codes.Internal, "Failed to Update Remote SG SRP to NONE: %s", err.Error())
+		}
+	}
+	// Add this volume to remote Storage group with service levels
+	err = pmaxClient.AddVolumesToStorageGroupS(ctx, remoteSymID, remoteStorageGroupName, true, remoteVolumeID)
+	if err != nil {
+		log.Error(fmt.Sprintf("Could not add volume in SG on R2: %s: %s", remoteVolumeID, err.Error()))
+		return nil, status.Errorf(codes.Internal, "Could not add volume in SG on R2: %s: %s", remoteVolumeID, err.Error())
+	}
+
+	// Formulate the return response
+	vol.VolumeID = fmt.Sprintf("%s-%s:%s-%s:%s", volumeIdentifier, symID, remoteSymID, vol.VolumeID, remoteVolumeID)
+	volResp := s.getCSIVolume(vol)
+	//Set the volume context
+	attributes := map[string]string{
+		ServiceLevelParam: serviceLevel,
+		StoragePoolParam:  storagePoolID,
+		path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam): symID,
+		CapacityGB:   fmt.Sprintf("%.2f", vol.CapacityGB),
+		StorageGroup: storageGroupName,
+		//Format the time output
+		"CreationTime": time.Now().Format("20060102150405"),
+	}
+	addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID)
+	attributes[path.Join(s.opts.ReplicationContextPrefix, RemoteVolumeIDParam)] = remoteVolumeID
+
+	volResp.VolumeContext = attributes
+	if accessibility != nil {
+		volResp.AccessibleTopology = accessibility.Preferred
+	}
+	csiResp := &csi.CreateVolumeResponse{
+		Volume: volResp,
+	}
+	log.WithFields(fields).Infof("Created volume with ID: %s", volResp.VolumeId)
+	return csiResp, nil
 }
 
-func (s *service) getOrCreateProtectedStorageGroup(symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID string, pmaxClient pmax.Pmax) (*types.RDFStorageGroup, error) {
+func addReplicationParamsToVolumeAttributes(attributes map[string]string, prefix, remoteSymID, repMode, remoteVolID string) {
+	attributes[path.Join(prefix, RemoteSymIDParam)] = remoteSymID
+	attributes[path.Join(prefix, ReplicationModeParam)] = repMode
+	attributes[path.Join(prefix, RemoteVolumeIDParam)] = remoteVolID
+}
+
+func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID string, pmaxClient pmax.Pmax) (*types.RDFStorageGroup, error) {
 	var lockHandle string
-	if repMode == Async {
-		lockHandle = fmt.Sprintf("%s%s", localRDFGrpNo, symID)
-	} else {
+	if repMode == Sync {
 		//Mode is SYNC
 		lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
+	} else {
+		lockHandle = fmt.Sprintf("%s%s", localRDFGrpNo, symID)
 	}
 	lockNum := RequestLock(lockHandle, reqID)
 	defer ReleaseLock(lockHandle, reqID, lockNum)
-	sg, err := pmaxClient.GetProtectedStorageGroup(symID, localProtectionGroupID)
+	sg, err := pmaxClient.GetProtectedStorageGroup(ctx, symID, localProtectionGroupID)
 	if err != nil || sg == nil {
 		// Verify the creation of new protected storage group is valid
-		err = s.verifyProtectionGroupID(symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, pmaxClient)
+		err = s.verifyProtectionGroupID(ctx, symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, pmaxClient)
 		if err != nil {
 			log.Errorf("VerifyProtectionGroupID failed:(%s)", err.Error())
 			return nil, status.Errorf(codes.Internal, "VerifyProtectionGroupID failed:(%s)", err.Error())
 		}
 		// this SG is valid, new and will need protection if working in replication mode
 		// Create protected SG
-		_, err := pmaxClient.CreateStorageGroup(symID, localProtectionGroupID, "None", "", false)
+		_, err := pmaxClient.CreateStorageGroup(ctx, symID, localProtectionGroupID, "None", "", false)
 		if err != nil {
 			log.Errorf("Error creating protected storage group (%s): (%s)", localProtectionGroupID, err.Error())
 			return nil, status.Errorf(codes.Internal, "Error creating protected storage group (%s): (%s)", localProtectionGroupID, err.Error())
@@ -710,34 +1070,26 @@ func (s *service) getOrCreateProtectedStorageGroup(symID, localProtectionGroupID
 	return sg, nil
 }
 
-func (s *service) buildProtectionGroupID(namespace, localRdfGrpNo, repMode string) string {
-	protectionGrpID := CsiNoSrpSGPrefix + namespace + "-" + localRdfGrpNo + "-" + repMode
-	return protectionGrpID
-}
-
 // verifyProtectionGroupID verify's the ProtectionGroupID's uniqueness w.r.t the srdf mode
+// For metro mode, one srdf group can only have rdf pairing from one namespace
 // For sync mode, one srdf group can have rdf pairing from many namespaces
 // For async mode, one srdf group can only have rdf pairing from one namespace
-// All rdf volume pairs of a namespace should be of one rdf mode
 // In async rdf mode there should be One to One correspondence between namespace and srdf group
-func (s *service) verifyProtectionGroupID(symID, storageGroupName, namespace, localRdfGrpNo, repMode string, pmaxClient pmax.Pmax) error {
-	sgList, err := pmaxClient.GetStorageGroupIDList(symID)
+func (s *service) verifyProtectionGroupID(ctx context.Context, symID, storageGroupName, namespace, localRdfGrpNo, repMode string, pmaxClient pmax.Pmax) error {
+	sgList, err := pmaxClient.GetStorageGroupIDList(ctx, symID)
 	if err != nil {
 		return err
 	}
 	for _, value := range sgList.StorageGroupIDs {
-		// Is it trying to create a new SG for with same namespace in multiple rdf groups?
-		if strings.Contains(value, storageGroupName+"-"+namespace) {
-			return fmt.Errorf("RDF pairs for Namespace (%s) are already in protection group (%s)", namespace, value)
-		}
 		// Is it trying to create more than one SG in async mode for one rdf group
-		if repMode == Async &&
-			strings.Contains(value, localRdfGrpNo+"-"+Async) || strings.Contains(value, localRdfGrpNo+"-"+Sync) {
-			return fmt.Errorf("RDF group (%s) is already a part of ReplicationGroup (%s) in Sync/Async mode", localRdfGrpNo, value)
+		if (repMode == Async || repMode == Metro) &&
+			(strings.Contains(value, localRdfGrpNo+"-"+Async) || strings.Contains(value, localRdfGrpNo+"-"+Sync) || strings.Contains(value, localRdfGrpNo+"-"+Metro)) {
+			return fmt.Errorf("RDF group (%s) is already a part of ReplicationGroup (%s) in Sync/Async/Metro mode", localRdfGrpNo, value)
 		}
-		// Is it trying to create a SG with a rdf group which is already used in Async mode
-		if repMode == Sync && strings.Contains(value, localRdfGrpNo+"-"+Async) {
-			return fmt.Errorf("RDF group (%s) is already part of another Async mode ReplicationGroup (%s)", localRdfGrpNo, value)
+
+		// Is it trying to create a SG with a rdf group which is already used in Async/Metro mode
+		if repMode == Sync && (strings.Contains(value, localRdfGrpNo+"-"+Async) || strings.Contains(value, localRdfGrpNo+"-"+Metro)) {
+			return fmt.Errorf("RDF group (%s) is already part of another Async/Metro mode ReplicationGroup (%s)", localRdfGrpNo, value)
 		}
 	}
 	return nil
@@ -746,7 +1098,7 @@ func (s *service) verifyProtectionGroupID(symID, storageGroupName, namespace, lo
 // validateVolSize uses the CapacityRange range params to determine what size
 // volume to create, and returns an error if volume size would be greater than
 // the given limit. Returned size is in number of cylinders
-func (s *service) validateVolSize(cr *csi.CapacityRange, symmetrixID, storagePoolID string, pmaxClient pmax.Pmax) (int, error) {
+func (s *service) validateVolSize(ctx context.Context, cr *csi.CapacityRange, symmetrixID, storagePoolID string, pmaxClient pmax.Pmax) (int, error) {
 
 	var minSizeBytes, maxSizeBytes int64
 	minSizeBytes = cr.GetRequiredBytes()
@@ -765,7 +1117,7 @@ func (s *service) validateVolSize(cr *csi.CapacityRange, symmetrixID, storagePoo
 	var maxAvailBytes int64 = MaxVolumeSizeBytes
 	if symmetrixID != "" && storagePoolID != "" {
 		// Normal path
-		srpCap, err := s.getStoragePoolCapacities(symmetrixID, storagePoolID, pmaxClient)
+		srpCap, err := s.getStoragePoolCapacities(ctx, symmetrixID, storagePoolID, pmaxClient)
 		if err != nil {
 			return 0, err
 		}
@@ -820,7 +1172,7 @@ func (s *service) validateVolSize(cr *csi.CapacityRange, symmetrixID, storagePoo
 
 // Validates Storage Pool IDs, keeps a cache. The cache entries are only  valid for
 // the StoragePoolCacheDuration period, after that they are rechecked.
-func (s *service) validateStoragePoolID(symmetrixID string, storagePoolID string, pmaxClient pmax.Pmax) error {
+func (s *service) validateStoragePoolID(ctx context.Context, symmetrixID string, storagePoolID string, pmaxClient pmax.Pmax) error {
 	if storagePoolID == "" {
 		return fmt.Errorf("A valid SRP parameter is required")
 	}
@@ -836,7 +1188,7 @@ func (s *service) validateStoragePoolID(symmetrixID string, storagePoolID string
 			return nil
 		}
 	}
-	list, err := pmaxClient.GetStoragePoolList(symmetrixID)
+	list, err := pmaxClient.GetStoragePoolList(ctx, symmetrixID)
 	if err != nil {
 		return err
 	}
@@ -852,7 +1204,7 @@ func (s *service) validateStoragePoolID(symmetrixID string, storagePoolID string
 
 // isPostElmSR - checks if the array is running ucode higher than the
 // ELM SR ucode version. ELM SR is the release name for uCode version - 5978.221.221
-func (s *service) isPostElmSR(symmetrixID string, pmaxClient pmax.Pmax) (bool, error) {
+func (s *service) isPostElmSR(ctx context.Context, symmetrixID string, pmaxClient pmax.Pmax) (bool, error) {
 	cacheMiss := false
 	s.cacheMutex.Lock()
 	defer s.cacheMutex.Unlock()
@@ -868,11 +1220,11 @@ func (s *service) isPostElmSR(symmetrixID string, pmaxClient pmax.Pmax) (bool, e
 	// If entry not found in cache
 	if uCodeVersion == "" {
 		cacheMiss = true
-		symmetrix, err := pmaxClient.GetSymmetrixByID(symmetrixID)
+		powermax, err := pmaxClient.GetSymmetrixByID(ctx, symmetrixID)
 		if err != nil {
 			return false, err
 		}
-		uCodeVersion = symmetrix.Ucode
+		uCodeVersion = powermax.Ucode
 		// Update the cache
 		cache.uCodeVersion = &Pair{
 			first:  uCodeVersion,
@@ -941,7 +1293,7 @@ func (s *service) createCSIVolumeID(volumePrefix, volumeName, symID, devID strin
 //	That's 19 characters total on the right end.
 // Also an error returned if mal-formatted.
 func (s *service) parseCsiID(csiID string) (
-	volName string, arrayID string, devID string, err error) {
+	volName string, arrayID string, devID string, remoteSymID, remoteVolID string, err error) {
 	if csiID == "" {
 		err = fmt.Errorf("A Volume ID is required for the request")
 		return
@@ -959,7 +1311,6 @@ func (s *service) parseCsiID(csiID string) (
 	devID = idComponents[numOfIDComponents-1]
 	// Array ID is the second to last token
 	arrayID = idComponents[numOfIDComponents-2]
-
 	// The two here is for two dashes - one at front of array ID and one between the Array ID and Device ID
 	lengthOfTrailer := len(devID) + len(arrayID) + 2
 	length := len(csiID)
@@ -968,8 +1319,17 @@ func (s *service) parseCsiID(csiID string) (
 		err = fmt.Errorf("The CSI ID %s is not formed correctly", csiID)
 		return
 	}
-	// calculate the volume name, which is everything before the array ID
 	volName = csiID[0 : length-lengthOfTrailer]
+
+	//Check if the symID and devID has remoteInfo
+	if strings.Contains(arrayID, ":") {
+		arrays := strings.Split(arrayID, ":")
+		arrayID = arrays[0]
+		remoteSymID = arrays[1]
+		vols := strings.Split(devID, ":")
+		devID = vols[0]
+		remoteVolID = vols[1]
+	}
 	return
 }
 
@@ -979,18 +1339,18 @@ func (s *service) DeleteVolume(
 	*csi.DeleteVolumeResponse, error) {
 
 	id := req.GetVolumeId()
-	volName, symID, devID, err := s.parseCsiID(id)
+	volName, symID, devID, remoteSymID, remDevID, err := s.parseCsiID(id)
 	if err != nil {
 		// We couldn't comprehend the identifier.
 		log.Info("Could not parse CSI VolumeId: " + id)
 		return &csi.DeleteVolumeResponse{}, nil
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID, remoteSymID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	var volumeID volumeIDType = volumeIDType(id)
+	volumeID := volumeIDType(id)
 	if err := volumeID.checkAndUpdatePendingState(&controllerPendingState); err != nil {
 		return nil, err
 	}
@@ -1008,7 +1368,31 @@ func (s *service) DeleteVolume(
 		log.Error("Failed to probe with erro: " + err.Error())
 		return nil, err
 	}
+	err = s.deleteVolume(ctx, reqID, symID, volName, devID, id, pmaxClient)
+	if err != nil {
+		return nil, err
+	}
+	// Delete scenario for SRDF METRO volumes
+	if remoteSymID != "" {
+		// set volume identifier on remote volume residing on remote SymID
+		_, err := pmaxClient.RenameVolume(ctx, remoteSymID, remDevID, volName)
+		if err != nil {
+			if strings.Contains(err.Error(), cannotBeFound) {
+				// The remote volume is already deleted
+				log.Info(fmt.Sprintf("DeleteVolume: Could not find volume: %s/%s so assume it's already deleted", symID, devID))
+				return &csi.DeleteVolumeResponse{}, nil
+			}
+			return nil, status.Errorf(codes.InvalidArgument, "RenameRemoteVolume: Failed to rename volume %s %s", remDevID, err.Error())
+		}
+		err = s.deleteVolume(ctx, reqID, remoteSymID, volName, remDevID, id, pmaxClient)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &csi.DeleteVolumeResponse{}, nil
+}
 
+func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID, id string, pmaxClient pmax.Pmax) error {
 	// log all parameters used in DeleteVolume call
 	fields := map[string]interface{}{
 		"SymmetrixID":  symID,
@@ -1018,15 +1402,15 @@ func (s *service) DeleteVolume(
 	}
 	log.WithFields(fields).Info("Executing DeleteVolume with following fields")
 
-	vol, err := pmaxClient.GetVolumeByID(symID, devID)
+	vol, err := pmaxClient.GetVolumeByID(ctx, symID, devID)
 	log.Debugf("vol: %#v, error: %#v\n", vol, err)
 	if err != nil {
-		if strings.Contains(err.Error(), cannotBeFound) || strings.Contains(err.Error(), ignoredViaAWhitelist) {
+		if strings.Contains(err.Error(), cannotBeFound) {
 			// The volume is already deleted
 			log.Info(fmt.Sprintf("DeleteVolume: Could not find volume: %s/%s so assume it's already deleted", symID, devID))
-			return &csi.DeleteVolumeResponse{}, nil
+			return nil
 		}
-		return nil, status.Errorf(codes.Internal, "Could not retrieve volume: (%s)", err.Error())
+		return status.Errorf(codes.Internal, "Could not retrieve volume: (%s)", err.Error())
 	}
 
 	if vol.VolumeIdentifier != volName {
@@ -1035,28 +1419,28 @@ func (s *service) DeleteVolume(
 		// Either way idempotence calls for doing nothing and returning ok.
 		log.Info(fmt.Sprintf("DeleteVolume: VolumeIdentifier %s did not match volume name %s so assume it's already deleted",
 			vol.VolumeIdentifier, volName))
-		return &csi.DeleteVolumeResponse{}, nil
+		return nil
 	}
 
 	// find if volume is present in any masking view
 	for _, sgid := range vol.StorageGroupIDList {
-		sg, err := pmaxClient.GetStorageGroup(symID, sgid)
+		sg, err := pmaxClient.GetStorageGroup(ctx, symID, sgid)
 		if err != nil || sg == nil {
 			log.Error(fmt.Sprintf("DeleteVolume: could not retrieve Storage Group %s/%s", symID, sgid))
-			return nil, status.Errorf(codes.Internal, "Unable to find storage group: %s in %s", sgid, symID)
+			return status.Errorf(codes.Internal, "Unable to find storage group: %s in %s", sgid, symID)
 		}
 		if sg.NumOfMaskingViews > 0 {
 			log.Error(fmt.Sprintf("DeleteVolume: Volume %s is in use by Storage Group %s which has Masking Views",
 				id, sgid))
-			return nil, status.Errorf(codes.Internal, "Volume is in use")
+			return status.Errorf(codes.Internal, "Volume is in use")
 		}
 	}
 
 	// Verify if volume is snapshot source
-	isSnapSrc, err := s.IsSnapshotSource(symID, devID, pmaxClient)
+	isSnapSrc, err := s.IsSnapshotSource(ctx, symID, devID, pmaxClient)
 	if err != nil {
 		log.Error("Failed to determine volume as a snapshot source: Error - ", err.Error())
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return status.Errorf(codes.Internal, err.Error())
 	}
 	if isSnapSrc {
 		//Execute soft delete i.e. return DeleteVolume success to the CO/k8s
@@ -1072,20 +1456,20 @@ func (s *service) DeleteVolume(
 			volName = volName[:len(volName)-truncLen]
 		}
 		newVolName = fmt.Sprintf("%s-%s", volName, delSrcTag)
-		vol, err = pmaxClient.RenameVolume(symID, devID, newVolName)
+		vol, err = pmaxClient.RenameVolume(ctx, symID, devID, newVolName)
 		if err != nil || vol == nil {
 			log.Error(fmt.Sprintf("DeleteVolume: Could not rename volume %s", id))
-			return nil, status.Errorf(codes.Internal, "Failed to rename volume")
+			return status.Errorf(codes.Internal, "Failed to rename volume")
 		}
 		log.Infof("Soft deletion of source volume (%s) is successful", volName)
-		return &csi.DeleteVolumeResponse{}, nil
+		return nil
 	}
-	err = s.MarkVolumeForDeletion(symID, vol, pmaxClient)
+	err = s.MarkVolumeForDeletion(ctx, symID, vol, pmaxClient)
 	if err != nil {
 		log.Error("RequestSoftVolDelete failed with error - ", err.Error())
-		return nil, status.Errorf(codes.Internal, "Failed marking volume for deletion with error (%s)", err.Error())
+		return status.Errorf(codes.Internal, "Failed marking volume for deletion with error (%s)", err.Error())
 	}
-	return &csi.DeleteVolumeResponse{}, nil
+	return nil
 }
 
 func (s *service) ControllerPublishVolume(
@@ -1115,18 +1499,19 @@ func (s *service) ControllerPublishVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"volume ID is required")
 	}
-	_, symID, _, err := s.parseCsiID(volID)
+	_, symID, _, remoteSymID, remoteVolumeID, err := s.parseCsiID(volID)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", volID)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", volID)
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID, remoteSymID)
 	if err != nil {
 		log.Error(err.Error())
+
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	var volumeID volumeIDType = volumeIDType(volID)
+	volumeID := volumeIDType(volID)
 	if err := volumeID.checkAndUpdatePendingState(&controllerPendingState); err != nil {
 		return nil, err
 	}
@@ -1163,7 +1548,7 @@ func (s *service) ControllerPublishVolume(
 	}
 
 	//Fetch the volume details from array
-	symID, devID, vol, err := s.GetVolumeByID(volID, pmaxClient)
+	symID, devID, vol, err := s.GetVolumeByID(ctx, volID, pmaxClient)
 	if err != nil {
 		log.Error("GetVolumeByID Error: " + err.Error())
 		return nil, err
@@ -1192,7 +1577,7 @@ func (s *service) ControllerPublishVolume(
 		}
 	} else {
 		log.Debugf("REQ ID: %s nodeID: %s not present in node cache\n", reqID, nodeID)
-		isISCSI, err = s.IsNodeISCSI(symID, nodeID, pmaxClient)
+		isISCSI, err = s.IsNodeISCSI(ctx, symID, nodeID, pmaxClient)
 		if err != nil {
 			return nil, status.Error(codes.NotFound, err.Error())
 		}
@@ -1213,12 +1598,34 @@ func (s *service) ControllerPublishVolume(
 		}
 	}
 
-	waitChan, lockChan, err := s.sgSvc.requestAddVolumeToSGMV(tgtStorageGroupID, tgtMaskingViewID, hostID, reqID, symID, symID, devID, am)
+	publishContext := map[string]string{
+		PublishContextDeviceWWN: vol.WWN,
+	}
+
+	ctrlPubRes, ctrlPubErr := s.publishVolume(ctx, publishContext, tgtStorageGroupID, hostID, symID, symID, tgtMaskingViewID, devID, reqID, am, pmaxClient, true)
+	if ctrlPubErr != nil {
+		return nil, ctrlPubErr
+	}
+
+	if remoteSymID != "" && remoteVolumeID != "" {
+		remoteVol, err := pmaxClient.GetVolumeByID(ctx, remoteSymID, remoteVolumeID)
+		log.Debugf("remote-vol: %#v, error: %#v\n", remoteVol, err)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "PublishVolume: Could not retrieve remote volume: (%s)", err.Error())
+		}
+		publishContext[RemotePublishContextDeviceWWN] = remoteVol.WWN
+		return s.publishVolume(ctx, publishContext, tgtStorageGroupID, hostID, symID, remoteSymID, tgtMaskingViewID, remoteVolumeID, reqID, am, pmaxClient, false)
+	}
+	return ctrlPubRes, ctrlPubErr
+}
+
+func (s *service) publishVolume(ctx context.Context, publishContext map[string]string, tgtStorageGroupID, hostID, clientSymID, symID, tgtMaskingViewID, deviceID, reqID string, accessMode *csi.VolumeCapability_AccessMode, pmaxClient pmax.Pmax, isLocal bool) (*csi.ControllerPublishVolumeResponse, error) {
+	waitChan, lockChan, err := s.sgSvc.requestAddVolumeToSGMV(ctx, tgtStorageGroupID, tgtMaskingViewID, hostID, reqID, clientSymID, symID, deviceID, accessMode)
 	if err != nil {
 		log.Error(err)
 		return nil, err
 	}
-	log.Infof("reqID %s devID %s waitChan %v lockChan %v", reqID, devID, waitChan, lockChan)
+	log.Infof("reqID %s devID %s waitChan %v lockChan %v", reqID, deviceID, waitChan, lockChan)
 
 	var connections []*types.MaskingViewConnection
 	for done := false; !done; {
@@ -1233,7 +1640,7 @@ func (s *service) ControllerPublishVolume(
 			done = true
 		case <-lockChan:
 			// We own the lock, and should process the service
-			s.sgSvc.runAddVolumesToSGMV(symID, tgtStorageGroupID)
+			s.sgSvc.runAddVolumesToSGMV(ctx, symID, tgtStorageGroupID, pmaxClient)
 		}
 	}
 
@@ -1242,11 +1649,7 @@ func (s *service) ControllerPublishVolume(
 		return nil, err
 	}
 
-	publishContext := map[string]string{
-		PublishContextDeviceWWN: vol.WWN,
-	}
-
-	return s.updatePublishContext(publishContext, symID, tgtMaskingViewID, devID, reqID, connections, pmaxClient)
+	return s.updatePublishContext(ctx, publishContext, symID, tgtMaskingViewID, deviceID, reqID, connections, pmaxClient, isLocal)
 }
 
 // Adds the LUN_ADDRESS and SCSI target information to the PublishContext by looking at MaskingView connections.
@@ -1255,8 +1658,8 @@ func (s *service) ControllerPublishVolume(
 // The return arguments are suitable for directly passing back to the grpc called.
 // This routine is careful to throw errors if it cannot come up with a valid context, because having ControllerPublish
 // succeed but without valid context will only cause the NodeStage or NodePublish to fail.
-func (s *service) updatePublishContext(publishContext map[string]string, symID, tgtMaskingViewID, deviceID, reqID string,
-	connections []*types.MaskingViewConnection, pmaxClient pmax.Pmax) (*csi.ControllerPublishVolumeResponse, error) {
+func (s *service) updatePublishContext(ctx context.Context, publishContext map[string]string, symID, tgtMaskingViewID, deviceID, reqID string,
+	connections []*types.MaskingViewConnection, pmaxClient pmax.Pmax, isLocal bool) (*csi.ControllerPublishVolumeResponse, error) {
 
 	// If we got connections already from runAddVolumesToSGMV, see if there are any for our deviceID.
 	err := errors.New("no connections")
@@ -1283,7 +1686,7 @@ func (s *service) updatePublishContext(publishContext map[string]string, symID, 
 			log.Infof("GetMaskingViewConnections retry %d %s %s %s err: %s", retry, symID, tgtMaskingViewID, deviceID, err)
 		}
 		lockNum := RequestLock(getMVLockKey(symID, tgtMaskingViewID), reqID)
-		connections, err = pmaxClient.GetMaskingViewConnections(symID, tgtMaskingViewID, deviceID)
+		connections, err = pmaxClient.GetMaskingViewConnections(ctx, symID, tgtMaskingViewID, deviceID)
 		ReleaseLock(getMVLockKey(symID, tgtMaskingViewID), reqID, lockNum)
 	}
 	if err != nil {
@@ -1317,7 +1720,7 @@ func (s *service) updatePublishContext(publishContext map[string]string, symID, 
 	portIdentifiers := ""
 
 	for _, dirPortKey := range dirPorts {
-		portIdentifier, err := s.GetPortIdentifier(symID, dirPortKey, pmaxClient)
+		portIdentifier, err := s.GetPortIdentifier(ctx, symID, dirPortKey, pmaxClient)
 		if err != nil {
 			log.Errorf("PublishContext: Failed to fetch port details %s %s", symID, dirPortKey)
 			continue
@@ -1331,9 +1734,14 @@ func (s *service) updatePublishContext(publishContext map[string]string, symID, 
 	}
 	// Each context key holds upto 128 characters of portIdentifiers. If one Identifier is more than
 	// 128, it gets overlayed to next key.
-	keyCount := int(len(portIdentifiers)/MaxPortIdentifierLength) + 1
+	keyCount := len(portIdentifiers)/MaxPortIdentifierLength + 1
 	for i := 1; i <= keyCount; i++ {
-		portIdentifierKey := fmt.Sprintf("%s_%d", PortIdentifiers, i)
+		var portIdentifierKey string
+		if isLocal {
+			portIdentifierKey = fmt.Sprintf("%s_%d", PortIdentifiers, i)
+		} else {
+			portIdentifierKey = fmt.Sprintf("%s_%d", RemotePortIdentifiers, i)
+		}
 		start := (i - 1) * MaxPortIdentifierLength
 		end := i * MaxPortIdentifierLength
 		if end > len(portIdentifiers) {
@@ -1342,8 +1750,13 @@ func (s *service) updatePublishContext(publishContext map[string]string, symID, 
 		publishContext[portIdentifierKey] = portIdentifiers[start:end]
 	}
 	log.Debugf("Port identifiers in publish context: %s", portIdentifiers)
-	publishContext[PortIdentifierKeyCount] = strconv.Itoa(keyCount)
-	publishContext[PublishContextLUNAddress] = lunid
+	if isLocal {
+		publishContext[PortIdentifierKeyCount] = strconv.Itoa(keyCount)
+		publishContext[PublishContextLUNAddress] = lunid
+	} else {
+		publishContext[RemotePortIdentifierKeyCount] = strconv.Itoa(keyCount)
+		publishContext[RemotePublishContextLUNAddress] = lunid
+	}
 	return &csi.ControllerPublishVolumeResponse{PublishContext: publishContext}, nil
 }
 
@@ -1354,29 +1767,29 @@ func getMVLockKey(symID, tgtMaskingViewID string) string {
 // IsNodeISCSI - Takes a sym id, node id as input and based on the transport protocol setting
 // and the existence of the host on array, it returns a bool to indicate if the Host
 // on array is ISCSI or not
-func (s *service) IsNodeISCSI(symID, nodeID string, pmaxClient pmax.Pmax) (bool, error) {
+func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxClient pmax.Pmax) (bool, error) {
 	fcHostID, _, fcMaskingViewID := s.GetFCHostSGAndMVIDFromNodeID(nodeID)
 	iSCSIHostID, _, iSCSIMaskingViewID := s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
 	if s.opts.TransportProtocol == FcTransportProtocol || s.opts.TransportProtocol == "" {
 		log.Debug("Preferred transport protocol is set to FC")
-		_, fcmverr := pmaxClient.GetMaskingViewByID(symID, fcMaskingViewID)
+		_, fcmverr := pmaxClient.GetMaskingViewByID(ctx, symID, fcMaskingViewID)
 		if fcmverr == nil {
 			return false, nil
 		}
 		// Check if ISCSI MV exists
-		_, iscsimverr := pmaxClient.GetMaskingViewByID(symID, iSCSIMaskingViewID)
+		_, iscsimverr := pmaxClient.GetMaskingViewByID(ctx, symID, iSCSIMaskingViewID)
 		if iscsimverr == nil {
 			return true, nil
 		}
 		// Check if FC Host exists
-		fcHost, fcHostErr := pmaxClient.GetHostByID(symID, fcHostID)
+		fcHost, fcHostErr := pmaxClient.GetHostByID(ctx, symID, fcHostID)
 		if fcHostErr == nil {
 			if fcHost.HostType == "Fibre" {
 				return false, nil
 			}
 		}
 		// Check if ISCSI Host exists
-		iscsiHost, iscsiHostErr := pmaxClient.GetHostByID(symID, iSCSIHostID)
+		iscsiHost, iscsiHostErr := pmaxClient.GetHostByID(ctx, symID, iSCSIHostID)
 		if iscsiHostErr == nil {
 			if iscsiHost.HostType == "iSCSI" {
 				return true, nil
@@ -1385,24 +1798,24 @@ func (s *service) IsNodeISCSI(symID, nodeID string, pmaxClient pmax.Pmax) (bool,
 	} else if s.opts.TransportProtocol == IscsiTransportProtocol {
 		log.Debug("Preferred transport protocol is set to ISCSI")
 		// Check if ISCSI MV exists
-		_, iscsimverr := pmaxClient.GetMaskingViewByID(symID, iSCSIMaskingViewID)
+		_, iscsimverr := pmaxClient.GetMaskingViewByID(ctx, symID, iSCSIMaskingViewID)
 		if iscsimverr == nil {
 			return true, nil
 		}
 		// Check if FC MV exists
-		_, fcmverr := pmaxClient.GetMaskingViewByID(symID, fcMaskingViewID)
+		_, fcmverr := pmaxClient.GetMaskingViewByID(ctx, symID, fcMaskingViewID)
 		if fcmverr == nil {
 			return false, nil
 		}
 		// Check if ISCSI Host exists
-		iscsiHost, iscsiHostErr := pmaxClient.GetHostByID(symID, iSCSIHostID)
+		iscsiHost, iscsiHostErr := pmaxClient.GetHostByID(ctx, symID, iSCSIHostID)
 		if iscsiHostErr == nil {
 			if iscsiHost.HostType == "iSCSI" {
 				return true, nil
 			}
 		}
 		// Check if FC Host exists
-		fcHost, fcHostErr := pmaxClient.GetHostByID(symID, fcHostID)
+		fcHost, fcHostErr := pmaxClient.GetHostByID(ctx, symID, fcHostID)
 		if fcHostErr == nil {
 			if fcHost.HostType == "Fibre" {
 				return false, nil
@@ -1415,15 +1828,15 @@ func (s *service) IsNodeISCSI(symID, nodeID string, pmaxClient pmax.Pmax) (bool,
 // GetVolumeByID - Takes a CSI volume ID and checks for its existence on array
 // along with matching with the volume identifier. Returns back the volume name
 // on array, device ID, volume structure
-func (s *service) GetVolumeByID(volID string, pmaxClient pmax.Pmax) (string, string, *types.Volume, error) {
+func (s *service) GetVolumeByID(ctx context.Context, volID string, pmaxClient pmax.Pmax) (string, string, *types.Volume, error) {
 	// parse the volume and get the array serial and volume ID
-	volName, symID, devID, err := s.parseCsiID(volID)
+	volName, symID, devID, _, _, err := s.parseCsiID(volID)
 	if err != nil {
 		return "", "", nil, status.Errorf(codes.InvalidArgument,
 			"volID: %s malformed. Error: %s", volID, err.Error())
 	}
 
-	vol, err := pmaxClient.GetVolumeByID(symID, devID)
+	vol, err := pmaxClient.GetVolumeByID(ctx, symID, devID)
 	if err != nil {
 		if strings.Contains(err.Error(), cannotBeFound) {
 			return "", "", nil, status.Errorf(codes.NotFound,
@@ -1444,12 +1857,12 @@ func (s *service) GetVolumeByID(volID string, pmaxClient pmax.Pmax) (string, str
 // GetMaskingViewAndSGDetails - Takes a list of SGs and returns the list of associated masking views
 // and individual storage group objects. The storage group objects are returned as
 // they can avoid any extra queries (since they have been already queried in this function)
-func (s *service) GetMaskingViewAndSGDetails(symID string, sgIDs []string, pmaxClient pmax.Pmax) ([]string, []*types.StorageGroup, error) {
+func (s *service) GetMaskingViewAndSGDetails(ctx context.Context, symID string, sgIDs []string, pmaxClient pmax.Pmax) ([]string, []*types.StorageGroup, error) {
 	maskingViewIDs := make([]string, 0)
 	storageGroups := make([]*types.StorageGroup, 0)
 	// Fetch each SG this device is part of
 	for _, sgID := range sgIDs {
-		sg, err := pmaxClient.GetStorageGroup(symID, sgID)
+		sg, err := pmaxClient.GetStorageGroup(ctx, symID, sgID)
 		if err != nil {
 			return nil, nil, status.Error(codes.Internal, "Failed to fetch SG details")
 		}
@@ -1543,17 +1956,17 @@ func (s *service) ControllerUnpublishVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume ID is required")
 	}
-	_, symID, _, err := s.parseCsiID(volID)
+	_, symID, _, remoteSymID, remoteVolID, err := s.parseCsiID(volID)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", volID)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", volID)
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID, remoteSymID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	var volumeID volumeIDType = volumeIDType(volID)
+	volumeID := volumeIDType(volID)
 	if err := volumeID.checkAndUpdatePendingState(&controllerPendingState); err != nil {
 		return nil, err
 	}
@@ -1572,7 +1985,7 @@ func (s *service) ControllerUnpublishVolume(
 	}
 
 	//Fetch the volume details from array
-	symID, devID, vol, err := s.GetVolumeByID(volID, pmaxClient)
+	symID, devID, vol, err := s.GetVolumeByID(ctx, volID, pmaxClient)
 	if err != nil {
 		// CSI sanity test will call this idempotently and expects pass
 		if strings.Contains(err.Error(), notFound) || strings.Contains(err.Error(), failedToValidateVolumeNameAndID) {
@@ -1581,11 +1994,37 @@ func (s *service) ControllerUnpublishVolume(
 		log.Error("GetVolumeByID Error: " + err.Error())
 		return nil, err
 	}
+	err = s.unpublishVolume(ctx, reqID, vol, nodeID, symID, symID, devID)
+	// Return error if that was the result
+	if err != nil {
+		return nil, err
+	}
 
+	//Fetch the volume details from secondary array
+	if remoteSymID != "" {
+		remVol, err := pmaxClient.GetVolumeByID(ctx, remoteSymID, remoteVolID)
+		if err != nil {
+			// CSI sanity test will call this idempotently and expects pass
+			if strings.Contains(err.Error(), notFound) || strings.Contains(err.Error(), failedToValidateVolumeNameAndID) {
+				return &csi.ControllerUnpublishVolumeResponse{}, nil
+			}
+			log.Error("GetVolumeByID Error: " + err.Error())
+			return nil, err
+		}
+		err = s.unpublishVolume(ctx, reqID, remVol, nodeID, remoteSymID, remoteSymID, remVol.VolumeID)
+		// Return error if that was the result
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &csi.ControllerUnpublishVolumeResponse{}, nil
+}
+
+func (s *service) unpublishVolume(ctx context.Context, reqID string, vol *types.Volume, nodeID, clientSymID, symID, devID string) error {
 	// log all parameters used in ControllerUnpublishVolume call
 	fields := map[string]interface{}{
 		"SymmetrixID":  symID,
-		"VolumeId":     volID,
+		"VolumeId":     vol.VolumeID,
 		"NodeId":       nodeID,
 		"CSIRequestID": reqID,
 	}
@@ -1611,7 +2050,7 @@ func (s *service) ControllerUnpublishVolume(
 
 	if !volumeInStorageGroup {
 		log.Debug("volume already unpublished")
-		return &csi.ControllerUnpublishVolumeResponse{}, nil
+		return nil
 	}
 	var tgtStorageGroupID, tgtMaskingViewID string
 	if !isISCSI {
@@ -1621,14 +2060,12 @@ func (s *service) ControllerUnpublishVolume(
 		tgtStorageGroupID = tgtISCSIStorageGroupID
 		tgtMaskingViewID = tgtISCSIMaskingViewID
 	}
-
-	waitChan, lockChan, err := s.sgSvc.requestRemoveVolumeFromSGMV(tgtStorageGroupID, tgtMaskingViewID, reqID, symID, symID, devID)
+	waitChan, lockChan, err := s.sgSvc.requestRemoveVolumeFromSGMV(ctx, tgtStorageGroupID, tgtMaskingViewID, reqID, clientSymID, symID, devID)
 	if err != nil {
 		log.Error(err)
-		return nil, err
+		return err
 	}
 	log.Infof("reqID %s devID %s waitChan %v lockChan %v", reqID, devID, waitChan, lockChan)
-
 	for done := false; !done; {
 		select {
 		case response := <-waitChan:
@@ -1640,16 +2077,10 @@ func (s *service) ControllerUnpublishVolume(
 			done = true
 		case <-lockChan:
 			// We own the lock, and should process the service
-			s.sgSvc.runRemoveVolumesFromSGMV(symID, tgtStorageGroupID)
+			s.sgSvc.runRemoveVolumesFromSGMV(ctx, symID, tgtStorageGroupID)
 		}
 	}
-
-	// Return error if that was the result
-	if err != nil {
-		return nil, err
-	}
-
-	return &csi.ControllerUnpublishVolumeResponse{}, nil
+	return err
 }
 
 func (s *service) ValidateVolumeCapabilities(
@@ -1667,13 +2098,13 @@ func (s *service) ValidateVolumeCapabilities(
 
 	volID := req.GetVolumeId()
 	// parse the volume and get the array serial and volume ID
-	volName, symID, devID, err := s.parseCsiID(volID)
+	volName, symID, devID, _, _, err := s.parseCsiID(volID)
 	if err != nil {
 		log.Error(fmt.Sprintf("volID: %s malformed. Error: %s", volID, err.Error()))
 		return nil, status.Errorf(codes.InvalidArgument,
 			"volID: %s malformed. Error: %s", volID, err.Error())
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -1692,7 +2123,7 @@ func (s *service) ValidateVolumeCapabilities(
 	}
 	log.WithFields(fields).Info("Executing ValidateVolumeCapabilities with following fields")
 
-	vol, err := pmaxClient.GetVolumeByID(symID, devID)
+	vol, err := pmaxClient.GetVolumeByID(ctx, symID, devID)
 	if err != nil {
 		log.Error(fmt.Sprintf("failure checking volume (Array: %s, Volume: %s)status for capabilities: %s",
 			symID, devID, err.Error()))
@@ -1708,7 +2139,7 @@ func (s *service) ValidateVolumeCapabilities(
 	}
 
 	attributes := req.GetVolumeContext()
-	validContext, reasonContext := s.valVolumeContext(attributes, vol, symID, pmaxClient)
+	validContext, reasonContext := s.valVolumeContext(ctx, attributes, vol, symID, pmaxClient)
 	if validContext != true {
 		log.Error(fmt.Sprintf("Failure checking volume context (Array: %s, Volume: %s): %s",
 			symID, devID, reasonContext))
@@ -1762,7 +2193,7 @@ func checkValidAccessTypes(vcs []*csi.VolumeCapability) bool {
 	return true
 }
 
-func (s *service) valVolumeContext(attributes map[string]string, vol *types.Volume, symID string, pmaxClient pmax.Pmax) (bool, string) {
+func (s *service) valVolumeContext(ctx context.Context, attributes map[string]string, vol *types.Volume, symID string, pmaxClient pmax.Pmax) (bool, string) {
 
 	foundSP := false
 	foundSL := false
@@ -1781,7 +2212,7 @@ func (s *service) valVolumeContext(attributes map[string]string, vol *types.Volu
 		return false, "Unable to find any associated Storage Groups"
 	}
 	for _, sgID := range vol.StorageGroupIDList {
-		sg, err := pmaxClient.GetStorageGroup(symID, sgID)
+		sg, err := pmaxClient.GetStorageGroup(ctx, symID, sgID)
 		if err == nil {
 			if (sl != "") && (sl == sg.SLO) {
 				foundSL = true
@@ -1885,7 +2316,7 @@ func (s *service) GetCapacity(
 		log.Error("A SYMID parameter is required")
 		return nil, status.Errorf(codes.InvalidArgument, "A SYMID parameter is required")
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symmetrixID)
+	pmaxClient, err := s.GetPowerMaxClient(symmetrixID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -1909,7 +2340,7 @@ func (s *service) GetCapacity(
 
 	// Storage (resource) Pool. Validate it against exist Pools
 	storagePoolID := params[StoragePoolParam]
-	err = s.validateStoragePoolID(symmetrixID, storagePoolID, pmaxClient)
+	err = s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Errorf(codes.InvalidArgument, err.Error())
@@ -1924,7 +2355,7 @@ func (s *service) GetCapacity(
 	log.WithFields(fields).Info("Executing ValidateVolumeCapabilities with following fields")
 
 	// Get storage pool capacities
-	srpCap, err := s.getStoragePoolCapacities(symmetrixID, storagePoolID, pmaxClient)
+	srpCap, err := s.getStoragePoolCapacities(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Could not retrieve StoragePool %s. Error(%s)", storagePoolID, err.Error())
 	}
@@ -1940,9 +2371,9 @@ func (s *service) GetCapacity(
 }
 
 // Return the storage pool capacities of types.SrpCap
-func (s *service) getStoragePoolCapacities(symmetrixID, storagePoolID string, pmaxClient pmax.Pmax) (*types.SrpCap, error) {
+func (s *service) getStoragePoolCapacities(ctx context.Context, symmetrixID, storagePoolID string, pmaxClient pmax.Pmax) (*types.SrpCap, error) {
 	// Get storage pool info
-	srp, err := pmaxClient.GetStoragePool(symmetrixID, storagePoolID)
+	srp, err := pmaxClient.GetStoragePool(ctx, symmetrixID, storagePoolID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Could not retrieve StoragePool %s. Error(%s)", storagePoolID, err.Error())
 	}
@@ -2026,13 +2457,8 @@ func (s *service) controllerProbe(ctx context.Context) error {
 	for _, p := range s.opts.PortGroups {
 		log.Debugf("Portgroups include: %s", p)
 	}
-	if len(s.opts.AllowedArrays) == 0 {
-		log.Debug("Allowing access to all Arrays known to Unisphere")
-	} else {
-		log.Debugf("Restricting access to the following Arrays: %v", s.opts.AllowedArrays)
-	}
 
-	err := s.createPowerMaxClients()
+	err := s.createPowerMaxClients(ctx)
 	if err != nil {
 		return err
 	}
@@ -2078,18 +2504,18 @@ func (s *service) SelectPortGroup() (string, error) {
 
 // SelectOrCreatePortGroup - Selects or Creates a PG given a symId and host
 // and the host type
-func (s *service) SelectOrCreatePortGroup(symID string, host *types.Host, pmaxClient pmax.Pmax) (string, error) {
+func (s *service) SelectOrCreatePortGroup(ctx context.Context, symID string, host *types.Host, pmaxClient pmax.Pmax) (string, error) {
 	if host == nil {
 		return "", fmt.Errorf("SelectOrCreatePortGroup: host can't be nil")
 	}
 	if host.HostType == "Fibre" {
-		return s.SelectOrCreateFCPGForHost(symID, host, pmaxClient)
+		return s.SelectOrCreateFCPGForHost(ctx, symID, host, pmaxClient)
 	}
 	return s.SelectPortGroup()
 }
 
 // SelectOrCreateFCPGForHost - Selects or creates a Fibre Channel PG given a symid and host
-func (s *service) SelectOrCreateFCPGForHost(symID string, host *types.Host, pmaxClient pmax.Pmax) (string, error) {
+func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, host *types.Host, pmaxClient pmax.Pmax) (string, error) {
 	if host == nil {
 		return "", fmt.Errorf("SelectOrCreateFCPGForHost: host can't be nil")
 	}
@@ -2099,7 +2525,7 @@ func (s *service) SelectOrCreateFCPGForHost(symID string, host *types.Host, pmax
 	var isValidHost bool
 	if host.HostType == "Fibre" {
 		for _, initiator := range host.Initiators {
-			initList, err := pmaxClient.GetInitiatorList(symID, initiator, false, false)
+			initList, err := pmaxClient.GetInitiatorList(ctx, symID, initiator, false, false)
 			if err != nil {
 				log.Errorf("Failed to get details for initiator - %s", initiator)
 				continue
@@ -2118,7 +2544,7 @@ func (s *service) SelectOrCreateFCPGForHost(symID string, host *types.Host, pmax
 	if !isValidHost {
 		return "", fmt.Errorf("Failed to find a valid initiator for hostID %s from %s", hostID, symID)
 	}
-	fcPortGroupList, err := pmaxClient.GetPortGroupList(symID, "fibre")
+	fcPortGroupList, err := pmaxClient.GetPortGroupList(ctx, symID, "fibre")
 	if err != nil {
 		return "", fmt.Errorf("Failed to fetch Fibre channel port groups for array: %s", symID)
 	}
@@ -2131,7 +2557,7 @@ func (s *service) SelectOrCreateFCPGForHost(symID string, host *types.Host, pmax
 		}
 	}
 	for _, portGroupID := range filteredPGList {
-		portGroup, err := pmaxClient.GetPortGroupByID(symID, portGroupID)
+		portGroup, err := pmaxClient.GetPortGroupByID(ctx, symID, portGroupID)
 		if err != nil {
 			log.Error("Failed to fetch port group details")
 			continue
@@ -2173,7 +2599,7 @@ func (s *service) SelectOrCreateFCPGForHost(symID string, host *types.Host, pmax
 			dirNames = truncateString(dirNames, MaxDirNameLength)
 		}
 		portGroupName := CSIPrefix + "-" + s.opts.ClusterPrefix + "-" + dirNames + PGSuffix
-		_, err = pmaxClient.CreatePortGroup(symID, portGroupName, portKeys)
+		_, err = pmaxClient.CreatePortGroup(ctx, symID, portGroupName, portKeys)
 		if err != nil {
 			return "", fmt.Errorf("Failed to create PortGroup - %s. Error - %s", portGroupName, err.Error())
 		}
@@ -2219,14 +2645,26 @@ func (s *service) CreateSnapshot(
 		return nil, status.Errorf(codes.InvalidArgument,
 			"Source volume ID is required for creating snapshot")
 	}
-	_, symID, devID, err := s.parseCsiID(volID)
+	_, localSymID, localDevID, remoteSymID, remoteDevID, err := s.parseCsiID(volID)
 	if err != nil {
 		// We couldn't comprehend the identifier.
 		log.Error("Could not parse CSI VolumeId: " + volID)
 		return nil, status.Error(codes.InvalidArgument,
 			"Could not parse CSI VolumeId")
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+
+	symID, devID := localSymID, localDevID
+	if snapSymID, ok := req.Parameters[SymmetrixIDParam]; ok {
+		if snapSymID == remoteSymID {
+			symID = remoteSymID
+			devID = remoteDevID
+		} else if snapSymID != localSymID {
+			return nil, status.Error(codes.InvalidArgument, "Symmetrix ID in snapclass parameters doesn't match the volume's symmetrix id")
+		}
+	}
+	log.Infof("Creating the snapshot for volume with id, %s, on array %s", devID, symID)
+
+	pmaxClient, err := s.GetPowerMaxClient(localSymID, remoteSymID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -2238,25 +2676,20 @@ func (s *service) CreateSnapshot(
 	}
 
 	// check snapshot is licensed
-	if err := s.IsSnapshotLicensed(symID, pmaxClient); err != nil {
+	if err := s.IsSnapshotLicensed(ctx, symID, pmaxClient); err != nil {
 		log.Error("Error - " + err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	vol, err := pmaxClient.GetVolumeByID(symID, devID)
+	vol, err := pmaxClient.GetVolumeByID(ctx, symID, devID)
 	if err != nil {
 		log.Error("Could not find device: " + devID)
 		return nil, status.Error(codes.InvalidArgument,
 			"Could not find source volume on the array")
 	}
 
-	if strings.Contains(vol.Type, "RDF") {
-		log.Error("Snapshot on RDF enabled volume is not supported")
-		return nil, status.Errorf(codes.InvalidArgument, "Snapshot on RDF enabled volume is not supported")
-	}
-
 	// Is it an idempotent request?
-	snapInfo, err := pmaxClient.GetSnapshotInfo(symID, devID, snapID)
+	snapInfo, err := pmaxClient.GetSnapshotInfo(ctx, symID, devID, snapID)
 	if err == nil && snapInfo.VolumeSnapshotSource != nil {
 		snapID = fmt.Sprintf("%s-%s-%s", snapID, symID, devID)
 		snapshot := &csi.Snapshot{
@@ -2283,7 +2716,7 @@ func (s *service) CreateSnapshot(
 	log.WithFields(fields).Info("Executing CreateSnapshot with following fields")
 
 	// Create snapshot
-	snap, err := s.CreateSnapshotFromVolume(symID, vol, snapID, 0, reqID, pmaxClient)
+	snap, err := s.CreateSnapshotFromVolume(ctx, symID, vol, snapID, 0, reqID, pmaxClient)
 	if err != nil {
 		if strings.Contains(err.Error(), "The maximum number of sessions has been exceeded for the specified Source device") {
 			return nil, status.Errorf(codes.FailedPrecondition, "Failed to create snapshot: %s", err.Error())
@@ -2295,8 +2728,9 @@ func (s *service) CreateSnapshot(
 	// populate response structure
 	snapshot := &csi.Snapshot{
 		SnapshotId:     snapID,
-		SourceVolumeId: volID, ReadyToUse: true,
-		CreationTime: ptypes.TimestampNow()}
+		SourceVolumeId: volID,
+		ReadyToUse:     true,
+		CreationTime:   ptypes.TimestampNow()}
 	resp := &csi.CreateSnapshotResponse{Snapshot: snapshot}
 
 	log.Debugf("Created snapshot: SnapshotId %s SourceVolumeId %s CreationTime %s",
@@ -2322,13 +2756,13 @@ func (s *service) DeleteSnapshot(
 	if id == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "Snapshot ID to be deleted is required")
 	}
-	snapID, symID, devID, err := s.parseCsiID(id)
+	snapID, symID, devID, _, _, err := s.parseCsiID(id)
 	if err != nil {
 		// We couldn't comprehend the identifier.
 		log.Error("Could not parse CSI snapshot identifier: " + id)
 		return nil, status.Error(codes.InvalidArgument, "Snapshot name is not in supported format")
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -2340,13 +2774,13 @@ func (s *service) DeleteSnapshot(
 	}
 
 	// check snapshot is licensed
-	if err := s.IsSnapshotLicensed(symID, pmaxClient); err != nil {
+	if err := s.IsSnapshotLicensed(ctx, symID, pmaxClient); err != nil {
 		log.Error("Error - " + err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	// Idempotency check
-	snapInfo, err := pmaxClient.GetSnapshotInfo(symID, devID, snapID)
+	snapInfo, err := pmaxClient.GetSnapshotInfo(ctx, symID, devID, snapID)
 	if err != nil {
 		//Unisphere returns "does not exist"
 		//when the snapshot is not found for Elm-SR ucode(9.0)
@@ -2383,7 +2817,7 @@ func (s *service) DeleteSnapshot(
 	lockHandle := fmt.Sprintf("%s%s", devID, symID)
 	lockNum := RequestLock(lockHandle, reqID)
 	defer ReleaseLock(lockHandle, reqID, lockNum)
-	err = s.UnlinkAndTerminate(symID, devID, snapID, pmaxClient)
+	err = s.UnlinkAndTerminate(ctx, symID, devID, snapID, pmaxClient)
 	if err != nil {
 		log.Error("Error - " + err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
@@ -2421,12 +2855,12 @@ func (s *service) ControllerExpandVolume(
 	}
 
 	id := req.GetVolumeId()
-	_, symID, _, err := s.parseCsiID(id)
+	_, symID, _, _, _, err := s.parseCsiID(id)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", id)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -2437,7 +2871,7 @@ func (s *service) ControllerExpandVolume(
 		return nil, err
 	}
 
-	symID, devID, vol, err := s.GetVolumeByID(id, pmaxClient)
+	symID, devID, vol, err := s.GetVolumeByID(ctx, id, pmaxClient)
 	if err != nil {
 		log.Errorf("GetVolumeByID failed with (%s) for devID (%s)", err.Error(), devID)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -2451,7 +2885,7 @@ func (s *service) ControllerExpandVolume(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	// Get the required capacity in cylinders
-	requestedSize, err := s.validateVolSize(req.CapacityRange, "", "", pmaxClient)
+	requestedSize, err := s.validateVolSize(ctx, req.CapacityRange, "", "", pmaxClient)
 	if err != nil {
 		log.Errorf("Failed to validate volume size (%s). Error(%s)", devID, err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
@@ -2483,7 +2917,7 @@ func (s *service) ControllerExpandVolume(
 	}
 
 	//Expand the volume
-	vol, err = pmaxClient.ExpandVolume(symID, devID, requestedSize)
+	vol, err = pmaxClient.ExpandVolume(ctx, symID, devID, requestedSize)
 	if err != nil {
 		log.Errorf("Failed to execute ExpandVolume() with error (%s)", err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
@@ -2499,7 +2933,7 @@ func (s *service) ControllerExpandVolume(
 
 //MarkVolumeForDeletion renames the volume with deletion prefix and sends a
 //request to deletion_worker queue
-func (s *service) MarkVolumeForDeletion(symID string, vol *types.Volume, pmaxClient pmax.Pmax) error {
+func (s *service) MarkVolumeForDeletion(ctx context.Context, symID string, vol *types.Volume, pmaxClient pmax.Pmax) error {
 	if vol == nil {
 		return fmt.Errorf("MarkVolumeForDeletion: Null volume object")
 	}
@@ -2509,7 +2943,7 @@ func (s *service) MarkVolumeForDeletion(symID string, vol *types.Volume, pmaxCli
 	if len(newVolName) > MaxVolIdentifierLength {
 		newVolName = newVolName[:MaxVolIdentifierLength]
 	}
-	vol, err := pmaxClient.RenameVolume(symID, vol.VolumeID, newVolName)
+	vol, err := pmaxClient.RenameVolume(ctx, symID, vol.VolumeID, newVolName)
 	if err != nil || vol == nil {
 		return fmt.Errorf("MarkVolumeForDeletion: Failed to rename volume %s", oldVolName)
 	}
@@ -2549,12 +2983,12 @@ func (s *service) CreateStorageProtectionGroup(ctx context.Context, req *csiext.
 		}
 	}
 	id := req.GetVolumeHandle()
-	_, symID, _, err := s.parseCsiID(id)
+	_, symID, _, _, _, err := s.parseCsiID(id)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", id)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -2565,18 +2999,19 @@ func (s *service) CreateStorageProtectionGroup(ctx context.Context, req *csiext.
 		return nil, err
 	}
 
-	symID, devID, vol, err := s.GetVolumeByID(id, pmaxClient)
+	symID, devID, vol, err := s.GetVolumeByID(ctx, id, pmaxClient)
 	if err != nil {
 		log.Errorf("GetVolumeByID failed with (%s) for devID (%s)", err.Error(), devID)
 		return nil, err
 	}
 	// Get the parameters
 	params := req.GetParameters()
-	localRDFGroup := params[LocalRDFGroupParam]
-	remoteRDFGroup := params[RemoteRDFGroupParam]
-	remoteSymID := params[RemoteSymIDParam]
-	repMode := params[ReplicationModeParam]
-	remoteVolumeID, err := s.GetRemoteVolumeID(symID, localRDFGroup, devID, pmaxClient)
+	localRDFGroup := params[path.Join(s.opts.ReplicationPrefix, LocalRDFGroupParam)]
+	remoteSymID := params[path.Join(s.opts.ReplicationPrefix, RemoteSymIDParam)]
+	repMode := params[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)]
+	remoteRDFGroup := params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
+
+	remoteVolumeID, err := s.GetRemoteVolumeID(ctx, symID, localRDFGroup, devID, pmaxClient)
 	if err != nil {
 		log.Errorf("GetRemoteVolumeID failed with (%s) for devID (%s)", err.Error(), devID)
 		return nil, err
@@ -2589,6 +3024,7 @@ func (s *service) CreateStorageProtectionGroup(ctx context.Context, req *csiext.
 		"DeviceID":          devID,
 		"RemoteDeviceID":    remoteVolumeID,
 		"LocalSRDFG":        localRDFGroup,
+		"RemoteSRDFG":       remoteRDFGroup,
 		"RemoteSymmetrixID": remoteSymID,
 		"ReplicationMode":   repMode,
 	}
@@ -2601,7 +3037,7 @@ func (s *service) CreateStorageProtectionGroup(ctx context.Context, req *csiext.
 		log.Error(errorMsg)
 		return nil, status.Error(codes.InvalidArgument, errorMsg)
 	}
-	remoteVol, err := pmaxClient.GetVolumeByID(remoteSymID, remoteVolumeID)
+	remoteVol, err := pmaxClient.GetVolumeByID(ctx, remoteSymID, remoteVolumeID)
 	if err != nil {
 		if strings.Contains(err.Error(), cannotBeFound) {
 			return nil, status.Errorf(codes.NotFound,
@@ -2613,26 +3049,31 @@ func (s *service) CreateStorageProtectionGroup(ctx context.Context, req *csiext.
 			remoteSymID, remoteVolumeID, err.Error())
 	}
 	// remoteProtectionGroupID refers to remote protected storage group having remote volume
-	remoteProtectionGroupID := s.GetProtectedStorageGroupID(remoteVol.StorageGroupIDList, localRDFGroup+"-"+repMode)
+	remoteProtectionGroupID := s.GetProtectedStorageGroupID(remoteVol.StorageGroupIDList, remoteRDFGroup+"-"+repMode)
 	if remoteProtectionGroupID == "" {
 		errorMsg := fmt.Sprintf("CreateStorageProtectionGroup failed with (%s) for devID (%s)", "Failed to find protected remote storage group", remoteVolumeID)
 		log.Error(errorMsg)
 		return nil, status.Error(codes.InvalidArgument, errorMsg)
 	}
-
 	localParams := map[string]string{
-		path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam):    symID,
-		path.Join(s.opts.ReplicationContextPrefix, LocalRDFGroupParam):  localRDFGroup,
-		path.Join(s.opts.ReplicationContextPrefix, RemoteSymIDParam):    remoteSymID,
-		path.Join(s.opts.ReplicationContextPrefix, RemoteRDFGroupParam): remoteRDFGroup,
-		path.Join(s.opts.ReplicationContextPrefix, "ReplicationMode"):   repMode,
+		path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam):     symID,
+		path.Join(s.opts.ReplicationContextPrefix, LocalRDFGroupParam):   localRDFGroup,
+		path.Join(s.opts.ReplicationContextPrefix, RemoteSymIDParam):     remoteSymID,
+		path.Join(s.opts.ReplicationContextPrefix, RemoteRDFGroupParam):  remoteRDFGroup,
+		path.Join(s.opts.ReplicationContextPrefix, ReplicationModeParam): repMode,
 	}
 	remoteParams := map[string]string{
-		path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam):    remoteSymID,
-		path.Join(s.opts.ReplicationContextPrefix, LocalRDFGroupParam):  remoteRDFGroup,
-		path.Join(s.opts.ReplicationContextPrefix, RemoteSymIDParam):    symID,
-		path.Join(s.opts.ReplicationContextPrefix, RemoteRDFGroupParam): localRDFGroup,
-		path.Join(s.opts.ReplicationContextPrefix, "ReplicationMode"):   repMode,
+		path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam):     remoteSymID,
+		path.Join(s.opts.ReplicationContextPrefix, LocalRDFGroupParam):   remoteRDFGroup,
+		path.Join(s.opts.ReplicationContextPrefix, RemoteSymIDParam):     symID,
+		path.Join(s.opts.ReplicationContextPrefix, RemoteRDFGroupParam):  localRDFGroup,
+		path.Join(s.opts.ReplicationContextPrefix, ReplicationModeParam): repMode,
+	}
+	pgStatus, err := s.getStorageProtectionGroupStatus(ctx, localProtectionGroupID, reqID, localParams)
+	if err != nil {
+		// Ignore the error for now, status should get updated in a future monitoring call
+		log.Warning(fmt.Sprintf("failed to get status for SG: %s, error: %s. continuing",
+			localProtectionGroupID, err.Error()))
 	}
 	// found both SGs, return response
 	csiExtResp := &csiext.CreateStorageProtectionGroupResponse{
@@ -2640,6 +3081,7 @@ func (s *service) CreateStorageProtectionGroup(ctx context.Context, req *csiext.
 		RemoteProtectionGroupId:         remoteProtectionGroupID,
 		LocalProtectionGroupAttributes:  localParams,
 		RemoteProtectionGroupAttributes: remoteParams,
+		Status:                          pgStatus,
 	}
 	return csiExtResp, nil
 }
@@ -2653,12 +3095,12 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 		}
 	}
 	id := req.GetVolumeHandle()
-	_, symID, _, err := s.parseCsiID(id)
+	_, symID, _, _, _, err := s.parseCsiID(id)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", id)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
 	}
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -2668,37 +3110,89 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 		return nil, err
 	}
 
-	symID, devID, vol, err := s.GetVolumeByID(id, pmaxClient)
+	symID, devID, vol, err := s.GetVolumeByID(ctx, id, pmaxClient)
 	if err != nil {
 		log.Errorf("GetVolumeByID failed with (%s) for devID (%s)", err.Error(), devID)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	// Get the parameters
 	params := req.GetParameters()
-	localRDFGroup := params[LocalRDFGroupParam]
-	remoteSymID := params[RemoteSymIDParam]
-	repMode := params[ReplicationModeParam]
-	remoteServiceLevel := params[RemoteServiceLevelParam]
-	remoteRDFGroup := params[RemoteRDFGroupParam]
-	remoteVolumeID, err := s.GetRemoteVolumeID(symID, localRDFGroup, devID, pmaxClient)
+	localRDFGroup := params[path.Join(s.opts.ReplicationPrefix, LocalRDFGroupParam)]
+	remoteSymID := params[path.Join(s.opts.ReplicationPrefix, RemoteSymIDParam)]
+	repMode := params[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)]
+	remoteServiceLevel := params[path.Join(s.opts.ReplicationPrefix, RemoteServiceLevelParam)]
+	remoteSRPID := params[path.Join(s.opts.ReplicationPrefix, RemoteSRPParam)]
+	remoteRDFGroup := params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
+
+	applicationPrefix := ""
+	if params[ApplicationPrefixParam] != "" {
+		applicationPrefix = params[ApplicationPrefixParam]
+	}
+	thick := params[ThickVolumesParam]
+	// Storage (resource) Pool. Validate it against exist Pools
+	err = s.validateStoragePoolID(ctx, remoteSymID, remoteSRPID, pmaxClient)
+	if err != nil {
+		log.Error(err.Error())
+		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+	}
+
+	// Validate Remote SLO
+	found := false
+	for _, val := range validSLO {
+		if remoteServiceLevel == val {
+			found = true
+		}
+	}
+	if !found {
+		log.Error("An invalid Remote Service Level parameter was specified")
+		return nil, status.Errorf(codes.InvalidArgument, "An invalid Remote Service Level parameter was specified")
+	}
+
+	remoteVolumeID, err := s.GetRemoteVolumeID(ctx, symID, localRDFGroup, devID, pmaxClient)
 	if err != nil {
 		log.Errorf("GetRemoteVolumeID failed with (%s) for devID (%s)", err.Error(), devID)
 		return nil, err
 	}
+
+	// Check existence of Storage Group and create if necessary on R2.
+	var remoteStorageGroupName string
+	if applicationPrefix == "" {
+		remoteStorageGroupName = fmt.Sprintf("%s-%s-%s-%s-SG", CSIPrefix, s.getClusterPrefix(),
+			remoteServiceLevel, remoteSRPID)
+	} else {
+		remoteStorageGroupName = fmt.Sprintf("%s-%s-%s-%s-%s-SG", CSIPrefix, s.getClusterPrefix(),
+			applicationPrefix, remoteServiceLevel, remoteSRPID)
+	}
+
+	sg, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteStorageGroupName)
+	if err != nil || sg == nil {
+		log.Debug(fmt.Sprintf("Unable to find storage group: %s", remoteStorageGroupName))
+		_, err := pmaxClient.CreateStorageGroup(ctx, remoteSymID, remoteStorageGroupName, remoteSRPID,
+			remoteServiceLevel, thick == "true")
+		if err != nil {
+			log.Errorf("Error: (%s) creating storage group on R2 (%s): ", err.Error(), remoteSymID)
+			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
+		}
+	}
+
 	// log all parameters used in CreateRemoteVolume call
 	fields := map[string]interface{}{
-		"RequestID":         reqID,
-		"SymmetrixID":       symID,
-		"VolumeName":        vol.VolumeIdentifier,
-		"DeviceID":          devID,
-		"RemoteDeviceID":    remoteVolumeID,
-		"LocalSRDFG":        localRDFGroup,
-		"RemoteSymmetrixID": remoteSymID,
-		"ReplicationMode":   repMode,
+		"RequestID":            reqID,
+		"SymmetrixID":          symID,
+		"VolumeName":           vol.VolumeIdentifier,
+		"DeviceID":             devID,
+		"RemoteDeviceID":       remoteVolumeID,
+		"LocalSRDFG":           localRDFGroup,
+		"RemoteSRDFG":          remoteRDFGroup,
+		"RemoteSymmetrixID":    remoteSymID,
+		"ReplicationMode":      repMode,
+		"RemoteServiceLevel":   remoteServiceLevel,
+		"RemoteSRPID":          remoteSRPID,
+		"RemoteStorageGroupID": remoteStorageGroupName,
 	}
 	log.WithFields(fields).Info("Executing CreateRemoteVolume with following fields")
 
-	remoteVol, err := pmaxClient.GetVolumeByID(remoteSymID, remoteVolumeID)
+	remoteVol, err := pmaxClient.GetVolumeByID(ctx, remoteSymID, remoteVolumeID)
 	if err != nil {
 		if strings.Contains(err.Error(), cannotBeFound) {
 			return nil, status.Errorf(codes.NotFound,
@@ -2709,24 +3203,63 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 			"failure checking volume (Array: %s, Volume: %s)status %s",
 			remoteSymID, remoteVolumeID, err.Error())
 	}
+
 	// Set the volume identifier on the remote volume to be same as local volume
 	if remoteVol.VolumeIdentifier == "" {
-		remoteVol, err = pmaxClient.RenameVolume(remoteSymID, remoteVol.VolumeID, vol.VolumeIdentifier)
+		remoteVol, err = pmaxClient.RenameVolume(ctx, remoteSymID, remoteVol.VolumeID, vol.VolumeIdentifier)
+		errorMsg := ""
+		if err != nil {
+			errorMsg = err.Error()
+		}
 		if err != nil || vol == nil {
-			return nil, status.Errorf(codes.InvalidArgument, "RenameRemoteVolume: Failed to rename volume %s %s", remoteVolumeID, err.Error())
+			return nil, status.Errorf(codes.InvalidArgument, "RenameRemoteVolume: Failed to rename volume %s %s", remoteVolumeID, errorMsg)
 		}
 	}
-	remoteProtectionGroupID := s.GetProtectedStorageGroupID(remoteVol.StorageGroupIDList, localRDFGroup+"-"+repMode)
+
+	remoteProtectionGroupID := s.GetProtectedStorageGroupID(remoteVol.StorageGroupIDList, remoteRDFGroup+"-"+repMode)
 	if remoteProtectionGroupID == "" {
 		errorMsg := fmt.Sprintf("CreateRemoteVolume failed with (%s) for devID (%s)", "Failed to find protected remote storage group", remoteVolumeID)
 		log.Error(errorMsg)
 		return nil, status.Error(codes.InvalidArgument, errorMsg)
 	}
+
+	// RESET SRP of Protected SG on remote array
+	r2PSG, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteProtectionGroupID)
+	if err != nil {
+		log.Errorf("Failed to fetch remote PSG details: %s\n", err.Error())
+		return nil, status.Errorf(codes.Internal, "Failed to fetch remote PSG details %s", err.Error())
+	}
+	if r2PSG.SRP != "" && r2PSG.SRP != "NONE" {
+		resetSRPPayload := &types.UpdateStorageGroupPayload{
+			EditStorageGroupActionParam: types.EditStorageGroupActionParam{
+				EditStorageGroupSRPParam: &types.EditStorageGroupSRPParam{
+					SRPID: "NONE",
+				},
+			},
+			ExecutionOption: types.ExecutionOptionSynchronous,
+		}
+		err = pmaxClient.UpdateStorageGroupS(ctx, remoteSymID, remoteProtectionGroupID, resetSRPPayload)
+		if err != nil {
+			log.Errorf("Failed to Update Remote SG SRP to NONE: %s\n", err.Error())
+			return nil, status.Errorf(codes.Internal, "Failed to Update Remote SG SRP to NONE: %s", err.Error())
+		}
+	}
+
+	// Add the remote volume to remote default SG if not present
+	if len(remoteVol.StorageGroupIDList) < 2 {
+		err = pmaxClient.AddVolumesToStorageGroupS(ctx, remoteSymID, remoteStorageGroupName, true, remoteVolumeID)
+		if err != nil {
+			log.Error(fmt.Sprintf("Could not add volume in SG on R2: %s: %s", remoteVolumeID, err.Error()))
+			return nil, status.Errorf(codes.Internal, "Could not add volume in SG on R2: %s: %s", remoteVolumeID, err.Error())
+		}
+	}
+
 	// Set the volume context for the response
 	volContext := map[string]string{
 		CapacityGB:   fmt.Sprintf("%.2f", vol.CapacityGB),
-		StorageGroup: remoteProtectionGroupID,
-		path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam): remoteSymID,
+		StorageGroup: remoteStorageGroupName,
+		path.Join(s.opts.ReplicationContextPrefix, "LocalProtectionGroupID"): remoteProtectionGroupID,
+		path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam):         remoteSymID,
 		ServiceLevelParam:  remoteServiceLevel,
 		LocalRDFGroupParam: remoteRDFGroup,
 		path.Join(s.opts.ReplicationContextPrefix, RemoteSymIDParam): symID,
@@ -2755,7 +3288,7 @@ func (s *service) DeleteStorageProtectionGroup(ctx context.Context, req *csiext.
 	protectionGroupID := req.GetProtectionGroupId()
 	localParams := req.GetProtectionGroupAttributes()
 	symID := localParams[path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam)]
-	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -2764,9 +3297,9 @@ func (s *service) DeleteStorageProtectionGroup(ctx context.Context, req *csiext.
 	if err := s.requireProbe(ctx, pmaxClient); err != nil {
 		return nil, err
 	}
-	sg, err := pmaxClient.GetProtectedStorageGroup(symID, protectionGroupID)
+	sg, err := pmaxClient.GetProtectedStorageGroup(ctx, symID, protectionGroupID)
 	if err != nil {
-		if strings.Contains(err.Error(), cannotBeFound) || strings.Contains(err.Error(), ignoredViaAWhitelist) {
+		if strings.Contains(err.Error(), cannotBeFound) {
 			// The protected storage group is already deleted
 			log.Info(fmt.Sprintf("DeleteStorageProtectionGroup: Could not find protected SG: %s on SymID: %s so assume it's already deleted", protectionGroupID, symID))
 			return &csiext.DeleteStorageProtectionGroupResponse{}, nil
@@ -2786,7 +3319,7 @@ func (s *service) DeleteStorageProtectionGroup(ctx context.Context, req *csiext.
 	}
 	log.WithFields(fields).Info("Executing DeleteStorageGroup with following fields")
 
-	err = pmaxClient.DeleteStorageGroup(symID, protectionGroupID)
+	err = pmaxClient.DeleteStorageGroup(ctx, symID, protectionGroupID)
 	if err != nil {
 		log.Errorf(" DeleteStorageGroup failed for (%s) with (%s)", protectionGroupID, err.Error())
 		return nil, status.Errorf(codes.Internal, " DeleteStorageGroup failed for (%s) with (%s)", protectionGroupID, err.Error())
@@ -2816,10 +3349,208 @@ func (s *service) ControllerGetVolume(ctx context.Context, request *csi.Controll
 	return nil, status.Error(codes.Unimplemented, "not implemented yet")
 }
 
-func (s *service) ExecuteAction(ctx context.Context, request *csiext.ExecuteActionRequest) (*csiext.ExecuteActionResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented yet")
+func (s *service) ExecuteAction(ctx context.Context, req *csiext.ExecuteActionRequest) (*csiext.ExecuteActionResponse, error) {
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+	protectionGroupID := req.GetProtectionGroupId()
+	action := req.GetAction().GetActionTypes()
+	localParams := req.GetProtectionGroupAttributes()
+	symID := localParams[path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam)]
+	rDFGroup := localParams[path.Join(s.opts.ReplicationContextPrefix, LocalRDFGroupParam)]
+	repMode := localParams[path.Join(s.opts.ReplicationContextPrefix, ReplicationModeParam)]
+	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	if err != nil {
+		log.Error(err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	// Requires probe
+	if err := s.requireProbe(ctx, pmaxClient); err != nil {
+		return nil, err
+	}
+	// log all parameters used in ExecuteAction call
+	fields := map[string]interface{}{
+		"RequestID":             reqID,
+		"SymmetrixID":           symID,
+		"ProtectedStorageGroup": protectionGroupID,
+		"LocalSRDFG":            rDFGroup,
+		"ReplicationMode":       repMode,
+		"Action":                action,
+	}
+	log.WithFields(fields).Info("Executing ExecuteAction with following fields")
+	actionType, toLocal := getActionString(action)
+	var psg *types.StorageGroupRDFG
+	idempotent := false
+	if repMode == Async || repMode == Sync {
+		switch actionType {
+		case FailOver:
+			withoutSwap := false
+			force := false
+			if strings.Contains(action.String(), "WITHOUT_SWAP") {
+				withoutSwap = true
+			}
+			if strings.Contains(action.String(), "UNPLANNED") {
+				force = true
+			}
+			idempotent, psg, err = s.Failover(ctx, symID, protectionGroupID, rDFGroup, pmaxClient, toLocal, force, withoutSwap)
+			if err != nil {
+				return nil, err
+			}
+		case FailBack:
+			idempotent, psg, err = s.Failback(ctx, symID, protectionGroupID, rDFGroup, pmaxClient, toLocal)
+			if err != nil {
+				return nil, err
+			}
+		case Swap:
+			idempotent, psg, err = s.Swap(ctx, symID, protectionGroupID, rDFGroup, pmaxClient, toLocal)
+			if err != nil {
+				return nil, err
+			}
+		case Reprotect:
+			idempotent, psg, err = s.Reprotect(ctx, symID, protectionGroupID, rDFGroup, pmaxClient, toLocal)
+			if err != nil {
+				return nil, err
+			}
+		case csiext.ActionTypes_SUSPEND.String():
+			err := s.Suspend(ctx, symID, protectionGroupID, rDFGroup, pmaxClient)
+			if err != nil {
+				return nil, err
+			}
+		case csiext.ActionTypes_RESUME.String():
+			err := s.Resume(ctx, symID, protectionGroupID, rDFGroup, pmaxClient)
+			if err != nil {
+				return nil, err
+			}
+		case csiext.ActionTypes_ESTABLISH.String():
+			err := s.Establish(ctx, symID, protectionGroupID, rDFGroup, false, pmaxClient)
+			if err != nil {
+				return nil, err
+			}
+		default:
+			return nil, status.Errorf(codes.Unknown, "The requested action does not match with supported actions")
+		}
+	} else {
+		return nil, fmt.Errorf("%s is not a valid srdf mode for action execution", repMode)
+	}
+	var pgStatus *csiext.StorageProtectionGroupStatus
+	if idempotent && psg != nil {
+		pgStatus = getPGStatusFromSGRDFInfo(psg)
+	} else {
+		// Get the updated status
+		pgStatus, err = s.getStorageProtectionGroupStatus(ctx, protectionGroupID, reqID, localParams)
+		if err != nil {
+			// Ignore the error for now, status should get updated in a future monitoring call
+			log.Warning(fmt.Sprintf("failed to get status for SG: %s, error: %s. continuing",
+				protectionGroupID, err.Error()))
+		}
+	}
+	resp := &csiext.ExecuteActionResponse{
+		Success: true,
+		ActionTypes: &csiext.ExecuteActionResponse_Action{
+			Action: req.GetAction(),
+		},
+		Status: pgStatus,
+	}
+	return resp, nil
 }
 
-func (s *service) GetStorageProtectionGroupStatus(ctx context.Context, request *csiext.GetStorageProtectionGroupStatusRequest) (*csiext.GetStorageProtectionGroupStatusResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented yet")
+func getActionString(actionType csiext.ActionTypes) (string, bool) {
+	action := ""
+	toLocal := false
+	if strings.Contains(actionType.String(), "FAILOVER") {
+		action = FailOver
+	} else if strings.Contains(actionType.String(), "FAILBACK") {
+		action = FailBack
+	} else if strings.Contains(actionType.String(), "SWAP") {
+		action = Swap
+	} else if strings.Contains(actionType.String(), "REPROTECT") {
+		action = Reprotect
+	} else {
+		action = actionType.String()
+	}
+	if strings.Contains(actionType.String(), "LOCAL") {
+		toLocal = true
+	}
+	return action, toLocal
+}
+
+func (s *service) getStorageProtectionGroupStatus(ctx context.Context, protectionGroupID,
+	reqID string, params map[string]string) (*csiext.StorageProtectionGroupStatus, error) {
+	symID := params[path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam)]
+	pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
+	if err != nil {
+		log.Error(err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	// log all parameters used in GetStorageProtectionGroupStatus call
+	fields := map[string]interface{}{
+		"RequestID":             reqID,
+		"SymmetrixID":           symID,
+		"ProtectedStorageGroup": protectionGroupID,
+	}
+	log.WithFields(fields).Info("Executing GetStorageProtectionGroupStatus with following fields")
+	_, rDFGno, repMode, err := GetRDFInfoFromSGID(protectionGroupID)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+	}
+	if repMode == Async || repMode == Sync {
+		psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, protectionGroupID, rDFGno)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "Failed to Get RDF Info for protected SG (%s)", err.Error())
+		}
+		pgStatus := getPGStatusFromSGRDFInfo(psg)
+		return pgStatus, nil
+	}
+	return nil, status.Errorf(codes.Internal, "expected error - invalid Replication mode")
+}
+
+func getPGStatusFromSGRDFInfo(psg *types.StorageGroupRDFG) *csiext.StorageProtectionGroupStatus {
+	pgStatus := &csiext.StorageProtectionGroupStatus{}
+	rdfState, isR1, mixedPersonalities, mixedStates := getStateAndSRDFPersonality(psg)
+	if mixedPersonalities || mixedStates {
+		log.Infof("Mixed state (%v) or Mixed RDF personalities (%v) found", mixedStates, mixedPersonalities)
+		pgStatus.State = csiext.StorageProtectionGroupStatus_UNKNOWN
+		pgStatus.IsSource = false
+	} else {
+		pgStatus.IsSource = isR1
+		switch rdfState {
+		case Consistent, Synchronized:
+			pgStatus.State = csiext.StorageProtectionGroupStatus_SYNCHRONIZED
+		case SyncInProgress:
+			pgStatus.State = csiext.StorageProtectionGroupStatus_SYNC_IN_PROGRESS
+		case Suspended:
+			pgStatus.State = csiext.StorageProtectionGroupStatus_SUSPENDED
+		case FailedOver:
+			pgStatus.State = csiext.StorageProtectionGroupStatus_FAILEDOVER
+		default:
+			log.Infof("The status (%s) does not match with known actions", rdfState)
+			pgStatus.State = csiext.StorageProtectionGroupStatus_UNKNOWN
+		}
+	}
+	return pgStatus
+}
+
+func (s *service) GetStorageProtectionGroupStatus(ctx context.Context, req *csiext.GetStorageProtectionGroupStatusRequest) (*csiext.GetStorageProtectionGroupStatusResponse, error) {
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+	protectionGroupID := req.GetProtectionGroupId()
+	params := req.GetProtectionGroupAttributes()
+	pgStatus, err := s.getStorageProtectionGroupStatus(ctx, protectionGroupID, reqID, params)
+	if err != nil {
+		return nil, err
+	}
+	log.Infof("The current state for SG (%s) is (%s).", protectionGroupID, pgStatus.State.String())
+	resp := &csiext.GetStorageProtectionGroupStatusResponse{
+		Status: pgStatus,
+	}
+	return resp, err
 }

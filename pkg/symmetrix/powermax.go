@@ -1,6 +1,21 @@
+/*
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
+
 package symmetrix
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -55,11 +70,11 @@ func (rep *ReplicationCapabilitiesCache) update(cap *types.SymmetrixCapability) 
 	rep.time.Set(SnapLicenseCacheValidity)
 }
 
-func (rep *ReplicationCapabilitiesCache) Get(client pmax.Pmax, symID string) (*types.SymmetrixCapability, error) {
+func (rep *ReplicationCapabilitiesCache) Get(ctx context.Context, client pmax.Pmax, symID string) (*types.SymmetrixCapability, error) {
 	if rep.time.IsValid() {
 		return rep.cap, nil
 	}
-	symRepCapabilities, err := client.GetReplicationCapabilities()
+	symRepCapabilities, err := client.GetReplicationCapabilities(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -77,11 +92,11 @@ type SRPCache struct {
 	time        CacheTime
 }
 
-func (s *SRPCache) Get(client pmax.Pmax, symID string) ([]string, error) {
+func (s *SRPCache) Get(ctx context.Context, client pmax.Pmax, symID string) ([]string, error) {
 	if s.time.IsValid() {
 		return s.identifiers, nil
 	}
-	list, err := client.GetStoragePoolList(symID)
+	list, err := client.GetStoragePoolList(ctx, symID)
 	if err != nil {
 		return nil, err
 	}
@@ -105,10 +120,10 @@ type PowerMax struct {
 	repCapabilitiesCache     ReplicationCapabilitiesCache
 }
 
-func (p *PowerMax) GetSRPs() ([]string, error) {
+func (p *PowerMax) GetSRPs(ctx context.Context) ([]string, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	return p.storageResourcePoolCache.Get(p.client, p.SymID)
+	return p.storageResourcePoolCache.Get(ctx, p.client, p.SymID)
 }
 
 func (p *PowerMax) GetServiceLevels() ([]string, error) {
@@ -180,12 +195,29 @@ func GetPowerMax(symID string) (*PowerMax, error) {
 	return getPowerMax(symID)
 }
 
-func GetPowerMaxClient(symID string) (pmax.Pmax, error) {
-	powermax, err := getPowerMax(symID)
+func GetPowerMaxClient(primaryArray string, arrays ...string) (pmax.Pmax, error) {
+	primaryPowermax, err := getPowerMax(primaryArray)
 	if err != nil {
 		return nil, err
 	}
-	return powermax.getClient(), err
+
+	// Check if a secondary array is specified,
+	// and managed by the driver.
+	if len(arrays) > 0 {
+		_, err := getPowerMax(arrays[0])
+		if err != nil {
+			return nil, err
+		}
+		client := &metroClient{
+			primaryArray:   primaryArray,
+			secondaryArray: arrays[0],
+			activeArray:    primaryArray,
+		}
+		c, _ := metroClients.LoadOrStore(client.getIdentifier(), client)
+		return c.(*metroClient).getPowerMaxClient()
+	}
+
+	return primaryPowermax.getClient(), nil
 }
 
 func Initialize(symIDList []string, client pmax.Pmax) error {
