@@ -1,5 +1,7 @@
 mode: {{ .Values.mode }}
 port: {{ .Values.port }}
+logLevel: {{ .Values.global.logLevel | default "debug" }}
+logFormat: {{ .Values.global.logFormat | default "TEXT" }}
   {{- if eq .Values.mode "Linked" }}
 linkConfig:
   primary:

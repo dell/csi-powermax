@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -113,7 +113,7 @@ func (mockUtils *MockUtils) createFile(fileName string, data []byte) error {
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
-			log.Printf("Error closing file: %s\n", err)
+			log.Errorf("Error closing file: %s\n", err)
 		}
 	}()
 	_, err = file.Write(data)

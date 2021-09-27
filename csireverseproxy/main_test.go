@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -195,7 +195,7 @@ func runRequestLoop(count int, duration time.Duration, port, path string) error 
 			defer wg.Done()
 			_, err := doHTTPRequest(port, path)
 			if err != nil {
-				log.Println(err.Error())
+				log.Error(err.Error())
 			}
 		}(i)
 	}
@@ -203,7 +203,7 @@ func runRequestLoop(count int, duration time.Duration, port, path string) error 
 	time.Sleep(duration)
 	_, err := doHTTPRequest(port, path)
 	if err != nil {
-		log.Println(err.Error())
+		log.Error(err.Error())
 	}
 	return nil
 }
@@ -319,36 +319,36 @@ func TestMain(m *testing.M) {
 	status := 0
 	var err error
 	// Start the mock server
-	log.Println("Creating primary mock server...")
+	log.Info("Creating primary mock server...")
 	primaryMockServer, err = createMockServer(primaryPort)
 	if err != nil {
 		log.Fatalf("Failed to create primary mock server. (%s)\n", err.Error())
 		os.Exit(1)
 	}
-	log.Printf("Primary mock server listening on %s\n", primaryMockServer.server.URL)
-	log.Println("Creating backup mock server...")
+	log.Infof("Primary mock server listening on %s\n", primaryMockServer.server.URL)
+	log.Info("Creating backup mock server...")
 	backupMockServer, err = createMockServer(backupPort)
 	if err != nil {
 		log.Fatalf("Failed to create backup mock server. (%s)\n", err.Error())
 		stopServers()
 		os.Exit(1)
 	}
-	log.Printf("Backup mock server listening on %s\n", backupMockServer.server.URL)
+	log.Infof("Backup mock server listening on %s\n", backupMockServer.server.URL)
 	// Start proxy server and other services
-	log.Println("Starting proxy server...")
+	log.Info("Starting proxy server...")
 	err = startTestServer()
 	if err != nil {
 		log.Fatalf("Failed to start proxy server. (%s)", err.Error())
 		stopServers()
 		os.Exit(1)
 	}
-	log.Println("Proxy server started successfully")
+	log.Info("Proxy server started successfully")
 	if st := m.Run(); st > status {
 		status = st
 	}
-	log.Println("Stopping the mock and proxy servers")
+	log.Info("Stopping the mock and proxy servers")
 	stopServers()
-	log.Println("Removing the certs")
+	log.Info("Removing the certs")
 	err = utils.RemoveTempFiles()
 	if err != nil {
 		log.Fatalln(err.Error())

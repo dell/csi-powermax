@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -125,7 +125,7 @@ func (f *feature) aPowermaxService() error {
 			Username: os.Getenv("X_CSI_POWERMAX_USER"),
 			Password: os.Getenv("X_CSI_POWERMAX_PASSWORD"),
 		}
-		err = f.pmaxClient.Authenticate(configConnect)
+		err = f.pmaxClient.Authenticate(context.Background(), configConnect)
 		if err != nil {
 			return err
 		}
@@ -264,7 +264,7 @@ func (f *feature) iCallDeleteLocalStorageProtectionGroup() error {
 	client := csiext.NewReplicationClient(grpcClient)
 	_, err = client.DeleteStorageProtectionGroup(ctx, req)
 	if err != nil {
-		fmt.Printf("CreateRemoteVolume error %s:\n", err.Error())
+		fmt.Printf("DeleteStorageProtectionGroup error %s:\n", err.Error())
 		f.addError(err)
 	}
 	return nil
@@ -281,8 +281,65 @@ func (f *feature) iCallDeleteRemoteStorageProtectionGroup() error {
 	client := csiext.NewReplicationClient(grpcClient)
 	_, err = client.DeleteStorageProtectionGroup(ctx, req)
 	if err != nil {
-		fmt.Printf("CreateRemoteVolume error %s:\n", err.Error())
+		fmt.Printf("DeleteStorageProtectionGroup error %s:\n", err.Error())
 		f.addError(err)
+	}
+	return nil
+}
+
+func (f *feature) iCallExecuteAction(action string) error {
+	req := new(csiext.ExecuteActionRequest)
+	params := make(map[string]string)
+	repMode := f.createVolumeRequest.Parameters[service.ReplicationModeParam]
+	params[f.replicationContextPrefix+"/"+service.SymmetrixIDParam] = f.symID
+	params[f.replicationContextPrefix+"/"+service.LocalRDFGroupParam] = f.localRdfGrpNo
+	params[f.replicationContextPrefix+"/"+service.ReplicationModeParam] = repMode
+	req.ProtectionGroupId = f.localProtectedStorageGroup
+	req.ProtectionGroupAttributes = params
+	actionType := &csiext.ExecuteActionRequest_Action{
+		Action: &csiext.Action{},
+	}
+	switch action {
+	case "Failover":
+		actionType.Action.ActionTypes = csiext.ActionTypes_FAILOVER_REMOTE
+	case "Failback":
+		actionType.Action.ActionTypes = csiext.ActionTypes_FAILBACK_LOCAL
+	case "Establish":
+		actionType.Action.ActionTypes = csiext.ActionTypes_ESTABLISH
+	case "Resume":
+		actionType.Action.ActionTypes = csiext.ActionTypes_RESUME
+	case "Suspend":
+		actionType.Action.ActionTypes = csiext.ActionTypes_SUSPEND
+	}
+	req.ActionTypes = actionType
+	ctx := context.Background()
+	client := csiext.NewReplicationClient(grpcClient)
+	_, err := client.ExecuteAction(ctx, req)
+	if err != nil {
+		fmt.Printf("ExecuteAction error %s:\n", err.Error())
+		f.addError(err)
+	}
+	return nil
+}
+
+func (f *feature) iCallGetStorageProtectionGroupStatus(expectedStatus string) error {
+	req := new(csiext.GetStorageProtectionGroupStatusRequest)
+	params := make(map[string]string)
+	params[f.replicationContextPrefix+"/"+service.SymmetrixIDParam] = f.symID
+	req.ProtectionGroupId = f.localProtectedStorageGroup
+	req.ProtectionGroupAttributes = params
+	ctx := context.Background()
+	client := csiext.NewReplicationClient(grpcClient)
+	resp, err := client.GetStorageProtectionGroupStatus(ctx, req)
+	if err != nil {
+		fmt.Printf("GetStorageProtectionGroupStatus error %s:\n", err.Error())
+		f.addError(err)
+	}
+	currentStatus := resp.GetStatus().State.String()
+	if currentStatus != expectedStatus {
+		errmsg := fmt.Sprintf("GetStorageProtectionGroupStatus error, Expected %s != %s Current", expectedStatus, currentStatus)
+		fmt.Printf(errmsg)
+		f.addError(errors.New(errmsg))
 	}
 	return nil
 }
@@ -1383,7 +1440,7 @@ func (f *feature) allVolumesAreDeletedSuccessfully() error {
 			max = 300
 		}
 		for i := 0; i < max; i++ {
-			vol, err := f.pmaxClient.GetVolumeByID(symID, symVolumeID)
+			vol, err := f.pmaxClient.GetVolumeByID(context.Background(), symID, symVolumeID)
 			if vol == nil {
 				deleted = strings.Contains(err.Error(), "cannot be found")
 				fmt.Printf("volume deleted?: %s\n", err)
@@ -1420,7 +1477,7 @@ func (f *feature) theVolumeIsNotDeleted() error {
 	id := f.volIDList[0]
 	splitid := strings.Split(id, "-")
 	deviceID := splitid[len(splitid)-1]
-	vol, err := f.pmaxClient.GetVolumeByID(f.symID, deviceID)
+	vol, err := f.pmaxClient.GetVolumeByID(context.Background(), f.symID, deviceID)
 	if err != nil {
 		return err
 	}
@@ -1833,7 +1890,7 @@ func (f *feature) iCheckIfVolumeExist() error {
 	if err != nil {
 		fmt.Printf("volID: %s malformed. Error: %s:\n", f.volID, err.Error())
 	}
-	volume, err := f.pmaxClient.GetVolumeByID(f.symID, devID)
+	volume, err := f.pmaxClient.GetVolumeByID(context.Background(), f.symID, devID)
 	if err != nil {
 		fmt.Printf("GetVolumeByID %s:\n", err.Error())
 		f.addError(err)
@@ -1852,7 +1909,7 @@ func (f *feature) iCheckIfVolumeIsDeleted() error {
 	if err != nil {
 		fmt.Printf("volID: %s malformed. Error: %s:\n", f.volID, err.Error())
 	}
-	vol, err := f.pmaxClient.GetVolumeByID(f.symID, devID)
+	vol, err := f.pmaxClient.GetVolumeByID(context.Background(), f.symID, devID)
 	if err != nil {
 		fmt.Printf("GetVolumeByID : %s", err.Error())
 		fmt.Println(", Volume is successfully deleted")
@@ -2058,6 +2115,8 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call CreateRemoteVolume with mode "([^"]*)"$`, f.iCallCreateRemoteVolume)
 	s.Step(`^I call Delete LocalStorageProtectionGroup$`, f.iCallDeleteLocalStorageProtectionGroup)
 	s.Step(`^I call Delete RemoteStorageProtectionGroup$`, f.iCallDeleteRemoteStorageProtectionGroup)
+	s.Step(`^I call ExecuteAction with action "([^"]*)"$`, f.iCallExecuteAction)
+	s.Step(`^I call GetStorageProtectionGroupStatus to get "([^"]*)"$`, f.iCallGetStorageProtectionGroupStatus)
 	s.Step(`^I check if volume exist$`, f.iCheckIfVolumeExist)
 	s.Step(`^I check if volume is deleted$`, f.iCheckIfVolumeIsDeleted)
 	s.Step(`^I delete a snapshot$`, f.iDeleteASnapshot)

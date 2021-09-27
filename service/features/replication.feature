@@ -26,7 +26,7 @@ Feature: PowerMax CSI Interface
     And I induce error "GetSRDFPairInfoError"
     And I call RDF enabled CreateVolume "volume1" in namespace "csi-test", mode "ASYNC" and RDFGNo 13
     And I call RDF enabled CreateVolume "volume1" in namespace "csi-test", mode "ASYNC" and RDFGNo 13
-    Then a valid CreateVolumeResponse is returned
+    Then the error contains "Failed to fetch rdf pair information"
 
   @srdf
   @v1.6.0
@@ -112,7 +112,7 @@ Feature: PowerMax CSI Interface
   @v1.6.0
   Scenario: GetRDFInfoFromSGID with no error
     Given a PowerMax service
-    And I call  GetRDFInfoFromSGID with "csi-test-no-srp-sg-namespace-1-mode"
+    And I call  GetRDFInfoFromSGID with "csi-rep-sg-csi-test-13-ASYNC"
     Then no error was received
 
   @srdf
@@ -128,7 +128,7 @@ Feature: PowerMax CSI Interface
     Given a PowerMax service
     And I call RDF enabled CreateVolume "volume1" in namespace "csi-test", mode "ASYNC" and RDFGNo 13
     And a valid CreateVolumeResponse is returned
-    And I call ProtectStorageGroup on "csi-no-srp-sg-csi-test-13-ASYNC"
+    And I call ProtectStorageGroup on "csi-rep-sg-csi-test-13-ASYNC"
     Then no error was received
 
   @srdf
@@ -138,7 +138,7 @@ Feature: PowerMax CSI Interface
     And I call RDF enabled CreateVolume "volume1" in namespace "csi-test", mode "ASYNC" and RDFGNo 13
     And a valid CreateVolumeResponse is returned
     When I induce error "GetProtectedStorageGroupError"
-    And I call ProtectStorageGroup on "csi-no-srp-sg-csi-test-13-ASYNC"
+    And I call ProtectStorageGroup on "csi-rep-sg-csi-test-13-ASYNC"
     Then the error contains "storage group cannot be found"
 
   @srdf
@@ -202,7 +202,7 @@ Feature: PowerMax CSI Interface
     And I call RDF enabled CreateVolume "volume1" in namespace "csi-test", mode "ASYNC" and RDFGNo 13
     And a valid CreateVolumeResponse is returned
     Then I induce error "RemoveVolumesFromSG"
-    And I call DeleteStorageProtectionGroup on "csi-no-srp-sg-csi-test-13-ASYNC"
+    And I call DeleteStorageProtectionGroup on "csi-rep-sg-csi-test-13-ASYNC"
     Then no error was received
 
   @srdf
@@ -212,7 +212,7 @@ Feature: PowerMax CSI Interface
     And I call RDF enabled CreateVolume "volume1" in namespace "csi-test", mode "ASYNC" and RDFGNo 13
     And a valid CreateVolumeResponse is returned
     Then I induce error <induced>
-    And I call DeleteStorageProtectionGroup on "csi-no-srp-sg-csi-test-13-ASYNC"
+    And I call DeleteStorageProtectionGroup on "csi-rep-sg-csi-test-13-ASYNC"
     Then the error contains <errormsg>
     Examples:
       | induced                           | errormsg                          |

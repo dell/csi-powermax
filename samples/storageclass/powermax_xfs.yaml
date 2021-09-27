@@ -1,0 +1,42 @@
+---
+# This is a sample manifest for a Storage Class for filesystem type xfs
+# Change instances of <SYMID> to the Local Symmetrix ID of the PowerMax array
+# In case you installed the driver with a custom name, then replace
+# all instances of "csi-powermax.dellemc.com" with the custom provisioner name
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: powermax-xfs
+parameters:
+  # "FsType" is used to set the FS type which will be used
+  # Allowed values:
+  #   "ext4" - EXT4 File system
+  #   "xfs"  - XFS File system
+  # Optional: true
+  # Default value: ext4 if defaultFsType is not mentioned in values.yaml
+  # Else defaultFsType value mentioned in values.yaml
+  # will be used as default value
+  FsType: xfs
+  # Name of SRP on the PowerMax array that should be used for provisioning
+  # Optional: false
+  # Examples: "DEFAULT_SRP" , "SRP_1"
+  SRP: <SRP Name>
+  # Serial ID of the array that is used for provisioning
+  # Optional: false
+  # Example: "000000000001"
+  SYMID: <SYMID>
+  # Name of Service Level on PowerMax array that should be used for provisioning
+  # Optional: true, Default value: Optimized
+  # Examples: "Diamond" , "Bronze"
+  ServiceLevel: <Service Level>
+# If using custom driver name, change the following to point to the custom name
+# Optional: true, Default value: csi-powermax.dellemc.com
+# Examples: "csi-driver-powermax", "csi-powermax.dellemc.com"
+provisioner: csi-powermax.dellemc.com
+# Configure what happens to a Persistent Volume when the PVC
+# it is bound to is to be deleted
+# Allowed values:
+#   Delete: the underlying persistent volume will be deleted along with the PVC.
+#   Retain: the underlying persistent volume remain.
+# Optional: true, Default value: None
+reclaimPolicy: Delete

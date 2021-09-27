@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ package main
 
 import (
 	"context"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"net/http"
 	"os"
 	"os/signal"
@@ -128,6 +128,7 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 	if err != nil {
 		return err
 	}
+	updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
 	proxyConfig, err := config.NewProxyConfig(proxyConfigMap, k8sUtils)
 	if err != nil {
 		return err
@@ -188,9 +189,9 @@ func (s *Server) Start() {
 func (s *Server) SignalHandler(k8sUtils k8sutils.UtilsInterface) {
 	go func() {
 		signal.Notify(s.SigChan, syscall.SIGINT, syscall.SIGHUP)
-		log.Println("SignalHandler setup to listen for SIGINT and SIGHUP")
+		log.Debug("SignalHandler setup to listen for SIGINT and SIGHUP")
 		sig := <-s.SigChan
-		log.Printf("Received signal: %v\n", sig)
+		log.Infof("Received signal: %v\n", sig)
 		// Stop InformerFactory
 		k8sUtils.StopInformer()
 		// gracefully shutdown http server
@@ -198,10 +199,47 @@ func (s *Server) SignalHandler(k8sUtils k8sutils.UtilsInterface) {
 		if err != nil {
 			log.Fatalf("Error during graceful shutdown of the server: %v", err)
 		} else {
-			log.Println("Server shutdown gracefully on signal")
+			log.Info("Server shutdown gracefully on signal")
 		}
 		close(s.SigChan)
 	}()
+}
+
+func updateRevProxyLogParams(format, logLevel string) {
+	logFormatFromConfig := strings.ToLower(format)
+	var formatter log.Formatter
+	// Use text logger as default
+	formatter = &log.TextFormatter{
+		DisableColors: true,
+		FullTimestamp: true,
+	}
+	if strings.EqualFold(logFormatFromConfig, "json") {
+		formatter = &log.JSONFormatter{
+			TimestampFormat: time.RFC3339Nano,
+		}
+	} else if !strings.EqualFold(logFormatFromConfig, "text") && (logFormatFromConfig != "") {
+		log.Printf("Unsupported logFormat: %s supplied. Defaulting to text", logFormatFromConfig)
+	}
+	level := log.DebugLevel // Use debug as default
+	if logLevel != "" {
+		logLevel = strings.ToLower(logLevel)
+		l, err := log.ParseLevel(logLevel)
+		if err != nil {
+			log.WithError(err).Errorf("logLevel %s value not recognized, error: %s, Setting to default: %s",
+				logLevel, err.Error(), level)
+		} else {
+			level = l
+		}
+	} else {
+		log.Print("Couldn't read logLevel from config file. Using debug level as default")
+	}
+	setLogFormatAndLevel(formatter, level)
+}
+
+func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
+	log.SetFormatter(logFormat)
+	log.Infof("Setting log level to %v", level)
+	log.SetLevel(level)
 }
 
 // SetupConfigMapWatcher - Uses viper config change watcher to watch for
@@ -211,20 +249,21 @@ func (s *Server) SignalHandler(k8sUtils k8sutils.UtilsInterface) {
 func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
-		log.Println("Received a config change event")
+		log.Info("Received a config change event")
 		var proxyConfigMap config.ProxyConfigMap
 		err := viper.Unmarshal(&proxyConfigMap)
 		if err != nil {
-			log.Printf("Error in umarshalling the config: %s\n", err.Error())
+			log.Errorf("Error in umarshalling the config: %s\n", err.Error())
 		} else {
+			updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
 			proxyConfig, err := config.NewProxyConfig(&proxyConfigMap, k8sUtils)
 			if err != nil || proxyConfig == nil {
-				log.Printf("Error parsing the config: %v\n", err)
+				log.Errorf("Error parsing the config: %v\n", err)
 			} else {
 				s.SetConfig(proxyConfig)
 				err = s.GetRevProxy().UpdateConfig(*proxyConfig)
 				if err != nil {
-					log.Printf("Error in updating the config: %s\n", err.Error())
+					log.Errorf("Error in updating the config: %s\n", err.Error())
 				}
 			}
 		}
@@ -236,14 +275,14 @@ func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
 // is received by the informer
 func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.Secret) {
 	conf := s.Config().DeepCopy()
-	log.Printf("New credential/cert update event for the secret(%s)\n", secret.Name)
+	log.Infof("New credential/cert update event for the secret(%s)\n", secret.Name)
 	hasChanged := false
 	if conf.Mode == config.Linked {
 		found := conf.LinkProxyConfig.IsCertSecretRelated(secret.Name)
 		if found {
 			certFileName, err := k8sUtils.GetCertFileFromSecret(secret)
 			if err != nil {
-				log.Printf("failed to get cert file from secret (error: %s). ignoring the config change event", err.Error())
+				log.Errorf("failed to get cert file from secret (error: %s). ignoring the config change event", err.Error())
 				return
 			}
 			isUpdated := conf.LinkProxyConfig.UpdateCertFileName(secret.Name, certFileName)
@@ -256,7 +295,7 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 		if found {
 			certFileName, err := k8sUtils.GetCertFileFromSecret(secret)
 			if err != nil {
-				log.Printf("failed to get cert file from secret (error: %s). ignoring the config change event", err.Error())
+				log.Errorf("failed to get cert file from secret (error: %s). ignoring the config change event", err.Error())
 				return
 			}
 			isUpdated := conf.StandAloneProxyConfig.UpdateCerts(secret.Name, certFileName)
@@ -268,7 +307,7 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 		if found {
 			creds, err := k8sUtils.GetCredentialsFromSecret(secret)
 			if err != nil {
-				log.Printf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
+				log.Errorf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
 				return
 			}
 			isUpdated := conf.StandAloneProxyConfig.UpdateCreds(secret.Name, creds)
@@ -283,7 +322,7 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 			log.Fatalf("Failed to update credentials/certs for the secret(%s)\n", secret.Name)
 		}
 		s.SetConfig(conf)
-		log.Printf("Credentials/Certs updated successfully for the secret(%s)\n", secret.Name)
+		log.Errorf("Credentials/Certs updated successfully for the secret(%s)\n", secret.Name)
 	}
 }
 

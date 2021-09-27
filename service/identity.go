@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -84,14 +84,14 @@ func (s *service) Probe(
 	if !strings.EqualFold(s.mode, "node") {
 		log.Debug("controllerProbe")
 		if err := s.controllerProbe(ctx); err != nil {
-			log.Printf("error in controllerProbe: %s", err.Error())
+			log.Errorf("error in controllerProbe: %s", err.Error())
 			return nil, err
 		}
 	}
 	if !strings.EqualFold(s.mode, "controller") {
 		log.Debug("nodeProbe")
 		if err := s.nodeProbe(ctx); err != nil {
-			log.Printf("error in nodeProbe: %s", err.Error())
+			log.Errorf("error in nodeProbe: %s", err.Error())
 			return nil, err
 		}
 		if !s.nodeIsInitialized {
@@ -100,7 +100,7 @@ func (s *service) Probe(
 				maximumStartupDelay = 1
 			}
 			// Initialize the node
-			_ = s.nodeStartup()
+			_ = s.nodeStartup(ctx)
 		}
 	}
 	ready := new(wrappers.BoolValue)
@@ -119,7 +119,7 @@ func (s *service) ProbeController(ctx context.Context,
 	if !strings.EqualFold(s.mode, "node") {
 		log.Debug("controllerProbe")
 		if err := s.controllerProbe(ctx); err != nil {
-			log.Printf("error in controllerProbe: %s", err.Error())
+			log.Errorf("error in controllerProbe: %s", err.Error())
 			return nil, err
 		}
 	}
@@ -166,7 +166,94 @@ func (s *service) GetReplicationCapabilities(
 					},
 				},
 			},
+			{
+				Type: &csiext.ReplicationCapability_Rpc{
+					Rpc: &csiext.ReplicationCapability_RPC{
+						Type: csiext.ReplicationCapability_RPC_MONITOR_PROTECTION_GROUP,
+					},
+				},
+			},
 		}
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_FAILOVER_LOCAL,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_FAILOVER_REMOTE,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_UNPLANNED_FAILOVER_LOCAL,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_UNPLANNED_FAILOVER_REMOTE,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_REPROTECT_LOCAL,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_REPROTECT_REMOTE,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_FAILOVER_WITHOUT_SWAP_LOCAL,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_FAILOVER_WITHOUT_SWAP_REMOTE,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_FAILBACK_LOCAL,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_FAILBACK_REMOTE,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_SWAP_LOCAL,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_SWAP_REMOTE,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_SUSPEND,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_RESUME,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_ESTABLISH,
+			},
+		})
+		rep.Actions = append(rep.Actions, &csiext.SupportedActions{
+			Actions: &csiext.SupportedActions_Type{
+				Type: csiext.ActionTypes_SYNC,
+			},
+		})
 	}
 	return rep, nil
 }

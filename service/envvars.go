@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -31,16 +31,6 @@ const (
 	// #nosec G101
 	EnvPassword = "X_CSI_POWERMAX_PASSWORD"
 
-	// EnvVersion is the name of the enviroment variable used to set the
-	// U4P version when authenticating to Unisphere
-	EnvVersion = "X_CSI_POWERMAX_VERSION"
-
-	// EnvInsecure is the name of the enviroment variable used to specify
-	// that Unisphere's certificate chain and host name should not
-	// be validated.
-	// This is deprecated- use X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION instead.
-	EnvInsecure = "X_CSI_POWERMAX_INSECURE"
-
 	// EnvSkipCertificateValidation is the name of the environment variable used
 	// to specify Unisphere's certificate chain and host name should not
 	// be validated.
@@ -68,10 +58,6 @@ const (
 	// EnvClusterPrefix is the name of the environment variable that is used
 	// to specifiy a a prefix to apply to objects creaated via this CSI cluster
 	EnvClusterPrefix = "X_CSI_K8S_CLUSTER_PREFIX"
-	// EnvArrayWhitelist is the name of the environment variable that is used
-	// to specifiy a list of Arrays the the driver can choose from.
-	// An empty list will allow all arrays known to Unisphere to be used.
-	EnvArrayWhitelist = "X_CSI_POWERMAX_ARRAYS"
 
 	// EnvISCSIChroot is the path to which the driver will chroot before
 	// running any iscsi commands. This value should only be set when instructed
@@ -136,4 +122,7 @@ const (
 
 	// EnvManagedArrays is an env variable with a list of space separated arrays.
 	EnvManagedArrays = "X_CSI_MANAGED_ARRAYS"
+
+	//EnvConfigFilePath is an env variable which contains the full path for the config file
+	EnvConfigFilePath = "X_CSI_POWERMAX_CONFIG_PATH"
 )

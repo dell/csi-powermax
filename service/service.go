@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/fsnotify/fsnotify"
+	"github.com/spf13/viper"
 	"math/rand"
 	"net"
 	"os"
@@ -30,11 +32,11 @@ import (
 	"sync"
 	"time"
 
-	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	gocsi "github.com/dell/gocsi"
+	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/dell/gocsi"
 	csictx "github.com/dell/gocsi/context"
 	"github.com/dell/goiscsi"
-	types "github.com/dell/gopowermax/types/v90"
+	"github.com/dell/gopowermax/types/v90"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -44,28 +46,19 @@ import (
 	pmax "github.com/dell/gopowermax"
 )
 
+// Constants for the service
 const (
-	// Name is the name of the CSI plug-in.
-	Name = "csi-powermax.dellemc.com"
-	// ApplicationName is the name used to register with Powermax REST APIs
-	ApplicationName = "CSI Driver for Dell EMC PowerMax"
-	// KeyThickProvisioning is the key used to get a flag indicating that
-	// a volume should be thick provisioned from the volume create params
-	KeyThickProvisioning = "thickprovisioning"
-
-	thinProvisioned  = "ThinProvisioned"
-	thickProvisioned = "ThickProvisioned"
-	defaultPrivDir   = "/dev/disk/csi-powermax"
-
+	Name                       = "csi-powermax.dellemc.com"         // Name is the name of the CSI plug-in.
+	ApplicationName            = "CSI Driver for Dell EMC PowerMax" // ApplicationName is the name used to register with Powermax REST APIs
+	defaultPrivDir             = "/dev/disk/csi-powermax"
 	defaultPmaxTimeout         = 120
 	defaultLockCleanupDuration = 4
-	// defaultU4PVersion should be reset to base supported endpoint
-	// version for the CSI driver release
-	defaultU4PVersion = "91"
-	csiPrefix         = "csi-"
-
-	logFields                 = "logFields"
-	maxAuthenticateRetryCount = 4
+	defaultU4PVersion          = "91" // defaultU4PVersion should be reset to base supported endpoint version for the CSI driver release
+	csiPrefix                  = "csi-"
+	logFields                  = "logFields"
+	maxAuthenticateRetryCount  = 4
+	CSILogLevelParam           = "CSI_LOG_LEVEL"
+	CSILogFormatParam          = "CSI_LOG_FORMAT"
 )
 
 type contextKey string // specific string type used for context keys
@@ -96,7 +89,6 @@ type Opts struct {
 	ProxyServicePort           string
 	User                       string
 	Password                   string
-	Version                    string
 	SystemName                 string
 	NodeName                   string
 	TransportProtocol          string
@@ -110,7 +102,6 @@ type Opts struct {
 	EnableCHAP                 bool
 	PortGroups                 []string
 	ClusterPrefix              string
-	AllowedArrays              []string
 	ManagedArrays              []string
 	DisableCerts               bool   // used for unit testing only
 	Lsmod                      string // used for unit testing only
@@ -166,6 +157,55 @@ func New() Service {
 	return svc
 }
 
+func updateDriverConfigParams(v *viper.Viper) {
+	logFormatFromConfig := v.GetString(CSILogFormatParam)
+	logFormatFromConfig = strings.ToLower(logFormatFromConfig)
+	if v.IsSet(CSILogFormatParam) && logFormatFromConfig != "" {
+		log.Infof("Read CSI_LOG_FORMAT: %s from configuration file", logFormatFromConfig)
+	}
+	var formatter log.Formatter
+	// Use text logger as default
+	formatter = &log.TextFormatter{
+		DisableColors: true,
+		FullTimestamp: true,
+	}
+	if strings.EqualFold(logFormatFromConfig, "json") {
+		formatter = &log.JSONFormatter{
+			TimestampFormat: time.RFC3339Nano,
+		}
+	} else if !strings.EqualFold(logFormatFromConfig, "text") && (logFormatFromConfig != "") {
+		log.Warningf("Unsupported CSI_LOG_FORMAT: %s supplied. Defaulting to text", logFormatFromConfig)
+	}
+	level := log.DebugLevel // Use debug as default
+	if v.IsSet(CSILogLevelParam) {
+		logLevel := v.GetString(CSILogLevelParam)
+		if logLevel != "" {
+			logLevel = strings.ToLower(logLevel)
+			log.Infof("Read CSI_LOG_LEVEL: %s from config file", logLevel)
+			var err error
+
+			l, err := log.ParseLevel(logLevel)
+			if err != nil {
+				log.WithError(err).Errorf("CSI_LOG_LEVEL %s value not recognized, error: %s, Setting to default: %s",
+					logLevel, err.Error(), level)
+			} else {
+				level = l
+			}
+		}
+	} else {
+		log.Warning("Couldn't read CSI_LOG_LEVEL from config file. Using debug level as default")
+	}
+	setLogFormatAndLevel(formatter, level)
+	// set X_CSI_LOG_LEVEL so that gocsi doesn't overwrite the loglevel set by us
+	_ = os.Setenv(gocsi.EnvVarLogLevel, level.String())
+}
+
+func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
+	log.SetFormatter(logFormat)
+	log.Infof("Setting log level to %v", level)
+	log.SetLevel(level)
+}
+
 func (s *service) BeforeServe(
 	ctx context.Context, sp *gocsi.StoragePlugin, lis net.Listener) error {
 
@@ -187,7 +227,6 @@ func (s *service) BeforeServe(
 			"enablechap":              s.opts.EnableCHAP,
 			"portgroups":              s.opts.PortGroups,
 			"clusterprefix":           s.opts.ClusterPrefix,
-			"arrays":                  s.opts.AllowedArrays,
 			"transport":               s.opts.TransportProtocol,
 			"mode":                    s.mode,
 			"drivername":              s.opts.DriverName,
@@ -209,10 +248,34 @@ func (s *service) BeforeServe(
 		log.WithFields(fields).Infof("configured %s", s.getDriverName())
 	}()
 
-	log.SetFormatter(&log.TextFormatter{
-		DisableColors: true,
-		FullTimestamp: true,
+	configFilePath, ok := csictx.LookupEnv(ctx, EnvConfigFilePath)
+	if !ok {
+		log.Warningf("Unable to read X_CSI_POWERMAX_CONFIG_PATH from env. Continuing with default values")
+	}
+
+	paramsViper := viper.New()
+	paramsViper.SetConfigFile(configFilePath)
+	paramsViper.SetConfigType("yaml")
+
+	err := paramsViper.ReadInConfig()
+	// if unable to read configuration file, set defaults
+	if err != nil {
+		log.WithError(err).Error("unable to read config file")
+		setLogFormatAndLevel(&log.TextFormatter{
+			DisableColors: true,
+			FullTimestamp: true,
+		}, log.DebugLevel)
+		// set X_CSI_LOG_LEVEL so that gocsi doesn't overwrite the loglevel set by us
+		_ = os.Setenv(gocsi.EnvVarLogLevel, log.DebugLevel.String())
+	} else {
+		updateDriverConfigParams(paramsViper)
+	}
+	paramsViper.WatchConfig()
+	paramsViper.OnConfigChange(func(e fsnotify.Event) {
+		log.Println("Received event for config file change:", e.Name)
+		updateDriverConfigParams(paramsViper)
 	})
+
 	s.StartLockManager(defaultLockCleanupDuration * time.Hour)
 	if lockWorker == nil {
 		lockWorker = new(lockWorkers)
@@ -246,12 +309,7 @@ func (s *service) BeforeServe(
 	if nt, ok := csictx.LookupEnv(ctx, EnvNodeNameTemplate); ok {
 		opts.NodeNameTemplate = nt
 	}
-	if vs, ok := csictx.LookupEnv(ctx, EnvVersion); ok {
-		opts.Version = vs
-	}
-	if opts.Version == "" {
-		opts.Version = defaultU4PVersion
-	}
+
 	if name, ok := csictx.LookupEnv(ctx, EnvNodeName); ok {
 		shortHostName := strings.Split(name, ".")[0]
 		opts.NodeName = shortHostName
@@ -263,13 +321,6 @@ func (s *service) BeforeServe(
 		}
 		opts.PortGroups = tempList
 	}
-
-	/* Use of array whitelist is depreciated.*/
-	/*if arrays, ok := csictx.LookupEnv(ctx, EnvArrayWhitelist); ok {
-		opts.AllowedArrays, _ = s.parseCommaSeperatedList(arrays)
-	} else {*/
-	opts.AllowedArrays = []string{}
-	//}
 
 	if arrays, ok := csictx.LookupEnv(ctx, EnvManagedArrays); ok {
 		opts.ManagedArrays, _ = s.parseCommaSeperatedList(arrays)
@@ -340,13 +391,7 @@ func (s *service) BeforeServe(
 		return false
 	}
 
-	// If the deprecated X_CSI_POWERMAX_INSECURE variable is set, it
-	// overrides the newer X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION,
-	// which should be always set, defaulting to true.
 	opts.Insecure = pb(EnvSkipCertificateValidation)
-	if isBoolEnvVar(EnvInsecure) {
-		opts.Insecure = pb(EnvInsecure)
-	}
 	opts.Thick = pb(EnvThick)
 	opts.AutoProbe = pb(EnvAutoProbe)
 	if isBoolEnvVar(EnvEnableBlock) {
@@ -391,7 +436,7 @@ func (s *service) BeforeServe(
 
 	// If this is a node, run the node startup logic
 	if !strings.EqualFold(s.mode, "controller") {
-		if err := s.nodeStartup(); err != nil {
+		if err := s.nodeStartup(ctx); err != nil {
 			return err
 		}
 	}
@@ -504,23 +549,7 @@ func (s *service) parseCommaSeperatedList(values string) ([]string, error) {
 	return results, nil
 }
 
-func (s *service) setArrayWhitelist(whitelist string) error {
-	tempList, err := s.parseCommaSeperatedList(whitelist)
-	if err != nil {
-		return fmt.Errorf("Invalid value for %s", EnvArrayWhitelist)
-	}
-	s.opts.AllowedArrays = tempList
-	if s.adminClient != nil {
-		s.adminClient.SetAllowedArrays(s.opts.AllowedArrays)
-	}
-	return nil
-}
-
-func (s *service) getArrayWhitelist() []string {
-	return s.opts.AllowedArrays
-}
-
-func (s *service) createPowerMaxClients() error {
+func (s *service) createPowerMaxClients(ctx context.Context) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	endPoint := ""
@@ -540,10 +569,9 @@ func (s *service) createPowerMaxClients() error {
 				"unable to create PowerMax client: %s", err.Error())
 		}
 		s.adminClient = c
-		s.adminClient.SetAllowedArrays(s.getArrayWhitelist())
 
 		for i := 0; i < maxAuthenticateRetryCount; i++ {
-			err = s.adminClient.Authenticate(&pmax.ConfigConnect{
+			err = s.adminClient.Authenticate(ctx, &pmax.ConfigConnect{
 				Endpoint: endPoint,
 				Username: s.opts.User,
 				Password: s.opts.Password,
@@ -564,7 +592,7 @@ func (s *service) createPowerMaxClients() error {
 		// initialize the PowerMax client for those array only
 		managedArrays := make([]string, 0, len(s.opts.ManagedArrays))
 		for _, array := range s.opts.ManagedArrays {
-			symmetrix, err := s.adminClient.GetSymmetrixByID(array)
+			symmetrix, err := s.adminClient.GetSymmetrixByID(ctx, array)
 			if err != nil {
 				log.Errorf("Failed to fetch details for array: %s. [%s]", array, err.Error())
 			} else {
@@ -578,7 +606,10 @@ func (s *service) createPowerMaxClients() error {
 			os.Exit(1)
 		}
 		s.opts.ManagedArrays = managedArrays
-		symmetrix.Initialize(s.opts.ManagedArrays, s.adminClient)
+		err = symmetrix.Initialize(s.opts.ManagedArrays, s.adminClient)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

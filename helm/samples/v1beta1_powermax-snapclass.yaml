@@ -1,9 +1,0 @@
-# This sample manifest file should be to create VolumeSnapshotClass 
-# if you have v1beta1 VolumeSnapshotClass CRD installed in the cluster
-apiVersion: snapshot.storage.k8s.io/v1beta1
-kind: VolumeSnapshotClass
-metadata:
-  name: powermax-snapclass
-# If using custom driver name, change the following to point to the custom name
-driver: csi-powermax.dellemc.com
-deletionPolicy: Delete

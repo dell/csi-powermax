@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -209,7 +209,7 @@ func (revProxy *StandAloneProxy) setIteratorID(resp *http.Response, URL url.URL,
 		SymmetrixID: symID,
 		URL:         URL,
 	})
-	log.Printf("Added Iterator (%s)", volumeIterator.ID)
+	log.Debugf("Added Iterator (%s)", volumeIterator.ID)
 	return volumeIterator, nil
 }
 
@@ -219,7 +219,7 @@ func (revProxy *StandAloneProxy) loggingMiddleware(next http.Handler) http.Handl
 		r.URL.Path = strings.TrimSuffix(r.URL.Path, "/")
 		r.Header.Set("RequestID", reqID)
 		logMsg := fmt.Sprintf("Request ID: %s - %s %s", reqID, r.Method, r.URL)
-		log.Println(logMsg)
+		log.Info(logMsg)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -259,7 +259,7 @@ func (revProxy *StandAloneProxy) getResponseIfAuthorised(res http.ResponseWriter
 	}
 	err = lock.Lock()
 	if err != nil {
-		log.Println("server busy")
+		log.Error("server busy")
 		utils.WriteHTTPError(res, "server busy", utils.StatusProxyBusy)
 		return nil, err
 	}
@@ -327,7 +327,7 @@ func (revProxy *StandAloneProxy) UpdateConfig(proxyConfig config.ProxyConfig) er
 		return fmt.Errorf("StandaloneProxyConfig can't be nil")
 	}
 	if reflect.DeepEqual(revProxy.config, *standaloneProxyConfig) {
-		log.Println("No changes detected in the configuration")
+		log.Info("No changes detected in the configuration")
 		return nil
 	}
 
@@ -362,7 +362,7 @@ func (revProxy *StandAloneProxy) UpdateConfig(proxyConfig config.ProxyConfig) er
 
 	revProxy.updateConfig(*standaloneProxyConfig)
 	if reflect.DeepEqual(revProxy.config, *standaloneProxyConfig) {
-		log.Println("Changes applied successfully")
+		log.Info("Changes applied successfully")
 	}
 	return nil
 }
@@ -399,10 +399,10 @@ func (revProxy *StandAloneProxy) GetRouter() http.Handler {
 func (revProxy *StandAloneProxy) ifNoSymIDInvoke(customHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if symid, ok := revProxy.getSymID(r); ok {
-			log.Printf("Invoking revproxy client for %s.\n", symid)
+			log.Debugf("Invoking revproxy client for %s.\n", symid)
 			revProxy.ServeReverseProxy(w, r)
 		} else {
-			log.Println("Invoking the common handler.")
+			log.Debug("Invoking the common handler.")
 			customHandler(w, r)
 		}
 	}
@@ -501,7 +501,7 @@ func (revProxy *StandAloneProxy) ServeVersions(res http.ResponseWriter, req *htt
 	for _, symID := range symIDs {
 		_, err := revProxy.getResponseIfAuthorised(res, req, symID)
 		if err != nil {
-			log.Printf("Authorisation step fails for: (%s) symID with error (%s)", symID, err.Error())
+			log.Errorf("Authorisation step fails for: (%s) symID with error (%s)", symID, err.Error())
 		}
 	}
 }
@@ -561,12 +561,12 @@ func (revProxy *StandAloneProxy) ServeSymmetrix(res http.ResponseWriter, req *ht
 			defer resp.Body.Close()
 			err = utils.IsValidResponse(resp)
 			if err != nil {
-				log.Printf("Get Symmetrix step fails for: (%s) symID with error (%s)", symID, err.Error())
+				log.Errorf("Get Symmetrix step fails for: (%s) symID with error (%s)", symID, err.Error())
 			} else {
 				symmetrixList := new(v90.SymmetrixIDList)
 				if err := json.NewDecoder(resp.Body).Decode(symmetrixList); err != nil {
 					utils.WriteHTTPError(res, "decoding error: "+err.Error(), 400)
-					log.Printf("decoding error: %s", err.Error())
+					log.Errorf("decoding error: %s", err.Error())
 				}
 				for _, sym := range symmetrixList.SymmetrixIDs {
 					allSymmetrixIDList.SymmetrixIDs = append(allSymmetrixIDList.SymmetrixIDs, sym)
@@ -598,12 +598,12 @@ func (revProxy *StandAloneProxy) ServeReplicationCapabilities(res http.ResponseW
 			defer resp.Body.Close()
 			err = utils.IsValidResponse(resp)
 			if err != nil {
-				log.Printf("Get Repelication capabilities step fails for: (%s) symID with error (%s)", symID, err.Error())
+				log.Errorf("Get Repelication capabilities step fails for: (%s) symID with error (%s)", symID, err.Error())
 			} else {
 				symCapabilities := new(v90.SymReplicationCapabilities)
 				if err := json.NewDecoder(resp.Body).Decode(symCapabilities); err != nil {
 					utils.WriteHTTPError(res, "decoding error: "+err.Error(), 400)
-					log.Printf("decoding error: %s", err.Error())
+					log.Errorf("decoding error: %s", err.Error())
 				}
 				//symCapability := symCapabilities.SymmetrixCapability
 				//symRepCapabilities.SymmetrixCapability = append(symRepCapabilities.SymmetrixCapability, symCapability)
@@ -636,18 +636,18 @@ func (revProxy *StandAloneProxy) ServeVolume(res http.ResponseWriter, req *http.
 	err = utils.IsValidResponse(resp)
 	if err != nil {
 		utils.WriteHTTPError(res, err.Error(), resp.StatusCode)
-		log.Printf("Get Volume step fails for: (%s) symID with error (%s)", symID, err.Error())
+		log.Errorf("Get Volume step fails for: (%s) symID with error (%s)", symID, err.Error())
 	} else {
 		proxy, err := revProxy.getProxyBySymmID(symID)
 		if err != nil {
 			utils.WriteHTTPError(res, err.Error(), utils.StatusNotFound)
-			log.Printf("Get Proxy for: (%s) symID with error (%s)", symID, err.Error())
+			log.Errorf("Get Proxy for: (%s) symID with error (%s)", symID, err.Error())
 			return
 		}
 		volumeIterator, err := revProxy.setIteratorID(resp, proxy.URL, symID)
 		if err != nil {
 			utils.WriteHTTPError(res, err.Error(), utils.StatusInternalError)
-			log.Printf("Setting iterator failed for: (%s) symID with error (%s)", symID, err.Error())
+			log.Errorf("Setting iterator failed for: (%s) symID with error (%s)", symID, err.Error())
 		}
 		utils.WriteHTTPResponse(res, volumeIterator)
 	}

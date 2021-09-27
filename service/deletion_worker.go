@@ -1,6 +1,21 @@
+/*
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
+
 package service
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -23,6 +38,7 @@ const (
 	MaxErrorCount               = 100
 	CacheValidTime              = 30 * time.Minute
 	MinPollingInterval          = 3 * time.Second
+	WaitTillSyncInProgTime      = 20 * time.Second
 	initialStep                 = "initialStep"
 	cleanupSnapshotStep         = "cleanupSnapshotStep"
 	removeVolumesFromSGStep     = "removeVolumesFromSGStep"
@@ -117,7 +133,7 @@ func (vol *symVolumeCache) getOrUpdateVolume(symID, volumeID string, pmaxClient 
 		updateCache = true
 	}
 	if updateCache {
-		volume, err := pmaxClient.GetVolumeByID(symID, volumeID)
+		volume, err := pmaxClient.GetVolumeByID(context.Background(), symID, volumeID)
 		if err != nil {
 			vol.volume = nil
 			return nil, err
@@ -130,10 +146,7 @@ func (vol *symVolumeCache) getOrUpdateVolume(symID, volumeID string, pmaxClient 
 }
 
 func (device *csiDevice) equals(csiDevice csiDevice) bool {
-	if device.SymDeviceID.DeviceID == csiDevice.SymDeviceID.DeviceID {
-		return true
-	}
-	return false
+	return device.SymDeviceID.DeviceID == csiDevice.SymDeviceID.DeviceID
 }
 
 func (device *csiDevice) print() string {
@@ -202,7 +215,7 @@ func unlinkTarget(tgtVol *types.Volume, snapID, srcDevID, symID string, snapGene
 	if tgtVol != nil {
 		isDefined := false
 		if snapID == "" {
-			snapInfo, err := pmaxClient.GetVolumeSnapInfo(symID, tgtVol.VolumeID)
+			snapInfo, err := pmaxClient.GetVolumeSnapInfo(context.Background(), symID, tgtVol.VolumeID)
 			if err != nil {
 				return fmt.Errorf("failed to find snapshot info for tgt vol. error: %s", err.Error())
 			}
@@ -214,7 +227,7 @@ func unlinkTarget(tgtVol *types.Volume, snapID, srcDevID, symID string, snapGene
 					// Overwrite whatever source device id information was sent
 					srcDevID = snapInfo.VolumeSnapshotLink[0].LinkSource
 					// get source details
-					srcSnapInfo, err := pmaxClient.GetVolumeSnapInfo(symID, srcDevID)
+					srcSnapInfo, err := pmaxClient.GetVolumeSnapInfo(context.Background(), symID, srcDevID)
 					if err != nil {
 						return fmt.Errorf("failed to obtain snapshot info for source device")
 					}
@@ -239,7 +252,7 @@ func unlinkTarget(tgtVol *types.Volume, snapID, srcDevID, symID string, snapGene
 			sourceList = append(sourceList, types.VolumeList{Name: srcDevID})
 			tgtList := make([]types.VolumeList, 0)
 			tgtList = append(tgtList, types.VolumeList{Name: tgtVol.VolumeID})
-			err := pmaxClient.ModifySnapshotS(symID, sourceList, tgtList, snapID,
+			err := pmaxClient.ModifySnapshotS(context.Background(), symID, sourceList, tgtList, snapID,
 				"Unlink", "", snapGeneration)
 			if err != nil {
 				return fmt.Errorf("failed to unlink snapshot. error: %s", err.Error())
@@ -257,7 +270,7 @@ func unlinkTargetsAndTerminateSnapshot(srcVol *types.Volume, symID string, pmaxC
 	// 2. Device has temporary snapshots
 	// deletion_worker will never unlink/terminate any other types of snapshot
 	if srcVol != nil {
-		snapInfo, err := pmaxClient.GetVolumeSnapInfo(symID, srcVol.VolumeID)
+		snapInfo, err := pmaxClient.GetVolumeSnapInfo(context.Background(), symID, srcVol.VolumeID)
 		if err != nil {
 			return err
 		}
@@ -281,14 +294,14 @@ func unlinkTargetsAndTerminateSnapshot(srcVol *types.Volume, symID string, pmaxC
 					sourceVolumes := make([]types.VolumeList, 0)
 					sourceVolumes = append(sourceVolumes, types.VolumeList{Name: srcVol.VolumeID})
 					if len(tgtVolumes) != 0 {
-						err := pmaxClient.ModifySnapshotS(symID, sourceVolumes, tgtVolumes, snapName,
+						err := pmaxClient.ModifySnapshotS(context.Background(), symID, sourceVolumes, tgtVolumes, snapName,
 							"Unlink", "", snapSrcInfo.Generation)
 						if err != nil {
 							return fmt.Errorf("failed to unlink snapshot. error: %s", err.Error())
 						}
 						if allLinksDefined {
 							// Terminate the snapshot generation
-							err = pmaxClient.DeleteSnapshotS(symID, snapName, sourceVolumes, snapSrcInfo.Generation)
+							err = pmaxClient.DeleteSnapshotS(context.Background(), symID, snapName, sourceVolumes, snapSrcInfo.Generation)
 							if err != nil {
 								return fmt.Errorf("failed to terminate the snapshot. error: %s", err.Error())
 							}
@@ -296,7 +309,7 @@ func unlinkTargetsAndTerminateSnapshot(srcVol *types.Volume, symID string, pmaxC
 					} else {
 						// we just need to terminate the snapshot
 						// Terminate the snapshot generation
-						err = pmaxClient.DeleteSnapshotS(symID, snapName, sourceVolumes, snapSrcInfo.Generation)
+						err = pmaxClient.DeleteSnapshotS(context.Background(), symID, snapName, sourceVolumes, snapSrcInfo.Generation)
 						if err != nil {
 							return fmt.Errorf("failed to terminate the snapshot. error: %s", err.Error())
 						}
@@ -394,7 +407,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 				if sgID == "" {
 					// Iterate through the SG list to find a SG which we can process
 					for _, storageGroupID := range symVol.StorageGroupIDList {
-						sg, err := pmaxClient.GetStorageGroup(queue.SymID, storageGroupID)
+						sg, err := pmaxClient.GetStorageGroup(context.Background(), queue.SymID, storageGroupID)
 						if err != nil {
 							// failed to fetch the SG details
 							// update error for this device
@@ -404,7 +417,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 							if sg.NumOfMaskingViews > 0 {
 								log.Warningf("%s: SG: %s in masking view. Can't proceed with deletion of devices\n",
 									device.print(), storageGroupID)
-								device.updateStatus(device.Status.State, fmt.Sprintf("device is in masking view, can't delete"))
+								device.updateStatus(device.Status.State, "device is in masking view, can't delete")
 								continue
 							}
 							sgID = storageGroupID
@@ -441,7 +454,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 	}
 	// Remove the volumes from SG
 	if len(volumeIDs) > 0 {
-		sg, err := pmaxClient.GetStorageGroup(queue.SymID, sgID)
+		sg, err := pmaxClient.GetStorageGroup(context.Background(), queue.SymID, sgID)
 		if err == nil {
 			if sg.NumOfMaskingViews > 0 {
 				log.Errorf("SG: %s in masking view. Can't proceed with deletion of devices\n", sgID)
@@ -451,21 +464,59 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 			// We failed to get SG details. This could be a transient error
 			// Proceed with the removal of volumes
 		}
-		_, rdfNo, _, err := GetRDFInfoFromSGID(sgID)
+		ns, rdfNo, mode, err := GetRDFInfoFromSGID(sgID)
 		if err != nil {
 			log.Debugf("GetRDFInfoFromSGID failed for (%s) on symID (%s). Proceeding for RemoveVolumesFromStorageGroup", sgID, queue.SymID)
 			// This is the default SG in which all the volumes are replicated
-			_, err = pmaxClient.RemoveVolumesFromStorageGroup(queue.SymID, sgID, true, volumeIDs...)
+			_, err = pmaxClient.RemoveVolumesFromStorageGroup(context.Background(), queue.SymID, sgID, true, volumeIDs...)
 		} else {
-			log.Debugf("RDF No: (%s)", rdfNo)
-			var rdfInfo *types.RDFGroup
-			rdfInfo, err = pmaxClient.GetRDFGroup(queue.SymID, rdfNo)
+			// replicated volumes
+			// RemoveVolumesFromProtectedStorageGroup should be done only from r1 type
+			psg, err := pmaxClient.GetStorageGroupRDFInfo(context.Background(), queue.SymID, sgID, rdfNo)
+			if err != nil {
+				log.Errorf("GetStorageGroupRDFInfo failed for (%s) on symID (%s)", sgID, queue.SymID)
+				return false
+			}
+			if psg.VolumeRdfTypes[0] != "R1" {
+				log.Debugf("Skipping remove volume from protected SG from R2 type")
+				return true
+			}
+			log.Debugf("LocalSG: (%s), Mode: (%s), RDF No: (%s), Namespace: (%s)", sgID, mode, rdfNo, ns)
+			rdfInfo, err := pmaxClient.GetRDFGroup(context.Background(), queue.SymID, rdfNo)
 			if err != nil {
 				log.Errorf("GetRDFGroup failed for (%s) on symID (%s)", sgID, queue.SymID)
 				return false
 			}
-			_, err = pmaxClient.RemoveVolumesFromProtectedStorageGroup(queue.SymID, sgID, rdfInfo.RemoteSymmetrix, sgID, true, volumeIDs...)
+			if mode == Metro {
+				state := psg.States[0]
+				if state != Suspended {
+					//SUSPEND the protected storage group
+					err := suspend(context.Background(), queue.SymID, sgID, rdfNo, pmaxClient)
+					if err != nil {
+						log.Error(errorMsg(err))
+						return false
+					}
+					time.Sleep(WaitTillSyncInProgTime)
+				}
+			}
+			// build remoteSGID
+			remoteSGID := buildProtectionGroupID(ns, strconv.Itoa(rdfInfo.RemoteRdfgNumber), mode)
+			_, err = pmaxClient.RemoveVolumesFromProtectedStorageGroup(context.Background(), queue.SymID, sgID, rdfInfo.RemoteSymmetrix, remoteSGID, true, volumeIDs...)
+			if mode == Metro {
+				// After suspend, Establish the RDF group if it has volumes
+				var psg *types.RDFStorageGroup
+				psg, err = pmaxClient.GetProtectedStorageGroup(context.Background(), queue.SymID, sgID)
+				if err != nil {
+					log.Errorf("GetProtectedStorageGroup failed for (%s) on symID (%s)", sgID, queue.SymID)
+					return false
+				}
+				if psg.Rdf {
+					err = establish(context.Background(), queue.SymID, sgID, rdfNo, true, pmaxClient)
+					time.Sleep(WaitTillSyncInProgTime)
+				}
+			}
 		}
+
 		for _, volumeID := range volumeIDs {
 			device := getDevice(volumeID, queue.DeviceList)
 			if device != nil {
@@ -549,7 +600,7 @@ func (queue *deletionQueue) deleteVolumes(pmaxClient pmax.Pmax) bool {
 			}
 		}
 		log.Info("Deleting device range: " + deviceRangeToBeDeleted.get())
-		err := pmaxClient.DeleteVolume(queue.SymID, deviceRangeToBeDeleted.get())
+		err := pmaxClient.DeleteVolume(context.Background(), queue.SymID, deviceRangeToBeDeleted.get())
 		if err != nil {
 			log.Error(err.Error())
 		}
@@ -667,7 +718,7 @@ func (worker *deletionWorker) deletionRequestHandler() {
 			req.errChan <- fmt.Errorf("unable to process device deletion request as sym id is not managed by deletion worker")
 			continue
 		}
-		vol, err := pmaxClient.GetVolumeByID(req.SymID, req.DeviceID)
+		vol, err := pmaxClient.GetVolumeByID(context.Background(), req.SymID, req.DeviceID)
 		if err != nil {
 			req.errChan <- err
 			continue
@@ -779,7 +830,7 @@ func (worker *deletionWorker) populateDeletionQueue() {
 			log.Error(err.Error())
 			continue
 		}
-		volList, err := pmaxClient.GetVolumeIDList(symID, volDeletePrefix, true)
+		volList, err := pmaxClient.GetVolumeIDList(context.Background(), symID, volDeletePrefix, true)
 		if err != nil {
 			log.Errorf("Could not retrieve volume IDs to be deleted. Error: %s", err.Error())
 			continue
@@ -789,7 +840,7 @@ func (worker *deletionWorker) populateDeletionQueue() {
 				log.Infof("Volumes with the prefix: %s - %v\n", volDeletePrefix, volList)
 			}
 			for _, id := range volList {
-				volume, err := pmaxClient.GetVolumeByID(symID, id)
+				volume, err := pmaxClient.GetVolumeByID(context.Background(), symID, id)
 				if err != nil {
 					log.Warningf("Could not retrieve details for volume: %s. Ignoring it", id)
 					continue
