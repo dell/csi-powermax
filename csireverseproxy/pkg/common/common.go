@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 package common
 
 import (
-	"log"
+	log "github.com/sirupsen/logrus"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -163,13 +163,13 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.RoundTripper.RoundTrip(req)
 	if err != nil {
 		t.HealthHandler(false)
-		log.Printf("Request ID: %s - Reporing server error to proxy health\n", requestID)
+		log.Debugf("Request ID: %s - Reporing server error to proxy health\n", requestID)
 	} else if resp.StatusCode == 401 || resp.StatusCode == 403 || int(resp.StatusCode/100) == 5 {
 		t.HealthHandler(false)
-		log.Printf("Request ID: %s - Reporing non-200 code to proxy health\n", requestID)
+		log.Debugf("Request ID: %s - Reporing non-200 code to proxy health\n", requestID)
 	} else if int(resp.StatusCode/100) == 2 {
 		t.HealthHandler(true)
-		log.Printf("Request ID: %s - Reporting 2xx response to proxy health\n", requestID)
+		log.Debugf("Request ID: %s - Reporting 2xx response to proxy health\n", requestID)
 	}
 	return resp, err
 }

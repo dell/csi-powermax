@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020 Dell Inc., or its subsidiaries. All Rights Reserved.
+# Copyright (c) 2021 Dell Inc., or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -10,16 +10,16 @@
 
 # verify-csi-powermax method
 function verify-csi-powermax() {
-  verify_k8s_versions "1.19" "1.21"
-  verify_openshift_versions "4.6" "4.7"
+  verify_k8s_versions "1.20" "1.22"
+  verify_openshift_versions "4.6" "4.8"  
+  verify_helm_values_version "2.0.0"
   verify_namespace "${NS}"
   verify_required_secrets "${RELEASE}-creds"
   verify_optional_secrets "${RELEASE}-certs"
   verify_optional_secrets "csirevproxy-tls-secret"
   verify_alpha_snap_resources
   verify_snap_requirements
-  # Skipping the check for replication requirements as the CRDs are still under development
-  #verify_optional_replication_requirements
+  verify_optional_replication_requirements
   verify_iscsi_installation
   verify_helm_3
 }

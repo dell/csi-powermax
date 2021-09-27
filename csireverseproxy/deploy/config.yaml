@@ -1,5 +1,7 @@
 mode: Linked
 port: 2222
+logLevel: debug
+logFormat: text
 linkConfig:
   primary:
     url: https://primary.unisphe.re:8443

@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -228,10 +228,10 @@ func publishVolume(
 		// Device is already mounted. Need to ensure that it is already
 		// mounted to the expected private mount, with correct rw/ro perms
 		mounted := false
-		log.Printf("A devMnts: %#v", devMnts)
+		log.Infof("A devMnts: %#v", devMnts)
 		for _, m := range devMnts {
 			if m.Path == target {
-				log.Printf("mount %#v already mounted to requested target %s", m, target)
+				log.Infof("mount %#v already mounted to requested target %s", m, target)
 				mounted = true
 			}
 			if m.Path == privTgt {
@@ -245,7 +245,7 @@ func publishVolume(
 						"private mount already in place")
 					break
 				} else {
-					log.WithFields(f).Printf("mount %#v rwo %s", m, rwo)
+					log.WithFields(f).Infof("mount %#v rwo %s", m, rwo)
 					return status.Error(codes.InvalidArgument,
 						"access mode conflicts with existing mounts")
 				}
@@ -270,7 +270,7 @@ func publishVolume(
 	// target path was already there, and if so is correct device and characteristics
 	if len(targetMnts) > 0 {
 		for _, m := range targetMnts {
-			log.Printf("pathMnt: %#v", m)
+			log.Infof("pathMnt: %#v", m)
 			if m.Device == sysDevice.RealDev || m.Device == sysDevice.FullPath || m.Source == privTgt {
 				// volume already published to target
 				// if mount options look good, do nothing
@@ -334,7 +334,7 @@ func cleanupPrivateTarget(reqID, privTgt string) {
 
 // mountBlock bind mounts the device to the required target
 func mountBlock(device *Device, target string, mntFlags []string, singleAccess bool) error {
-	log.Printf("mountBlock called device %#v target %s mntFlags %#v", device, target, mntFlags)
+	log.Infof("mountBlock called device %#v target %s mntFlags %#v", device, target, mntFlags)
 	// Check to see if already mounted
 	mnts, err := getDevMounts(device)
 	if err != nil {

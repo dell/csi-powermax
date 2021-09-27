@@ -82,7 +82,7 @@ spec:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
           image: {{ required "Must provide the PowerMax driver container image." .Values.images.driver }}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
           command: [ "/csi-powermax.sh" ]
           env:
             - name: X_CSI_POWERMAX_DRIVER_NAME
@@ -92,13 +92,11 @@ spec:
               value: csi-powermax.dellemc.com
               {{- end }}
             - name: CSI_ENDPOINT
-              value: unix:///var/lib/kubelet/plugins/powermax.emc.dell.com/csi_sock
+              value: unix://{{ .Values.kubeletConfigDir }}/plugins/powermax.emc.dell.com/csi_sock
             - name: X_CSI_MODE
               value: node
-            - name: X_CSI_DEBUG
-              value: "true"
             - name: X_CSI_PRIVATE_MOUNT_DIR
-              value: "/var/lib/kubelet/plugins/powermax.emc.dell.com/disks"
+              value: "{{ .Values.kubeletConfigDir }}/plugins/powermax.emc.dell.com/disks"
             - name: X_CSI_MANAGED_ARRAYS
               value: {{ $arraysStr | replace " " "," | quote }}
             {{- if ne .Values.csireverseproxy.enabled true }}
@@ -110,8 +108,6 @@ spec:
               value: {{ .Values.powerMaxDebug | default "false" | lower | quote }}
             - name: X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION
               value: {{ .Values.skipCertificateValidation | default "true" | lower | quote }}
-            - name: X_CSI_POWERMAX_INSECURE
-              value: {{ .Values.powerMaxInsecure | default "none" | lower | quote }}
             - name: X_CSI_K8S_CLUSTER_PREFIX
               value:  {{ required "Must provide a Cluster Prefix." .Values.clusterPrefix }}
             - name: X_CSI_POWERMAX_USER
@@ -143,8 +139,6 @@ spec:
             - name: X_CSI_POWERMAX_ISCSI_ENABLE_CHAP
               value: "false"
             {{- end }}
-            - name: X_CSI_POWERMAX_ARRAYS
-              value:  {{ .Values.arrayWhitelist | default "" | toJson }}
             - name: X_CSI_POWERMAX_PROXY_SERVICE_NAME
             {{- if eq .Values.csireverseproxy.enabled true }}
               value: {{ .Release.Name }}-reverseproxy
@@ -163,6 +157,8 @@ spec:
               value: {{ .Values.transportProtocol | default "" }}
             - name: SSL_CERT_DIR
               value: /certs
+            - name: X_CSI_POWERMAX_CONFIG_PATH
+              value: /powermax-config-params/driver-config-params.yaml
             - name: X_CSI_IG_NODENAME_TEMPLATE
               value: {{ .Values.nodeNameTemplate | default "" }}
             - name: X_CSI_IG_MODIFY_HOSTNAME
@@ -171,12 +167,12 @@ spec:
               value: {{ .Values.portGroups | toJson }}
           volumeMounts:
             - name: driver-path
-              mountPath: /var/lib/kubelet/plugins/powermax.emc.dell.com
+              mountPath: {{ .Values.kubeletConfigDir }}/plugins/powermax.emc.dell.com
             - name: volumedevices-path
-              mountPath: /var/lib/kubelet/plugins/kubernetes.io/csi/volumeDevices
+              mountPath: {{ .Values.kubeletConfigDir }}/plugins/kubernetes.io/csi/volumeDevices
               mountPropagation: "Bidirectional"
             - name: pods-path
-              mountPath: /var/lib/kubelet/pods
+              mountPath: {{ .Values.kubeletConfigDir }}/pods
               mountPropagation: "Bidirectional"
             - name: dev
               mountPath: /dev
@@ -189,6 +185,8 @@ spec:
               readOnly: true
             - name: dbus-socket
               mountPath: /run/dbus/system_bus_socket
+            - name: powermax-config-params
+              mountPath: /powermax-config-params
         - name: registrar
           image: {{ required "Must provide the CSI node registrar container image." .Values.images.registrar }}
           args:
@@ -197,7 +195,7 @@ spec:
             #- --mode=node-register
             #- --driver-requires-attachment=true
             #- --pod-info-mount-version=v1
-            - --kubelet-registration-path=/var/lib/kubelet/plugins/powermax.emc.dell.com/csi_sock
+            - --kubelet-registration-path={{ .Values.kubeletConfigDir }}/plugins/powermax.emc.dell.com/csi_sock
           env:
             - name: ADDRESS
               value: /csi/csi_sock
@@ -214,19 +212,19 @@ spec:
       volumes:
         - name: registration-dir
           hostPath:
-            path: /var/lib/kubelet/plugins_registry/
+            path: {{ .Values.kubeletConfigDir }}/plugins_registry/
             type: DirectoryOrCreate
         - name: driver-path
           hostPath:
-            path: /var/lib/kubelet/plugins/powermax.emc.dell.com
+            path: {{ .Values.kubeletConfigDir }}/plugins/powermax.emc.dell.com
             type: DirectoryOrCreate
         - name: volumedevices-path
           hostPath:
-            path: /var/lib/kubelet/plugins/kubernetes.io/csi/volumeDevices
+            path: {{ .Values.kubeletConfigDir }}/plugins/kubernetes.io/csi/volumeDevices
             type: DirectoryOrCreate
         - name: pods-path
           hostPath:
-            path: /var/lib/kubelet/pods
+            path: {{ .Values.kubeletConfigDir }}/pods
             type: Directory
         - name: dev
           hostPath:
@@ -244,6 +242,9 @@ spec:
           hostPath:
             path: /run/dbus/system_bus_socket
             type: Socket
+        - name: powermax-config-params
+          configMap:
+            name: {{ .Release.Name }}-config-params
         - name: certs
           secret:
               secretName: {{ .Release.Name }}-certs

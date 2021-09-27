@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ package config
 
 import (
 	"fmt"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"os"
 	"revproxy/pkg/common"
 	"revproxy/pkg/k8smock"
@@ -113,7 +113,7 @@ func TestNewLinkedProxyConfig(t *testing.T) {
 			return
 		}
 	}
-	log.Println("config read")
+	log.Debug("config read")
 	proxyConfigMap.Mode = "Linked"
 	proxyConfig, err := newProxyConfig(proxyConfigMap, k8sUtils)
 	if err != nil {
@@ -125,7 +125,7 @@ func TestNewLinkedProxyConfig(t *testing.T) {
 		return
 	}
 	proxyConfig.LinkProxyConfig.Log()
-	log.Println("Linked Proxy Config created successfully")
+	log.Info("Linked Proxy Config created successfully")
 }
 
 func TestNewStandAloneProxyConfig(t *testing.T) {
@@ -149,7 +149,7 @@ func TestLinkedProxyConfig_IsCertSecretRelated(t *testing.T) {
 		t.Errorf("read config failed: %s", err.Error())
 		return
 	}
-	log.Println("config read")
+	log.Debug("config read")
 	if proxyConfigMap.LinkConfig.Primary.CertSecret != "" {
 		_, err = k8sUtils.CreateNewCertSecret(proxyConfigMap.LinkConfig.Primary.CertSecret)
 		if err != nil {
@@ -196,7 +196,7 @@ func TestLinkedProxyConfig_UpdateCertFileName(t *testing.T) {
 		t.Errorf("read config failed: %s", err.Error())
 		return
 	}
-	log.Println("config read")
+	log.Debug("config read")
 	if proxyConfigMap.LinkConfig.Primary.CertSecret != "" {
 		_, err = k8sUtils.CreateNewCertSecret(proxyConfigMap.LinkConfig.Primary.CertSecret)
 		if err != nil {

@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ package utils
 
 import (
 	"fmt"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"revproxy/pkg/common"
 	"sync"
 )
@@ -56,9 +56,9 @@ func (lockProp *LockProperties) Queue(request LockRequest) {
 	} else {
 		select {
 		case lockProp.WaitChannel <- request.WaitChannel:
-			log.Printf("Request queued: %s\n", request.ResourceID)
+			log.Infof("Request queued: %s\n", request.ResourceID)
 		default:
-			log.Printf("Max number of outstanding requests already queued for: %s\n", request.ResourceID)
+			log.Infof("Max number of outstanding requests already queued for: %s\n", request.ResourceID)
 			request.WaitChannel <- false
 		}
 	}
@@ -130,7 +130,7 @@ func InitializeLock() {
 func LockRequestHandler() {
 	var fifoLocks = make(map[string]*LockProperties)
 	go func() {
-		log.Println("Successfully started the lock request handler")
+		log.Debug("Successfully started the lock request handler")
 		for {
 			select {
 			case request := <-lockRequestsQueue:
@@ -144,7 +144,7 @@ func LockRequestHandler() {
 				} else {
 					lockProps.Queue(request)
 				}
-				log.Printf("Lock: %s, %s", request.ResourceID, lockProps.String())
+				log.Infof("Lock: %s, %s", request.ResourceID, lockProps.String())
 				lockMutex.Unlock()
 			}
 		}
@@ -179,7 +179,7 @@ func (l *Lock) Lock() error {
 	if !isLocked {
 		return fmt.Errorf("failed to obtain lock")
 	}
-	log.Printf("Request ID: %s - Obtained %s lock\n", l.RequestID, string(l.LockType))
+	log.Infof("Request ID: %s - Obtained %s lock\n", l.RequestID, string(l.LockType))
 	return nil
 }
 

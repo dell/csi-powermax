@@ -1,6 +1,21 @@
+/*
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
+
 package service
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -130,7 +145,7 @@ func (g *storageGroupSvc) getUpdateStorageGroupState(symID, tgtStorageGroupID st
 }
 
 // requestAddVolumeToSGMV requests that a volume be added to a specific storage group and masking view.
-func (g *storageGroupSvc) requestAddVolumeToSGMV(tgtStorageGroupID, tgtMaskingViewID, hostID, reqID, clientSymID, symID, devID string, accessMode *csi.VolumeCapability_AccessMode) (chan addVolumeToSGMVResponse, chan bool, error) {
+func (g *storageGroupSvc) requestAddVolumeToSGMV(ctx context.Context, tgtStorageGroupID, tgtMaskingViewID, hostID, reqID, clientSymID, symID, devID string, accessMode *csi.VolumeCapability_AccessMode) (chan addVolumeToSGMVResponse, chan bool, error) {
 	responseChan := make(chan addVolumeToSGMVResponse, 1)
 	sgStateP, key := g.getUpdateStorageGroupState(symID, tgtStorageGroupID)
 
@@ -154,7 +169,7 @@ func (g *storageGroupSvc) requestAddVolumeToSGMV(tgtStorageGroupID, tgtMaskingVi
 // outputs include: 1)  a channel which will receive an error or nil when the request is complete,
 // 2) a channel that is the lock for the service; if you can receive on the channel you have acquired the lock
 // and should call runRemoveVolumesFromSGMV (which will release the lock by writing to the channel when complete)
-func (g *storageGroupSvc) requestRemoveVolumeFromSGMV(tgtStorageGroupID, tgtMaskingViewID, reqID, clientSymID, symID, devID string) (chan removeVolumeFromSGMVResponse, chan bool, error) {
+func (g *storageGroupSvc) requestRemoveVolumeFromSGMV(ctx context.Context, tgtStorageGroupID, tgtMaskingViewID, reqID, clientSymID, symID, devID string) (chan removeVolumeFromSGMVResponse, chan bool, error) {
 	responseChan := make(chan removeVolumeFromSGMVResponse, 1)
 	sgStateP, key := g.getUpdateStorageGroupState(symID, tgtStorageGroupID)
 
@@ -174,7 +189,7 @@ func (g *storageGroupSvc) requestRemoveVolumeFromSGMV(tgtStorageGroupID, tgtMask
 
 // runAddVolumesToSGMV gets the applicable number of requests, calls addVolumesToSGMV to process them,
 // handles any errors by calling handleAddVolumeToSGMV error, and makes sure each volume gets a return response to the error channel
-func (g *storageGroupSvc) runAddVolumesToSGMV(symID, tgtStorageGroupID string) {
+func (g *storageGroupSvc) runAddVolumesToSGMV(ctx context.Context, symID, tgtStorageGroupID string, pmaxClient pmax.Pmax) {
 	// Get the key and defer releasing the lock
 	key := getKey(symID, tgtStorageGroupID)
 	sgStateInterface, ok := g.updateSGStateMap.Load(key)
@@ -188,21 +203,21 @@ func (g *storageGroupSvc) runAddVolumesToSGMV(symID, tgtStorageGroupID string) {
 	}(sgState)
 
 	// Pull a request of the queue and process it
-	requests, deviceIDs := g.getRequestsForAddVolumesToSG(sgState)
+	requests, deviceIDs := g.getRequestsForAddVolumesToSG(ctx, sgState)
 	if len(requests) > 0 {
 		req := requests[0]
 		pmaxClient, err := symmetrix.GetPowerMaxClient(req.clientSymID)
 		if err != nil {
 			log.Error(err.Error())
 			for _, req := range requests {
-				g.handleAddVolumeToSGMVError(req)
+				g.handleAddVolumeToSGMVError(ctx, req)
 			}
 		}
-		err = g.addVolumesToSGMV(req.reqID, req.symID, req.tgtStorageGroupID, req.tgtMaskingViewID, req.hostID, deviceIDs, pmaxClient)
+		err = g.addVolumesToSGMV(ctx, req.reqID, req.symID, req.tgtStorageGroupID, req.tgtMaskingViewID, req.hostID, deviceIDs, pmaxClient)
 		if err != nil {
 			// In case of error, retry each of the requests individually if necessary.
 			for _, req := range requests {
-				g.handleAddVolumeToSGMVError(req)
+				g.handleAddVolumeToSGMVError(ctx, req)
 			}
 		} else {
 			// Default with no connections
@@ -212,7 +227,7 @@ func (g *storageGroupSvc) runAddVolumesToSGMV(symID, tgtStorageGroupID string) {
 			// and then Write nil response to all requests errChan to awaken the clients
 			if enableBatchGetMaskingViewConnections {
 				lockNum := RequestLock(getMVLockKey(req.symID, req.tgtMaskingViewID), req.reqID)
-				connections, connectionErr := pmaxClient.GetMaskingViewConnections(req.symID, req.tgtMaskingViewID, "")
+				connections, connectionErr := pmaxClient.GetMaskingViewConnections(ctx, req.symID, req.tgtMaskingViewID, "")
 				ReleaseLock(getMVLockKey(req.symID, req.tgtMaskingViewID), req.reqID, lockNum)
 				if connectionErr != nil {
 					connections = connections[:0]
@@ -231,14 +246,14 @@ func (g *storageGroupSvc) runAddVolumesToSGMV(symID, tgtStorageGroupID string) {
 }
 
 // handleAddVolumeToSGMVError handles case where a volume received error and may need to be retried
-func (g *storageGroupSvc) handleAddVolumeToSGMVError(req *addVolumeToSGMVRequest) {
+func (g *storageGroupSvc) handleAddVolumeToSGMVError(ctx context.Context, req *addVolumeToSGMVRequest) {
 	pmaxClient, err := symmetrix.GetPowerMaxClient(req.clientSymID)
 	if err != nil {
 		log.Error(err.Error())
 		return
 	}
 	// Get the current state of the volume
-	vol, err := pmaxClient.GetVolumeByID(req.symID, req.devID)
+	vol, err := pmaxClient.GetVolumeByID(ctx, req.symID, req.devID)
 	if err != nil {
 		response := addVolumeToSGMVResponse{
 			err: err,
@@ -255,7 +270,7 @@ func (g *storageGroupSvc) handleAddVolumeToSGMVError(req *addVolumeToSGMVRequest
 		}
 	}
 	// Make sure the target masking view also exists
-	_, err = pmaxClient.GetMaskingViewByID(req.symID, req.tgtMaskingViewID)
+	_, err = pmaxClient.GetMaskingViewByID(ctx, req.symID, req.tgtMaskingViewID)
 	// If MV exists and volume is in the SG, then no error
 	if err == nil && found {
 		// In the Storage Group, done
@@ -267,7 +282,7 @@ func (g *storageGroupSvc) handleAddVolumeToSGMVError(req *addVolumeToSGMVRequest
 		return
 	}
 	// Process as a single AddVolumeToSGMV request
-	g.processSingleAddVolumeToSGMV(req)
+	g.processSingleAddVolumeToSGMV(ctx, req)
 }
 
 // runRemoveVolumesFromSGMV removes zero, one, or more volumes from a single Storage Group
@@ -276,7 +291,7 @@ func (g *storageGroupSvc) handleAddVolumeToSGMVError(req *addVolumeToSGMVRequest
 // the SG, and them doing them in one operation. When complete, the service lock is automatically
 // released when we return to the caller, there is nothing more for him to do other than
 // continue polling until his request completes or it's his turn to run the service again.
-func (g *storageGroupSvc) runRemoveVolumesFromSGMV(symID, tgtStorageGroupID string) {
+func (g *storageGroupSvc) runRemoveVolumesFromSGMV(ctx context.Context, symID, tgtStorageGroupID string) {
 	// Get the key and defer releasing the lock
 	key := getKey(symID, tgtStorageGroupID)
 	// Pull a request off the queue and process it
@@ -292,14 +307,14 @@ func (g *storageGroupSvc) runRemoveVolumesFromSGMV(symID, tgtStorageGroupID stri
 	}(sgState)
 
 	// Pull a request off the queue and process it
-	requests, deviceIDs := g.getRequestsForRemoveVolumesFromSG(sgState)
+	requests, deviceIDs := g.getRequestsForRemoveVolumesFromSG(ctx, sgState)
 	if len(requests) > 0 {
 		req := requests[0]
-		err := g.removeVolumesFromSGMV(req.clientSymID, req.tgtStorageGroupID, req.tgtMaskingViewID, req.reqID, req.symID, deviceIDs)
+		err := g.removeVolumesFromSGMV(ctx, req.clientSymID, req.tgtStorageGroupID, req.tgtMaskingViewID, req.reqID, req.symID, deviceIDs)
 		if err != nil {
 			// In case of error, retry each of the requests individually if necessary.
 			for _, req := range requests {
-				g.handleRemoveVolumeFromSGMVError(req)
+				g.handleRemoveVolumeFromSGMVError(ctx, req)
 			}
 		} else {
 			// There was no error, Write nil response to all requests errChan to awaken the clients
@@ -314,14 +329,14 @@ func (g *storageGroupSvc) runRemoveVolumesFromSGMV(symID, tgtStorageGroupID stri
 }
 
 // handleRemoveVolumeFromSGMVError handles case where a volume received error and may need to be retried
-func (g *storageGroupSvc) handleRemoveVolumeFromSGMVError(req *removeVolumeFromSGMVRequest) {
+func (g *storageGroupSvc) handleRemoveVolumeFromSGMVError(ctx context.Context, req *removeVolumeFromSGMVRequest) {
 	pmaxClient, err := symmetrix.GetPowerMaxClient(req.clientSymID)
 	if err != nil {
 		log.Error(err.Error())
 		return
 	}
 	// Get the current state of the volume
-	vol, err := pmaxClient.GetVolumeByID(req.symID, req.devID)
+	vol, err := pmaxClient.GetVolumeByID(ctx, req.symID, req.devID)
 	if err != nil {
 		response := removeVolumeFromSGMVResponse{
 			err: err,
@@ -347,11 +362,11 @@ func (g *storageGroupSvc) handleRemoveVolumeFromSGMVError(req *removeVolumeFromS
 		return
 	}
 	// Process as a single RemoveVolumeFromSG request
-	g.processSingleRemoveVolumeFromSG(req)
+	g.processSingleRemoveVolumeFromSG(ctx, req)
 }
 
-// getRequestsForAddVolumesToSGMV gets zero to maxAddGroupSize requests for the sgState passed in and returns a request list and devID list
-func (g *storageGroupSvc) getRequestsForAddVolumesToSG(sgState *updateStorageGroupState) ([]*addVolumeToSGMVRequest, []string) {
+// getRequestsForAddVolumesToSG gets zero to maxAddGroupSize requests for the sgState passed in and returns a request list and devID list
+func (g *storageGroupSvc) getRequestsForAddVolumesToSG(ctx context.Context, sgState *updateStorageGroupState) ([]*addVolumeToSGMVRequest, []string) {
 	var initialReq *addVolumeToSGMVRequest
 	devIDs := make([]string, 0)
 	requests := make([]*addVolumeToSGMVRequest, 0)
@@ -363,7 +378,7 @@ func (g *storageGroupSvc) getRequestsForAddVolumesToSG(sgState *updateStorageGro
 				initialReq = req
 			}
 			if req.symID == initialReq.symID && req.tgtStorageGroupID == initialReq.tgtStorageGroupID && req.tgtMaskingViewID == initialReq.tgtMaskingViewID {
-				addToSG, createMV, err := g.addVolumeToSGMVVolumeCheck(req.clientSymID, req.symID, req.devID, req.tgtStorageGroupID, req.tgtMaskingViewID, req.accessMode)
+				addToSG, createMV, err := g.addVolumeToSGMVVolumeCheck(ctx, req.clientSymID, req.symID, req.devID, req.tgtStorageGroupID, req.tgtMaskingViewID, req.accessMode)
 				if err != nil {
 					// received an error
 					response := addVolumeToSGMVResponse{
@@ -385,7 +400,7 @@ func (g *storageGroupSvc) getRequestsForAddVolumesToSG(sgState *updateStorageGro
 					req.respChan <- response
 				}
 			} else {
-				g.processSingleAddVolumeToSGMV(req)
+				g.processSingleAddVolumeToSGMV(ctx, req)
 				i = maxAddGroupSize
 				break
 			}
@@ -398,7 +413,7 @@ func (g *storageGroupSvc) getRequestsForAddVolumesToSG(sgState *updateStorageGro
 }
 
 // getRequestsForRemoveVolumesFromSG gets zero to maxRemoveGroupSize requests for the sgState passed in and returns a request list and devID list
-func (g *storageGroupSvc) getRequestsForRemoveVolumesFromSG(sgState *updateStorageGroupState) ([]*removeVolumeFromSGMVRequest, []string) {
+func (g *storageGroupSvc) getRequestsForRemoveVolumesFromSG(ctx context.Context, sgState *updateStorageGroupState) ([]*removeVolumeFromSGMVRequest, []string) {
 	var initialReq *removeVolumeFromSGMVRequest
 	devIDs := make([]string, 0)
 	requests := make([]*removeVolumeFromSGMVRequest, 0)
@@ -414,7 +429,7 @@ func (g *storageGroupSvc) getRequestsForRemoveVolumesFromSG(sgState *updateStora
 				devIDs = append(devIDs, req.devID)
 				requests = append(requests, req)
 			} else {
-				g.processSingleRemoveVolumeFromSG(req)
+				g.processSingleRemoveVolumeFromSG(ctx, req)
 				i = maxRemoveGroupSize
 				break
 			}
@@ -427,7 +442,7 @@ func (g *storageGroupSvc) getRequestsForRemoveVolumesFromSG(sgState *updateStora
 	return requests, devIDs
 }
 
-func (g *storageGroupSvc) processSingleAddVolumeToSGMV(req *addVolumeToSGMVRequest) {
+func (g *storageGroupSvc) processSingleAddVolumeToSGMV(ctx context.Context, req *addVolumeToSGMVRequest) {
 	log.Infof("Single addVolumesToSGMV: %v", req)
 	devIDs := make([]string, 1)
 	devIDs[0] = req.devID
@@ -440,7 +455,7 @@ func (g *storageGroupSvc) processSingleAddVolumeToSGMV(req *addVolumeToSGMVReque
 		req.respChan <- response
 		return
 	}
-	err = g.addVolumesToSGMV(req.reqID, req.symID, req.tgtStorageGroupID, req.tgtMaskingViewID, req.hostID, devIDs, pmaxClient)
+	err = g.addVolumesToSGMV(ctx, req.reqID, req.symID, req.tgtStorageGroupID, req.tgtMaskingViewID, req.hostID, devIDs, pmaxClient)
 	response := addVolumeToSGMVResponse{
 		err: err,
 	}
@@ -448,11 +463,11 @@ func (g *storageGroupSvc) processSingleAddVolumeToSGMV(req *addVolumeToSGMVReque
 }
 
 // Process a single request, sending the error (if any) back to the caller
-func (g *storageGroupSvc) processSingleRemoveVolumeFromSG(req *removeVolumeFromSGMVRequest) {
+func (g *storageGroupSvc) processSingleRemoveVolumeFromSG(ctx context.Context, req *removeVolumeFromSGMVRequest) {
 	log.Infof("Single removeVolumesFromSGMV: %v", req)
 	devIDs := make([]string, 1)
 	devIDs[0] = req.devID
-	err := g.removeVolumesFromSGMV(req.clientSymID, req.tgtStorageGroupID, req.tgtMaskingViewID, req.reqID, req.symID, devIDs)
+	err := g.removeVolumesFromSGMV(ctx, req.clientSymID, req.tgtStorageGroupID, req.tgtMaskingViewID, req.reqID, req.symID, devIDs)
 	response := removeVolumeFromSGMVResponse{
 		err: err,
 	}
@@ -463,13 +478,13 @@ func (g *storageGroupSvc) processSingleRemoveVolumeFromSG(req *removeVolumeFromS
 // and that the access modes are compatible.
 // Returns bool addVolumeToSG, bool addVolumeToMV (i.e. create MV), and error
 // Can return true, true, nil -- add volume to SG; false, true, nil -- volume already in SG, check MV; false, false, nil -- done; false, false, err -- Error occured
-func (g *storageGroupSvc) addVolumeToSGMVVolumeCheck(clientSymID, symID, devID, tgtStorageGroupID, tgtMaskingViewID string, am *csi.VolumeCapability_AccessMode) (bool, bool, error) {
+func (g *storageGroupSvc) addVolumeToSGMVVolumeCheck(ctx context.Context, clientSymID, symID, devID, tgtStorageGroupID, tgtMaskingViewID string, am *csi.VolumeCapability_AccessMode) (bool, bool, error) {
 	pmaxClient, err := symmetrix.GetPowerMaxClient(clientSymID)
 	if err != nil {
 		log.Error(err.Error())
 		return false, false, err
 	}
-	vol, err := pmaxClient.GetVolumeByID(symID, devID)
+	vol, err := pmaxClient.GetVolumeByID(ctx, symID, devID)
 	if err != nil {
 		log.Error("Error retreiving volume: " + devID + ": " + err.Error())
 		return false, false, err
@@ -481,7 +496,7 @@ func (g *storageGroupSvc) addVolumeToSGMVVolumeCheck(clientSymID, symID, devID, 
 			volumeAlreadyInTargetSG = true
 		}
 	}
-	maskingViewIDs, storageGroups, err := g.svc.GetMaskingViewAndSGDetails(symID, currentSGIDs, pmaxClient)
+	maskingViewIDs, storageGroups, err := g.svc.GetMaskingViewAndSGDetails(ctx, symID, currentSGIDs, pmaxClient)
 	if err != nil {
 		log.Error("GetMaskingViewAndSGDetails Error: " + err.Error())
 		return false, false, err
@@ -533,7 +548,7 @@ func (g *storageGroupSvc) addVolumeToSGMVVolumeCheck(clientSymID, symID, devID, 
 
 // addVolumesToSGMV adds volumes to StorageGroup and Masking View for a specific symID, tgtStorageGroupID, tgtMaskingViewID, hostID
 // devIDs can be of zero length, in which case we'll just ensure the masking view exists
-func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtMaskingViewID, hostID string, devIDs []string, pmaxClient pmax.Pmax) error {
+func (g *storageGroupSvc) addVolumesToSGMV(ctx context.Context, reqID, symID, tgtStorageGroupID, tgtMaskingViewID, hostID string, devIDs []string, pmaxClient pmax.Pmax) error {
 	var maskingViewExists bool
 	var err error
 	f := log.Fields{
@@ -545,7 +560,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtM
 	log.WithFields(f).Infof("addVolumesToSGMV processing: %s", devIDs)
 	tgtMaskingView := &types.MaskingView{}
 	// Fetch the masking view
-	tgtMaskingView, err = pmaxClient.GetMaskingViewByID(symID, tgtMaskingViewID)
+	tgtMaskingView, err = pmaxClient.GetMaskingViewByID(ctx, symID, tgtMaskingViewID)
 	if err != nil {
 		log.WithFields(f).Debug("Failed to fetch masking view from array")
 	} else {
@@ -558,7 +573,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtM
 			if len(devIDs) > 0 {
 				log.WithFields(f).Info("Calling AddVolumesToStorageGroup")
 				start := time.Now()
-				err := pmaxClient.AddVolumesToStorageGroupS(symID, tgtStorageGroupID, true, devIDs...)
+				err := pmaxClient.AddVolumesToStorageGroupS(ctx, symID, tgtStorageGroupID, true, devIDs...)
 				if err != nil {
 					log.WithFields(f).Errorf("ControllerPublishVolume: Failed to add devices %s to storage group: %s", devIDs, err)
 					return status.Error(codes.Internal, "Failed to add volume to storage group: "+err.Error())
@@ -577,7 +592,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtM
 		// We need to create a Masking view
 		// First fetch the host details
 		log.WithFields(f).Infof("calling GetHostByID: %s", hostID)
-		host, err := pmaxClient.GetHostByID(symID, hostID)
+		host, err := pmaxClient.GetHostByID(ctx, symID, hostID)
 		if err != nil {
 			errormsg := fmt.Sprintf(
 				"ControllerPublishVolume: Failed to fetch host details for host %s on %s with error - %s", hostID, symID, err.Error())
@@ -586,7 +601,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtM
 		}
 		// Fetch or create a Port Group
 		log.WithFields(f).Info("calling SelectOrCreatePortGroup")
-		portGroupID, err := g.svc.SelectOrCreatePortGroup(symID, host, pmaxClient)
+		portGroupID, err := g.svc.SelectOrCreatePortGroup(ctx, symID, host, pmaxClient)
 		if err != nil {
 			errormsg := fmt.Sprintf(
 				"ControllerPublishVolume: Failed to select/create PG for host %s on %s with error - %s", hostID, symID, err.Error())
@@ -596,7 +611,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtM
 		log.Debugf("Selected PortGroup: %s", portGroupID)
 		// First check if our storage group exists
 		log.WithFields(f).Info("calling GetStorageGroup")
-		tgtStorageGroup, err := pmaxClient.GetStorageGroup(symID, tgtStorageGroupID)
+		tgtStorageGroup, err := pmaxClient.GetStorageGroup(ctx, symID, tgtStorageGroupID)
 		if err == nil {
 			// Check if this SG is not managed by FAST
 			if tgtStorageGroup.SRP != "" {
@@ -606,7 +621,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtM
 		} else {
 			// Attempt to create SG
 			log.WithFields(f).Info("calling CreateStorageGroup")
-			tgtStorageGroup, err = pmaxClient.CreateStorageGroup(symID, tgtStorageGroupID, "None", "", false)
+			tgtStorageGroup, err = pmaxClient.CreateStorageGroup(ctx, symID, tgtStorageGroupID, "None", "", false)
 			if err != nil {
 				log.WithFields(f).Errorf("ControllerPublishVolume: Failed to create storage group: %s", err)
 				return status.Error(codes.Internal, "Failed to create storage group")
@@ -616,7 +631,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtM
 		if len(devIDs) > 0 {
 			log.WithFields(f).Info("calling AddVolumesToStorageGroup")
 			start := time.Now()
-			err = pmaxClient.AddVolumesToStorageGroup(symID, tgtStorageGroupID, true, devIDs...)
+			err = pmaxClient.AddVolumesToStorageGroup(ctx, symID, tgtStorageGroupID, true, devIDs...)
 			if err != nil {
 				log.WithFields(f).Errorf("ControllerPublishVolume: Failed to add device - %s to storage group", devIDs)
 				return status.Error(codes.Internal, "Failed to add volume to storage group: "+err.Error())
@@ -624,7 +639,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtM
 			dur := time.Now().Sub(start)
 			log.WithFields(f).Infof("AddVolumesToStorageGroup time %d %f", len(devIDs), dur.Seconds())
 		}
-		_, err = pmaxClient.CreateMaskingView(symID, tgtMaskingViewID, tgtStorageGroupID, hostID, true, portGroupID)
+		_, err = pmaxClient.CreateMaskingView(ctx, symID, tgtMaskingViewID, tgtStorageGroupID, hostID, true, portGroupID)
 		if err != nil {
 			log.WithFields(f).Error(fmt.Sprintf("ControllerPublishVolume: Failed to create masking view - %s", tgtMaskingViewID))
 			return status.Error(codes.Internal, "Failed to create masking view: "+err.Error())
@@ -633,7 +648,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(reqID, symID, tgtStorageGroupID, tgtM
 	return nil
 }
 
-func (g *storageGroupSvc) removeVolumesFromSGMV(clientSymID, tgtStorageGroupID, tgtMaskingViewID, reqID, symID string, devIDs []string) error {
+func (g *storageGroupSvc) removeVolumesFromSGMV(ctx context.Context, clientSymID, tgtStorageGroupID, tgtMaskingViewID, reqID, symID string, devIDs []string) error {
 	var err error
 	pmaxClient, err := symmetrix.GetPowerMaxClient(clientSymID)
 	if err != nil {
@@ -649,7 +664,7 @@ func (g *storageGroupSvc) removeVolumesFromSGMV(clientSymID, tgtStorageGroupID, 
 	log.WithFields(f).Infof("removeVolumesFromSGMV processing %s", devIDs)
 
 	tempStorageGroupList := []string{tgtStorageGroupID}
-	maskingViewIDs, storageGroups, err := g.svc.GetMaskingViewAndSGDetails(symID, tempStorageGroupList, pmaxClient)
+	maskingViewIDs, storageGroups, err := g.svc.GetMaskingViewAndSGDetails(ctx, symID, tempStorageGroupList, pmaxClient)
 	if err != nil {
 		return err
 	}
@@ -669,7 +684,7 @@ func (g *storageGroupSvc) removeVolumesFromSGMV(clientSymID, tgtStorageGroupID, 
 	//First check if these are the only volumes in the SG
 	if storageGroups[0].NumOfVolumes == len(devIDs) {
 		// We need to delete the MV first
-		err = pmaxClient.DeleteMaskingView(symID, tgtMaskingViewID)
+		err = pmaxClient.DeleteMaskingView(ctx, symID, tgtMaskingViewID)
 		if err != nil {
 			log.WithFields(f).Errorf("removeVolumesFromSGMV: Failed to delete masking view Volumes: %s, status %s", devIDs, err.Error())
 			return status.Errorf(codes.Internal,
@@ -680,7 +695,7 @@ func (g *storageGroupSvc) removeVolumesFromSGMV(clientSymID, tgtStorageGroupID, 
 	}
 	// Remove the volume from SG
 	start := time.Now()
-	_, err = pmaxClient.RemoveVolumesFromStorageGroup(symID, tgtStorageGroupID, true, devIDs...)
+	_, err = pmaxClient.RemoveVolumesFromStorageGroup(ctx, symID, tgtStorageGroupID, true, devIDs...)
 	if err != nil {
 		log.Errorf("Failed to remove volume from SG (Volumes: %s, Array: %s, SG: %s) status %s", devIDs, symID, tgtStorageGroupID, err.Error())
 		return status.Errorf(codes.Internal,
@@ -692,7 +707,7 @@ func (g *storageGroupSvc) removeVolumesFromSGMV(clientSymID, tgtStorageGroupID, 
 	// If MV was deleted, then delete the SG as well
 	if maskingViewDeleted {
 		log.WithFields(f).Info("Deleting storage group")
-		err = pmaxClient.DeleteStorageGroup(symID, tgtStorageGroupID)
+		err = pmaxClient.DeleteStorageGroup(ctx, symID, tgtStorageGroupID)
 		if err != nil {
 			// We can just log a warning and continue
 			log.WithFields(f).Infof("removeVolumesFromSGMV: Failed to delete storage group %s", tgtStorageGroupID)

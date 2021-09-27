@@ -49,14 +49,6 @@ Feature: PowerMax CSI interface
       And I call CreateVolumeSize "volume3" "55"
       Then the error contains "different size than requested"
 
-
-     Scenario: Create volume with invalid arrays in the whitelist
-      Given a PowerMax service
-      And a provided array whitelist of "badone, badtwo"
-      And I call CreateVolumeSize "volume1" "10"
-      Then the error contains "ignored via a whitelist"
-
-
      Scenario: Create volume without probe
       Given a PowerMax service
       When I invalidate the Probe cache
@@ -269,13 +261,6 @@ Feature: PowerMax CSI interface
       Given a PowerMax service
       And I call GetCapacity with storage pool "xxx"
       Then the error contains "Storage Pool xxx not found"
-
-
-     Scenario: Call GetCapacity with invalid arrays in the whitelist
-      Given a PowerMax service
-      And a provided array whitelist of "badone, badtwo"
-      And I call GetCapacity with storage pool "SRP_1"
-      Then the error contains "ignored via a whitelist"
 
 @v1.0.0
      Scenario: Call GetCapacity with induced error retrieving capacity
@@ -516,21 +501,6 @@ Feature: PowerMax CSI interface
       | "InduceLoginError"     | "failed to login to (some) ISCSI targets"        | 0     |
       | "InduceSetCHAPError"   | "set CHAP induced error"                         | 0     |
       | "none"                 | "none"                                           | 2     |
-
-@v1.0.0
-    Scenario Outline: Validate Array Whitelists
-      Given a PowerMax service
-      And a provided array whitelist of <whitelist>
-      When I invoke getArrayWhitelist
-      Then the error contains <errormsg>
-      And <count> arrays are found
-
-      Examples:
-      | whitelist              | errormsg                         | count              | 
-      | ""                     | "none"                           | 0                  |
-      | "001, 002"             | "none"                           | 2                  |
-      | "001,002,   003"       | "none"                           | 3                  |
-      | "001,, ,  ,002"        | "none"                           | 2                  |
 
 @v1.0.0
     Scenario Outline: Test GetVolumeByID function

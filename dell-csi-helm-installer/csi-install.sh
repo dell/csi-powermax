@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020 Dell Inc., or its subsidiaries. All Rights Reserved.
+# Copyright (c) 2021 Dell Inc., or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -134,6 +134,12 @@ function install_driver() {
     log step "Upgrading Driver"
   else
     log step "Installing Driver"
+  fi
+
+  # run driver specific install script
+  local SCRIPTNAME="install-${DRIVER}.sh"
+  if [ -f "${SCRIPTDIR}/${SCRIPTNAME}" ]; then
+    source "${SCRIPTDIR}/${SCRIPTNAME}"
   fi
 
   HELMOUTPUT="/tmp/csi-install.$$.out"

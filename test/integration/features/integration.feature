@@ -848,3 +848,72 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And I call Delete RemoteStorageProtectionGroup
     And there are no errors
 
+@v1.6.0
+  Scenario: SRDF Actions on a protected SG
+    Given a Powermax service
+    And a basic block volume request "integration1" "100"
+    And adds replication capability with mode "ASYNC" namespace "INT"
+    When I call CreateVolume
+    And I receive a valid volume
+    And I call CreateRemoteVolume with mode "ASYNC"
+    And there are no errors
+    And I call CreateStorageProtectionGroup with mode "ASYNC"
+    And there are no errors
+    And I call ExecuteAction with action "Failover"
+    And there are no errors
+    And I call ExecuteAction with action "Failback"
+    And there are no errors
+    And I call ExecuteAction with action "Suspend"
+    And there are no errors
+    And I call ExecuteAction with action "Resume"
+    And there are no errors
+    And I call ExecuteAction with action "Resume"
+    And there are no errors
+    And I call ExecuteAction with action "Suspend"
+    And there are no errors
+    And I call ExecuteAction with action "Establish"
+    And there are no errors
+    And when I call DeleteVolume
+    Then there are no errors
+    And I call DeleteTargetVolume
+    Then there are no errors
+    And all volumes are deleted successfully
+    And I call Delete LocalStorageProtectionGroup
+    And there are no errors
+    And I call Delete RemoteStorageProtectionGroup
+    And there are no errors
+
+@v1.6.0
+  Scenario: Get Status of a protected SG
+    Given a Powermax service
+    And a basic block volume request "integration1" "100"
+    And adds replication capability with mode "ASYNC" namespace "INT"
+    When I call CreateVolume
+    And I receive a valid volume
+    And I call CreateRemoteVolume with mode "ASYNC"
+    And there are no errors
+    And I call CreateStorageProtectionGroup with mode "ASYNC"
+    And there are no errors
+    And I call ExecuteAction with action "Failover"
+    And there are no errors
+    And I call GetStorageProtectionGroupStatus to get "FAILEDOVER"
+    And there are no errors
+    And I call ExecuteAction with action "Failback"
+    And there are no errors
+    And I call GetStorageProtectionGroupStatus to get "SYNCHRONIZED"
+    And there are no errors
+    And I call ExecuteAction with action "Suspend"
+    And there are no errors
+    And I call GetStorageProtectionGroupStatus to get "SUSPENDED"
+    And there are no errors
+    And I call ExecuteAction with action "Resume"
+    And there are no errors
+    And when I call DeleteVolume
+    Then there are no errors
+    And I call DeleteTargetVolume
+    Then there are no errors
+    And all volumes are deleted successfully
+    And I call Delete LocalStorageProtectionGroup
+    And there are no errors
+    And I call Delete RemoteStorageProtectionGroup
+    And there are no errors

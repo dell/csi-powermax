@@ -1,5 +1,5 @@
 /*
- Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"path"
@@ -79,7 +79,7 @@ func BasicAuth(credentials common.Credentials) string {
 func Elapsed(requestID string, op string) func() {
 	start := time.Now()
 	return func() {
-		log.Printf("Request ID: %s - %s time: %v\n", requestID, op, time.Since(start))
+		log.Infof("Request ID: %s - %s time: %v\n", requestID, op, time.Since(start))
 	}
 }
 
@@ -106,7 +106,7 @@ func WriteHTTPResponse(w http.ResponseWriter, val interface{}) {
 	}
 	_, err = w.Write(jsonBytes)
 	if err != nil {
-		log.Printf("Couldn't write to ResponseWriter")
+		log.Error("Couldn't write to ResponseWriter")
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 	return

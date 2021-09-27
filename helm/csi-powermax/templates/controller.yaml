@@ -1,14 +1,15 @@
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ .Release.Name }}-controller
-  namespace: {{ .Release.Namespace }}
+  name: {{.Release.Name}}-controller
+  namespace: {{.Release.Namespace}}
 ---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   {{- if eq .Values.customDriverName.enabled true}}
-  name: {{ printf "%s-%s-controller" .Release.Namespace .Values.customDriverName.value }}
+  name: {{printf "%s-%s-controller" .Release.Namespace .Values.customDriverName.value}}
   {{- else }}
   name: {{ .Release.Name }}-controller
   {{- end }}
@@ -108,7 +109,7 @@ metadata:
   name: {{ .Release.Name }}-controller
   namespace: {{ .Release.Namespace }}
 spec:
-  replicas: {{ required "Must provide the number of controller instances to create." .Values.controllerCount }}
+  replicas: {{ required "Must provide the number of controller instances to create." .Values.controller.controllerCount }}
   selector:
     matchLabels:
       name: {{ .Release.Name }}-controller
@@ -139,6 +140,7 @@ spec:
       containers:
         - name: attacher
           image: {{ required "Must provide the CSI attacher container image." .Values.images.attacher }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
@@ -153,9 +155,10 @@ spec:
               mountPath: /var/run/csi
         - name: provisioner
           image: {{ required "Must provide the CSI provisioner container image." .Values.images.provisioner }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
-            - "--volume-name-prefix={{ required "Must provide a Volume Name Prefix." .Values.volumeNamePrefix }}"
+            - "--volume-name-prefix={{ required "Must provide a Volume Name Prefix." .Values.controller.volumeNamePrefix }}"
             - "--volume-name-uuid-length=10"
             - "--timeout=180s"
             - "--worker-threads=6"
@@ -170,12 +173,15 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi
+        {{- if hasKey .Values.controller "snapshot" }}
+        {{- if eq .Values.controller.snapshot.enabled true }}      
         - name: snapshotter
           image: {{ required "Must provide the CSI snapshotter container image." .Values.images.snapshotter }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
-            - "--snapshot-name-prefix={{ required "Must privided a Snapshot Name Prefix" .Values.snapNamePrefix }}"
+            - "--snapshot-name-prefix={{ required "Must provide a Snapshot Name Prefix" .Values.controller.snapshot.snapNamePrefix }}"
             - "--snapshot-name-uuid-length=10"
             - "--timeout=180s"
             - "--leader-election"
@@ -185,28 +191,39 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi
+        {{- end }}
+        {{- end }}
         {{- if eq .Values.replication.enabled true}}
         - name: dell-csi-replicator
           image: {{ required "Must provide the Dell CSI Replicator Resizer image." .Values.replication.image}}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
             - "--leader-election=true"
             - "--worker-threads=2"
             - "--retry-interval-start=1s"
             - "--retry-interval-max=300s"
-            - "--timeout=10s"
+            - "--timeout=300s"
             - "--context-prefix={{ .Values.replication.replicationContextPrefix}}"
             - "--prefix={{ .Values.replication.replicationPrefix}}"
           env:
             - name: ADDRESS
               value: /var/run/csi/csi.sock
+            - name: X_CSI_REPLICATION_CONFIG_DIR
+              value: /powermax-config-params
+            - name: X_CSI_REPLICATION_CONFIG_FILE_NAME
+              value: driver-config-params.yaml
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi
+            - name: powermax-config-params
+              mountPath: /powermax-config-params
         {{- end }}
+        {{- if hasKey .Values.controller "resizer" }}
+        {{- if eq .Values.controller.resizer.enabled true }}
         - name: resizer
           image: {{ required "Must provide the CSI resizer container image." .Values.images.resizer }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
             - "--timeout=180s"
@@ -218,9 +235,11 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi
+          {{- end }}
+          {{- end }}
         - name: driver
           image: {{ required "Must provide the PowerMax driver container image." .Values.images.driver }}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
           command: [ "/csi-powermax.sh" ]
           args:
             - "--leader-election"
@@ -240,8 +259,6 @@ spec:
               value: /var/run/csi/csi.sock
             - name: X_CSI_MODE
               value: controller
-            - name: X_CSI_DEBUG
-              value: "true"
             - name: X_CSI_MANAGED_ARRAYS
               value: {{ $arraysStr | replace " " "," | quote }}
             {{- if ne .Values.csireverseproxy.enabled true }}
@@ -259,14 +276,12 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.global.defaultCredentialsSecret }}
                   key: password
-            - name: X_CSI_POWERMAX_VERSION
-              value: "90"
+            - name: X_CSI_POWERMAX_CONFIG_PATH
+              value: /powermax-config-params/driver-config-params.yaml
             - name: X_CSI_POWERMAX_DEBUG
               value: {{ .Values.powerMaxDebug | default "false" | lower | quote }}
             - name: X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION
               value: {{ .Values.skipCertificateValidation | default "true" | lower | quote }}
-            - name: X_CSI_POWERMAX_INSECURE
-              value: {{ .Values.powerMaxInsecure | default "none" | lower | quote }}
             {{- if eq .Values.csireverseproxy.enabled true }}
               {{- if eq .Values.csireverseproxy.deployAsSidecar true }}
             - name: X_CSI_POWERMAX_SIDECAR_PROXY_PORT
@@ -283,8 +298,6 @@ spec:
               value: {{ .Values.portGroups | toJson }}
             - name: X_CSI_K8S_CLUSTER_PREFIX
               value: {{ required "Must provide a Cluster Prefix." .Values.clusterPrefix }}
-            - name: X_CSI_POWERMAX_ARRAYS
-              value: {{ .Values.arrayWhitelist | default "" | toJson }}
             - name: X_CSI_GRPC_MAX_THREADS
             {{- if eq .Values.csireverseproxy.enabled true }}
               value: "50"
@@ -299,22 +312,24 @@ spec:
               value: {{ .Values.nodeNameTemplate | default "" }}
             - name: X_CSI_IG_MODIFY_HOSTNAME
               value: {{ .Values.modifyHostName | default "false" | lower | quote }}
-            {{- if eq .Values.replication.enabled true}}
             - name: X_CSI_REPLICATION_CONTEXT_PREFIX
-              value: {{ .Values.replication.replicationContextPrefix | default "powermax/"}}
+              value: {{ .Values.replication.replicationContextPrefix | default "powermax"}}
             - name: X_CSI_REPLICATION_PREFIX
-              value: {{ .Values.replication.replicationPrefix | default "replication.storage.dell.com/"}}
-            {{- end }}
+              value: {{ .Values.replication.replicationPrefix | default "replication.storage.dell.com"}}
+            - name: X_CSI_UNISPHERE_TIMEOUT
+              value: {{.Values.unisphereTimeout | default "5m"}}
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi
             - name: certs
               mountPath: /certs
               readOnly: true
+            - name: powermax-config-params
+              mountPath: /powermax-config-params
         {{- if and (eq .Values.csireverseproxy.enabled true) (eq .Values.csireverseproxy.deployAsSidecar true) }}
         - name: reverseproxy
           image: {{ required "Must provided an image for reverseproxy container." .Values.csireverseproxy.image }}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
           env:
             - name: X_CSI_REVPROXY_CONFIG_DIR
               value: /etc/config/configmap
@@ -342,7 +357,7 @@ spec:
         - name: certs
           secret:
               secretName: {{ .Release.Name }}-certs
-              optional: true 
+              optional: true
         - name: configmap-volume
           configMap:
             name: {{ .Release.Name }}-reverseproxy-config
@@ -352,3 +367,6 @@ spec:
             secretName: {{ .Values.csireverseproxy.tlsSecret }}
         - name: cert-dir
           emptyDir:
+        - name: powermax-config-params
+          configMap:
+            name: {{ .Release.Name }}-config-params
