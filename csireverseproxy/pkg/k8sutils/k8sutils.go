@@ -212,17 +212,14 @@ func (utils *K8sUtils) createFile(fileName string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			log.Errorf("failed to close file: %s, error: %s", fileName, err.Error())
-		}
-	}()
 	_, err = file.Write(data)
 	if err != nil {
 		return err
 	}
-	err = file.Sync()
-	return err
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	return file.Close()
 }
 
 // StartInformer -  starts the informer to listen for any events related to secrets

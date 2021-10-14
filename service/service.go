@@ -458,7 +458,7 @@ func (s *service) BeforeServe(
 
 	// Start the snapshot housekeeping worker thread
 	if !strings.EqualFold(s.mode, "node") {
-		s.startSnapCleanupWorker()
+		s.startSnapCleanupWorker() // #nosec G20
 		if snapCleaner == nil {
 			snapCleaner = new(snapCleanupWorker)
 		}

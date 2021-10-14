@@ -409,7 +409,7 @@ func mkfile(path string) (bool, error) {
 				err).Error("Unable to create file")
 			return false, err
 		}
-		file.Close()
+		file.Close() // #nosec G20
 		log.WithField("path", path).Debug("created file")
 		return true, nil
 	}
