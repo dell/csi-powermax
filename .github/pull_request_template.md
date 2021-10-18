@@ -17,7 +17,6 @@ List the GitHub issues impacted by this PR:
 - [ ] Have you commented your code, particularly in hard-to-understand areas
 - [ ] Have you done corresponding changes to the documentation
 - [ ] Did you run tests in a real Kubernetes cluster?
-- [ ] Have you maintained at least 90% code coverage?
 - [ ] Backward compatibility is not broken
 
 # How Has This Been Tested?
