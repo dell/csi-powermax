@@ -26,14 +26,14 @@ import (
 
 const (
 	// CSIPrefix is the prefix added to all the resource names created by the driver.
-	CSIPrefix              = "csi"
+	CSIPrefix = "csi"
 	// MaxVolIdentifierLength is the maximum allowed size of a volume identifier.
 	MaxVolIdentifierLength = 64
 )
 
 var (
 	// SRPCacheValidity ...
-	SRPCacheValidity         = 24 * time.Hour
+	SRPCacheValidity = 24 * time.Hour
 	// SnapLicenseCacheValidity ...
 	SnapLicenseCacheValidity = 24 * time.Hour
 	validSLO                 = [...]string{"Diamond", "Platinum", "Gold", "Silver", "Bronze", "Optimized", "None"}
