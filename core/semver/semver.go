@@ -90,11 +90,9 @@ func main() {
 			os.Exit(1)
 		}
 		w = fout
-		defer func() {
-			if err := fout.Close(); err != nil {
-				panic(err)
-			}
-		}()
+		if err := fout.Close(); err != nil {
+			panic(err)
+		}
 	}
 
 	gitdesc := chkErr(doExec("git", "describe", "--long", "--dirty"))

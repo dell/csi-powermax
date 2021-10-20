@@ -89,8 +89,13 @@ func (rep *ReplicationCapabilitiesCache) Get(ctx context.Context, client pmax.Pm
 	}
 	for _, symCapability := range symRepCapabilities.SymmetrixCapability {
 		if symCapability.SymmetrixID == symID {
-			rep.update(&symCapability)
-			return &symCapability, nil
+			capability := &types.SymmetrixCapability{
+				SymmetrixID: symCapability.SymmetrixID,
+				RdfCapable: symCapability.RdfCapable,
+				SnapVxCapable: symCapability.SnapVxCapable,
+			}
+			rep.update(capability)
+			return capability, nil
 		}
 	}
 	return nil, fmt.Errorf("couldn't find sym id: %s in response", symID)
