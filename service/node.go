@@ -372,7 +372,7 @@ func (s *service) NodeUnstageVolume(
 	if err != nil {
 		log.Infof("NodeUnstageVolume error unmount stage target %s: %s", stageTgt, err.Error())
 	}
-	removeWithRetry(stageTgt)
+	removeWithRetry(stageTgt) // #nosec G20
 
 	// READ volume WWN from the local file copy
 	var volumeWWN string
@@ -452,9 +452,9 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		nodeUnstageCtx = setLogFields(nodeUnstageCtx, f)
 		switch s.arrayTransportProtocolMap[symID] {
 		case FcTransportProtocol:
-			s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+			s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName) // #nosec G20
 		case IscsiTransportProtocol:
-			s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+			s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName) // #nosec G20
 		}
 		cancel()
 		time.Sleep(disconnectVolumeRetryTime)
@@ -462,7 +462,7 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		// Check that the /sys/block/DeviceName actually exists
 		if _, err := ioutil.ReadDir(sysBlock + deviceName); err != nil {
 			// If not, make sure the symlink is removed
-			os.Remove(symlinkPath)
+			os.Remove(symlinkPath) // #nosec G20
 		}
 	}
 
@@ -646,7 +646,7 @@ func (s *service) NodeUnpublishVolume(
 
 	log.Infof("lastUmounted %v\n", lastUnmounted)
 	if lastUnmounted {
-		removeWithRetry(target)
+		removeWithRetry(target) // #nosec G20
 		return &csi.NodeUnpublishVolumeResponse{}, nil
 	}
 
@@ -673,7 +673,7 @@ func (s *service) NodeUnpublishVolume(
 	if len(mnts) > 0 {
 		log.WithFields(f).Infof("Device mounts still present: %#v", mnts)
 	}
-	removeWithRetry(target)
+	removeWithRetry(target) // #nosec G20
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
@@ -932,7 +932,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 	symmetrixIDs := arrays.SymmetrixIDs
 	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
 
-	s.nodeHostSetup(ctx, portWWNs, IQNs, symmetrixIDs)
+	s.nodeHostSetup(ctx, portWWNs, IQNs, symmetrixIDs) // #nosec G20
 
 	return err
 }
@@ -1891,5 +1891,5 @@ func (s *service) readWWNFile(id string) (string, error) {
 // removeWWNFile removes the WWN file from the node local disk
 func (s *service) removeWWNFile(id string) {
 	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
-	os.Remove(wwnFileName)
+	os.Remove(wwnFileName) // #nosec G20
 }

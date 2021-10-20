@@ -90,8 +90,8 @@ func (rep *ReplicationCapabilitiesCache) Get(ctx context.Context, client pmax.Pm
 	for _, symCapability := range symRepCapabilities.SymmetrixCapability {
 		if symCapability.SymmetrixID == symID {
 			capability := &types.SymmetrixCapability{
-				SymmetrixID: symCapability.SymmetrixID,
-				RdfCapable: symCapability.RdfCapable,
+				SymmetrixID:   symCapability.SymmetrixID,
+				RdfCapable:    symCapability.RdfCapable,
 				SnapVxCapable: symCapability.SnapVxCapable,
 			}
 			rep.update(capability)
