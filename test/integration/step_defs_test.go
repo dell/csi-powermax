@@ -25,7 +25,7 @@ import (
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cucumber/godog"
-	service "github.com/dell/csi-powermax/service"
+	service "github.com/dell/csi-powermax/v2/service"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 	pmax "github.com/dell/gopowermax"
 	ptypes "github.com/golang/protobuf/ptypes"

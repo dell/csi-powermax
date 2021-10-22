@@ -19,8 +19,8 @@ package main
 import "C"
 
 import (
-	"github.com/dell/csi-powermax/provider"
-	"github.com/dell/csi-powermax/service"
+	"github.com/dell/csi-powermax/v2/provider"
+	"github.com/dell/csi-powermax/v2/service"
 )
 
 ////////////////////////////////////////////////////////////////////////////////

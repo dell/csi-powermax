@@ -94,7 +94,7 @@ func main() {
 			if err := fout.Close(); err != nil {
 				panic(err)
 			}
-		}()
+		}() // #nosec G20
 	}
 
 	gitdesc := chkErr(doExec("git", "describe", "--long", "--dirty"))

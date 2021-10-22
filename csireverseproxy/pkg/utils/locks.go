@@ -16,9 +16,10 @@ package utils
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"revproxy/pkg/common"
+	"revproxy/v2/pkg/common"
 	"sync"
+
+	log "github.com/sirupsen/logrus"
 )
 
 const (

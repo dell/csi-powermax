@@ -16,10 +16,11 @@ package k8smock
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"os"
-	"revproxy/pkg/utils"
+	"revproxy/v2/pkg/utils"
 	"testing"
+
+	log "github.com/sirupsen/logrus"
 )
 
 func TestMain(m *testing.M) {

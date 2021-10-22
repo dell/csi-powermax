@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"revproxy/pkg/common"
+	"revproxy/v2/pkg/common"
 	"strconv"
 	"time"
 

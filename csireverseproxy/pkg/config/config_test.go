@@ -16,13 +16,14 @@ package config
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"os"
-	"revproxy/pkg/common"
-	"revproxy/pkg/k8smock"
-	"revproxy/pkg/k8sutils"
-	"revproxy/pkg/utils"
+	"revproxy/v2/pkg/common"
+	"revproxy/v2/pkg/k8smock"
+	"revproxy/v2/pkg/k8sutils"
+	"revproxy/v2/pkg/utils"
 	"testing"
+
+	log "github.com/sirupsen/logrus"
 )
 
 func readConfig() (*ProxyConfigMap, error) {

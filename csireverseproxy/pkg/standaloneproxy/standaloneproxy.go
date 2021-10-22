@@ -19,24 +19,25 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"reflect"
-	"revproxy/pkg/common"
-	"revproxy/pkg/config"
-	"revproxy/pkg/utils"
+	"revproxy/v2/pkg/common"
+	"revproxy/v2/pkg/config"
+	"revproxy/v2/pkg/utils"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+
 	v90 "github.com/dell/gopowermax/types/v90"
 	"github.com/gorilla/mux"
 
-	"revproxy/pkg/cache"
+	"revproxy/v2/pkg/cache"
 )
 
 const clientSymID = "proxyClientSymID"

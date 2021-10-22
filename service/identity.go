@@ -25,7 +25,7 @@ import (
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	wrappers "github.com/golang/protobuf/ptypes/wrappers"
 
-	"github.com/dell/csi-powermax/core"
+	"github.com/dell/csi-powermax/v2/core"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 )
 
