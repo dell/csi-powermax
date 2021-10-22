@@ -25,8 +25,8 @@ import (
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cucumber/godog"
-	"github.com/dell/csi-powermax/provider"
-	"github.com/dell/csi-powermax/service"
+	"github.com/dell/csi-powermax/v2/provider"
+	"github.com/dell/csi-powermax/v2/service"
 	"github.com/dell/gocsi/utils"
 	"google.golang.org/grpc"
 )

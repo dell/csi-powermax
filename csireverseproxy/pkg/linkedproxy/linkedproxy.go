@@ -18,18 +18,19 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"reflect"
-	"revproxy/pkg/common"
-	"revproxy/pkg/config"
-	"revproxy/pkg/utils"
+	"revproxy/v2/pkg/common"
+	"revproxy/v2/pkg/config"
+	"revproxy/v2/pkg/utils"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/gorilla/mux"
 )

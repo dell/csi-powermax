@@ -15,13 +15,14 @@
 package provider
 
 import (
-	"github.com/dell/csi-powermax/service"
-	"github.com/dell/gocsi"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/keepalive"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/dell/csi-powermax/v2/service"
+	"github.com/dell/gocsi"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 )
 
 // New returns a new Mock Storage Plug-in Provider.

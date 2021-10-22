@@ -16,21 +16,22 @@ package main
 
 import (
 	"context"
-	log "github.com/sirupsen/logrus"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"revproxy/pkg/common"
-	"revproxy/pkg/config"
-	"revproxy/pkg/k8sutils"
-	"revproxy/pkg/linkedproxy"
-	"revproxy/pkg/standaloneproxy"
-	"revproxy/pkg/utils"
+	"revproxy/v2/pkg/common"
+	"revproxy/v2/pkg/config"
+	"revproxy/v2/pkg/k8sutils"
+	"revproxy/v2/pkg/linkedproxy"
+	"revproxy/v2/pkg/standaloneproxy"
+	"revproxy/v2/pkg/utils"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
 
