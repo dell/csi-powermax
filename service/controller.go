@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dell/csi-powermax/pkg/symmetrix"
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 
 	pmax "github.com/dell/gopowermax"
 

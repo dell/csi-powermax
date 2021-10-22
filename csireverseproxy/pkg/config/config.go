@@ -17,12 +17,13 @@ package config
 import (
 	"crypto/subtle"
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"net/url"
 	"reflect"
-	"revproxy/pkg/common"
-	"revproxy/pkg/k8sutils"
-	"revproxy/pkg/utils"
+	"revproxy/v2/pkg/common"
+	"revproxy/v2/pkg/k8sutils"
+	"revproxy/v2/pkg/utils"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/spf13/viper"
 	corev1 "k8s.io/api/core/v1"

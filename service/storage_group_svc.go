@@ -22,7 +22,7 @@ import (
 
 	pmax "github.com/dell/gopowermax"
 
-	"github.com/dell/csi-powermax/pkg/symmetrix"
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	types "github.com/dell/gopowermax/types/v90"

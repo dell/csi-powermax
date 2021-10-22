@@ -18,9 +18,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"revproxy/pkg/common"
-	"revproxy/pkg/k8sutils"
-	"revproxy/pkg/utils"
+	"revproxy/v2/pkg/common"
+	"revproxy/v2/pkg/k8sutils"
+	"revproxy/v2/pkg/utils"
 	"strconv"
 	"time"
 

@@ -17,15 +17,16 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/fsnotify/fsnotify"
-	"github.com/spf13/viper"
 	"math/rand"
 	"net"
 	"os"
 	"strconv"
 	"strings"
 
-	"github.com/dell/csi-powermax/pkg/symmetrix"
+	"github.com/fsnotify/fsnotify"
+	"github.com/spf13/viper"
+
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 
 	"google.golang.org/grpc"
 
@@ -41,7 +42,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/dell/csi-powermax/core"
+	"github.com/dell/csi-powermax/v2/core"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 	pmax "github.com/dell/gopowermax"
 )

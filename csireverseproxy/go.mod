@@ -1,4 +1,4 @@
-module revproxy
+module revproxy/v2
 
 go 1.16
 

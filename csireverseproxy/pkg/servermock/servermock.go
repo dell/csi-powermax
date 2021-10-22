@@ -15,9 +15,10 @@
 package servermock
 
 import (
-	"github.com/gorilla/mux"
 	"net/http"
-	"revproxy/pkg/utils"
+	"revproxy/v2/pkg/utils"
+
+	"github.com/gorilla/mux"
 )
 
 const (
