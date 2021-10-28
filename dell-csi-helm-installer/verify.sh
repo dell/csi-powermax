@@ -463,8 +463,8 @@ function verify_authorization_proxy_server() {
 
   proxyHost=$(grep -v "#" $VALUES | grep proxyHost | xargs | awk '{print $2}')
   insecure=$(grep -v "#" $VALUES | grep -A10 "authorization:" | grep insecure | xargs | awk '{print $2}')
-  WGET=`which wget`
-  CURL=`which curl`
+  WGET=$(ssh ${NODEUSER}@"${node}" "which wget")
+  CURL=$(ssh ${NODEUSER}@"${node}" "which curl")
 
   error=0
   code=0
@@ -475,32 +475,38 @@ function verify_authorization_proxy_server() {
     log step_failure
     check_error error
     return
-    fi
+  fi
 
+  for node in $MINION_NODES; do
     log info "Making HTTP request to https://"${proxyHost}"; expecting response code 502"
-    if [ "${insecure}" == "true" ]
-    then
-      code=$(curl -kIs https://"${proxyHost}" 2>&1 | grep "HTTP/1.1"| awk '{print $2}')
-    else
-      code=$(curl -Is https://"${proxyHost}" 2>&1 | grep "HTTP/1.1"| awk '{print $2}')
+
+    if [ -x "${CURL}" ]; then
+      if [ "${insecure}" == "true" ]
+      then
+        code=$(ssh ${NODEUSER}@"${node}" curl -kIs https://"${proxyHost}" 2>&1 | grep "HTTP/1.1"| awk '{print $2}')
+      else
+        code=$(ssh ${NODEUSER}@"${node}" curl -Is https://"${proxyHost}" 2>&1 | grep "HTTP/1.1"| awk '{print $2}')
+      fi
     fi
-  fi
 
-  log info "Making HTTP request to https://"${proxyHost}"; expecting response code 502"
-  if [ "${insecure}" == "true" ]
-    then
-      code=$(wget --no-check-certificate --server-response --spider --quiet https://"${proxyHost}"  2>&1 | awk 'NR==1{print $2}')
-    else
-      code=$(wget --server-response --spider --quiet https:"${proxyHost}" 2>&1 | awk 'NR==1{print $2}')
-  fi
+    if [ ! -x "${WGET}" ]; then
+      if [ "${insecure}" == "true" ]
+      then
+        code=$(ssh ${NODEUSER}@"${node}" wget --no-check-certificate --server-response --spider --quiet https://"${proxyHost}"  2>&1 | awk 'NR==1{print $2}')
+      else
+        code=$(ssh ${NODEUSER}@"${node}" wget --server-response --spider --quiet https:"${proxyHost}" 2>&1 | awk 'NR==1{print $2}')
+      fi
+    fi
+    
+    if [ "${code}" != "502" ]; then
+      error=1
+      found_error "did not get expected response code 502 from the the csm-authorization proxy-server, got "${code}""
+      log step_failure
+    fi
 
-  if [ "${code}" != "502" ]; then
-    error=1
-    found_error "did not get expected response code 502 from the the csm-authorization proxy-server, got "${code}""
-    log step_failure
-  fi
-
-   check_error error
+    check_error error
+    return
+  done
 }
 
 #
