@@ -26,7 +26,7 @@ clean:
 
 build: golint check
 	go generate
-	CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build
+	CGO_ENABLED=0 GOOS=linux GO111MODULE=on GOARCH=$(XGOARCH) go build
 
 install:
 	go generate

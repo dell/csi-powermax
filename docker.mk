@@ -11,7 +11,7 @@ VERSION="v$(MAJOR).$(MINOR).$(PATCH).$(BUILD)$(TYPE)"
 REGISTRY="localhost:5000/csi-powermax"
 
 docker:
-	docker build -t "$(REGISTRY):$(VERSION)" .
+	test -z "$(XGOARCH)" && docker build -t "$(REGISTRY):$(VERSION)" . || buildah bud -f Dockerfile.$(XGOARCH) -t $(REGISTRY):$(VERSION)
 
 push:   
 	docker push "$(REGISTRY):$(VERSION)"
