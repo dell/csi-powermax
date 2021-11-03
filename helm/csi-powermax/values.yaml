@@ -26,10 +26,10 @@ global:
     - storageArrayId: "000000000001"
     - storageArrayId: "000000000002"
   # Address of the Unisphere server that is managing the PowerMax arrays
-  # Default value: None
-  # Example: https://0.0.0.1:8443
   # If authorization is enabled, endpoint should be the HTTPS localhost endpoint that 
   # the authorization sidecar will listen on
+  # Default value: None
+  # Example: https://0.0.0.1:8443
   managementServers:
     - endpoint: https://unisphere-address:8443
   # Current version of the driver
@@ -41,8 +41,6 @@ global:
 # Please refer to the doc website about a
 # detailed explanation of each configuration parameter
 # and the various ReverseProxy modes
-# If authorization is enabled, endpoint and backupEndpoint should be the HTTPS localhost endpoint that 
-# the authorization sidecar will listen on. Increment port for each storage array used
 
 #  defaultCredentialsSecret: powermax-creds
 #  storageArrays:
@@ -341,7 +339,7 @@ replication:
 
 # Authorization: enable csm-authorization for RBAC
 authorization:
-  # enable: Enable/Disable csm-authorization
+  # enabled: Enable/Disable csm-authorization
   enabled: false
 
   # sidecarProxyImage: the container images used for the csm-authorization-sidecar.
@@ -350,5 +348,6 @@ authorization:
   # proxyHost: hostname of the csm-authorization server
   proxyHost:
 
-  # insecure: Enable/Disable certificate validation of the csm-authorization server
-  insecure: true
+  # skipCertificateValidation: Enable/Disable certificate validation of the csm-authorization server
+  skipCertificateValidation: true
+  
