@@ -1,0 +1,148 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+    name: powermaxtest
+    namespace: {{ .Values.namespace }}
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+    name: powermaxtest
+    namespace: {{ .Values.namespace }}
+spec:
+    selector:
+        matchLabels:
+          app: powermaxtest
+    serviceName: test2vols
+    template:
+      metadata:
+        labels:
+          app: powermaxtest
+      spec:
+        serviceAccount: powermaxtest
+        containers:
+          - name: test
+            image: docker.io/centos:latest
+            command: [ "/bin/sleep", "3600" ]
+            volumeDevices:
+              - devicePath: "/dev/data0"
+                name: pvol0
+              - devicePath: "/dev/data1"
+                name: pvol1
+              - devicePath: "/dev/data2"
+                name: pvol2
+              - devicePath: "/dev/data3"
+                name: pvol3
+              - devicePath: "/dev/data4"
+                name: pvol4
+              - devicePath: "/dev/data5"
+                name: pvol5
+              - devicePath: "/dev/data6"
+                name: pvol6
+              - devicePath: "/dev/data7"
+                name: pvol7
+              - devicePath: "/dev/data8"
+                name: pvol8
+              - devicePath: "/dev/data9"
+                name: pvol9
+    volumeClaimTemplates:
+    - metadata:
+        name: pvol0
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        volumeMode: Block
+        storageClassName: {{ .Values.sc }}
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: pvol1
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        volumeMode: Block
+        storageClassName: {{ .Values.sc }}
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: pvol2
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        volumeMode: Block
+        storageClassName: {{ .Values.sc }}
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: pvol3
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        volumeMode: Block
+        storageClassName: {{ .Values.sc }}
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: pvol4
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        volumeMode: Block
+        storageClassName: {{ .Values.sc }}
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: pvol5
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        volumeMode: Block
+        storageClassName: {{ .Values.sc }}
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: pvol6
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        volumeMode: Block
+        storageClassName: {{ .Values.sc }}
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: pvol7
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        volumeMode: Block
+        storageClassName: {{ .Values.sc }}
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: pvol8
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        volumeMode: Block
+        storageClassName: {{ .Values.sc }}
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: pvol9
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        volumeMode: Block
+        storageClassName: {{ .Values.sc }}
+        resources:
+          requests:
+            storage: 1Gi

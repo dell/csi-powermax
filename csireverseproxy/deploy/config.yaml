@@ -1,0 +1,43 @@
+mode: Linked
+port: 2222
+logLevel: debug
+logFormat: text
+linkConfig:
+  primary:
+    url: https://primary.unisphe.re:8443
+    skipCertificateValidation: true
+    certSecret: "primary-cert"
+    limits:
+      maxActiveRead: 5
+      maxOutStandingWrite: 50
+  backup:
+    url: https://backup.unisphe.re:8443
+    skipCertificateValidation: true
+    certSecret: "backup-cert"
+standAloneConfig:
+  storageArrays:
+    - storageArrayId: "000000000001"
+      primaryURL: https://primary-1.unisphe.re:8443
+      backupURL: https://backup-1.unisphe.re
+      proxyCredentialSecrets:
+        - proxy-secret-11
+        - proxy-secret-12
+    - storageArrayId: "000000000002"
+      primaryURL: https://primary-2.unisphe.re:8443
+      backupURL: https://backup-2.unisphe.re
+      proxyCredentialSecrets:
+        - proxy-secret-21
+        - proxy-secret-22
+  managementServers:
+    - url: https://primary-1.unisphe.re:8443
+      arrayCredentialSecret: primary-1-secret
+      skipCertificateValidation: true
+    - url: https://backup-1.unisphe.re:8443
+      arrayCredentialSecret: backup-1-secret
+      skipCertificateValidation: false
+    - url: https://primary-2.unisphe.re:8443
+      arrayCredentialSecret: primary-2-secret
+      skipCertificateValidation: true
+    - url: https://backup-2.unisphe.re:8443
+      arrayCredentialSecret: backup-2-secret
+      skipCertificateValidation: false
