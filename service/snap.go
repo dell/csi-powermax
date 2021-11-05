@@ -539,32 +539,6 @@ func (s *service) CreateSnapshotFromVolume(ctx context.Context, symID string, vo
 	return pmaxClient.GetSnapshotInfo(ctx, symID, deviceID, snapID)
 }
 
-// IsSnapshotSource returns true if the volume is a snapshots source
-func (s *service) IsSnapshotSource(ctx context.Context, symID, devID string, pmaxClient pmax.Pmax) (snapSrc bool, err error) {
-	var tempSnapTag string
-	var delSnapTag string
-
-	srcSessions, _, err := s.GetSnapSessions(ctx, symID, devID, pmaxClient)
-	if err != nil {
-		log.Error("Failed to determine volume as a snapshot source: Error - ", err.Error())
-		if strings.Contains(err.Error(), "Volume is neither a source nor target") {
-			err = nil
-		}
-		return false, err
-	}
-	tempSnapTag = fmt.Sprintf("%s%s", TempSnap, s.getClusterPrefix())
-	delSnapTag = fmt.Sprintf("%s-%s%s", SnapDelPrefix, CsiVolumePrefix, s.getClusterPrefix())
-	if len(srcSessions) > 0 {
-		for _, session := range srcSessions {
-			if !strings.HasPrefix(session.Name, tempSnapTag) &&
-				!strings.HasPrefix(session.Name, delSnapTag) {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
-}
-
 // startSnapCleanupWorker starts the snapshot housekeeping worker thread(s).
 // It should be called when the driver is initializing.
 func (s *service) startSnapCleanupWorker() error {

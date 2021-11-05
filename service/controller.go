@@ -1437,12 +1437,7 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 	}
 
 	// Verify if volume is snapshot source
-	isSnapSrc, err := s.IsSnapshotSource(ctx, symID, devID, pmaxClient)
-	if err != nil {
-		log.Error("Failed to determine volume as a snapshot source: Error - ", err.Error())
-		return status.Errorf(codes.Internal, err.Error())
-	}
-	if isSnapSrc {
+	if vol.SnapSource {
 		//Execute soft delete i.e. return DeleteVolume success to the CO/k8s
 		//after appending the volumeID with 'DS' tag. While appending the tag, ensure
 		//that length of volume name shouldn't exceed MaxVolIdentifierLength
