@@ -26,6 +26,8 @@ global:
     - storageArrayId: "000000000001"
     - storageArrayId: "000000000002"
   # Address of the Unisphere server that is managing the PowerMax arrays
+  # If authorization is enabled, endpoint should be the HTTPS localhost endpoint that 
+  # the authorization sidecar will listen on
   # Default value: None
   # Example: https://0.0.0.1:8443
   managementServers:
@@ -334,3 +336,27 @@ replication:
   # Default value: "replication.storage.dell.com"
   # Examples: "replication.storage.dell.com", "rdf.storage.dell.com"
   replicationPrefix: "replication.storage.dell.com"
+
+# CSM module attributes
+# authorization: enable csm-authorization for RBAC
+# Deploy and configure authorization before installing driver
+# Allowed values:
+#   "true" - authorization is enabled
+#   "false" - authorization is disabled
+# Default value: "false"
+authorization:
+  enabled: false
+  # sidecarProxyImage: the container image used for the csm-authorization-sidecar.
+  # Default value: dellemc/csm-authorization-sidecar:v1.0.0
+  # Example: 0.0.0.1:5000/csm-authorization-sidecar:v1.0.0
+  sidecarProxyImage: dellemc/csm-authorization-sidecar:v1.0.0
+  # proxyHost: hostname of the csm-authorization server
+  # Default value: None
+  proxyHost:
+  # skipCertificateValidation: certificate validation of the csm-authorization server
+  # Allowed Values:
+  #   "true" - TLS certificate verification will be skipped
+  #   "false" - TLS certificate will be verified 
+  # Default value: "true" 
+  skipCertificateValidation: true
+  
