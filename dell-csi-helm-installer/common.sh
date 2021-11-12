@@ -33,14 +33,6 @@ function log() {
   separator)
     decho "------------------------------------------------------"
     ;;
-  uninstall_error)
-    log separator
-    printf "${RED}Error: $2\n"
-    printf "${RED}Uninstallation cannot continue${NC}\n"
-    debuglog_only "Error: $2"
-    debuglog_only "Uninstallation cannot continue"
-    exit 1
-    ;;
   error)
     decho
     log separator
