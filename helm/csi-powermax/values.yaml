@@ -32,9 +32,6 @@ global:
   # Example: https://0.0.0.1:8443
   managementServers:
     - endpoint: https://unisphere-address:8443
-  # Current version of the driver
-  # Don't modify this value as this value will be used by the install script
-  version: "2.0.0" 
 # If you are using the CSI PowerMax ReverseProxy then comment the section
 # 'without reverse proxy configuration' above and uncomment the following section
 # and fill out the required configuration
@@ -70,6 +67,10 @@ global:
 #    - endpoint: https://backup-2.unisphe.re:8443
 #      credentialsSecret: backup-2-secret
 #      skipCertificateValidation: true
+
+# Current version of the driver
+# Don't modify this value as this value will be used by the install script
+version: "2.0.0"
 
 ## K8S/DRIVER ATTRIBUTES
 ########################
