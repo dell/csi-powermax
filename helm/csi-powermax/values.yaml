@@ -326,7 +326,6 @@ replication:
   enabled: false
   # Change this to use any specific version of the dell-csi-replicator sidecar
   # Default value: None
-  # Example: 0.0.0.1:5000/dell-csi-replicator:v0.0.1
   image: dellemc/dell-csi-replicator:v1.0.0
   # replicationContextPrefix enables side cars to read
   # required information from the volume context
@@ -349,7 +348,6 @@ authorization:
   enabled: false
   # sidecarProxyImage: the container image used for the csm-authorization-sidecar.
   # Default value: dellemc/csm-authorization-sidecar:v1.0.0
-  # Example: 0.0.0.1:5000/csm-authorization-sidecar:v1.0.0
   sidecarProxyImage: dellemc/csm-authorization-sidecar:v1.0.0
   # proxyHost: hostname of the csm-authorization server
   # Default value: None
