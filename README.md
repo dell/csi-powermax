@@ -41,10 +41,3 @@ Please refer to the section `Testing Drivers` in the [Documentation](https://del
 
 ## Documentation
 For more detailed information on the driver, please refer to [Container Storage Modules documentation](https://dell.github.io/csm-docs/).
-
-## Downloading Images 
-For the latest stable release, download `dellemc/csi-powermax:latest`
-
-For the nightly builds (Built from main branch every night), download `dellemc/csi-powermax:nightly`
-
-For particular release, download `dellemc/csi-powermax:<release-tag>`
