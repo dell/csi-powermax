@@ -151,6 +151,7 @@ function build_image {
                 --build-arg SOURCE_IMAGE_TAG=$SOURCE_IMAGE_TAG\
                 --build-arg SOURCE_REPO=$SOURCE_REPO\
                 --build-arg IMAGE_TYPE=$IMAGE_TYPE\
+		--no-cache\
                 $DOCKEROPT
       (cd .. &&
        $BUILDCMD build -t "$IMAGE_VERSION_TAG"\
@@ -163,6 +164,7 @@ function build_image {
                 --build-arg SOURCE_IMAGE_TAG="$SOURCE_IMAGE_TAG"\
                 --build-arg SOURCE_REPO="$SOURCE_REPO"\
                 --build-arg IMAGE_TYPE="$IMAGE_TYPE"\
+		--no-cache\
                 $DOCKEROPT)
        if [ "$BUILD_REVPROXY" = true ]; then
          echo $BUILDCMD build -t "$REVPROXY_IMAGE_VERSION_TAG"
@@ -177,6 +179,7 @@ function build_image {
                 --build-arg SOURCE_IMAGE_TAG=$SOURCE_IMAGE_TAG\
                 --build-arg SOURCE_REPO=$SOURCE_REPO\
                 --build-arg IMAGE_TYPE="$IMAGE_TYPE"\
+		--no-cache\
                 $DOCKEROPT
       (cd .. &&
        $BUILDCMD build -t "$IMAGE_VERSION_TAG"\
@@ -187,6 +190,7 @@ function build_image {
                 --build-arg SOURCE_IMAGE_TAG="$SOURCE_IMAGE_TAG"\
                 --build-arg SOURCE_REPO="$SOURCE_REPO"\
                 --build-arg IMAGE_TYPE="$IMAGE_TYPE"\
+		--no-cache\
                 $DOCKEROPT)
        if [ "$BUILD_REVPROXY" = true ]; then
          echo $BUILDCMD build -t "$REVPROXY_IMAGE_VERSION_TAG" .
