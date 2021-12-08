@@ -11,7 +11,6 @@ ENV BUILD_NUMBER=$BUILD_NUMBER
 ENV BUILD_TYPE=$BUILD_TYPE
 RUN mkdir -p /go/src
 COPY csi-powermax/go.mod /go/src/csi-powermax/go.mod
-COPY csi-powermax/go.sum /go/src/csi-powermax/go.sum
 COPY csi-powermax/ /go/src/csi-powermax
 COPY goiscsi/ /go/src/goiscsi
 COPY gofsutil/ /go/src/gofsutil
@@ -21,9 +20,7 @@ COPY gocsi /go/src/gocsi
 COPY dell-csi-extensions /go/src/dell-csi-extensions
 
 WORKDIR /go/src/csi-powermax
-RUN git status && git diff
 RUN go mod download
-RUN git status && git diff
 # Run check.sh to make sure there are no linting errors
 RUN ./check.sh
 RUN go generate
