@@ -1,3 +1,6 @@
+//go:build linux && plugin
+// +build linux,plugin
+
 /*
  Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
 
@@ -11,7 +14,6 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 */
-// +build linux,plugin
 //go:generate go generate ./core
 
 package main
