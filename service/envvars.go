@@ -29,7 +29,7 @@ const (
 	// EnvPassword is the name of the enviroment variable used to set the
 	// user's password when authenticating to Unisphere
 	// #nosec G101
-	EnvPassword = "X_CSI_POWERMAX_PASSWORD"
+	EnvPassword = "X_CSI_POWERMAX_PASSWORD" // #nosec G101
 
 	// EnvSkipCertificateValidation is the name of the environment variable used
 	// to specify Unisphere's certificate chain and host name should not
@@ -98,7 +98,7 @@ const (
 	// EnvISCSICHAPPassword is the the password for the ISCSI CHAP
 	// authentication for the host initiator(s)
 	// #nosec G101
-	EnvISCSICHAPPassword = "X_CSI_POWERMAX_ISCSI_CHAP_PASSWORD"
+	EnvISCSICHAPPassword = "X_CSI_POWERMAX_ISCSI_CHAP_PASSWORD" // #nosec 101
 
 	// EnvNodeNameTemplate is the templatized name to construct node names
 	// by the driver based on a name format as specified by the user in this
