@@ -217,7 +217,7 @@ func (s *service) GetPortIdentifier(ctx context.Context, symID string, dirPortKe
 	}
 	log.Debugf("Symmetrix ID: %s, DirPortKey: %s, Port type: %s",
 		symID, dirPortKey, port.SymmetrixPort.Type)
-	if strings.Contains(port.SymmetrixPort.Type, "FibreChannel") {
+	if strings.Contains(port.SymmetrixPort.Type, "FibreChannel") || strings.Contains(port.SymmetrixPort.Type, "OSHostAndRDF") {
 		// Add "0x" to the FC Port WWN as that is used by gofsutils to differentiate between FC and ISCSI
 		portIdentifier = "0x"
 	}
@@ -1117,19 +1117,41 @@ func (s *service) validateVolSize(ctx context.Context, cr *csi.CapacityRange, sy
 	var maxAvailBytes int64 = MaxVolumeSizeBytes
 	if symmetrixID != "" && storagePoolID != "" {
 		// Normal path
-		srpCap, err := s.getStoragePoolCapacities(ctx, symmetrixID, storagePoolID, pmaxClient)
+		srp, fba, ckd, err := s.getStoragePoolCapacities(ctx, symmetrixID, storagePoolID, pmaxClient)
 		if err != nil {
 			return 0, err
 		}
-		totalSrpCapInGB := srpCap.UsableTotInTB * 1024.0
-		usedSrpCapInGB := srpCap.UsableUsedInTB * 1024.0
-		remainingCapInGB := totalSrpCapInGB - usedSrpCapInGB
-		// maxAvailBytes is the remaining capacity in bytes
-		maxAvailBytes = int64(remainingCapInGB) * 1024 * 1024 * 1024
-		log.Infof("totalSrcCapInGB %f usedSrpCapInGB %f remainingCapInGB %f maxAvailBytes %d",
-			totalSrpCapInGB, usedSrpCapInGB, remainingCapInGB, maxAvailBytes)
-	}
+		if srp != nil {
+			totalSrpCapInGB := srp.UsableTotInTB * 1024.0
+			usedSrpCapInGB := srp.UsableUsedInTB * 1024.0
+			remainingCapInGB := totalSrpCapInGB - usedSrpCapInGB
+			// maxAvailBytes is the remaining capacity in bytes
+			maxAvailBytes = int64(remainingCapInGB) * 1024 * 1024 * 1024
+			log.Infof("totalSrcCapInGB %f usedSrpCapInGB %f remainingCapInGB %f maxAvailBytes %d",
+				totalSrpCapInGB, usedSrpCapInGB, remainingCapInGB, maxAvailBytes)
+		} else if (fba != nil) || (ckd != nil) {
+			var totalCkdCapInGB float64
+			var usedCkdCapInGB float64
+			var totalFbaCapInGB float64
+			var usedFbaCapInGB float64
+			if ckd != nil {
+				totalCkdCapInGB = ckd.Provisioned.UsableTotInTB * 1024.0
+				usedCkdCapInGB = ckd.Provisioned.UsableUsedInTB * 1024.0
+			}
 
+			if fba != nil {
+				totalFbaCapInGB = fba.Provisioned.UsableTotInTB * 1024.0
+				usedFbaCapInGB = fba.Provisioned.UsableUsedInTB * 1024.0
+			}
+			totalSrpCapInGB := totalFbaCapInGB + totalCkdCapInGB
+			usedSrpCapInGB := usedFbaCapInGB + usedCkdCapInGB
+			remainingCapInGB := totalSrpCapInGB - usedSrpCapInGB
+			// maxAvailBytes is the remaining capacity in bytes
+			maxAvailBytes = int64(remainingCapInGB) * 1024 * 1024 * 1024
+			log.Infof("totalSrcCapInGB %f usedSrpCapInGB %f remainingCapInGB %f maxAvailBytes %d",
+				totalSrpCapInGB, usedSrpCapInGB, remainingCapInGB, maxAvailBytes)
+		}
+	}
 	if maxSizeBytes == 0 {
 		maxSizeBytes = maxAvailBytes
 	}
@@ -1784,7 +1806,7 @@ func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxCli
 		// Check if FC Host exists
 		fcHost, fcHostErr := pmaxClient.GetHostByID(ctx, symID, fcHostID)
 		if fcHostErr == nil {
-			if fcHost.HostType == "Fibre" {
+			if (fcHost.HostType == "Fibre") || (fcHost.HostType == "SCSI_FC") {
 				return false, nil
 			}
 		}
@@ -1817,7 +1839,7 @@ func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxCli
 		// Check if FC Host exists
 		fcHost, fcHostErr := pmaxClient.GetHostByID(ctx, symID, fcHostID)
 		if fcHostErr == nil {
-			if fcHost.HostType == "Fibre" {
+			if (fcHost.HostType == "Fibre") || (fcHost.HostType == "SCSI_FC") {
 				return false, nil
 			}
 		}
@@ -2355,13 +2377,32 @@ func (s *service) GetCapacity(
 	log.WithFields(fields).Info("Executing ValidateVolumeCapabilities with following fields")
 
 	// Get storage pool capacities
-	srpCap, err := s.getStoragePoolCapacities(ctx, symmetrixID, storagePoolID, pmaxClient)
+	srpCap, fba, ckd, err := s.getStoragePoolCapacities(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Could not retrieve StoragePool %s. Error(%s)", storagePoolID, err.Error())
 	}
+	var totalSrpCapInGB float64
+	var usedSrpCapInGB float64
+	if srpCap != nil {
+		totalSrpCapInGB = srpCap.UsableTotInTB * 1024
+		usedSrpCapInGB = srpCap.UsableUsedInTB * 1024
+	} else if (fba != nil) || (ckd != nil) {
+		var totalCkdCapInGB float64
+		var usedCkdCapInGB float64
+		var totalFbaCapInGB float64
+		var usedFbaCapInGB float64
+		if ckd != nil {
+			totalCkdCapInGB = ckd.Provisioned.UsableTotInTB * 1024.0
+			usedCkdCapInGB = ckd.Provisioned.UsableUsedInTB * 1024.0
+		}
 
-	totalSrpCapInGB := srpCap.UsableTotInTB * 1024
-	usedSrpCapInGB := srpCap.UsableUsedInTB * 1024
+		if fba != nil {
+			totalFbaCapInGB = fba.Provisioned.UsableTotInTB * 1024.0
+			usedFbaCapInGB = fba.Provisioned.UsableUsedInTB * 1024.0
+		}
+		totalSrpCapInGB = totalFbaCapInGB + totalCkdCapInGB
+		usedSrpCapInGB = usedFbaCapInGB + usedCkdCapInGB
+	}
 	remainingCapInGB := totalSrpCapInGB - usedSrpCapInGB
 	remainingCapInBytes := remainingCapInGB * 1024 * 1024 * 1024
 
@@ -2371,14 +2412,21 @@ func (s *service) GetCapacity(
 }
 
 // Return the storage pool capacities of types.SrpCap
-func (s *service) getStoragePoolCapacities(ctx context.Context, symmetrixID, storagePoolID string, pmaxClient pmax.Pmax) (*types.SrpCap, error) {
+func (s *service) getStoragePoolCapacities(ctx context.Context, symmetrixID, storagePoolID string, pmaxClient pmax.Pmax) (*types.SrpCap, *types.FbaCap, *types.CkdCap, error) {
 	// Get storage pool info
 	srp, err := pmaxClient.GetStoragePool(ctx, symmetrixID, storagePoolID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Could not retrieve StoragePool %s. Error(%s)", storagePoolID, err.Error())
+		return nil, nil, nil, status.Errorf(codes.Internal, "Could not retrieve StoragePool %s. Error(%s)", storagePoolID, err.Error())
 	}
-	log.Infof("StoragePoolCapacities: %#v", srp.SrpCap)
-	return srp.SrpCap, nil
+	if srp.SrpCap != nil {
+		log.Infof("StoragePoolCapacities: %#v", srp.SrpCap)
+		return srp.SrpCap, nil, nil, nil
+	}
+	if (srp.FbaCap != nil) || (srp.CkdCap != nil) {
+		log.Infof("StoragePoolCapacities(Fba/Ckd) : %#v StoragePoolCapacities(Fba/Ckd) : %#v ", srp.FbaCap, srp.CkdCap)
+		return nil, srp.FbaCap, srp.CkdCap, nil
+	}
+	return nil, nil, nil, status.Errorf(codes.Internal, "Could not retrieve StoragePool %s. Error(%s)", storagePoolID, err.Error())
 }
 
 func (s *service) ControllerGetCapabilities(
@@ -2508,7 +2556,7 @@ func (s *service) SelectOrCreatePortGroup(ctx context.Context, symID string, hos
 	if host == nil {
 		return "", fmt.Errorf("SelectOrCreatePortGroup: host can't be nil")
 	}
-	if host.HostType == "Fibre" {
+	if (host.HostType == "Fibre") || (host.HostType == "SCSI_FC") {
 		return s.SelectOrCreateFCPGForHost(ctx, symID, host, pmaxClient)
 	}
 	return s.SelectPortGroup()
@@ -2523,7 +2571,7 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 	hostID := host.HostID
 	var portListFromHost []string
 	var isValidHost bool
-	if host.HostType == "Fibre" {
+	if (host.HostType == "Fibre") || (host.HostType == "SCSI_FC") {
 		for _, initiator := range host.Initiators {
 			initList, err := pmaxClient.GetInitiatorList(ctx, symID, initiator, false, false)
 			if err != nil {
@@ -2563,7 +2611,7 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 			continue
 		} else {
 			var portList []string
-			if portGroup.PortGroupType == "Fibre" {
+			if (portGroup.PortGroupType == "Fibre") || (portGroup.PortGroupType == "SCSI_FC") {
 				for _, portKey := range portGroup.SymmetrixPortKey {
 					dirPort := fmt.Sprintf("%s:%s", portKey.DirectorID, portKey.PortID)
 					portList = append(portList, dirPort)
@@ -2599,7 +2647,7 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 			dirNames = truncateString(dirNames, MaxDirNameLength)
 		}
 		portGroupName := CSIPrefix + "-" + s.opts.ClusterPrefix + "-" + dirNames + PGSuffix
-		_, err = pmaxClient.CreatePortGroup(ctx, symID, portGroupName, portKeys)
+		_, err = pmaxClient.CreatePortGroup(ctx, symID, portGroupName, portKeys, "SCSI_FC")
 		if err != nil {
 			return "", fmt.Errorf("Failed to create PortGroup - %s. Error - %s", portGroupName, err.Error())
 		}

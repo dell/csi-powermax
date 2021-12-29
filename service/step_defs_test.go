@@ -391,7 +391,7 @@ func (f *feature) getService() *service {
 	}
 	mock.Reset()
 	// This is a temp fix and needs to be handled in a different way
-	mock.Data.JSONDir = "../../gopowermax/mock"
+	mock.Data.JSONDir = "../../gopowermax-juniper/mock"
 	svc.loggedInArrays = map[string]bool{}
 
 	var opts Opts
