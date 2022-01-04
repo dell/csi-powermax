@@ -14,9 +14,8 @@ jobs:
       - name: Checkout the code
         uses: actions/checkout@v2
         with:
-        # Repository name with owner. For example, actions/checkout
-        # Default: ${{ github.repository }}
-        repository: 'https://github.com/dell/gopowermax'
+        repository: dell/gopowermax
+        path: gopowermax
       - name: Run the formatter, linter, and vetter
         uses: dell/common-github-actions/go-code-formatter-linter-vetter@main
         with:
