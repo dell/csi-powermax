@@ -33,6 +33,9 @@ jobs:
     steps:
       - name: Checkout the code
         uses: actions/checkout@v2
+        with:
+          path: main
+          
       - name: Checkout the code
         uses: actions/checkout@v2
         with:
