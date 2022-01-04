@@ -33,7 +33,7 @@ jobs:
     steps:
       - name: Checkout the code
         uses: actions/checkout@v2
-       - name: Checkout the code
+      - name: Checkout the code
         uses: actions/checkout@v2
         with:
           repository: dell/gopowermax
