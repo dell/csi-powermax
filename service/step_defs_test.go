@@ -280,7 +280,6 @@ func (f *feature) aPowerMaxService() error {
 	f.snapshotNameToID = make(map[string]string)
 	f.snapshotIndex = 0
 	f.iscsiTargets = make([]maskingViewTargetInfo, 0)
-	f.isSnapSrc = false
 	f.addVolumeToSGMVResponse1 = nil
 	f.addVolumeToSGMVResponse2 = nil
 	f.removeVolumeFromSGMVResponse1 = nil
@@ -3444,25 +3443,6 @@ func (f *feature) iResetTheLicenseCache() error {
 	return nil
 }
 
-func (f *feature) iCallIsSnapshotSource() error {
-	var arrayID, deviceID string
-	if f.createSnapshotResponse != nil {
-		_, arrayID, deviceID, _, _, f.err = f.service.parseCsiID(f.createSnapshotResponse.GetSnapshot().GetSnapshotId())
-	} else {
-		_, arrayID, deviceID, _, _, f.err = f.service.parseCsiID(f.createVolumeResponse.GetVolume().GetVolumeId())
-	}
-
-	f.isSnapSrc, f.err = f.service.IsSnapshotSource(context.Background(), arrayID, deviceID, f.service.adminClient)
-	return nil
-}
-
-func (f *feature) isSnapshotSourceReturns(isSnapSrcResponse string) error {
-	if !(isSnapSrcResponse == strconv.FormatBool(f.isSnapSrc)) {
-		f.err = fmt.Errorf("Incorrect response sent by IsSnapshotSource()")
-	}
-	return nil
-}
-
 func (f *feature) iCallDeleteSnapshotWith(snapshotName string) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
@@ -4009,9 +3989,7 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^a non-existent volume$`, f.aNonexistentVolume)
 	s.Step(`^no volume source$`, f.noVolumeSource)
 	s.Step(`^I reset the license cache$`, f.iResetTheLicenseCache)
-	s.Step(`^I call IsSnapshotSource$`, f.iCallIsSnapshotSource)
 	s.Step(`^I call DeleteSnapshot with "([^"]*)"$`, f.iCallDeleteSnapshotWith)
-	s.Step(`^IsSnapshotSource returns "([^"]*)"$`, f.isSnapshotSourceReturns)
 	s.Step(`^I queue snapshots for termination$`, f.iQueueSnapshotsForTermination)
 	s.Step(`^the deletion worker processes the snapshots successfully$`, f.theDeletionWorkerProcessesTheSnapshotsSuccessfully)
 	s.Step(`^I call ensureISCSIDaemonStarted$`, f.iCallEnsureISCSIDaemonStarted)
