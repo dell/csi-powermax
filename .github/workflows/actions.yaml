@@ -18,24 +18,12 @@ jobs:
   test:
     name: Run Go unit tests and check package coverage
     runs-on: ubuntu-latest
-    container: node:10.18-jessie
-    services:
-      # Label used to access the service container
-      redis:
-        # Docker Hub image
-        image: redis
-        # Set health checks to wait until redis has started
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    container: ubuntu:20.04
     steps:
       - name: Force Install GIT latest
         run: |
           apt-get update
           apt-get install -y git
-
       - name: Checkout the code
         uses: actions/checkout@v2
         with:
