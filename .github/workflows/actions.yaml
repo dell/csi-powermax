@@ -26,20 +26,11 @@ jobs:
           apt-get install -y git
       - name: Checkout the code
         uses: actions/checkout@v2
-        with:
-          path: main
-          submodules: true
-      - name: Checkout the code
-        uses: actions/checkout@v2
-        with:
-          repository: dell/gopowermax
-          path: gopowermax
       - name: Run unit tests and check package coverage
         uses: dell/common-github-actions/go-code-tester@main
         with:
           threshold: 90
           test-folder: "service"
-          skip-list: ""
         env:
           # The hostname used to communicate with the Redis service container
           REDIS_HOST: redis
