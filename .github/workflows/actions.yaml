@@ -20,10 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     container: ubuntu:20.04
     steps:
-      - name: Force Install GIT latest
-        run: |
-          apt-get update
-          apt-get install -y git
       - name: Checkout the code
         uses: actions/checkout@v2
       - name: Clone gopowerstore repository
@@ -32,8 +28,6 @@ jobs:
           repository: dell/gopowermax
           path: gopowermax
           ref: main
-      - name: See dir
-        run: ls
       - name: Run unit tests and check package coverage
         uses: dell/common-github-actions/go-code-tester@main
         with:
