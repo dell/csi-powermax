@@ -31,16 +31,17 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Force Install GIT latest
+        run: |
+          apt-get install -y software-properties-common \
+          && apt-get update \
+          && add-apt-repository -y ppa:git-core/ppa \
+          && apt-get update \
+          && apt-get install -y git
+
       - name: Checkout the code
         uses: actions/checkout@v2
-        with:
-          path: csi-powermax
           submodules: true
-      - name: Checkout the code
-        uses: actions/checkout@v2
-        with:
-          repository: dell/gopowermax
-          path: gopowermax
       - name: Run unit tests and check package coverage
         uses: dell/common-github-actions/go-code-tester@main
         with:
