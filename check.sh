@@ -51,11 +51,11 @@ echo === Linting...
 if [ -z ${GOLINT+x} ]; then
   if [ "$REVPROXY" = true ] ; then
     (command -v golint >/dev/null 2>&1 \
-        || GO111MODULE=off go get -insecure -u golang.org/x/lint/golint) \
+        || GO111MODULE=on go install golang.org/x/lint/golint@latest) \
         && golint --set_exit_status ./service/... ./csireverseproxy/...
   else
     (command -v golint >/dev/null 2>&1 \
-        || GO111MODULE=off go get -insecure -u golang.org/x/lint/golint) \
+        || GO111MODULE=on go install golang.org/x/lint/golint@latest) \
         && golint --set_exit_status ./service/...
   fi
 else
