@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           path: csi-powermax
-        submodules: true
+          submodules: true
       - name: Checkout the code
         uses: actions/checkout@v2
         with:
