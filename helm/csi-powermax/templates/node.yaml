@@ -171,6 +171,12 @@ spec:
               value: {{ .Values.modifyHostName | default "false" | lower | quote }}
             - name: X_CSI_POWERMAX_PORTGROUPS
               value: {{ .Values.portGroups | toJson }}
+            {{- if hasKey .Values.node "healthMonitor" }}
+            {{- if eq .Values.node.healthMonitor.enabled true }}
+            - name: X_CSI_HEALTH_MONITOR_ENABLED
+              value: "{{ .Values.node.healthMonitor.enabled }}"
+            {{- end }}
+            {{- end }}
           volumeMounts:
             - name: driver-path
               mountPath: {{ .Values.kubeletConfigDir }}/plugins/powermax.emc.dell.com

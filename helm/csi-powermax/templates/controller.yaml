@@ -274,6 +274,27 @@ spec:
               mountPath: /etc/karavi-authorization
         {{- end }}
         {{- end }}
+        {{- if hasKey .Values.controller "healthMonitor" }}
+        {{- if eq .Values.controller.healthMonitor.enabled true }}
+        - name: csi-external-health-monitor-controller
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          image: {{ required "Must provide the CSI external health monitor controller image." .Values.images.externalhealthmonitorcontroller }}
+          args:
+            - "--v=5"
+            - "--csi-address=$(ADDRESS)"
+            - "--leader-election"
+            - "--http-endpoint=:8080"
+            - "--enable-node-watcher=true"
+            - "--monitor-interval={{ .Values.controller.healthMonitor.volumeHealthMonitorInterval | default "60s" }}"
+            - "--timeout=180s"
+          env:
+            - name: ADDRESS
+              value: /var/run/csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/csi
+        {{- end }}
+        {{- end }}
         - name: driver
           image: {{ required "Must provide the PowerMax driver container image." .Values.images.driver }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
@@ -355,6 +376,12 @@ spec:
               value: {{ .Values.replication.replicationPrefix | default "replication.storage.dell.com"}}
             - name: X_CSI_UNISPHERE_TIMEOUT
               value: {{.Values.unisphereTimeout | default "5m"}}
+            {{- if hasKey .Values.controller "healthMonitor" }}
+            {{- if eq .Values.controller.healthMonitor.enabled true }}
+            - name: X_CSI_HEALTH_MONITOR_ENABLED
+              value: "{{ .Values.controller.healthMonitor.enabled }}"
+            {{- end }}
+            {{- end }}
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi

@@ -166,6 +166,7 @@ type feature struct {
 	doneChan                             chan bool
 	fcArray                              string
 	uDevID                               string
+	nodeGetVolumeStatsResponse           *csi.NodeGetVolumeStatsResponse
 }
 
 var inducedErrors struct {
@@ -185,6 +186,7 @@ var inducedErrors struct {
 	noIQNs              bool
 	nonExistentVolume   bool
 	noVolumeSource      bool
+	noMountInfo         bool
 }
 
 type failedSnap struct {
@@ -290,6 +292,7 @@ func (f *feature) aPowerMaxService() error {
 	f.doneChan = make(chan bool)
 	f.remoteSymID = mock.DefaultRemoteSymID
 	f.uDevID = ""
+	f.nodeGetVolumeStatsResponse = nil
 	inducedErrors.invalidSymID = false
 	inducedErrors.invalidStoragePool = false
 	inducedErrors.invalidServiceLevel = false
@@ -306,6 +309,7 @@ func (f *feature) aPowerMaxService() error {
 	inducedErrors.nonExistentVolume = false
 	inducedErrors.invalidSnapID = false
 	inducedErrors.noVolumeSource = false
+	inducedErrors.noMountInfo = false
 
 	// configure gofsutil; we use a mock interface
 	gofsutil.UseMockFS()
@@ -1156,6 +1160,8 @@ func (f *feature) iInduceError(errtype string) error {
 		inducePendingError = true
 	case "InvalidateNodeID":
 		f.iInvalidateTheNodeID()
+	case "NoMountInfo":
+		inducedErrors.noMountInfo = true
 	case "none":
 		return nil
 	default:
@@ -1847,11 +1853,13 @@ func (f *feature) aValidControllerGetCapabilitiesResponseIsReturned() error {
 				count = count + 1
 			case csi.ControllerServiceCapability_RPC_EXPAND_VOLUME:
 				count = count + 1
+			case csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER:
+				count = count + 1
 			default:
 				return fmt.Errorf("received unexpected capability: %v", typex)
 			}
 		}
-		if count != 6 {
+		if count != 7 {
 			return fmt.Errorf("Did not retrieve all the expected capabilities")
 		}
 		return nil
@@ -2983,11 +2991,59 @@ func (f *feature) aValidGetVolumeByIDResultIsReturnedIfNoError() error {
 	return nil
 }
 
-func (f *feature) iCallNodeGetVolumeStats() error {
+func (f *feature) iCallNodeGetVolumeStats(volPath string) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
-	req := new(csi.NodeGetVolumeStatsRequest)
-	_, f.err = f.service.NodeGetVolumeStats(ctx, req)
+	req := &csi.NodeGetVolumeStatsRequest{
+		VolumeId:   f.volumeID,
+		VolumePath: volPath,
+	}
+	if volPath != "" {
+		if err := os.MkdirAll(volPath, 0777); err != nil {
+			return err
+		}
+	}
+	if inducedErrors.noVolumeID {
+		req.VolumeId = ""
+	}
+	var resp *csi.NodeGetVolumeStatsResponse
+	resp, f.err = f.service.NodeGetVolumeStats(ctx, req)
+	f.nodeGetVolumeStatsResponse = resp
+	return nil
+}
+
+func (f *feature) aValidNodeGetVolumeStatsResponseIsReturned() error {
+
+	if gofsutil.GOFSMock.InduceGetMountInfoFromDeviceError {
+		if !f.nodeGetVolumeStatsResponse.VolumeCondition.GetAbnormal() {
+			return errors.New("expected nodeGetVolumeStatsResponse to have volume condition as Abnormal")
+		}
+		errmsg := f.nodeGetVolumeStatsResponse.VolumeCondition.GetMessage()
+		if !strings.Contains(errmsg, "Error getting mount info for volume") {
+			return errors.New("expected nodeGetVolumeStatsResponse to have get mount info error in message but has " + errmsg)
+		}
+
+		volUsage := f.nodeGetVolumeStatsResponse.GetUsage()
+		if volUsage[0].Unit != csi.VolumeUsage_UNKNOWN {
+			return errors.New("expected nodeGetVolumeStatsResponse to have volume usage info unit as unknown")
+		}
+	}
+	if inducedErrors.noMountInfo {
+		if !f.nodeGetVolumeStatsResponse.VolumeCondition.GetAbnormal() {
+			return errors.New("expected nodeGetVolumeStatsResponse to have volume condition as Abnormal")
+		}
+		errmsg := f.nodeGetVolumeStatsResponse.VolumeCondition.GetMessage()
+		if !strings.Contains(errmsg, "no mount info for volume") {
+			return errors.New("expected nodeGetVolumeStatsResponse to have no mount info error in message but has " + errmsg)
+		}
+
+		volUsage := f.nodeGetVolumeStatsResponse.GetUsage()
+		if volUsage[0].Unit != csi.VolumeUsage_UNKNOWN {
+			return errors.New("expected nodeGetVolumeStatsResponse to have volume usage info unit as unknown")
+		}
+	}
+
+	fmt.Printf("NodeGetVolumeStats: %v\n", f.nodeGetVolumeStatsResponse.GetVolumeCondition())
 	return nil
 }
 
@@ -3963,7 +4019,8 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call GetVolumeByID$`, f.iCallGetVolumeByID)
 	s.Step(`^a valid GetVolumeByID result is returned if no error$`, f.aValidGetVolumeByIDResultIsReturnedIfNoError)
 	s.Step(`^(\d+) initiators are found$`, f.initiatorsAreFound)
-	s.Step(`^I call NodeGetVolumeStats$`, f.iCallNodeGetVolumeStats)
+	s.Step(`^I call NodeGetVolumeStats with volumePath as "([^"]*)"$`, f.iCallNodeGetVolumeStats)
+	s.Step(`^a valid NodeGetVolumeStatsResponse is returned$`, f.aValidNodeGetVolumeStatsResponseIsReturned)
 	s.Step(`^I have a volume with invalid volume identifier$`, f.iHaveAVolumeWithInvalidVolumeIdentifier)
 	s.Step(`^there are no arrays logged in$`, f.thereAreNoArraysLoggedIn)
 	s.Step(`^I invoke ensureLoggedIntoEveryArray$`, f.iInvokeEnsureLoggedIntoEveryArray)
