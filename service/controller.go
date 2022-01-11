@@ -217,7 +217,7 @@ func (s *service) GetPortIdentifier(ctx context.Context, symID string, dirPortKe
 	}
 	log.Debugf("Symmetrix ID: %s, DirPortKey: %s, Port type: %s",
 		symID, dirPortKey, port.SymmetrixPort.Type)
-	if strings.Contains(port.SymmetrixPort.Type, "FibreChannel") || strings.Contains(port.SymmetrixPort.Type, "OSHostAndRDF") {
+	if !strings.Contains(port.SymmetrixPort.Identifier, "iqn") {
 		// Add "0x" to the FC Port WWN as that is used by gofsutils to differentiate between FC and ISCSI
 		portIdentifier = "0x"
 	}
@@ -1806,7 +1806,7 @@ func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxCli
 		// Check if FC Host exists
 		fcHost, fcHostErr := pmaxClient.GetHostByID(ctx, symID, fcHostID)
 		if fcHostErr == nil {
-			if (fcHost.HostType == "Fibre") || (fcHost.HostType == "SCSI_FC") {
+			if (fcHost.HostType == "Fibre") {
 				return false, nil
 			}
 		}
@@ -1839,7 +1839,7 @@ func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxCli
 		// Check if FC Host exists
 		fcHost, fcHostErr := pmaxClient.GetHostByID(ctx, symID, fcHostID)
 		if fcHostErr == nil {
-			if (fcHost.HostType == "Fibre") || (fcHost.HostType == "SCSI_FC") {
+			if fcHost.HostType == "Fibre" {
 				return false, nil
 			}
 		}
@@ -2556,7 +2556,7 @@ func (s *service) SelectOrCreatePortGroup(ctx context.Context, symID string, hos
 	if host == nil {
 		return "", fmt.Errorf("SelectOrCreatePortGroup: host can't be nil")
 	}
-	if (host.HostType == "Fibre") || (host.HostType == "SCSI_FC") {
+	if host.HostType == "Fibre" {
 		return s.SelectOrCreateFCPGForHost(ctx, symID, host, pmaxClient)
 	}
 	return s.SelectPortGroup()
@@ -2571,7 +2571,7 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 	hostID := host.HostID
 	var portListFromHost []string
 	var isValidHost bool
-	if (host.HostType == "Fibre") || (host.HostType == "SCSI_FC") {
+	if host.HostType == "Fibre" {
 		for _, initiator := range host.Initiators {
 			initList, err := pmaxClient.GetInitiatorList(ctx, symID, initiator, false, false)
 			if err != nil {
