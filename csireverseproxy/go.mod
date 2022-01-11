@@ -2,7 +2,7 @@ module revproxy/v2
 
 go 1.16
 
-replace github.com/dell/gopowermax/v2 => ../../gopowermax-juniper
+replace github.com/dell/gopowermax/v2 => ../../gopowermax
 
 require (
 	github.com/dell/gopowermax/v2 v2.0.0
