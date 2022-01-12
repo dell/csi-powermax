@@ -1806,7 +1806,7 @@ func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxCli
 		// Check if FC Host exists
 		fcHost, fcHostErr := pmaxClient.GetHostByID(ctx, symID, fcHostID)
 		if fcHostErr == nil {
-			if (fcHost.HostType == "Fibre") {
+			if fcHost.HostType == "Fibre" {
 				return false, nil
 			}
 		}
