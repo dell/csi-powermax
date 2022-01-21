@@ -518,6 +518,8 @@ func (g *storageGroupSvc) addVolumeToSGMVVolumeCheck(ctx context.Context, client
 	}
 	switch am.Mode {
 	case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER,
 		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
 		// Check if the volume is already mapped to some host
 		if vol.NumberOfFrontEndPaths > 0 {

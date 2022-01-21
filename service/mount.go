@@ -376,7 +376,9 @@ func handlePrivFSMount(
 			return status.Errorf(codes.Internal, "error performing private mount: %s", err.Error())
 		}
 		return nil
-	} else if accMode.GetMode() == csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER {
+	} else if (accMode.GetMode() == csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER) ||
+		(accMode.GetMode() == csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER) ||
+		(accMode.GetMode() == csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER) {
 		if err := gofsutil.FormatAndMount(formatCtx, sysDevice.FullPath, privTgt, fs, mntFlags...); err != nil {
 			return status.Errorf(codes.Internal, "error performing private mount: %s", err.Error())
 		}
@@ -663,7 +665,9 @@ func validateVolumeCapability(volCap *csi.VolumeCapability, readOnly bool) (bool
 		switch accMode.GetMode() {
 		case csi.VolumeCapability_AccessMode_UNKNOWN:
 			return true, mntVol, accMode, "", status.Error(codes.InvalidArgument, "Unknown Access Mode")
-		case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:
+		case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
+			csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER:
 		case csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
 		case csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
 			multiAccessFlag = "ro"
@@ -681,7 +685,9 @@ func validateVolumeCapability(volCap *csi.VolumeCapability, readOnly bool) (bool
 		switch accMode.GetMode() {
 		case csi.VolumeCapability_AccessMode_UNKNOWN:
 			return false, mntVol, accMode, "", status.Error(codes.InvalidArgument, "Unknown Access Mode")
-		case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:
+		case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
+			csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER:
 		case csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
 		case csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
 			multiAccessFlag = "ro"
@@ -697,10 +703,13 @@ func validateVolumeCapability(volCap *csi.VolumeCapability, readOnly bool) (bool
 	return isBlock, mntVol, accMode, multiAccessFlag, nil
 }
 
-// singleAccessMode returns true if only a single access is allowed SINGLE_NODE_WRITER or SINGLE_NODE_READER_ONLY
+// singleAccessMode returns true if only a single access is allowed SINGLE_NODE_WRITER, SINGLE_NODE_SINGLE_WRITER,
+// SINGLE_NODE_MULTI_WRITER or SINGLE_NODE_READER_ONLY
 func singleAccessMode(accMode *csi.VolumeCapability_AccessMode) bool {
 	switch accMode.GetMode() {
-	case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER:
 		return true
 	case csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
 		return true
