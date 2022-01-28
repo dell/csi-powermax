@@ -2254,6 +2254,10 @@ func valVolumeCaps(
 			break
 		case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:
 			break
+		case csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER:
+			break
+		case csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER:
+			break
 		case csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
 			break
 		case csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
@@ -2427,6 +2431,13 @@ func (s *service) ControllerGetCapabilities(
 				Type: &csi.ControllerServiceCapability_Rpc{
 					Rpc: &csi.ControllerServiceCapability_RPC{
 						Type: csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
+					},
+				},
+			},
+			{
+				Type: &csi.ControllerServiceCapability_Rpc{
+					Rpc: &csi.ControllerServiceCapability_RPC{
+						Type: csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
 					},
 				},
 			},
