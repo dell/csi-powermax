@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -84,7 +85,7 @@ func main() {
 
 	var w io.Writer = os.Stdout
 	if len(output) > 0 {
-		fout, err := os.Create(output)
+		fout, err := os.Create(filepath.Clean(output))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
