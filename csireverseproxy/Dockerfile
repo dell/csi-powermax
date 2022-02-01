@@ -23,10 +23,11 @@ RUN adduser \
     --uid "${UID}" \
     "${USER}"
 
-RUN mkdir -p /go/src/csireverseproxy
-COPY . /go/src/csireverseproxy
+RUN mkdir -p /go/src/revproxy/csireverseproxy
+COPY csi-powermax/csireverseproxy/ /go/src/revproxy/csireverseproxy/
+COPY gopowermax/ /go/src/gopowermax
 
-WORKDIR /go/src/csireverseproxy
+WORKDIR /go/src/revproxy/csireverseproxy
 RUN CGO_ENABLED=0 go build
 
 
@@ -40,7 +41,7 @@ LABEL vendor="Dell Inc." \
       description="CSI PowerMax Reverse Proxy which helps manage connections with Unisphere for PowerMax" \
       version="1.4.0" \
       license="Apache-2.0"
-COPY licenses /licenses
+COPY csi-powermax/csireverseproxy/licenses /licenses
 # Import from builder.
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
@@ -50,7 +51,7 @@ COPY --from=builder /etc/group /etc/group
 # Use an unprivileged user.
 USER revproxy:revproxy
 
-COPY --from=builder /go/src/csireverseproxy/revproxy /app/revproxy
+COPY --from=builder /go/src/revproxy/csireverseproxy/revproxy /app/revproxy
 
 WORKDIR /app
 CMD ["/app/revproxy"]
