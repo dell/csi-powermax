@@ -317,6 +317,8 @@ Feature: PowerMax CSI interface
       | "mount"    | "single-writer"            | "ext4"    | "SRP_1" | "bad"       | "Unable to validate context (SRP=true, SLO=false)"                |
       | "mount"    | "single-writer"            | "ext4"    | ""      | "Optimized" | "none"                                                            |
       | "mount"    | "single-writer"            | "ext4"    | "SRP_1" | ""          | "none"                                                            |
+      | "mount"    | "single-node-single-writer"| "ext4"    | ""      | ""          | "none"                                                            |
+      | "mount"    | "single-node-multi-writer" | "ext4"    | ""      | ""          | "none"                                                            |
 
 @v1.0.0
      Scenario Outline: Call validate volume capabilities with non-existent volume

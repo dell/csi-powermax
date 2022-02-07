@@ -1195,6 +1195,12 @@ func (f *feature) getControllerPublishVolumeRequest(accessType, nodeID string) *
 	case "multiple-writer":
 		accessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER
 		break
+	case "single-node-single-writer":
+		accessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER
+		break
+	case "single-node-multi-writer":
+		accessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER
+		break
 	case "unknown":
 		accessMode.Mode = csi.VolumeCapability_AccessMode_UNKNOWN
 		break
@@ -1851,6 +1857,8 @@ func (f *feature) aValidControllerGetCapabilitiesResponseIsReturned() error {
 				count = count + 1
 			case csi.ControllerServiceCapability_RPC_CLONE_VOLUME:
 				count = count + 1
+			case csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER:
+				count = count + 1
 			case csi.ControllerServiceCapability_RPC_EXPAND_VOLUME:
 				count = count + 1
 			case csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER:
@@ -1900,6 +1908,10 @@ func (f *feature) iCallValidateVolumeCapabilitiesWithVoltypeAccessFstype(voltype
 		accessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER
 	case "multi-reader":
 		accessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY
+	case "single-node-single-writer":
+		accessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER
+	case "single-node-multi-writer":
+		accessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER
 	case "multi-node-single-writer":
 		accessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER
 	}
@@ -1998,6 +2010,10 @@ func (f *feature) aCapabilityWithVoltypeAccessFstype(voltype, access, fstype str
 		accessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY
 	case "multiple-node-single-writer":
 		accessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER
+	case "single-node-single-writer":
+		accessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER
+	case "single-node-multi-writer":
+		accessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER
 	}
 	capability.AccessMode = accessMode
 	f.capabilities = make([]*csi.VolumeCapability, 0)
