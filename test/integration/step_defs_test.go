@@ -2050,6 +2050,63 @@ func (f *feature) nodeExpandVolume(volID, volPath string) error {
 	f.nodeExpandVolumeResponse = resp
 	return err
 }
+
+func (f *feature) iCallNodeGetVolumeStats() error {
+	nodePublishReq := f.nodePublishVolumeRequest
+	if nodePublishReq == nil {
+		err := fmt.Errorf("Volume is not stage, nodePublishVolumeRequest not found")
+		return err
+	}
+	err := f.nodeGetVolumeStats(f.volID, nodePublishReq.TargetPath)
+	if err != nil {
+		fmt.Printf("NodeGetVolumeStats %s:\n", err.Error())
+		f.addError(err)
+	} else {
+		fmt.Printf("NodeGetVolumeStats completed successfully\n")
+	}
+	time.Sleep(SleepTime)
+	return nil
+}
+
+func (f *feature) nodeGetVolumeStats(volID string, volPath string) error {
+	var resp *csi.NodeGetVolumeStatsResponse
+	var err error
+	req := &csi.NodeGetVolumeStatsRequest{
+		VolumeId:   volID,
+		VolumePath: volPath,
+	}
+	ctx := context.Background()
+	client := csi.NewNodeClient(grpcClient)
+	// Retry loop to deal with API being overwhelmed
+	for i := 0; i < f.maxRetryCount; i++ {
+		resp, err = client.NodeGetVolumeStats(ctx, req)
+		if err == nil {
+			break
+		}
+		fmt.Printf("NodeGetVolumeStats retry: %s\n", err.Error())
+		time.Sleep(RetrySleepTime)
+	}
+	fmt.Printf("NodeGetVolumeStats: (%v)", resp)
+	return err
+}
+
+func (f *feature) iCallControllerGetVolume() error {
+	ctx := context.Background()
+	client := csi.NewControllerClient(grpcClient)
+	req := &csi.ControllerGetVolumeRequest{
+		VolumeId: f.volID,
+	}
+	resp, err := client.ControllerGetVolume(ctx, req)
+	if err != nil {
+		fmt.Printf("ControllerGetVolume returned error: %s\n", err.Error())
+		f.addError(err)
+	}
+	fmt.Printf("ControllerGetVolume: Volume %v VolumeCondition %s PublishedNodeIDs %v\n",
+		resp.Volume, resp.Status.VolumeCondition, resp.Status.PublishedNodeIds)
+	time.Sleep(RetrySleepTime)
+	return nil
+}
+
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a Powermax service$`, f.aPowermaxService)
@@ -2126,4 +2183,6 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I check if volume is deleted$`, f.iCheckIfVolumeIsDeleted)
 	s.Step(`^I delete a snapshot$`, f.iDeleteASnapshot)
 	s.Step(`^I create a snapshot per volume in parallel$`, f.iCreateASnapshotPerVolumeInParallel)
+	s.Step(`^when I call ControllerGetVolume$`, f.iCallControllerGetVolume)
+	s.Step(`^when I call NodeGetVolumeStats$`, f.iCallNodeGetVolumeStats)
 }

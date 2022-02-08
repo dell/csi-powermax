@@ -115,6 +115,7 @@ type Opts struct {
 	IsReverseProxyEnabled      bool
 	ReplicationContextPrefix   string // Enables sidecars to read required information from volume context
 	ReplicationPrefix          string // Used as a prefix to find out if replication is enabled
+	IsHealthMonitorEnabled     bool   // used to check if health monitor for volume is enabled
 }
 
 type service struct {
@@ -237,6 +238,7 @@ func (s *service) BeforeServe(
 			"modifyHostName":          s.opts.ModifyHostName,
 			"replicationContextPreix": s.opts.ReplicationContextPrefix,
 			"replicationPrefix":       s.opts.ReplicationPrefix,
+			"isHealthMonitorEnabled":  s.opts.IsHealthMonitorEnabled,
 		}
 
 		if s.opts.Password != "" {
@@ -407,6 +409,7 @@ func (s *service) BeforeServe(
 		// reverseproxy is enabled is set
 		opts.IsReverseProxyEnabled = pb(EnvProxyEnabled)
 	}
+	opts.IsHealthMonitorEnabled = pb(EnvHealthMonitorEnabled)
 	s.opts = opts
 
 	// setup the iscsi client

@@ -2390,58 +2390,81 @@ func (s *service) ControllerGetCapabilities(
 	req *csi.ControllerGetCapabilitiesRequest) (
 	*csi.ControllerGetCapabilitiesResponse, error) {
 
-	return &csi.ControllerGetCapabilitiesResponse{
-		Capabilities: []*csi.ControllerServiceCapability{
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
-					},
-				},
-			},
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
-					},
-				},
-			},
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_GET_CAPACITY,
-					},
-				},
-			},
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
-					},
-				},
-			},
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_CLONE_VOLUME,
-					},
-				},
-			},
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
-					},
-				},
-			},
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
-					},
+	capabilities := []*csi.ControllerServiceCapability{
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 				},
 			},
 		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
+				},
+			},
+		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_GET_CAPACITY,
+				},
+			},
+		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
+				},
+			},
+		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_CLONE_VOLUME,
+				},
+			},
+		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
+				},
+			},
+		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
+				},
+			},
+		},
+	}
+
+	healthMonitorCapabilities := []*csi.ControllerServiceCapability{
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_VOLUME_CONDITION,
+				},
+			},
+		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_GET_VOLUME,
+				},
+			},
+		},
+	}
+
+	if s.opts.IsHealthMonitorEnabled {
+		capabilities = append(capabilities, healthMonitorCapabilities...)
+	}
+
+	return &csi.ControllerGetCapabilitiesResponse{
+		Capabilities: capabilities,
 	}, nil
 }
 
@@ -3356,8 +3379,106 @@ func addMetaData(params map[string]string) map[string][]string {
 	return headerMetadata
 }
 
-func (s *service) ControllerGetVolume(ctx context.Context, request *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented yet")
+func (s *service) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+	id := req.GetVolumeId()
+	volName, symID, devID, _, _, err := s.parseCsiID(id)
+	if err != nil {
+		log.Errorf("Invalid volumeid: %s", id)
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
+	}
+	pmaxClient, err := s.GetPowerMaxClient(symID)
+	if err != nil {
+		log.Error(err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Requires probe
+	if err := s.requireProbe(ctx, pmaxClient); err != nil {
+		return nil, err
+	}
+
+	fields := map[string]interface{}{
+		"RequestID":   reqID,
+		"SymmetrixID": symID,
+		"VolumeName":  volName,
+		"DeviceID":    devID,
+	}
+	log.WithFields(fields).Info("Executing ControllerGetVolume with following fields")
+
+	symID, devID, vol, err := s.GetVolumeByID(ctx, id, pmaxClient)
+	if err != nil {
+		log.Errorf("GetVolumeByID failed with (%s) for devID (%s)", err.Error(), devID)
+		return &csi.ControllerGetVolumeResponse{
+			Volume: nil,
+			Status: &csi.ControllerGetVolumeResponse_VolumeStatus{
+				VolumeCondition: &csi.VolumeCondition{
+					Abnormal: true,
+					Message:  fmt.Sprintf("error in getting volume (%s): (%s)", devID, err.Error()),
+				},
+			},
+		}, nil
+	}
+
+	volResp := s.getCSIVolume(vol)
+	if len(vol.StorageGroupIDList) < 2 {
+		return &csi.ControllerGetVolumeResponse{
+			Volume: volResp,
+			Status: &csi.ControllerGetVolumeResponse_VolumeStatus{
+				VolumeCondition: &csi.VolumeCondition{
+					Abnormal: false,
+					Message:  fmt.Sprintf("volume (%s) is not published", devID),
+				},
+			},
+		}, nil
+	}
+	// fetch node ID's published
+	var nodeIDs []string
+	for _, sgID := range vol.StorageGroupIDList {
+		if strings.Contains(sgID, "no-srp") {
+			// fetch the SG details, and see if masking view is present
+			sg, err := pmaxClient.GetStorageGroup(ctx, symID, sgID)
+			if err != nil {
+				log.Errorf("GetStorageGroup failed with (%s) for devID (%s) sgID (%s)", err.Error(), devID, sgID)
+				return &csi.ControllerGetVolumeResponse{
+					Volume: nil,
+					Status: &csi.ControllerGetVolumeResponse_VolumeStatus{
+						VolumeCondition: &csi.VolumeCondition{
+							Abnormal: true,
+							Message:  fmt.Sprintf("error in getting SG masking view details (%s): (%s)", devID, err.Error()),
+						},
+					},
+				}, nil
+			}
+			for _, mv := range sg.MaskingView {
+				hostID := getHostIDFromMaskingView(mv)
+				nodeIDs = append(nodeIDs, hostID)
+			}
+		}
+	}
+	return &csi.ControllerGetVolumeResponse{
+		Volume: volResp,
+		Status: &csi.ControllerGetVolumeResponse_VolumeStatus{
+			PublishedNodeIds: nodeIDs,
+			VolumeCondition: &csi.VolumeCondition{
+				Abnormal: false,
+				Message:  "Volume is available",
+			},
+		},
+	}, nil
+}
+
+// getHostIDFromMaskingView will return hostID from the given maskingview
+// maskingview is CsiMVPrefix-ClusterPrefix-nodeID, eg. csi-mv-ABC-node1
+func getHostIDFromMaskingView(maskingView string) string {
+	subParts := strings.SplitAfterN(maskingView, "-", 4)
+	return subParts[3]
 }
 
 func (s *service) ExecuteAction(ctx context.Context, req *csiext.ExecuteActionRequest) (*csiext.ExecuteActionResponse, error) {
