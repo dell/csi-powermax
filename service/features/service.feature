@@ -369,12 +369,6 @@ Feature: PowerMax CSI interface
       Then the error contains "exceeds maximum length"
 
 @v1.0.0
-     Scenario: Call NodeGetVolumeStats, should get unimplemented
-      Given a PowerMax service
-      When I call NodeGetVolumeStats
-      Then the error contains "Unimplemented"
-
-@v1.0.0
      Scenario: Call ListVolumes, should get unimplemented
       Given a PowerMax service
       When I call ListVolumes
@@ -675,3 +669,20 @@ Feature: PowerMax CSI interface
       And I have a Node "Node1" with MaskingView
       When I invoke nodeHostSetup with a "node" service
       Then no error was received
+
+@v2.2.0
+    Scenario Outline: Call NodeGetVolumeStats
+      Given a PowerMax service
+      And a valid volume
+      And I induce error <induced>
+      When I call NodeGetVolumeStats with volumePath as <volPath>
+      Then the error contains <errormsg>
+      And a valid NodeGetVolumeStatsResponse is returned
+
+      Examples:
+        | induced                                  | volPath                                                        | errormsg                 |
+        | "none"                                   | ""                                                             | "no Volume path found"   |
+        | "none"                                   | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
+        | "GOFSInduceGetMountInfoFromDeviceError"  | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
+        | "NoVolumeID"                             | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "Invalid volume id"      |
+	    | "NoMountInfo"                            | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"                | "none"                   |

@@ -37,11 +37,10 @@ import (
 	"github.com/dell/goiscsi"
 	log "github.com/sirupsen/logrus"
 
+	types "github.com/dell/gopowermax/types/v90"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-
-	types "github.com/dell/gopowermax/types/v90"
 )
 
 var (
@@ -723,31 +722,50 @@ func (s *service) NodeGetCapabilities(
 	ctx context.Context,
 	req *csi.NodeGetCapabilitiesRequest) (
 	*csi.NodeGetCapabilitiesResponse, error) {
-
-	return &csi.NodeGetCapabilitiesResponse{
-		Capabilities: []*csi.NodeServiceCapability{
-			{
-				Type: &csi.NodeServiceCapability_Rpc{
-					Rpc: &csi.NodeServiceCapability_RPC{
-						Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
-					},
-				},
-			},
-			{
-				Type: &csi.NodeServiceCapability_Rpc{
-					Rpc: &csi.NodeServiceCapability_RPC{
-						Type: csi.NodeServiceCapability_RPC_EXPAND_VOLUME,
-					},
-				},
-			},
-			{
-				Type: &csi.NodeServiceCapability_Rpc{
-					Rpc: &csi.NodeServiceCapability_RPC{
-						Type: csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
-					},
+	capabilities := []*csi.NodeServiceCapability{
+		{
+			Type: &csi.NodeServiceCapability_Rpc{
+				Rpc: &csi.NodeServiceCapability_RPC{
+					Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
 				},
 			},
 		},
+		{
+			Type: &csi.NodeServiceCapability_Rpc{
+				Rpc: &csi.NodeServiceCapability_RPC{
+					Type: csi.NodeServiceCapability_RPC_EXPAND_VOLUME,
+				},
+			},
+		},
+		{
+			Type: &csi.NodeServiceCapability_Rpc{
+				Rpc: &csi.NodeServiceCapability_RPC{
+					Type: csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
+				},
+			},
+		},
+	}
+	if s.opts.IsHealthMonitorEnabled {
+		healthMonitorCapabilities := []*csi.NodeServiceCapability{
+			{
+				Type: &csi.NodeServiceCapability_Rpc{
+					Rpc: &csi.NodeServiceCapability_RPC{
+						Type: csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
+					},
+				},
+			}, {
+				Type: &csi.NodeServiceCapability_Rpc{
+					Rpc: &csi.NodeServiceCapability_RPC{
+						Type: csi.NodeServiceCapability_RPC_VOLUME_CONDITION,
+					},
+				},
+			},
+		}
+		capabilities = append(capabilities, healthMonitorCapabilities...)
+	}
+
+	return &csi.NodeGetCapabilitiesResponse{
+		Capabilities: capabilities,
 	}, nil
 }
 
@@ -848,7 +866,7 @@ func (s *service) createTopologyMap(ctx context.Context) (map[string]string, err
 	return topology, nil
 }
 
-// Minimal version of NodeGetInfo. Returns the NodeId
+// NodeGetInfo minimal version. Returns the NodeId
 // MaxVolumesPerNode (optional) is left as 0 which means unlimited, and AccessibleTopology is left nil.
 func (s *service) NodeGetInfo(
 	ctx context.Context,
@@ -883,7 +901,175 @@ func (s *service) NodeGetInfo(
 
 func (s *service) NodeGetVolumeStats(
 	ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+
+	// Get the VolumeID and parse it
+	id := req.GetVolumeId()
+	volName, symID, _, _, _, err := s.parseCsiID(id)
+	if err != nil {
+		log.Errorf("Invalid volumeid: %s", id)
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
+	}
+
+	volPath := req.GetVolumePath()
+	if volPath == "" {
+		log.Error("Volume path required")
+		return nil, status.Error(codes.InvalidArgument, "no Volume path found in request, a volume path is required")
+	}
+
+	// Probe the node if required and make sure startup called
+	err = s.nodeProbe(ctx)
+	if err != nil {
+		log.Error("nodeProbe failed with error :" + err.Error())
+		return nil, err
+	}
+
+	f := log.Fields{
+		"CSIRequestID":      reqID,
+		"VolumePath":        volPath,
+		"ID":                id,
+		"VolumeName":        volName,
+		"StagingTargetPath": req.GetStagingTargetPath(),
+	}
+	log.WithFields(f).Info("Calling NodeGetVolumeStats")
+
+	pmaxClient, err := s.GetPowerMaxClient(symID)
+	if err != nil {
+		log.Error(err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// abnormal and msg tells the condition of the volume
+	var abnormal bool
+	var msg string
+
+	// check if volume exist
+	_, _, _, err = s.GetVolumeByID(ctx, id, pmaxClient)
+	if err != nil {
+		abnormal = true
+		msg = fmt.Sprintf("volume %s not found", id)
+	}
+
+	// check if volume is mounted
+	if !abnormal {
+		log.Debug("---- check 1 ----")
+		replace := CSIPrefix + "-" + s.getClusterPrefix() + "-"
+		volName = strings.Replace(volName, replace, "", 1)
+		isMounted, err := isVolumeMounted(ctx, volName, volPath)
+		log.Debug("---- isMounted ----", isMounted)
+		if err != nil {
+			abnormal = true
+			msg = fmt.Sprintf("Error getting mount info for volume %s", id)
+		}
+		if err == nil && !isMounted {
+			abnormal = true
+			msg = fmt.Sprintf("no mount info for volume %s", id)
+		}
+	}
+
+	if !abnormal {
+		log.Debug("---- check 2 ----")
+		// check if volume path is accessible
+		_, err = os.ReadDir(volPath)
+		if err != nil {
+			abnormal = true
+			msg = fmt.Sprintf("volume Path is not accessible: %s", err)
+		}
+		log.Debug("---- path is readable ----")
+	}
+	if abnormal {
+		// return the response based on abnormal condition
+		return &csi.NodeGetVolumeStatsResponse{
+			Usage: []*csi.VolumeUsage{
+				{
+					Unit:      csi.VolumeUsage_UNKNOWN,
+					Available: 0,
+					Total:     0,
+					Used:      0,
+				},
+			},
+			VolumeCondition: &csi.VolumeCondition{
+				Abnormal: abnormal,
+				Message:  msg,
+			},
+		}, nil
+	}
+	// Get Volume stats metrics
+	availableBytes, totalBytes, usedBytes, totalInodes, freeInodes, usedInodes, err := getVolumeStats(ctx, volPath)
+	if err != nil {
+		return &csi.NodeGetVolumeStatsResponse{
+			Usage: []*csi.VolumeUsage{
+				{
+					Unit:      csi.VolumeUsage_UNKNOWN,
+					Available: availableBytes,
+					Total:     totalBytes,
+					Used:      usedBytes,
+				},
+			},
+			VolumeCondition: &csi.VolumeCondition{
+				Abnormal: false,
+				Message:  fmt.Sprintf("failed to get volume stats metrics : %s", err),
+			},
+		}, nil
+	}
+
+	// return the response with all the usage
+	return &csi.NodeGetVolumeStatsResponse{
+		Usage: []*csi.VolumeUsage{
+			{
+				Unit:      csi.VolumeUsage_BYTES,
+				Available: availableBytes,
+				Total:     totalBytes,
+				Used:      usedBytes,
+			},
+			{
+				Unit:      csi.VolumeUsage_INODES,
+				Available: freeInodes,
+				Total:     totalInodes,
+				Used:      usedInodes,
+			},
+		},
+		VolumeCondition: &csi.VolumeCondition{
+			Abnormal: abnormal,
+			Message:  "Volume in use",
+		},
+	}, nil
+}
+
+//getVolumeStats - Returns the stats for the volume mounted on given volume path
+func getVolumeStats(ctx context.Context, volumePath string) (int64, int64, int64, int64, int64, int64, error) {
+	availableBytes, totalBytes, usedBytes, totalInodes, freeInodes, usedInodes, err := gofsutil.FsInfo(ctx, volumePath)
+
+	if err != nil {
+		return 0, 0, 0, 0, 0, 0, status.Error(codes.Internal, fmt.Sprintf(
+			"failed to get volume stats: %s", err))
+	}
+	return availableBytes, totalBytes, usedBytes, totalInodes, freeInodes, usedInodes, err
+}
+
+// isVolumeMounted fetches the mount info for a volume
+// and compare the volume mount path with the target
+func isVolumeMounted(ctx context.Context, volName string, target string) (bool, error) {
+
+	devmnt, err := gofsutil.GetMountInfoFromDevice(ctx, volName)
+	if err != nil {
+		return false, status.Errorf(codes.Internal,
+			"could not reliably determine existing mount status: '%s'",
+			err.Error())
+	}
+	if strings.Contains(devmnt.MountPoint, target) {
+		return true, nil
+	}
+
+	// No mount exists, volume is not published
+	log.Debugf("target '%s' does not exist", target)
+	return false, nil
 }
 
 // nodeStartup performs a few necessary functions for the nodes to function properly

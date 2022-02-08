@@ -27,6 +27,11 @@ parameters:
   # Optional: true, Default value: Optimized
   # Examples: "Diamond" , "Bronze"
   ServiceLevel: <Service Level>
+  # Name of application to be used to group volumes
+  # This is used in naming storage group
+  # Optional: true, Default value: None
+  # Examples: APP, app, sanity, tests
+  ApplicationPrefix: <application prefix>
 # If using custom driver name, change the following to point to the custom name
 # Optional: true, Default value: csi-powermax.dellemc.com
 # Examples: "csi-driver-powermax", "csi-powermax.dellemc.com"
