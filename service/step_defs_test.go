@@ -1861,8 +1861,6 @@ func (f *feature) aValidControllerGetCapabilitiesResponseIsReturned() error {
 				count = count + 1
 			case csi.ControllerServiceCapability_RPC_EXPAND_VOLUME:
 				count = count + 1
-			case csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER:
-				count = count + 1
 			default:
 				return fmt.Errorf("received unexpected capability: %v", typex)
 			}
