@@ -302,6 +302,9 @@ Feature: Powermax OS CSI interface
     | "block"      | "single-writer"                | "none"     | "none"                                       |
     | "block"      | "multi-writer"                 | "none"     | "none"                                       |
     | "block"      | "single-writer"                | "none"     | "none"                                       |
+    | "mount"      | "single-node-single-writer"    | "xfs"      | "none"                                       |
+    | "mount"      | "single-node-single-writer"    | "ext4"     | "none"                                       |
+    | "block"      | "single-node-single-writer"    | "none"     | "none"                                       |
     
 
   Scenario: Create publish, unpublish, and delete basic volume

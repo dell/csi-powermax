@@ -11,8 +11,14 @@ Feature: PowerMax CSI interface
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
       And I have a Node "node1" with MaskingView
-      And I call PublishVolume with "single-writer" to "node1"
+      And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.1.0
@@ -23,8 +29,14 @@ Feature: PowerMax CSI interface
       And I set transport protocol to "FC"
       And I have a Node "node1" with Host
       And I have a FC PortGroup "PG1"
-      And I call PublishVolume with "single-writer" to "node1"
+      And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.1.0
@@ -34,8 +46,14 @@ Feature: PowerMax CSI interface
       And a valid CreateVolumeResponse is returned
       And I set transport protocol to "FC"
       And I have a Node "node1" with Host
-      And I call PublishVolume with "single-writer" to "node1"
+      And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.1.0
@@ -45,16 +63,28 @@ Feature: PowerMax CSI interface
       And a valid CreateVolumeResponse is returned
       And I set transport protocol to "FC"
       And I have a Node "node1" with Host with Initiator mapped to multiple ports
-      And I call PublishVolume with "single-writer" to "node1"
+      And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
      Scenario: Publish volume with single writer with an invalid volume
       Given a PowerMax service
       And I have a Node "node1" with MaskingView
-      And I call PublishVolume with "single-writer" to "node1"
+      And I call PublishVolume with <access> to "node1"
       Then the error contains "Volume not found"
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
@@ -138,8 +168,14 @@ Feature: PowerMax CSI interface
       And I have a Node "node1" with Host
       And I have a Node "node1" with FastManagedStorageGroup
       And I add the Volume to "node1"
-      When I call PublishVolume with "single-writer" to "node1"
+      When I call PublishVolume with <access> to "node1"
       Then the error contains "Conflicting SG present"
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
@@ -150,8 +186,14 @@ Feature: PowerMax CSI interface
       And a valid CreateVolumeResponse is returned
       And I have a Node "node1" with Host
       And I have a Node "node1" with FastManagedStorageGroup
-      When I call PublishVolume with "single-writer" to "node1"
+      When I call PublishVolume with <access> to "node1"
       Then the error contains "Storage group exists with same name but with conflicting params"
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
@@ -177,10 +219,16 @@ Feature: PowerMax CSI interface
       And a valid CreateVolumeResponse is returned
       And I have a Node "node1" with initiators "initlist1" with MaskingView
       And I have a Node "node2" with initiators "initlist1" with MaskingView
-      And I call PublishVolume with "single-writer" to "node1"
+      And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
-      And I call PublishVolume with "single-writer" to "node2"
+      And I call PublishVolume with <access> to "node2"
       Then the error contains "volume already present in a different masking view"
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
@@ -190,8 +238,14 @@ Feature: PowerMax CSI interface
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
       And I have a Node "node1" with Host
-      And I call PublishVolume with "single-writer" to "node1"
+      And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
@@ -200,8 +254,14 @@ Feature: PowerMax CSI interface
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
-      And I call PublishVolume with "single-writer" to "node1"
+      And I call PublishVolume with <access> to "node1"
       Then the error contains "Failed to fetch host"
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
@@ -212,8 +272,14 @@ Feature: PowerMax CSI interface
       And a valid CreateVolumeResponse is returned
       And I have a Node "node1" with Host
       And I have a Node "node1" with StorageGroup
-      And I call PublishVolume with "single-writer" to "node1"
+      And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
@@ -225,8 +291,14 @@ Feature: PowerMax CSI interface
       And I have a Node "node1" with StorageGroup
       And I induce error "PortGroupError"
       When I request a PortGroup
-      And I call PublishVolume with "single-writer" to "node1"
+      And I call PublishVolume with <access> to "node1"
       Then the error contains "No port groups have been supplied"
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
@@ -236,10 +308,16 @@ Feature: PowerMax CSI interface
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
       And I have a Node "node1" with MaskingView
-      And I call PublishVolume with "single-writer" to "node1"
+      And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
-      And I call PublishVolume with "single-writer" to "node1"
+      And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
+
+     Examples:
+      | access                      |
+      | "single-writer"             |
+      | "single-node-single-writer" |
+      | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
