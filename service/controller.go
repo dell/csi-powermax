@@ -677,6 +677,7 @@ func (s *service) CreateVolume(
 	}
 
 	// Formulate the return response
+	volID := vol.VolumeID
 	vol.VolumeID = fmt.Sprintf("%s-%s-%s", volumeIdentifier, symmetrixID, vol.VolumeID)
 	volResp := s.getCSIVolume(vol)
 	volResp.ContentSource = contentSource
@@ -692,7 +693,7 @@ func (s *service) CreateVolume(
 		"CreationTime": time.Now().Format("20060102150405"),
 	}
 	if replicationEnabled == "true" {
-		remoteVolumeID, err := s.GetRemoteVolumeID(ctx, symmetrixID, localRDFGrpNo, vol.VolumeID, pmaxClient)
+		remoteVolumeID, err := s.GetRemoteVolumeID(ctx, symmetrixID, localRDFGrpNo, volID, pmaxClient)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "Failed to fetch rdf pair information for (%s) - Error (%s)", vol.VolumeID, err.Error())
 		}
