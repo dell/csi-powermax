@@ -27,7 +27,10 @@ Feature: PowerMax CSI interface
     | "ISCSI"    | "mount"      | "multiple-writer"              | "ext4"     | "Mount volumes do not support AccessMode"    |
     | "ISCSI"    | "block"      | "single-writer"                | "none"     | "none"                                       |
     | "ISCSI"    | "block"      | "multiple-writer"              | "none"     | "none"                                       |
-
+    | "FC"       | "mount"      | "single-node-single-writer"    | "none"     | "none"                                       |
+    | "FC"       | "mount"      | "single-node-multi-writer"     | "none"     | "none"                                       |
+    | "ISCSI"    | "mount"      | "single-node-single-writer"    | "none"     | "none"                                       |
+    | "ISCSI"    | "mount"      | "single-node-multi-writer"     | "none"     | "none"                                       |
 
 @nodePublish
 @v1.0.0
@@ -64,6 +67,38 @@ Feature: PowerMax CSI interface
     And I have a Node "node1" with MaskingView
     And a controller published volume
     And a capability with voltype "block" access "single-writer" fstype "none"
+    And get Node Publish Volume Request
+    And I induce error <error>
+    When I call NodePublishVolume
+    Then the error contains <errormsg>
+
+    Examples:
+    | error                                   | errormsg                                                          |
+    | "GOFSMockBindMountError"                | "none"                                                            |
+    | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"                     |
+    | "GOFSMockMountError"                    | "error bind mounting to target path"                              |
+    | "NoDeviceWWNError"                      | "Device WWN required to be in PublishContext"                     |
+    | "GOFSMockGetMountsError"                | "Could not getDevMounts for"                                      |
+    | "NoSymlinkForNodePublish"               | "cannot find the path specified@@no such file or directory@@none"  |
+    # may be different for Windows vs. Linux
+    | "NoBlockDevForNodePublish"              | "is not a block device@@no such file or directory"                |
+    | "TargetNotCreatedForNodePublish"        | "none"                                                            |
+    # may be different for Windows vs. Linux
+    | "PrivateDirectoryNotExistForNodePublish"| "cannot find the path specified@@no such file or directory@@none"  |
+    | "BlockMkfilePrivateDirectoryNodePublish"| "existing path is not a directory"                                |
+    | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
+    | "NodePublishNoVolumeCapability"         | "Volume Capability is required"                                   |
+    | "NodePublishNoAccessMode"               | "Volume Access Mode is required"                                  |
+    | "NodePublishNoAccessType"               | "Volume Access Type is required"                                  |
+    | "NodePublishBlockTargetNotFile"         | "existing path is a directory"                                    |
+
+    @nodePublish
+@v1.0.0
+  Scenario Outline: Node publish block volumes various induced error use cases from examples
+    Given a PowerMax service
+    And I have a Node "node1" with MaskingView
+    And a controller published volume
+    And a capability with voltype "block" access "single-node-single-writer" fstype "none"
     And get Node Publish Volume Request
     And I induce error <error>
     When I call NodePublishVolume
@@ -136,6 +171,49 @@ Feature: PowerMax CSI interface
 
 @nodePublish
 @v1.0.0
+  Scenario Outline: Node publish mount volumes various induced error use cases from examples
+    Given a PowerMax service
+    And I have a Node "node1" with MaskingView
+    And a controller published volume
+    And a capability with voltype "mount" access "single-node-single-writer" fstype "xfs"
+    And get Node Publish Volume Request
+    And I induce error <errora>
+    And I induce error <errorb>
+    When I call NodePublishVolume
+    Then the error contains <errormsg>
+
+    Examples:
+    | errora                                  | errorb                        | errormsg                                                                  |
+    | "GOFSMockDevMountsError"                | "none"                        | "none"                                                                    |
+    | "GOFSWWNToDevicePathError"              | "none"                        | "Device path not found for WWN"                                           |
+    | "GOFSWWNToDevicePathError"              | "GOISCSIDiscoveryError"       | "Device path not found for WWN"                                           |
+    | "GOFSWWNToDevicePathError"              | "GOISCSIRescanError"          | "Device path not found for WWN"                                           |
+    | "GOFSMockMountError"                    | "none"                        | "mode conflicts with existing mounts@@mount induced error"                |
+    | "GOFSMockGetMountsError"                | "none"                        | "could not reliably determine existing mount status"                      |
+    # may be different for Windows vs. Linux
+    | "NoSymlinkForNodePublish"               | "none"                        | "cannot find the path specified@@no such file or directory@@none"          |
+    # may be different for Windows vs. Linux
+    | "NoBlockDevForNodePublish"              | "none"                        | "is not a block device@@not published to node@@no such file or directory" |
+    | "TargetNotCreatedForNodePublish"        | "none"                        | "none"                                                                    |
+    # may be different for Windows vs. Linux
+    | "PrivateDirectoryNotExistForNodePublish"| "none"                        | "cannot find the path specified@@no such file or directory@@none"          |
+    | "BlockMkfilePrivateDirectoryNodePublish"| "none"                        | "existing path is not a directory"                                        |
+    | "NodePublishNoTargetPath"               | "none"                        | "Target Path is required"                                                 |
+    | "NodePublishNoVolumeCapability"         | "none"                        | "Volume Capability is required"                                           |
+    | "NodePublishNoAccessMode"               | "none"                        | "Volume Access Mode is required"                                          |
+    | "NodePublishNoAccessType"               | "none"                        | "Volume Access Type is required"                                          |
+    | "NodePublishFileTargetNotDir"           | "none"                        | "existing path is not a directory"                                        |
+    | "NodePublishRequestReadOnly"            | "none"                        | "none"                                                                    |
+    | "BadVolumeIdentifier"                   | "none"                        | "bad volume identifier"                                             |
+    | "PrivMountAlreadyMounted"               | "none"                        | "none"                                                                    |
+    | "PrivMountByDifferentDev"               | "none"                        | "mounted by different device"                                             |
+    | "PrivMountByDifferentDev"               | "GOFSMockGetMountsError"      | "could not reliably determine existing mount status"                      |
+    | "PrivMountByDifferentDir"               | "none"                        | "device already in use and mounted elsewhere"                             |
+    | "MountTargetAlreadyMounted"             | "none"                        | "none"                                                                    |
+    | "MountTargetAlreadyMounted"             | "NodePublishRequestReadOnly"  | "volume previously published with different mount options"                |
+
+@nodePublish
+@v1.0.0
   Scenario Outline: Node publish various use cases from examples when volume already published
     Given a PowerMax service
     And I have a Node "node1" with MaskingView
@@ -154,6 +232,10 @@ Feature: PowerMax CSI interface
     | "mount"      | "single-writer"                | "xfs"      | "none"                                               |
     | "mount"      | "single-writer"                | "ext4"     | "none"                                               |
     | "mount"      | "multiple-writer"              | "ext4"     | "Mount volumes do not support AccessMode"            |
+    | "mount"      | "single-node-single-writer"    | "none"     | "none"					        |
+    | "mount"      | "single-node-multiple-writer"  | "none"     | "Unknown Access Mode"                                |
+    | "block"      | "single-node-single-writer"    | "none"     | "Access mode conflicts with existing mounts"         |
+    | "block"      | "single-node-multiple-writer"  | "none"     | "Unknown Access Mode"                                |
 
 @nodePublish
 @v1.0.0
@@ -192,6 +274,8 @@ Feature: PowerMax CSI interface
     | "mount"      | "single-writer"                | "ext4"     | "access mode conflicts with existing mounts" |
     | "mount"      | "multiple-writer"              | "ext4"     | "Mount volumes do not support AccessMode"    |
     | "block"      | "multiple-reader"              | "none"     | "read only not supported for Block Volume"   |
+    | "mount"      | "single-node-single-writer"    | "none"     | "access mode conflicts with existing mounts" |
+    | "mount"      | "single-node-multiple-writer"  | "none"     | "Unknown Access Mode"                        |
 
 
 @nodePublish
