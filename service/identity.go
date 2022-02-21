@@ -16,6 +16,7 @@ package service
 
 import (
 	"fmt"
+	commonext "github.com/dell/dell-csi-extensions/common"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -113,8 +114,8 @@ func (s *service) Probe(
 }
 
 func (s *service) ProbeController(ctx context.Context,
-	req *csiext.ProbeControllerRequest) (
-	*csiext.ProbeControllerResponse, error) {
+	req *commonext.ProbeControllerRequest) (
+	*commonext.ProbeControllerResponse, error) {
 
 	if !strings.EqualFold(s.mode, "node") {
 		log.Debug("controllerProbe")
@@ -126,7 +127,7 @@ func (s *service) ProbeController(ctx context.Context,
 
 	ready := new(wrappers.BoolValue)
 	ready.Value = true
-	rep := new(csiext.ProbeControllerResponse)
+	rep := new(commonext.ProbeControllerResponse)
 	rep.Ready = ready
 	rep.Name = s.getDriverName()
 	rep.VendorVersion = core.SemVer

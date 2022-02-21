@@ -9,6 +9,7 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20190612170431-362f06ec6bc1
 	github.com/cucumber/godog v0.10.0
 	github.com/cucumber/messages-go/v10 v10.0.3
+	github.com/dell/dell-csi-extensions/common v1.0.0
 	github.com/dell/dell-csi-extensions/replication v1.0.0
 	github.com/dell/gobrick v1.2.0
 	github.com/dell/gocsi v1.5.0
@@ -22,8 +23,14 @@ require (
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f
-	google.golang.org/grpc v1.38.0
+	google.golang.org/grpc v1.42.0
 	k8s.io/client-go v0.18.6
+)
+
+replace (
+	github.com/dell/dell-csi-extensions/common v1.0.0 => github.com/dell/dell-csi-extensions/common v0.0.0-20211217121714-58de430139aa
+	github.com/dell/dell-csi-extensions/replication v1.0.0 => github.com/dell/dell-csi-extensions/replication v0.0.0-20211217121714-58de430139aa
+	github.com/dell/dell-csi-extensions/volumeGroupSnapshot v1.0.0 => github.com/dell/dell-csi-extensions/volumeGroupSnapshot v0.0.0-20211217121714-58de430139aa
 )
 
 require (
