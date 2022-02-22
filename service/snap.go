@@ -618,7 +618,7 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 								snapCleaner.requestCleanup(&cleanReq)
 							}
 						} else {
-							log.Infof("Snapshot ID (%s) is not in supported format", snapID)
+							log.Debugf("Snapshot (%s) is not in a supported format", snap.Name)
 						}
 					}
 				}
