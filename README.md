@@ -26,8 +26,8 @@ This project may be compiled as a stand-alone binary using Golang that, when run
 * [Security](https://github.com/dell/csm/blob/main/docs/SECURITY.md)
 * [Building](#building)
 * [Runtime Dependecies](#runtime-dependencies)
-* [Driver Installation](driver-installation)
-* [Using driver](#using-driver)
+* [Driver Installation](#driver-installation)
+* [Using Driver](#using-driver)
 * [Documentation](#documentation)
 
 ## Support
@@ -53,7 +53,7 @@ If you are using ISCSI, then the Node portion of the driver can only be run on n
 ## Driver Installation
 Please consult the [Installation Guide](https://dell.github.io/csm-docs/docs/csidriver/installation)
 
-## Using driver
+## Using Driver
 Please refer to the section `Testing Drivers` in the [Documentation](https://dell.github.io/csm-docs/docs/csidriver/installation/test/) for more info.
 
 ## Documentation
