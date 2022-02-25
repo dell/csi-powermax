@@ -271,7 +271,7 @@ csireverseproxy:
 # This should be unique per K8s/CSI deployment
 # maximum length of this value is 3 characters
 # Default value: None
-# Examples: "XYZ", "EMC"
+# Examples: "XYZ"
 clusterPrefix: ABC
 
 # portGroups: Define the set of existing port groups that the driver will use.
