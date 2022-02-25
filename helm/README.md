@@ -1,4 +1,4 @@
-# Dell EMC Powermax Helm Chart for Kubernetes
+# Dell Powermax Helm Chart for Kubernetes
 
 For detailed installation instructions, please check the `dell-csi-helm-installer` directory
 

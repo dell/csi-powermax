@@ -39,7 +39,7 @@ function print_usage {
    echo "    -i      - Image name for which scan has to be run"
    echo "    -p      - Choice of package manager for installing clamav (microdnf/dnf/yum). Default is microdnf"
    echo
-   echo "Set CA_CERTS env to point to a directory in case you want to copy Dell EMC CA_CERTS to the container"
+   echo "Set CA_CERTS env to point to a directory in case you want to copy Dell CA_CERTS to the container"
 }
 
 function stop_container {
