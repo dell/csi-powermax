@@ -12,7 +12,7 @@ require (
 	github.com/dell/dell-csi-extensions/common v1.0.0
 	github.com/dell/dell-csi-extensions/replication v1.0.0
 	github.com/dell/gobrick v1.2.0
-	github.com/dell/gocsi v1.5.0
+	github.com/dell/gocsi v1.5.1-0.20220218201557-b18545e234c3
 	github.com/dell/gofsutil v1.7.1-0.20220131144828-d54a8e0917c7
 	github.com/dell/goiscsi v1.2.0
 	github.com/dell/gopowermax v1.6.0
@@ -23,7 +23,7 @@ require (
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f
-	google.golang.org/grpc v1.42.0
+	google.golang.org/grpc v1.43.0
 	k8s.io/client-go v0.18.6
 )
 

@@ -89,6 +89,8 @@ github.com/dell/gobrick v1.2.0 h1:dlgWgonXG7qoa+SXlek/NkdFBnfxgqSv+8tsHIBIEDg=
 github.com/dell/gobrick v1.2.0/go.mod h1:pYN9r3XvIjct/QkEg5mEM+k2L3QBLVaHUZeAMzQgwRg=
 github.com/dell/gocsi v1.5.0 h1:qi2T6H6JHDo9sJEw24jo6Z88fJszBXfQc3lxOBaUijo=
 github.com/dell/gocsi v1.5.0/go.mod h1:nIsIXXB5JpAvOQ0//gtPGULC2+NUddpi5qwpBeMhiLs=
+github.com/dell/gocsi v1.5.1-0.20220218201557-b18545e234c3 h1:kxuw6ZTvkhTGPuz8ANx4IIFIzdzO/XiYG18uJGgr05s=
+github.com/dell/gocsi v1.5.1-0.20220218201557-b18545e234c3/go.mod h1:GoNFNluCYj7i9AcPQy4CLFF1FQoLsD5rlnDttVesnzk=
 github.com/dell/gofsutil v1.7.1-0.20220131144828-d54a8e0917c7 h1:+lDblTVlST1wIR75v+4f8fECGJwBWCINYwZQcTk7GeA=
 github.com/dell/gofsutil v1.7.1-0.20220131144828-d54a8e0917c7/go.mod h1:0tAefmK/JahHEUFLwtqFPRdr823j0c5vrrhcq+Mx4TM=
 github.com/dell/goiscsi v1.1.0/go.mod h1:MfuMjbKWsh/MOb0VDW20C+LFYRIOfWKGiAxWkeM5TKo=
@@ -622,6 +624,8 @@ google.golang.org/grpc v1.36.0/go.mod h1:qjiiYl8FncCW8feJPdyg3v6XW24KsRHe+dy9BAG
 google.golang.org/grpc v1.38.0/go.mod h1:NREThFqKR1f3iQ6oBuvc5LadQuXVGo9rkm5ZGrQdJfM=
 google.golang.org/grpc v1.42.0 h1:XT2/MFpuPFsEX2fWh3YQtHkZ+WYZFQRfaUgLZYj/p6A=
 google.golang.org/grpc v1.42.0/go.mod h1:k+4IHHFw41K8+bbowsex27ge2rCb65oeWqe4jJ590SU=
+google.golang.org/grpc v1.43.0 h1:Eeu7bZtDZ2DpRCsLhUlcrLnvYaMK1Gz86a+hMVvELmM=
+google.golang.org/grpc v1.43.0/go.mod h1:k+4IHHFw41K8+bbowsex27ge2rCb65oeWqe4jJ590SU=
 google.golang.org/protobuf v0.0.0-20200109180630-ec00e32a8dfd/go.mod h1:DFci5gLYBciE7Vtevhsrf46CRTquxDuWsQurQQe4oz8=
 google.golang.org/protobuf v0.0.0-20200221191635-4d8936d0db64/go.mod h1:kwYJMbMJ01Woi6D6+Kah6886xMZcty6N08ah7+eCXa0=
 google.golang.org/protobuf v0.0.0-20200228230310-ab0ca4ff8a60/go.mod h1:cfTl7dwQJ+fmap5saPgwCLgHXTUD7jkjRqWcaiX5VyM=
