@@ -70,7 +70,7 @@ global:
 
 # Current version of the driver
 # Don't modify this value as this value will be used by the install script
-version: "2.1.0"
+version: "2.2.0"
 
 ## K8S/DRIVER ATTRIBUTES
 ########################
@@ -244,8 +244,8 @@ csireverseproxy:
   enabled: false
   # image: Define the container images used for the reverse proxy
   # Default value: None
-  # Example: "csipowermax-reverseproxy:v1.4.0"
-  image: dellemc/csipowermax-reverseproxy:v1.4.0
+  # Example: "csipowermax-reverseproxy:v2.1.0"
+  image: dellemc/csipowermax-reverseproxy:v2.1.0
   # "tlsSecret" defines the TLS secret that is created with certificate
   # and its associated key
   # Default value: None
