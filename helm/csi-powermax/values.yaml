@@ -244,8 +244,8 @@ csireverseproxy:
   enabled: false
   # image: Define the container images used for the reverse proxy
   # Default value: None
-  # Example: "csipowermax-reverseproxy:v1.5.0"
-  image: dellemc/csipowermax-reverseproxy:v1.5.0
+  # Example: "csipowermax-reverseproxy:v2.1.0"
+  image: dellemc/csipowermax-reverseproxy:v2.1.0
   # "tlsSecret" defines the TLS secret that is created with certificate
   # and its associated key
   # Default value: None

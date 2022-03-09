@@ -11,7 +11,7 @@ keywords:
 - storage
 dependencies:
   - name: csireverseproxy
-    version: 1.5.0
+    version: 2.1.0
     condition: csireverseproxy.enabled
 home: https://github.com/dell/csi-powermax
 icon: https://avatars1.githubusercontent.com/u/20958494?s=200&v=4
