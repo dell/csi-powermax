@@ -11,11 +11,11 @@ require (
 	github.com/cucumber/messages-go/v10 v10.0.3
 	github.com/dell/dell-csi-extensions/common v1.0.0
 	github.com/dell/dell-csi-extensions/replication v1.0.0
-	github.com/dell/gobrick v1.2.1-0.20220224111903-717383a5e97e
-	github.com/dell/gocsi v1.5.1-0.20220218201557-b18545e234c3
-	github.com/dell/gofsutil v1.7.1-0.20220302150419-2b529e262361
-	github.com/dell/goiscsi v1.2.1-0.20220222054507-9cc2d02a05dd
-	github.com/dell/gopowermax v1.6.1-0.20220106064709-b3c4ae0225a2
+	github.com/dell/gobrick v1.3.0
+	github.com/dell/gocsi v1.5.1
+	github.com/dell/gofsutil v1.8.0
+	github.com/dell/goiscsi v1.3.0
+	github.com/dell/gopowermax v1.7.0
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.2
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
@@ -39,7 +39,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/cucumber/gherkin-go/v11 v11.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dell/gonvme v0.0.0-20220224072409-dcb82cef802a // indirect
+	github.com/dell/gonvme v1.0.0 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/gofrs/uuid v3.2.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
