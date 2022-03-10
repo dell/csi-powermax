@@ -78,10 +78,10 @@ github.com/davecgh/go-spew v0.0.0-20151105211317-5215b55f46b2/go.mod h1:J7Y8YcW2
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/dell/dell-csi-extensions/common v0.0.0-20211217121714-58de430139aa h1:aETQQEsjCVXPPDOWs+HfJRWfgvU8Dy/uoJV/0vcojQQ=
-github.com/dell/dell-csi-extensions/common v0.0.0-20211217121714-58de430139aa/go.mod h1:HCs4rWiZJ1hcwfhCsr5sBsi+/5E8zuBZ+VG7qwiHOsU=
-github.com/dell/dell-csi-extensions/replication v0.0.0-20211217121714-58de430139aa h1:C7nKArKDtARwEZtDD//ewlC8Ru+v3uavlAqrnx5Rvpk=
-github.com/dell/dell-csi-extensions/replication v0.0.0-20211217121714-58de430139aa/go.mod h1:9BF1BUr8XF9IXLrghrznqO6J5J1TX0fcunoFZfQ0Ozc=
+github.com/dell/dell-csi-extensions/common v1.0.0 h1:1xANuTl8hFN6MosdW6uAwfYsRBbEBV6hz+MWOXoHbE8=
+github.com/dell/dell-csi-extensions/common v1.0.0/go.mod h1:HCs4rWiZJ1hcwfhCsr5sBsi+/5E8zuBZ+VG7qwiHOsU=
+github.com/dell/dell-csi-extensions/replication v1.1.0 h1:Z+99y0CoQD4Jhl8rO5Dfz1L65cK5Ia+ClOIGfPHoGUA=
+github.com/dell/dell-csi-extensions/replication v1.1.0/go.mod h1:9BF1BUr8XF9IXLrghrznqO6J5J1TX0fcunoFZfQ0Ozc=
 github.com/dell/gobrick v1.3.0 h1:qEeiNp767/SoP2xDHYUYQC2UbHP79ssvvVSJzDsKMZQ=
 github.com/dell/gobrick v1.3.0/go.mod h1:Lq7Ov0zxz8X9XgAhzWyMvxyoTh6//L1WbmmUKKfJfsU=
 github.com/dell/gocsi v1.5.1 h1:rBpQ6sWLOHCcWAteMYHybBaeEIqgpT0vmU4B/6WG6f4=
