@@ -349,7 +349,7 @@ replication:
   enabled: false
   # Change this to use any specific version of the dell-csi-replicator sidecar
   # Default value: None
-  image: dellemc/dell-csi-replicator:v1.1.0
+  image: dellemc/dell-csi-replicator:v1.2.0
   # replicationContextPrefix enables side cars to read
   # required information from the volume context
   # Default value: "powermax"
