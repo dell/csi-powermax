@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"os/exec"
 	"strings"
 	"sync"
@@ -78,6 +79,7 @@ type feature struct {
 	replicationPrefix           string
 	replicationContextPrefix    string
 	symmetrixIDParam            string
+	remoteSRPID		    string
 }
 
 func (f *feature) addError(err error) {
@@ -131,6 +133,7 @@ func (f *feature) aPowermaxService() error {
 	}
 	f.symID = os.Getenv("SYMID")
 	f.srpID = os.Getenv("SRPID")
+	f.remoteSRPID = os.Getenv("REMOTESRPID")
 	f.remotesymID = os.Getenv("REMOTESYMID")
 	f.serviceLevel = os.Getenv("SERVICELEVEL")
 	f.remoteServiceLevel = os.Getenv("REMOTESERVICELEVEL")
@@ -185,11 +188,11 @@ func (f *feature) anAlternateServiceLevel(serviceLevel string) error {
 	return nil
 }
 func (f *feature) addsReplicationCapability(replicationMode string, namespace string) error {
-	f.createVolumeRequest.Parameters[f.replicationPrefix+"/"+service.RepEnabledParam] = "true"
-	f.createVolumeRequest.Parameters[service.LocalRDFGroupParam] = f.localRdfGrpNo
-	f.createVolumeRequest.Parameters[service.RemoteRDFGroupParam] = f.remoteRdfGrpNo
-	f.createVolumeRequest.Parameters[service.RemoteSymIDParam] = f.remotesymID
-	f.createVolumeRequest.Parameters[service.ReplicationModeParam] = replicationMode
+	f.createVolumeRequest.Parameters[path.Join(f.replicationPrefix, service.RepEnabledParam)] = "true"
+	f.createVolumeRequest.Parameters[path.Join(f.replicationPrefix, service.LocalRDFGroupParam)] = f.localRdfGrpNo
+	f.createVolumeRequest.Parameters[path.Join(f.replicationPrefix, service.RemoteRDFGroupParam)] = f.remoteRdfGrpNo
+	f.createVolumeRequest.Parameters[path.Join(f.replicationPrefix, service.RemoteSymIDParam)] = f.remotesymID
+	f.createVolumeRequest.Parameters[path.Join(f.replicationPrefix, service.ReplicationModeParam)] = replicationMode
 	f.createVolumeRequest.Parameters[service.CSIPVCNamespace] = namespace
 	return nil
 }
@@ -197,10 +200,10 @@ func (f *feature) addsReplicationCapability(replicationMode string, namespace st
 func (f *feature) iCallCreateStorageProtectionGroup(replicationMode string) error {
 	req := new(csiext.CreateStorageProtectionGroupRequest)
 	params := make(map[string]string)
-	params[service.LocalRDFGroupParam] = f.localRdfGrpNo
-	params[service.RemoteSymIDParam] = f.remotesymID
-	params[service.ReplicationModeParam] = replicationMode
-	params[service.RemoteRDFGroupParam] = f.remoteRdfGrpNo
+	params[path.Join(f.replicationPrefix, service.LocalRDFGroupParam)] = f.localRdfGrpNo
+	params[path.Join(f.replicationPrefix, service.RemoteSymIDParam)] = f.remotesymID
+	params[path.Join(f.replicationPrefix, service.ReplicationModeParam)] = replicationMode
+	params[path.Join(f.replicationPrefix, service.RemoteRDFGroupParam)] = f.remoteRdfGrpNo
 	req.Parameters = params
 	req.VolumeHandle = f.volID
 	var err error
@@ -212,9 +215,9 @@ func (f *feature) iCallCreateStorageProtectionGroup(replicationMode string) erro
 		f.addError(err)
 	}
 	fmt.Printf("CreateStorageProtectionGroup succeeded \n")
-	if resp.LocalProtectionGroupAttributes[f.replicationContextPrefix+"/"+f.symmetrixIDParam] != f.symID {
+	if resp.LocalProtectionGroupAttributes[path.Join(f.replicationContextPrefix, f.symmetrixIDParam)] != f.symID {
 		fmt.Printf("CreateStorageProtectionGroup validation failed")
-		err := errors.New("Validation failed for CreateStorageProtectionGroup, context prefix is missing")
+		err := errors.New("validation failed for CreateStorageProtectionGroup, context prefix is missing")
 		f.addError(err)
 	}
 	fmt.Printf("CreateStorageProtectionGroup validation succeeded \n")
@@ -226,10 +229,12 @@ func (f *feature) iCallCreateStorageProtectionGroup(replicationMode string) erro
 func (f *feature) iCallCreateRemoteVolume(replicationMode string) error {
 	req := new(csiext.CreateRemoteVolumeRequest)
 	params := make(map[string]string)
-	params[service.LocalRDFGroupParam] = f.localRdfGrpNo
-	params[service.RemoteSymIDParam] = f.remotesymID
-	params[service.ReplicationModeParam] = replicationMode
-	params[service.RemoteRDFGroupParam] = f.remoteRdfGrpNo
+	params[path.Join(f.replicationPrefix, service.LocalRDFGroupParam)] = f.localRdfGrpNo
+	params[path.Join(f.replicationPrefix, service.RemoteSymIDParam)] = f.remotesymID
+	params[path.Join(f.replicationPrefix, service.ReplicationModeParam)] = replicationMode
+	params[path.Join(f.replicationPrefix, service.RemoteRDFGroupParam)] = f.remoteRdfGrpNo
+	params[path.Join(f.replicationPrefix, service.RemoteServiceLevelParam)] = f.remoteServiceLevel
+	params[path.Join(f.replicationPrefix, service.RemoteSRPParam)] = f.remoteSRPID
 	req.Parameters = params
 	req.VolumeHandle = f.volID
 	var err error
@@ -242,7 +247,7 @@ func (f *feature) iCallCreateRemoteVolume(replicationMode string) error {
 	}
 	remoteVolume := resp.RemoteVolume.GetVolumeId()
 	fmt.Printf("Remote Volume retrieved %s:\n", remoteVolume)
-	if resp.RemoteVolume.VolumeContext[f.replicationContextPrefix+"/"+f.symmetrixIDParam] != f.remotesymID {
+	if resp.RemoteVolume.VolumeContext[path.Join(f.replicationContextPrefix, f.symmetrixIDParam)] != f.remotesymID {
 		fmt.Printf("CreateRemoteVolume validation failed \n")
 		err := errors.New("Validation failed for CreateRemoteVolume, context prefix is missing")
 		f.addError(err)
@@ -255,7 +260,7 @@ func (f *feature) iCallCreateRemoteVolume(replicationMode string) error {
 func (f *feature) iCallDeleteLocalStorageProtectionGroup() error {
 	req := new(csiext.DeleteStorageProtectionGroupRequest)
 	params := make(map[string]string)
-	params[f.replicationContextPrefix+"/"+service.SymmetrixIDParam] = f.symID
+	params[path.Join(f.replicationContextPrefix, service.SymmetrixIDParam)] = f.remotesymID
 	req.ProtectionGroupAttributes = params
 	req.ProtectionGroupId = f.localProtectedStorageGroup
 	var err error
@@ -289,10 +294,10 @@ func (f *feature) iCallDeleteRemoteStorageProtectionGroup() error {
 func (f *feature) iCallExecuteAction(action string) error {
 	req := new(csiext.ExecuteActionRequest)
 	params := make(map[string]string)
-	repMode := f.createVolumeRequest.Parameters[service.ReplicationModeParam]
-	params[f.replicationContextPrefix+"/"+service.SymmetrixIDParam] = f.symID
-	params[f.replicationContextPrefix+"/"+service.LocalRDFGroupParam] = f.localRdfGrpNo
-	params[f.replicationContextPrefix+"/"+service.ReplicationModeParam] = repMode
+	repMode := f.createVolumeRequest.Parameters[path.Join(f.replicationPrefix, service.ReplicationModeParam)]
+	params[path.Join(f.replicationContextPrefix, service.SymmetrixIDParam)] = f.symID
+	params[path.Join(f.replicationContextPrefix, service.LocalRDFGroupParam)] = f.localRdfGrpNo
+	params[path.Join(f.replicationContextPrefix, service.ReplicationModeParam)] = repMode
 	req.ProtectionGroupId = f.localProtectedStorageGroup
 	req.ProtectionGroupAttributes = params
 	actionType := &csiext.ExecuteActionRequest_Action{
@@ -324,7 +329,7 @@ func (f *feature) iCallExecuteAction(action string) error {
 func (f *feature) iCallGetStorageProtectionGroupStatus(expectedStatus string) error {
 	req := new(csiext.GetStorageProtectionGroupStatusRequest)
 	params := make(map[string]string)
-	params[f.replicationContextPrefix+"/"+service.SymmetrixIDParam] = f.symID
+	params[path.Join(f.replicationContextPrefix, service.SymmetrixIDParam)] = f.symID
 	req.ProtectionGroupId = f.localProtectedStorageGroup
 	req.ProtectionGroupAttributes = params
 	ctx := context.Background()
