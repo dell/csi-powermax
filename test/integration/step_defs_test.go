@@ -18,8 +18,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"os/exec"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -79,7 +79,7 @@ type feature struct {
 	replicationPrefix           string
 	replicationContextPrefix    string
 	symmetrixIDParam            string
-	remoteSRPID		    string
+	remoteSRPID                 string
 }
 
 func (f *feature) addError(err error) {
