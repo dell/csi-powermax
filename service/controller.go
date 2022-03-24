@@ -1083,12 +1083,12 @@ func (s *service) verifyProtectionGroupID(ctx context.Context, symID, storageGro
 	for _, value := range sgList.StorageGroupIDs {
 		// Is it trying to create more than one SG in async mode for one rdf group
 		if (repMode == Async || repMode == Metro) &&
-			(strings.Contains(value, localRdfGrpNo+"-"+Async) || strings.Contains(value, localRdfGrpNo+"-"+Sync) || strings.Contains(value, localRdfGrpNo+"-"+Metro)) {
+			(strings.Contains(value, "-"+localRdfGrpNo+"-"+Async) || strings.Contains(value, "-"+localRdfGrpNo+"-"+Sync) || strings.Contains(value, "-"+localRdfGrpNo+"-"+Metro)) {
 			return fmt.Errorf("RDF group (%s) is already a part of ReplicationGroup (%s) in Sync/Async/Metro mode", localRdfGrpNo, value)
 		}
 
 		// Is it trying to create a SG with a rdf group which is already used in Async/Metro mode
-		if repMode == Sync && (strings.Contains(value, localRdfGrpNo+"-"+Async) || strings.Contains(value, localRdfGrpNo+"-"+Metro)) {
+		if repMode == Sync && (strings.Contains(value, "-"+localRdfGrpNo+"-"+Async) || strings.Contains(value, "-"+localRdfGrpNo+"-"+Metro)) {
 			return fmt.Errorf("RDF group (%s) is already part of another Async/Metro mode ReplicationGroup (%s)", localRdfGrpNo, value)
 		}
 	}
