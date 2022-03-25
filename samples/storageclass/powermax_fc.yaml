@@ -12,6 +12,15 @@ kind: StorageClass
 metadata:
   name: powermax-fc
 parameters:
+  # "csi.storage.k8s.io/fstype" is used to set the filesystem type which will be used to format the new volume
+  # Allowed values:
+  #   "ext4" - EXT4 File system
+  #   "xfs"  - XFS File system
+  # Optional: true
+  # Default value: None if defaultFsType is not mentioned in values.yaml
+  # Else defaultFsType value mentioned in values.yaml
+  # will be used as default value
+  csi.storage.k8s.io/fstype: xfs
   # Name of SRP on the PowerMax array that should be used for provisioning
   # Optional: false
   # Examples: "DEFAULT_SRP" , "SRP_1"
@@ -61,12 +70,4 @@ allowedTopologies:
       - key: csi-powermax.dellemc.com/<SYMID>.fc
         values:
           - csi-powermax.dellemc.com
-# "csi.storage.k8s.io/fstype" is used to set the filesystem type which will be used to format the new volume
-# Allowed values:
-#   "ext4" - EXT4 File system
-#   "xfs"  - XFS File system
-# Optional: true
-# Default value: None if defaultFsType is not mentioned in values.yaml
-# Else defaultFsType value mentioned in values.yaml
-# will be used as default value
-csi.storage.k8s.io/fstype: xfs
+
