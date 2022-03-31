@@ -1,7 +1,8 @@
 apiVersion: v1
 name: csi-powermax
 version: 2.2.0
-appVersion: 2.2.0
+appVersion: "2.2.0"
+kubeVersion: ">= 1.21.0 <= 1.23.0"
 description: |
   PowerMax CSI (Container Storage Interface) driver Kubernetes
   integration. This chart includes everything required to provision via CSI as
@@ -19,4 +20,7 @@ sources:
 - https://github.com/dell/csi-powermax
 maintainers:
 - name: DellEMC
-engine: gotpl
+name: csi-powermax
+sources:
+- https://github.com/dell/csi-powermax
+version: "2.2.0"
