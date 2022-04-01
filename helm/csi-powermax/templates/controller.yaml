@@ -145,7 +145,7 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
         - name: attacher
-          image: {{ required "Must provide the CSI attacher container image." .Values.images.attacher }}
+          image: {{ required "Must provide the CSI attacher container image." ( include "csi-powermax.attacherImage" . ) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
@@ -160,7 +160,7 @@ spec:
             - name: socket-dir
               mountPath: /var/run/csi
         - name: provisioner
-          image: {{ required "Must provide the CSI provisioner container image." .Values.images.provisioner }}
+          image: {{ required "Must provide the CSI provisioner container image." ( include "csi-powermax.provisionerImage" . ) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
@@ -182,7 +182,7 @@ spec:
         {{- if hasKey .Values.controller "snapshot" }}
         {{- if eq .Values.controller.snapshot.enabled true }}      
         - name: snapshotter
-          image: {{ required "Must provide the CSI snapshotter container image." .Values.images.snapshotter }}
+          image: {{ required "Must provide the CSI snapshotter container image." ( include "csi-powermax.snapshotterImage" . ) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
@@ -228,7 +228,7 @@ spec:
         {{- if hasKey .Values.controller "resizer" }}
         {{- if eq .Values.controller.resizer.enabled true }}
         - name: resizer
-          image: {{ required "Must provide the CSI resizer container image." .Values.images.resizer }}
+          image: {{ required "Must provide the CSI resizer container image." ( include "csi-powermax.resizerImage" . ) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
@@ -278,7 +278,7 @@ spec:
         {{- if eq .Values.controller.healthMonitor.enabled true }}
         - name: csi-external-health-monitor-controller
           imagePullPolicy: {{ .Values.imagePullPolicy }}
-          image: {{ required "Must provide the CSI external health monitor controller image." .Values.images.externalhealthmonitorcontroller }}
+          image: {{ required "Must provide the CSI external health monitor controller image." ( include "csi-powermax.healthmonitorImage" . ) }}
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
@@ -296,7 +296,7 @@ spec:
         {{- end }}
         {{- end }}
         - name: driver
-          image: {{ required "Must provide the PowerMax driver container image." .Values.images.driver }}
+          image: {{ required "Must provide the PowerMax driver image repository." .Values.images.driverRepository }}/{{ .Chart.Name }}:{{ .Values.version }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           command: [ "/csi-powermax.sh" ]
           args:
