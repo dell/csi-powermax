@@ -70,8 +70,11 @@ global:
 
 # Current version of the driver
 # Don't modify this value as this value will be used by the install script
-version: "2.2.0"
+version: "v2.2.0"
 
+images:
+  # "driver" defines the container image, used for the driver container.
+  driverRepository: dellemc
 ## K8S/DRIVER ATTRIBUTES
 ########################
 # customDriverName: If enabled, sets the driver name to the
