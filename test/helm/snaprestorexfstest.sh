@@ -80,29 +80,11 @@ else
   exit 1
 fi
 
-function isv1SnapSupported() {
-  kMajorVersion=$(kubectl version | grep 'Server Version' | sed -e 's/^.*Major:"//' -e 's/[^0-9].*//g')
-  kMinorVersion=$(kubectl version | grep 'Server Version' | sed -e 's/^.*Minor:"//' -e 's/[^0-9].*//g')
-  local K8SV120="1.20"
-  local V="${kMajorVersion}.${kMinorVersion}"
-  if [[ ${V} < ${K8SV120} ]]; then
-    v1Snap="false"
-  else
-    echo "Detected k8s version >= 1.20. Will default to v1 VolumeSnapshot. Make sure v1 snapshot CRDs are installed in the cluster"
-    v1Snap="true"
-  fi
-}
-
-isv1SnapSupported
 
 echo "******************Begin Test*********************"
 echo "creating snapshot of pvol1 (xfs volume)"
 echo "************************************************"
-if [ "$v1Snap" = true ]; then
-     kubectl create -f snap2.yaml --namespace $NAMESPACE
-else
-  kubectl create -f betaSnap2.yaml --namespace $NAMESPACE
-fi
+kubectl create -f snap2.yaml --namespace $NAMESPACE
 echo "Sleeping for 25 seconds to allow creation of snapshot"
 sleep 25
 kubectl get volumesnapshot -n $NAMESPACE
@@ -124,11 +106,7 @@ kubectl delete pvc restorepvc -n $NAMESPACE
 echo "************************************************"
 echo "Deleting the snapshot"
 echo "************************************************"
-if [ "$v1Snap" = true ]; then
-     kubectl delete -f snap2.yaml --namespace $NAMESPACE
-else
-  kubectl delete -f betaSnap2.yaml --namespace $NAMESPACE
-fi
+kubectl delete -f snap2.yaml --namespace $NAMESPACE
 echo "************************************************"
 echo "Deleting the original pod"
 echo "************************************************"
