@@ -415,7 +415,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 							continue
 						} else {
 							if sg.NumOfMaskingViews > 0 {
-								log.Warningf("%s: SG: %s in masking view. Can't proceed with deletion of devices\n",
+								log.Warningf("%s: SG: %s in masking view. Can't proceed with deletion of devices",
 									device.print(), storageGroupID)
 								device.updateStatus(device.Status.State, "device is in masking view, can't delete")
 								continue
@@ -696,7 +696,7 @@ func (worker *deletionWorker) QueueDeviceForDeletion(devID string, volumeIdentif
 		if err != nil {
 			return err
 		}
-		log.Debugf("(Device ID: %s, SymID: %s): Successfully queued request\n", devID, symID)
+		log.Debugf("(Device ID: %s, SymID: %s): Successfully queued request", devID, symID)
 	default:
 		log.Error("Deletion request queue full. Retry after sometime")
 		return fmt.Errorf("deletion request queue full. retry after sometime")
@@ -852,7 +852,7 @@ func (worker *deletionWorker) populateDeletionQueue() {
 							log.Errorf("Error in queuing device for deletion. Error: %s", err.Error())
 						}
 					} else {
-						log.Warningf("(Device ID: %s, SymID: %s): skipping as it is not tagged for deletion\n",
+						log.Warningf("(Device ID: %s, SymID: %s): skipping as it is not tagged for deletion",
 							volume.VolumeID, symID)
 					}
 				}

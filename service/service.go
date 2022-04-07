@@ -446,7 +446,7 @@ func (s *service) BeforeServe(
 	}
 
 	// Start the deletion worker thread
-	log.Printf("s.mode: %s\n", s.mode)
+	log.Printf("s.mode: %s", s.mode)
 	if !strings.EqualFold(s.mode, "node") {
 		/*symIDs, err := s.adminClient.GetSymmetrixIDList()
 		if err != nil {

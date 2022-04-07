@@ -174,12 +174,12 @@ func RemoveTempFiles() error {
 	tmpConfigDir := rootDir + "/../" + common.TempConfigDir
 	certFiles, err := ioutil.ReadDir(certsDir)
 	if err != nil {
-		log.Fatalf("Failed to list cert files in `%s`\n", certsDir)
+		log.Fatalf("Failed to list cert files in `%s`", certsDir)
 		return err
 	}
 	configFiles, err := ioutil.ReadDir(tmpConfigDir)
 	if err != nil {
-		log.Fatalf("Failed to list config files in `%s`\n", tmpConfigDir)
+		log.Fatalf("Failed to list config files in `%s`", tmpConfigDir)
 		return err
 	}
 	files := append(configFiles, certFiles...)
@@ -192,7 +192,7 @@ func RemoveTempFiles() error {
 			err = os.Remove(tmpConfigDir + "/" + fileName)
 		}
 		if err != nil {
-			log.Fatalf("Failed to remove `%s`. (%s)\n", fileName, err.Error())
+			log.Fatalf("Failed to remove `%s`. (%s)", fileName, err.Error())
 		}
 	}
 	return nil

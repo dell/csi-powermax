@@ -977,13 +977,13 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 
 	remoteVolumeID, err := s.GetRemoteVolumeID(ctx, symID, localRDFGrpNo, vol.VolumeID, pmaxClient)
 	if err != nil {
-		log.Errorf("Failed to fetch remote volume details: %s\n", err.Error())
+		log.Errorf("Failed to fetch remote volume details: %s", err.Error())
 		return nil, err
 	}
 	// RESET SRP of Protected SG on remote array
 	r2PSG, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteProtectionGroupID)
 	if err != nil {
-		log.Errorf("Failed to fetch remote PSG details: %s\n", err.Error())
+		log.Errorf("Failed to fetch remote PSG details: %s", err.Error())
 		return nil, status.Errorf(codes.Internal, "Failed to fetch remote PSG details %s", err.Error())
 	}
 	if r2PSG.SRP != "" && r2PSG.SRP != "NONE" {
@@ -997,7 +997,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		}
 		err = pmaxClient.UpdateStorageGroupS(ctx, remoteSymID, remoteProtectionGroupID, resetSRPPayload)
 		if err != nil {
-			log.Errorf("Failed to Update Remote SG SRP to NONE: %s\n", err.Error())
+			log.Errorf("Failed to Update Remote SG SRP to NONE: %s", err.Error())
 			return nil, status.Errorf(codes.Internal, "Failed to Update Remote SG SRP to NONE: %s", err.Error())
 		}
 	}
@@ -1589,10 +1589,10 @@ func (s *service) ControllerPublishVolume(
 		if !ok {
 			log.Debugf("REQ ID: %s Added nodeID: %s, hostID: %s to node cache", reqID, nodeID, hostID)
 		} else {
-			log.Debugf("REQ ID: %s Some other goroutine added hostID: %s for node: %s to node cache\n",
+			log.Debugf("REQ ID: %s Some other goroutine added hostID: %s for node: %s to node cache",
 				reqID, val.(string), nodeID)
 			if hostID != val.(string) {
-				log.Warningf("REQ ID: %s Mismatch between calculated value: %s and latest value: %s from node cache\n",
+				log.Warningf("REQ ID: %s Mismatch between calculated value: %s and latest value: %s from node cache",
 					reqID, val.(string), hostID)
 			}
 		}
@@ -1609,7 +1609,7 @@ func (s *service) ControllerPublishVolume(
 
 	if remoteSymID != "" && remoteVolumeID != "" {
 		remoteVol, err := pmaxClient.GetVolumeByID(ctx, remoteSymID, remoteVolumeID)
-		log.Debugf("remote-vol: %#v, error: %#v\n", remoteVol, err)
+		log.Debugf("remote-vol: %#v, error: %#v", remoteVol, err)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "PublishVolume: Could not retrieve remote volume: (%s)", err.Error())
 		}
@@ -3260,7 +3260,7 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 	// RESET SRP of Protected SG on remote array
 	r2PSG, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteProtectionGroupID)
 	if err != nil {
-		log.Errorf("Failed to fetch remote PSG details: %s\n", err.Error())
+		log.Errorf("Failed to fetch remote PSG details: %s", err.Error())
 		return nil, status.Errorf(codes.Internal, "Failed to fetch remote PSG details %s", err.Error())
 	}
 	if r2PSG.SRP != "" && r2PSG.SRP != "NONE" {
@@ -3274,7 +3274,7 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 		}
 		err = pmaxClient.UpdateStorageGroupS(ctx, remoteSymID, remoteProtectionGroupID, resetSRPPayload)
 		if err != nil {
-			log.Errorf("Failed to Update Remote SG SRP to NONE: %s\n", err.Error())
+			log.Errorf("Failed to Update Remote SG SRP to NONE: %s", err.Error())
 			return nil, status.Errorf(codes.Internal, "Failed to Update Remote SG SRP to NONE: %s", err.Error())
 		}
 	}
