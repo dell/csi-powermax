@@ -326,7 +326,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to create primary mock server. (%s)\n", err.Error())
 		os.Exit(1)
 	}
-	log.Infof("Primary mock server listening on %s\n", primaryMockServer.server.URL)
+	log.Infof("Primary mock server listening on %s", primaryMockServer.server.URL)
 	log.Info("Creating backup mock server...")
 	backupMockServer, err = createMockServer(backupPort)
 	if err != nil {
@@ -334,7 +334,7 @@ func TestMain(m *testing.M) {
 		stopServers()
 		os.Exit(1)
 	}
-	log.Infof("Backup mock server listening on %s\n", backupMockServer.server.URL)
+	log.Infof("Backup mock server listening on %s", backupMockServer.server.URL)
 	// Start proxy server and other services
 	log.Info("Starting proxy server...")
 	err = startTestServer()

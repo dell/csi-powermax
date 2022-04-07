@@ -57,9 +57,9 @@ func (lockProp *LockProperties) Queue(request LockRequest) {
 	} else {
 		select {
 		case lockProp.WaitChannel <- request.WaitChannel:
-			log.Infof("Request queued: %s\n", request.ResourceID)
+			log.Infof("Request queued: %s", request.ResourceID)
 		default:
-			log.Infof("Max number of outstanding requests already queued for: %s\n", request.ResourceID)
+			log.Infof("Max number of outstanding requests already queued for: %s", request.ResourceID)
 			request.WaitChannel <- false
 		}
 	}
@@ -180,7 +180,7 @@ func (l *Lock) Lock() error {
 	if !isLocked {
 		return fmt.Errorf("failed to obtain lock")
 	}
-	log.Infof("Request ID: %s - Obtained %s lock\n", l.RequestID, string(l.LockType))
+	log.Infof("Request ID: %s - Obtained %s lock", l.RequestID, string(l.LockType))
 	return nil
 }
 

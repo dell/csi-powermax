@@ -80,7 +80,7 @@ func BasicAuth(credentials common.Credentials) string {
 func Elapsed(requestID string, op string) func() {
 	start := time.Now()
 	return func() {
-		log.Infof("Request ID: %s - %s time: %v\n", requestID, op, time.Since(start))
+		log.Infof("Request ID: %s - %s time: %v", requestID, op, time.Since(start))
 	}
 }
 

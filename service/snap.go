@@ -370,7 +370,7 @@ func (s *service) GetSnapSessions(ctx context.Context, symID, deviceID string, p
 		log.Errorf("GetVolumeSnapInfo failed for (%s): (%s)\n", deviceID, err.Error())
 		return
 	}
-	log.Debugf("For Volume (%s), Snap Info: %v\n", deviceID, snapInfo)
+	log.Debugf("For Volume (%s), Snap Info: %v", deviceID, snapInfo)
 	for _, volumeSnapshotSource := range snapInfo.VolumeSnapshotSource {
 		snapSession := SnapSession{
 			Source:     deviceID,

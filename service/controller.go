@@ -1403,7 +1403,7 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 	log.WithFields(fields).Info("Executing DeleteVolume with following fields")
 
 	vol, err := pmaxClient.GetVolumeByID(ctx, symID, devID)
-	log.Debugf("vol: %#v, error: %#v\n", vol, err)
+	log.Debugf("vol: %#v, error: %#v", vol, err)
 	if err != nil {
 		if strings.Contains(err.Error(), cannotBeFound) {
 			// The volume is already deleted
@@ -1569,14 +1569,14 @@ func (s *service) ControllerPublishVolume(
 	cacheID := symID + ":" + nodeID
 	tempHostID, ok := nodeCache.Load(cacheID)
 	if ok {
-		log.Debugf("REQ ID: %s Loaded nodeID: %s, hostID: %s from node cache\n",
+		log.Debugf("REQ ID: %s Loaded nodeID: %s, hostID: %s from node cache",
 			reqID, nodeID, tempHostID.(string))
 		nodeInCache = true
 		if !strings.Contains(tempHostID.(string), "-FC") {
 			isISCSI = true
 		}
 	} else {
-		log.Debugf("REQ ID: %s nodeID: %s not present in node cache\n", reqID, nodeID)
+		log.Debugf("REQ ID: %s nodeID: %s not present in node cache", reqID, nodeID)
 		isISCSI, err = s.IsNodeISCSI(ctx, symID, nodeID, pmaxClient)
 		if err != nil {
 			return nil, status.Error(codes.NotFound, err.Error())
@@ -1587,7 +1587,7 @@ func (s *service) ControllerPublishVolume(
 		// Update the map
 		val, ok := nodeCache.LoadOrStore(cacheID, hostID)
 		if !ok {
-			log.Debugf("REQ ID: %s Added nodeID: %s, hostID: %s to node cache\n", reqID, nodeID, hostID)
+			log.Debugf("REQ ID: %s Added nodeID: %s, hostID: %s to node cache", reqID, nodeID, hostID)
 		} else {
 			log.Debugf("REQ ID: %s Some other goroutine added hostID: %s for node: %s to node cache\n",
 				reqID, val.(string), nodeID)
@@ -2339,7 +2339,7 @@ func (s *service) GetCapacity(
 			log.Error("GetVolumeCapabilities failed with error: " + reason)
 			return nil, status.Errorf(codes.InvalidArgument, reason)
 		}
-		log.Infof("Supported capabilities - Error(%s)\n", reason)
+		log.Infof("Supported capabilities - Error(%s)", reason)
 	}
 
 	// Storage (resource) Pool. Validate it against exist Pools

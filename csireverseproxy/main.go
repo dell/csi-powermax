@@ -192,7 +192,7 @@ func (s *Server) SignalHandler(k8sUtils k8sutils.UtilsInterface) {
 		signal.Notify(s.SigChan, syscall.SIGINT, syscall.SIGHUP)
 		log.Debug("SignalHandler setup to listen for SIGINT and SIGHUP")
 		sig := <-s.SigChan
-		log.Infof("Received signal: %v\n", sig)
+		log.Infof("Received signal: %v", sig)
 		// Stop InformerFactory
 		k8sUtils.StopInformer()
 		// gracefully shutdown http server
@@ -276,7 +276,7 @@ func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
 // is received by the informer
 func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.Secret) {
 	conf := s.Config().DeepCopy()
-	log.Infof("New credential/cert update event for the secret(%s)\n", secret.Name)
+	log.Infof("New credential/cert update event for the secret(%s)", secret.Name)
 	hasChanged := false
 	if conf.Mode == config.Linked {
 		found := conf.LinkProxyConfig.IsCertSecretRelated(secret.Name)
