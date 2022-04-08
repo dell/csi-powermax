@@ -1,6 +1,6 @@
 module github.com/dell/csi-powermax/v2
 
-go 1.17
+go 1.18
 
 replace github.com/coreos/go-systemd => github.com/coreos/go-systemd/v22 v22.0.0
 

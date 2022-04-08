@@ -8,7 +8,7 @@ endif
 
 VERSION="v$(MAJOR).$(MINOR).$(PATCH).$(BUILD)$(TYPE)"
 # Set it to your own docker registry
-REGISTRY="localhost:5000/csi-powermax"
+REGISTRY="vmadurprd01.cec.lab.emc.com:5000/csi-powermax"
 
 docker:
 	docker build -t "$(REGISTRY):$(VERSION)" .
