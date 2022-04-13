@@ -1,6 +1,6 @@
 module revproxy/v2
 
-go 1.17
+go 1.18
 
 require (
 	github.com/dell/gopowermax v1.6.0
