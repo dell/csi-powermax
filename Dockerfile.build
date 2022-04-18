@@ -68,6 +68,6 @@ LABEL vendor="Dell Inc." \
       name="csi-powermax" \
       summary="CSI Driver for Dell PowerMax" \
       description="CSI Driver for provisioning persistent storage from Dell PowerMax" \
-      version="2.2.0" \
+      version="2.3.0" \
       license="Apache-2.0"
 COPY csi-powermax/licenses /licenses
