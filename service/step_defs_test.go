@@ -87,7 +87,7 @@ const (
 	defaultISCSIDirPort1       = "SE1-E:6"
 	defaultISCSIDirPort2       = "SE2-E:4"
 	MaxRetries                 = 10
-	Namespace                  = "namespace-test"
+	Namespace                  = "namespace_test"
 )
 
 var allBlockDevices = [2]string{nodePublishBlockDevicePath, altPublishBlockDevicePath}

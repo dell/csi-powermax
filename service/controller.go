@@ -2138,7 +2138,7 @@ func (s *service) ValidateVolumeCapabilities(
 	}
 
 	if volName != vol.VolumeIdentifier {
-		log.Error("Failed to validate combination of Volume Name and Volume ID")
+		log.Error(fmt.Sprintf("Failed to validate combination of Volume Name %s and Volume ID %s ", volName, vol.VolumeIdentifier))
 		return nil, status.Errorf(codes.NotFound,
 			"Failed to validate combination of Volume Name and Volume ID")
 	}
