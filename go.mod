@@ -10,7 +10,8 @@ require (
 	github.com/cucumber/godog v0.10.0
 	github.com/cucumber/messages-go/v10 v10.0.3
 	github.com/dell/dell-csi-extensions/common v1.0.0
-	github.com/dell/dell-csi-extensions/replication v1.1.0
+	github.com/dell/dell-csi-extensions/migration v0.0.0-20220419095831-beeaf83e4853
+	github.com/dell/dell-csi-extensions/replication v0.0.0-20220414131232-182de7593e1d
 	github.com/dell/gobrick v1.3.0
 	github.com/dell/gocsi v1.5.1
 	github.com/dell/gofsutil v1.8.0
