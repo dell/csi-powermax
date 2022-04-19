@@ -251,7 +251,8 @@ func TestVolumeIdentifier(t *testing.T) {
 	devID := "12345"
 	volumeName := "Vol-Name"
 	symID := "123456789012"
-	csiDeviceID := s.createCSIVolumeID(volumePrefix, volumeName, symID, devID)
+	namespace := "Namespace-Test"
+	csiDeviceID := s.createCSIVolumeID(volumePrefix, volumeName, namespace, symID, devID)
 	volumeNameT, symIDT, devIDT, _, _, err := s.parseCsiID(csiDeviceID)
 	if err != nil {
 		t.Error()
