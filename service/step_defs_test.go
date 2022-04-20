@@ -87,7 +87,7 @@ const (
 	defaultISCSIDirPort1       = "SE1-E:6"
 	defaultISCSIDirPort2       = "SE2-E:4"
 	MaxRetries                 = 10
-	Namespace                  = "namespace_test"
+	Namespace                  = "namespace-test"
 )
 
 var allBlockDevices = [2]string{nodePublishBlockDevicePath, altPublishBlockDevicePath}
@@ -1277,12 +1277,12 @@ func (f *feature) getControllerDeleteVolumeRequest(accessType string) *csi.Delet
 	req := new(csi.DeleteVolumeRequest)
 	if !inducedErrors.noVolumeID {
 		if inducedErrors.invalidVolumeID {
-			req.VolumeId = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, Namespace, f.symmetrixID, "99999")
+			req.VolumeId = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, "99999")
 		} else {
 			if f.volumeID != "" {
 				req.VolumeId = f.volumeID
 			} else {
-				req.VolumeId = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, Namespace, f.symmetrixID, goodVolumeID)
+				req.VolumeId = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, goodVolumeID)
 			}
 		}
 	}
@@ -1479,23 +1479,23 @@ func (f *feature) aValidPublishVolumeResponseIsReturned() error {
 
 func (f *feature) aValidVolume() error {
 	f.uDevID = fmt.Sprintf("%s%d", goodVolumeID, time.Now().Unix())
-	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + goodVolumeName + Namespace
+	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + goodVolumeName
 	sgList := make([]string, 1)
 	sgList[0] = defaultStorageGroup
 	mock.AddStorageGroup(defaultStorageGroup, "SRP_1", "Optimized")
 	mock.AddOneVolumeToStorageGroup(f.uDevID, volumeIdentifier, defaultStorageGroup, 1)
-	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, Namespace, f.symmetrixID, f.uDevID)
+	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, f.uDevID)
 	return nil
 }
 
 func (f *feature) aValidVolumeWithSizeOfCYL(nCYL int) error {
 	devID := goodVolumeID
-	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + goodVolumeName + Namespace
+	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + goodVolumeName
 	sgList := make([]string, 1)
 	sgList[0] = defaultStorageGroup
 	mock.AddStorageGroup(defaultStorageGroup, "SRP_1", "Optimized")
 	mock.AddOneVolumeToStorageGroup(devID, volumeIdentifier, defaultStorageGroup, nCYL)
-	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, Namespace, f.symmetrixID, goodVolumeID)
+	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, goodVolumeID)
 	return nil
 }
 
@@ -1880,7 +1880,7 @@ func (f *feature) iCallValidateVolumeCapabilitiesWithVoltypeAccessFstype(voltype
 	if inducedErrors.invalidVolumeID || f.volumeID == "" {
 		req.VolumeId = "000-000"
 	} else if inducedErrors.differentVolumeID {
-		req.VolumeId = f.service.createCSIVolumeID(f.service.getClusterPrefix(), altVolumeName, Namespace, f.symmetrixID, goodVolumeID)
+		req.VolumeId = f.service.createCSIVolumeID(f.service.getClusterPrefix(), altVolumeName, f.symmetrixID, goodVolumeID)
 	} else {
 		req.VolumeId = f.volumeID
 	}
@@ -2966,14 +2966,14 @@ func (f *feature) iCallGetVolumeByID() error {
 	var id string
 	if !inducedErrors.noVolumeID {
 		if inducedErrors.invalidVolumeID {
-			id = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, Namespace, f.symmetrixID, "99999")
+			id = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, "99999")
 		} else if inducedErrors.differentVolumeID {
-			id = f.service.createCSIVolumeID(f.service.getClusterPrefix(), altVolumeName, Namespace, f.symmetrixID, f.uDevID)
+			id = f.service.createCSIVolumeID(f.service.getClusterPrefix(), altVolumeName, f.symmetrixID, f.uDevID)
 		} else {
 			if f.volumeID != "" {
 				id = f.volumeID
 			} else {
-				id = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, Namespace, f.symmetrixID, f.uDevID)
+				id = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, f.uDevID)
 			}
 		}
 	}
@@ -3087,12 +3087,12 @@ func (f *feature) iCallListSnapshots() error {
 
 func (f *feature) iHaveAVolumeWithInvalidVolumeIdentifier() error {
 	devID := goodVolumeID
-	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + "xyz" + Namespace
+	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + "xyz"
 	sgList := make([]string, 1)
 	sgList[0] = defaultStorageGroup
 	mock.AddStorageGroup(defaultStorageGroup, "SRP_1", "Optimized")
 	mock.AddOneVolumeToStorageGroup(devID, volumeIdentifier, defaultStorageGroup, 1)
-	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, Namespace, f.symmetrixID, goodVolumeID)
+	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, goodVolumeID)
 	return nil
 }
 

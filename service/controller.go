@@ -1285,9 +1285,9 @@ func splitFibreChannelInitiatorID(initiatorID string) (string, string, string, e
 }
 
 // Create a CSI VolumeId from component parts.
-func (s *service) createCSIVolumeID(volumePrefix, volumeName, namespace, symID, devID string) string {
+func (s *service) createCSIVolumeID(volumePrefix, volumeName, symID, devID string) string {
 	//return fmt.Sprintf("%s-%s-%s-%s", volumePrefix, volumeName, symID, devID)
-	return fmt.Sprintf("%s%s-%s-%s-%s-%s", CsiVolumePrefix, s.getClusterPrefix(), volumeName, namespace, symID, devID)
+	return fmt.Sprintf("%s%s-%s-%s-%s-%s", CsiVolumePrefix, s.getClusterPrefix(), volumeName, symID, devID)
 }
 
 // parseCsiID returns the VolumeName, Array ID, and Device ID given the CSI ID.
