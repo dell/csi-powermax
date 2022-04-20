@@ -1479,7 +1479,7 @@ func (f *feature) aValidPublishVolumeResponseIsReturned() error {
 
 func (f *feature) aValidVolume() error {
 	f.uDevID = fmt.Sprintf("%s%d", goodVolumeID, time.Now().Unix())
-	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + goodVolumeName
+	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + goodVolumeName + Namespace
 	sgList := make([]string, 1)
 	sgList[0] = defaultStorageGroup
 	mock.AddStorageGroup(defaultStorageGroup, "SRP_1", "Optimized")
@@ -1490,7 +1490,7 @@ func (f *feature) aValidVolume() error {
 
 func (f *feature) aValidVolumeWithSizeOfCYL(nCYL int) error {
 	devID := goodVolumeID
-	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + goodVolumeName
+	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + goodVolumeName + Namespace
 	sgList := make([]string, 1)
 	sgList[0] = defaultStorageGroup
 	mock.AddStorageGroup(defaultStorageGroup, "SRP_1", "Optimized")
@@ -3087,7 +3087,7 @@ func (f *feature) iCallListSnapshots() error {
 
 func (f *feature) iHaveAVolumeWithInvalidVolumeIdentifier() error {
 	devID := goodVolumeID
-	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + "xyz"
+	volumeIdentifier := csiPrefix + f.service.getClusterPrefix() + "-" + "xyz" + Namespace
 	sgList := make([]string, 1)
 	sgList[0] = defaultStorageGroup
 	mock.AddStorageGroup(defaultStorageGroup, "SRP_1", "Optimized")
