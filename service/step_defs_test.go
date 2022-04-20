@@ -2730,7 +2730,7 @@ func (f *feature) deletionWorkerProcessesWhichResultsIn(volumeName, errormsg str
 	if volumeID == "" {
 		return fmt.Errorf("Could not find volumeID for volume %s", volumeName)
 	}
-	volumeName = DeletionPrefix + "csi-" + f.service.opts.ClusterPrefix + "-" + volumeName
+	volumeName = DeletionPrefix + "csi_" + f.service.opts.ClusterPrefix + "-" + volumeName
 	_, arrayID, _, _, _, _ := f.service.parseCsiID(volumeID)
 	// wait until the job completes
 	for i := 1; i < 20; i++ {

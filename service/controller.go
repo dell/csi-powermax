@@ -37,6 +37,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/dell/gopowermax/types/v90"
 	"github.com/golang/protobuf/ptypes"
 	log "github.com/sirupsen/logrus"
 )
@@ -1287,7 +1288,7 @@ func splitFibreChannelInitiatorID(initiatorID string) (string, string, string, e
 // Create a CSI VolumeId from component parts.
 func (s *service) createCSIVolumeID(volumePrefix, volumeName, symID, devID string) string {
 	//return fmt.Sprintf("%s-%s-%s-%s", volumePrefix, volumeName, symID, devID)
-	return fmt.Sprintf("%s%s-%s-%s-%s-%s", CsiVolumePrefix, s.getClusterPrefix(), volumeName, symID, devID)
+	return fmt.Sprintf("%s%s-%s-%s-%s", CsiVolumePrefix, s.getClusterPrefix(), volumeName, symID, devID)
 }
 
 // parseCsiID returns the VolumeName, Array ID, and Device ID given the CSI ID.
@@ -2136,7 +2137,7 @@ func (s *service) ValidateVolumeCapabilities(
 	}
 
 	if volName != vol.VolumeIdentifier {
-		log.Error(fmt.Sprintf("Failed to validate combination of Volume Name %s and Volume ID %s ", volName, vol.VolumeIdentifier))
+		log.Error("Failed to validate combination of Volume Name and Volume ID")
 		return nil, status.Errorf(codes.NotFound,
 			"Failed to validate combination of Volume Name and Volume ID")
 	}
