@@ -1301,7 +1301,6 @@ func (s *service) parseCsiID(csiID string) (
 		err = fmt.Errorf("A Volume ID is required for the request")
 		return
 	}
-	var namespace string
 	// get the Device ID and Array ID
 	idComponents := strings.Split(csiID, "-")
 	// Protect against mal-formed component
@@ -1316,8 +1315,7 @@ func (s *service) parseCsiID(csiID string) (
 	// Array ID is the second to last token
 	arrayID = idComponents[numOfIDComponents-2]
 	// The two here is for two dashes - one at front of array ID and one between the Array ID and Device ID
-	namespace = idComponents[numOfIDComponents-3]
-	lengthOfTrailer := len(devID) + len(arrayID) + len(namespace) + 2
+	lengthOfTrailer := len(devID) + len(arrayID) + 2
 	length := len(csiID)
 	if length <= lengthOfTrailer+2 {
 		// Not well formed...
