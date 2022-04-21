@@ -7,16 +7,16 @@
 # be requested for review when someone opens a pull request.
 # Order is alphabetical for easier maintenance.
 #
-# Prasanna Muthukumaraswamy (prablr79)
-# Matt Schmaelzle (mjsdell)
-# Yamunadevi Shanmugam (shanmydell)
+# Bharadwaj Sathavalli (bharadwajrs-dell)
 # Boya Murthy (boyamurthy)
 # Utkarsh Dubey (delldubey)
-# Sinu Chacko (SinuChacko)
-# Bharadwaj Sathavalli (bharadwajrs-dell)
 # Rajat Maheshwari (mahesr2)
+# Matt Schmaelzle (mjsdell)
 # Nida Taranum (nidtara)
+# Prasanna Muthukumaraswamy (prablr79)
+# Sinu Chacko (SinuChacko)
 # Shampavman Cg (shampavman)
+# Yamunadevi Shanmugam (shanmydell)
 
 # for all files
-* @prablr79 @mjsdell @shanmydell @boyamurthy @delldubey @SinuChacko @bharadwajrs-dell @mahesr2 @nidtara @shampavman
+* @bharadwajrs-dell @boyamurthy @delldubey @mahesr2 @mjsdell @nidtara @prablr79 @SinuChacko @shampavman @shanmydell
