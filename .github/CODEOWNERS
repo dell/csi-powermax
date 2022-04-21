@@ -1,0 +1,22 @@
+# CODEOWNERS
+#
+# Documentation for this file can be found at:
+# https://help.github.com/en/articles/about-code-owners
+
+# These are the default owners for the code and will
+# be requested for review when someone opens a pull request.
+# Order is alphabetical for easier maintenance.
+#
+# Bharadwaj Sathavalli (bharadwajrs-dell)
+# Boya Murthy (boyamurthy)
+# Utkarsh Dubey (delldubey)
+# Rajat Maheshwari (mahesr2)
+# Matt Schmaelzle (mjsdell)
+# Nida Taranum (nidtara)
+# Prasanna Muthukumaraswamy (prablr79)
+# Sinu Chacko (SinuChacko)
+# Shampavman Cg (shampavman)
+# Yamunadevi Shanmugam (shanmydell)
+
+# for all files
+* @bharadwajrs-dell @boyamurthy @delldubey @mahesr2 @mjsdell @nidtara @prablr79 @SinuChacko @shampavman @shanmydell
