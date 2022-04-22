@@ -457,8 +457,11 @@ func (s *service) CreateVolume(
 	//First get the short volume name
 	shortVolumeName := truncateString(volumeName, maxLength)
 	//Form the volume identifier using short volume name and namespace
-	volumeIdentifier := fmt.Sprintf("%s%s-%s-%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespace)
-
+	var namespaceSuffix string
+	if namespace != "" {
+		namespaceSuffix = "-" + namespace
+	}
+	volumeIdentifier := fmt.Sprintf("%s%s-%s%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespaceSuffix)
 	// Storage Group is required to be derived from the parameters (such as service level and storage resource pool which are supplied in parameters)
 	// Storage Group Name can optionally be supplied in the parameters (for testing) to over-ride the default.
 	if storageGroupName == "" {
@@ -766,8 +769,11 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	//First get the short volume name
 	shortVolumeName := truncateString(volumeName, maxLength)
 	//Form the volume identifier using short volume name and namespace
-	volumeIdentifier := fmt.Sprintf("%s%s-%s-%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespace)
-
+	var namespaceSuffix string
+	if namespace != "" {
+		namespaceSuffix = "-" + namespace
+	}
+	volumeIdentifier := fmt.Sprintf("%s%s-%s%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespaceSuffix)
 	// Storage Group is required to be derived from the parameters (such as service level and storage resource pool which are supplied in parameters)
 	// Storage Group Name can optionally be supplied in the parameters (for testing) to over-ride the default.
 	var remoteStorageGroupName string
