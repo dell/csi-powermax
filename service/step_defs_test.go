@@ -561,7 +561,6 @@ func (f *feature) getTypicalCreateVolumeRequest() *csi.CreateVolumeRequest {
 	params[SymmetrixIDParam] = f.symmetrixID
 	params[ServiceLevelParam] = mock.DefaultServiceLevel
 	params[StoragePoolParam] = mock.DefaultStoragePool
-
 	if inducedErrors.invalidSymID {
 		params[SymmetrixIDParam] = ""
 	}
@@ -678,43 +677,6 @@ func (f *feature) iCallCreateVolume(name string) error {
 		f.volumeID = f.createVolumeResponse.GetVolume().VolumeId
 		f.volumeNameToID[name] = f.volumeID
 	}
-	return nil
-}
-
-func (f *feature) iCallCreateVolumeWithNamespace(name string, namespace string) error {
-	header := metadata.New(map[string]string{"csi.requestid": "1"})
-	ctx := metadata.NewIncomingContext(context.Background(), header)
-	if f.createVolumeRequest == nil {
-		req := f.getTypicalCreateVolumeRequest()
-		f.createVolumeRequest = req
-	}
-	req := f.createVolumeRequest
-	req.Name = name
-	req.Parameters[CSIPVCNamespace] = namespace
-
-	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
-	if f.err != nil {
-		log.Printf("CreateVolume called failed: %s\n", f.err.Error())
-	}
-	if f.createVolumeResponse != nil {
-		log.Printf("vol id %s\n", f.createVolumeResponse.GetVolume().VolumeId)
-		f.volumeID = f.createVolumeResponse.GetVolume().VolumeId
-		f.volumeNameToID[name] = f.volumeID
-	}
-
-	vol, _, _, _, _, err := f.service.parseCsiID(f.volumeID)
-	if err != nil {
-		log.Printf("volID: %s malformed. Error: %s", vol, f.err.Error())
-	}
-
-	// get the namespace from volume name and validate
-	volNameComponents := strings.Split(vol, "-")
-	numOfIDComponents := len(volNameComponents)
-	namespaceValue := volNameComponents[numOfIDComponents-1]
-	if namespaceValue != namespace {
-		return errors.New("Namespace is not appended")
-	}
-
 	return nil
 }
 
@@ -2768,7 +2730,7 @@ func (f *feature) deletionWorkerProcessesWhichResultsIn(volumeName, errormsg str
 	if volumeID == "" {
 		return fmt.Errorf("Could not find volumeID for volume %s", volumeName)
 	}
-	volumeName = DeletionPrefix + "csi-" + f.service.opts.ClusterPrefix + "-" + volumeName
+	volumeName = DeletionPrefix + "csi-" + f.service.opts.ClusterPrefix + "-" + volumeName + "-"
 	_, arrayID, _, _, _, _ := f.service.parseCsiID(volumeID)
 	// wait until the job completes
 	for i := 1; i < 20; i++ {
@@ -4149,5 +4111,4 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call DiscoverRemoteVolume$`, f.iCallDiscoverRemoteVolume)
 	s.Step(`^I call DeleteStorageProtectionGroup on "([^"]*)"$`, f.iCallDeleteStorageProtectionGroup)
 	s.Step(`^deletion worker timed out for "([^"]*)"$`, f.deletionWorkerTimedOutFor)
-	s.Step(`^I call CreateVolume "([^"]*)" in namespace "([^"]*)"$`, f.iCallCreateVolumeWithNamespace)
 }

@@ -37,6 +37,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/dell/gopowermax/types/v90"
 	"github.com/golang/protobuf/ptypes"
 	log "github.com/sirupsen/logrus"
 )
@@ -456,10 +457,7 @@ func (s *service) CreateVolume(
 	//First get the short volume name
 	shortVolumeName := truncateString(volumeName, maxLength)
 	//Form the volume identifier using short volume name and namespace
-	if namespace != "" {
-		namespace = "-" + namespace
-	}
-	volumeIdentifier := fmt.Sprintf("%s%s-%s%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespace)
+	volumeIdentifier := fmt.Sprintf("%s%s-%s-%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespace)
 
 	// Storage Group is required to be derived from the parameters (such as service level and storage resource pool which are supplied in parameters)
 	// Storage Group Name can optionally be supplied in the parameters (for testing) to over-ride the default.
@@ -767,11 +765,8 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	maxLength := MaxVolIdentifierLength - len(volumePrefix) - len(s.getClusterPrefix()) - len(CsiVolumePrefix) - 1
 	//First get the short volume name
 	shortVolumeName := truncateString(volumeName, maxLength)
-	if namespace != "" {
-		namespace = "-" + namespace
-	}
 	//Form the volume identifier using short volume name and namespace
-	volumeIdentifier := fmt.Sprintf("%s%s-%s%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespace)
+	volumeIdentifier := fmt.Sprintf("%s%s-%s-%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespace)
 
 	// Storage Group is required to be derived from the parameters (such as service level and storage resource pool which are supplied in parameters)
 	// Storage Group Name can optionally be supplied in the parameters (for testing) to over-ride the default.
