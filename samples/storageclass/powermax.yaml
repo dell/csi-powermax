@@ -13,7 +13,7 @@ metadata:
     #   "true"  - default storage class
     #   "false" - non-default storage class
     # Default value: "false"
-    storageclass.beta.kubernetes.io/is-default-class: <isDefault>
+    storageclass.kubernetes.io/is-default-class: <isDefault>
 parameters:
   # "csi.storage.k8s.io/fstype" is used to set the filesystem type which will be used to format the new volume
   # Allowed values:
