@@ -36,7 +36,7 @@ Feature: PowerMax CSI interface
       Then a valid CreateVolumeResponse is returned
 
 
-  @v2.3.0
+@v2.3.0
     Scenario: Create volume with namespace
       Given a PowerMax service
       And I call CreateVolume "volume1" with namespace "test_namespace"

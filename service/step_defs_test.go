@@ -4148,5 +4148,5 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call DiscoverRemoteVolume$`, f.iCallDiscoverRemoteVolume)
 	s.Step(`^I call DeleteStorageProtectionGroup on "([^"]*)"$`, f.iCallDeleteStorageProtectionGroup)
 	s.Step(`^deletion worker timed out for "([^"]*)"$`, f.deletionWorkerTimedOutFor)
-	s.Step(`^I call CreateVolume "([^"]*)" in namespace "([^"]*)"$`, f.iCallCreateVolumeWithNamespace)
+	s.Step(`^I call CreateVolume "([^"]*)" with namespace "([^"]*)"$`, f.iCallCreateVolumeWithNamespace)
 }
