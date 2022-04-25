@@ -361,7 +361,7 @@ func (f *feature) aPowerMaxService() error {
 			f.server = httptest.NewServer(handler)
 		}
 		f.service.opts.Endpoint = f.server.URL
-		log.Printf("server url: %s\n", f.server.URL)
+		log.Printf("server url: %s", f.server.URL)
 	} else {
 		f.server = nil
 	}
@@ -670,10 +670,10 @@ func (f *feature) iCallCreateVolume(name string) error {
 
 	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
 	if f.err != nil {
-		log.Printf("CreateVolume called failed: %s\n", f.err.Error())
+		log.Printf("CreateVolume called failed: %s", f.err.Error())
 	}
 	if f.createVolumeResponse != nil {
-		log.Printf("vol id %s\n", f.createVolumeResponse.GetVolume().VolumeId)
+		log.Printf("vol id %s", f.createVolumeResponse.GetVolume().VolumeId)
 		f.volumeID = f.createVolumeResponse.GetVolume().VolumeId
 		f.volumeNameToID[name] = f.volumeID
 	}
@@ -694,10 +694,10 @@ func (f *feature) iCallRDFEnabledCreateVolume(volName, namespace, mode string, r
 	req.Parameters[LocalRDFGroupParam] = fmt.Sprintf("%d", rdfgNo)
 	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
 	if f.err != nil {
-		log.Printf("CreateVolume called failed: %s\n", f.err.Error())
+		log.Printf("CreateVolume called failed: %s", f.err.Error())
 	}
 	if f.createVolumeResponse != nil {
-		log.Printf("vol id %s\n", f.createVolumeResponse.GetVolume().VolumeId)
+		log.Printf("vol id %s", f.createVolumeResponse.GetVolume().VolumeId)
 		f.volumeID = f.createVolumeResponse.GetVolume().VolumeId
 		f.volumeNameToID[volName] = f.volumeID
 	}
@@ -846,10 +846,10 @@ func (f *feature) iCallCreateVolumeSize(name string, size int64) error {
 
 	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
 	if f.err != nil {
-		log.Printf("CreateVolumeSize called failed: %s\n", f.err.Error())
+		log.Printf("CreateVolumeSize called failed: %s", f.err.Error())
 	}
 	if f.createVolumeResponse != nil {
-		log.Printf("vol id %s\n", f.createVolumeResponse.GetVolume().VolumeId)
+		log.Printf("vol id %s", f.createVolumeResponse.GetVolume().VolumeId)
 		f.volumeID = f.createVolumeResponse.GetVolume().VolumeId
 		f.volumeNameToID[name] = f.volumeID
 	}
@@ -866,7 +866,7 @@ func (f *feature) iChangeTheStoragePool(storagePoolName string) error {
 }
 
 func (f *feature) iInduceError(errtype string) error {
-	log.Printf("set induce error %s\n", errtype)
+	log.Printf("set induce error %s", errtype)
 	f.errType = errtype
 	switch errtype {
 	case "InvalidSymID":
@@ -1458,7 +1458,7 @@ func (f *feature) iCallPublishVolumeWithTo(accessMode, nodeID string) error {
 	log.Printf("Calling controllerPublishVolume")
 	f.publishVolumeResponse, f.err = f.service.ControllerPublishVolume(ctx, req)
 	if f.err != nil {
-		log.Printf("PublishVolume call failed: %s\n", f.err.Error())
+		log.Printf("PublishVolume call failed: %s", f.err.Error())
 	}
 	f.publishVolumeRequest = nil
 	return nil
@@ -1577,7 +1577,7 @@ func (f *feature) iCallUnpublishVolumeFrom(nodeID string) error {
 	log.Printf("Calling controllerUnpublishVolume: %s", req.VolumeId)
 	f.unpublishVolumeResponse, f.err = f.service.ControllerUnpublishVolume(ctx, req)
 	if f.err != nil {
-		log.Printf("UnpublishVolume call failed: %s\n", f.err.Error())
+		log.Printf("UnpublishVolume call failed: %s", f.err.Error())
 	}
 	return nil
 }
@@ -1629,7 +1629,7 @@ func (f *feature) iCallDeleteVolumeWith(arg1 string) error {
 	log.Printf("Calling DeleteVolume")
 	f.deleteVolumeResponse, f.err = f.service.DeleteVolume(ctx, req)
 	if f.err != nil {
-		log.Printf("DeleteVolume called failed: %s\n", f.err.Error())
+		log.Printf("DeleteVolume called failed: %s", f.err.Error())
 	}
 	return nil
 }
@@ -1684,7 +1684,7 @@ func (f *feature) iCallGetCapacityWithStoragePool(srpID string) error {
 		req.Parameters[StoragePoolParam], req.Parameters[SymmetrixIDParam])
 	f.getCapacityResponse, f.err = f.service.GetCapacity(ctx, req)
 	if f.err != nil {
-		log.Printf("GetCapacity call failed: %s\n", f.err.Error())
+		log.Printf("GetCapacity call failed: %s", f.err.Error())
 		return nil
 	}
 	return nil
@@ -1699,7 +1699,7 @@ func (f *feature) iCallGetCapacityWithoutSymmetrixID() error {
 	req.Parameters = parameters
 	f.getCapacityResponse, f.err = f.service.GetCapacity(ctx, req)
 	if f.err != nil {
-		log.Printf("GetCapacity call failed: %s\n", f.err.Error())
+		log.Printf("GetCapacity call failed: %s", f.err.Error())
 		return nil
 	}
 	return nil
@@ -1712,7 +1712,7 @@ func (f *feature) iCallGetCapacityWithoutParameters() error {
 	req.Parameters = nil
 	f.getCapacityResponse, f.err = f.service.GetCapacity(ctx, req)
 	if f.err != nil {
-		log.Printf("GetCapacity call failed: %s\n", f.err.Error())
+		log.Printf("GetCapacity call failed: %s", f.err.Error())
 		return nil
 	}
 	return nil
@@ -1727,7 +1727,7 @@ func (f *feature) iCallGetCapacityWithInvalidCapabilities() error {
 	req.Parameters = parameters
 	f.getCapacityResponse, f.err = f.service.GetCapacity(ctx, req)
 	if f.err != nil {
-		log.Printf("GetCapacity call failed: %s\n", f.err.Error())
+		log.Printf("GetCapacity call failed: %s", f.err.Error())
 		return nil
 	}
 	return nil
@@ -1754,7 +1754,7 @@ func (f *feature) iCallControllerGetCapabilities() error {
 	log.Printf("Calling ControllerGetCapabilities")
 	f.controllerGetCapabilitiesResponse, f.err = f.service.ControllerGetCapabilities(ctx, req)
 	if f.err != nil {
-		log.Printf("ControllerGetCapabilities call failed: %s\n", f.err.Error())
+		log.Printf("ControllerGetCapabilities call failed: %s", f.err.Error())
 		return f.err
 	}
 	return nil
@@ -1828,7 +1828,7 @@ func (f *feature) iCallListVolumesWith(dt *messages.PickleStepArgument_PickleTab
 	log.Printf("Calling ListVolumes with req=%+v", f.listVolumesRequest)
 	f.listVolumesResponse, f.err = f.service.ListVolumes(ctx, req)
 	if f.err != nil {
-		log.Printf("ListVolume called failed: %s\n", f.err.Error())
+		log.Printf("ListVolume called failed: %s", f.err.Error())
 	} else if f.listVolumesResponse == nil {
 		log.Printf("Received null response from ListVolumes")
 	} else {

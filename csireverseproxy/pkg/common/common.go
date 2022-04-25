@@ -163,13 +163,13 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.RoundTripper.RoundTrip(req)
 	if err != nil {
 		t.HealthHandler(false)
-		log.Debugf("Request ID: %s - Reporing server error to proxy health\n", requestID)
+		log.Debugf("Request ID: %s - Reporing server error to proxy health", requestID)
 	} else if resp.StatusCode == 401 || resp.StatusCode == 403 || int(resp.StatusCode/100) == 5 {
 		t.HealthHandler(false)
-		log.Debugf("Request ID: %s - Reporing non-200 code to proxy health\n", requestID)
+		log.Debugf("Request ID: %s - Reporing non-200 code to proxy health", requestID)
 	} else if int(resp.StatusCode/100) == 2 {
 		t.HealthHandler(true)
-		log.Debugf("Request ID: %s - Reporting 2xx response to proxy health\n", requestID)
+		log.Debugf("Request ID: %s - Reporting 2xx response to proxy health", requestID)
 	}
 	return resp, err
 }
