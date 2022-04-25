@@ -680,6 +680,43 @@ func (f *feature) iCallCreateVolume(name string) error {
 	return nil
 }
 
+func (f *feature) iCallCreateVolumeWithNamespace(name string, namespace string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	if f.createVolumeRequest == nil {
+		req := f.getTypicalCreateVolumeRequest()
+		f.createVolumeRequest = req
+	}
+	req := f.createVolumeRequest
+	req.Name = name
+	req.Parameters[CSIPVCNamespace] = namespace
+
+	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
+	if f.err != nil {
+		log.Printf("CreateVolume called failed: %s\n", f.err.Error())
+	}
+	if f.createVolumeResponse != nil {
+		log.Printf("vol id %s\n", f.createVolumeResponse.GetVolume().VolumeId)
+		f.volumeID = f.createVolumeResponse.GetVolume().VolumeId
+		f.volumeNameToID[name] = f.volumeID
+	}
+
+	vol, _, _, _, _, err := f.service.parseCsiID(f.volumeID)
+	if err != nil {
+		log.Printf("volID: %s malformed. Error: %s", vol, f.err.Error())
+	}
+
+	// get the namespace from volume name and validate
+	volNameComponents := strings.Split(vol, "-")
+	numOfIDComponents := len(volNameComponents)
+	namespaceValue := volNameComponents[numOfIDComponents-1]
+	if namespaceValue != namespace {
+		return errors.New("Namespace is not appended")
+	}
+
+	return nil
+}
+
 func (f *feature) iCallRDFEnabledCreateVolume(volName, namespace, mode string, rdfgNo int) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
@@ -4111,4 +4148,5 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call DiscoverRemoteVolume$`, f.iCallDiscoverRemoteVolume)
 	s.Step(`^I call DeleteStorageProtectionGroup on "([^"]*)"$`, f.iCallDeleteStorageProtectionGroup)
 	s.Step(`^deletion worker timed out for "([^"]*)"$`, f.deletionWorkerTimedOutFor)
+	s.Step(`^I call CreateVolume "([^"]*)" with namespace "([^"]*)"$`, f.iCallCreateVolumeWithNamespace)
 }
