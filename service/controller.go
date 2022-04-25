@@ -324,6 +324,12 @@ func (s *service) CreateVolume(
 		storageGroupName = params[StorageGroupParam]
 	}
 
+	// Get the namespace
+	namespace := ""
+	if params[CSIPVCNamespace] != "" {
+		namespace = params[CSIPVCNamespace]
+	}
+
 	// Remote Replication based params
 	var replicationEnabled string
 	var remoteSymID string
@@ -332,7 +338,6 @@ func (s *service) CreateVolume(
 	var remoteServiceLevel string
 	var remoteSRPID string
 	var repMode string
-	var namespace string
 	var bias string
 
 	if params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)] == "true" {
@@ -345,7 +350,6 @@ func (s *service) CreateVolume(
 		remoteServiceLevel = params[path.Join(s.opts.ReplicationPrefix, RemoteServiceLevelParam)]
 		remoteSRPID = params[path.Join(s.opts.ReplicationPrefix, RemoteSRPParam)]
 		bias = params[path.Join(s.opts.ReplicationPrefix, BiasParam)]
-		namespace = params[CSIPVCNamespace]
 		if repMode == Metro {
 			return s.createMetroVolume(ctx, req, reqID, storagePoolID, symmetrixID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias)
 		}
@@ -452,9 +456,12 @@ func (s *service) CreateVolume(
 	maxLength := MaxVolIdentifierLength - len(volumePrefix) - len(s.getClusterPrefix()) - len(CsiVolumePrefix) - 1
 	//First get the short volume name
 	shortVolumeName := truncateString(volumeName, maxLength)
-	//Form the volume identifier using short volume name
-	volumeIdentifier := fmt.Sprintf("%s%s-%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName)
-
+	//Form the volume identifier using short volume name and namespace
+	var namespaceSuffix string
+	if namespace != "" {
+		namespaceSuffix = "-" + namespace
+	}
+	volumeIdentifier := fmt.Sprintf("%s%s-%s%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespaceSuffix)
 	// Storage Group is required to be derived from the parameters (such as service level and storage resource pool which are supplied in parameters)
 	// Storage Group Name can optionally be supplied in the parameters (for testing) to over-ride the default.
 	if storageGroupName == "" {
@@ -761,9 +768,12 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	maxLength := MaxVolIdentifierLength - len(volumePrefix) - len(s.getClusterPrefix()) - len(CsiVolumePrefix) - 1
 	//First get the short volume name
 	shortVolumeName := truncateString(volumeName, maxLength)
-	//Form the volume identifier using short volume name
-	volumeIdentifier := fmt.Sprintf("%s%s-%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName)
-
+	//Form the volume identifier using short volume name and namespace
+	var namespaceSuffix string
+	if namespace != "" {
+		namespaceSuffix = "-" + namespace
+	}
+	volumeIdentifier := fmt.Sprintf("%s%s-%s%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespaceSuffix)
 	// Storage Group is required to be derived from the parameters (such as service level and storage resource pool which are supplied in parameters)
 	// Storage Group Name can optionally be supplied in the parameters (for testing) to over-ride the default.
 	var remoteStorageGroupName string
@@ -1414,7 +1424,7 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 	}
 
 	if vol.VolumeIdentifier != volName {
-		// This volume is aready deleted or marked for deletion,
+		// This volume is already deleted or marked for deletion,
 		// or volume id is an old stale identifier not matching a volume.
 		// Either way idempotence calls for doing nothing and returning ok.
 		log.Info(fmt.Sprintf("DeleteVolume: VolumeIdentifier %s did not match volume name %s so assume it's already deleted",
