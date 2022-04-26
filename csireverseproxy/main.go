@@ -192,7 +192,7 @@ func (s *Server) SignalHandler(k8sUtils k8sutils.UtilsInterface) {
 		signal.Notify(s.SigChan, syscall.SIGINT, syscall.SIGHUP)
 		log.Debug("SignalHandler setup to listen for SIGINT and SIGHUP")
 		sig := <-s.SigChan
-		log.Infof("Received signal: %v\n", sig)
+		log.Infof("Received signal: %v", sig)
 		// Stop InformerFactory
 		k8sUtils.StopInformer()
 		// gracefully shutdown http server
@@ -254,17 +254,17 @@ func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
 		var proxyConfigMap config.ProxyConfigMap
 		err := viper.Unmarshal(&proxyConfigMap)
 		if err != nil {
-			log.Errorf("Error in umarshalling the config: %s\n", err.Error())
+			log.Errorf("Error in unmarshalling the config: %s", err.Error())
 		} else {
 			updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
 			proxyConfig, err := config.NewProxyConfig(&proxyConfigMap, k8sUtils)
 			if err != nil || proxyConfig == nil {
-				log.Errorf("Error parsing the config: %v\n", err)
+				log.Errorf("Error parsing the config: %v", err)
 			} else {
 				s.SetConfig(proxyConfig)
 				err = s.GetRevProxy().UpdateConfig(*proxyConfig)
 				if err != nil {
-					log.Errorf("Error in updating the config: %s\n", err.Error())
+					log.Errorf("Error in updating the config: %s", err.Error())
 				}
 			}
 		}
@@ -276,7 +276,7 @@ func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
 // is received by the informer
 func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.Secret) {
 	conf := s.Config().DeepCopy()
-	log.Infof("New credential/cert update event for the secret(%s)\n", secret.Name)
+	log.Infof("New credential/cert update event for the secret(%s)", secret.Name)
 	hasChanged := false
 	if conf.Mode == config.Linked {
 		found := conf.LinkProxyConfig.IsCertSecretRelated(secret.Name)
@@ -320,10 +320,10 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 	if hasChanged {
 		err := s.GetRevProxy().UpdateConfig(*conf)
 		if err != nil {
-			log.Fatalf("Failed to update credentials/certs for the secret(%s)\n", secret.Name)
+			log.Fatalf("Failed to update credentials/certs for the secret(%s)", secret.Name)
 		}
 		s.SetConfig(conf)
-		log.Errorf("Credentials/Certs updated successfully for the secret(%s)\n", secret.Name)
+		log.Errorf("Credentials/Certs updated successfully for the secret(%s)", secret.Name)
 	}
 }
 
@@ -334,14 +334,14 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 
 	err := server.Setup(k8sUtils)
 	if err != nil {
-		log.Fatalf("Failed to setup server. (%s)\n", err.Error())
+		log.Fatalf("Failed to setup server. (%s)", err.Error())
 		return nil, err
 	}
 
 	// Start the Secrets informer
 	err = k8sUtils.StartInformer(server.EventHandler)
 	if err != nil {
-		log.Fatalf("Failed to start informer. (%s)\n", err.Error())
+		log.Fatalf("Failed to start informer. (%s)", err.Error())
 		return nil, err
 	}
 
