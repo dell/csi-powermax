@@ -24,6 +24,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
+
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cucumber/godog"
 	service "github.com/dell/csi-powermax/v2/service"
@@ -142,6 +144,13 @@ func (f *feature) aPowermaxService() error {
 	f.remoteRdfGrpNo = os.Getenv("REMOTERDFGROUP")
 	f.replicationPrefix = os.Getenv("X_CSI_REPLICATION_PREFIX")
 	f.replicationContextPrefix = os.Getenv("X_CSI_REPLICATION_CONTEXT_PREFIX")
+	symIDList := []string{f.remotesymID}
+	// Add remote array to managed sym by csi driver
+	err := symmetrix.Initialize(symIDList, f.pmaxClient)
+	if err != nil {
+		fmt.Printf("initialize remote array error: %s", err.Error())
+		return err
+	}
 	return nil
 }
 
@@ -1443,23 +1452,25 @@ func (f *feature) allVolumesAreDeletedSuccessfully() error {
 		idComponents := strings.Split(id, "-")
 		symVolumeID := idComponents[len(idComponents)-1]
 		symID := idComponents[len(idComponents)-2]
-		fmt.Printf("Waiting for volume %s %s to be deleted\n", id, symVolumeID)
-		max := 40 * nVols
-		if 300 > max {
-			max = 300
-		}
-		for i := 0; i < max; i++ {
-			vol, err := f.pmaxClient.GetVolumeByID(context.Background(), symID, symVolumeID)
-			if vol == nil {
-				deleted = strings.Contains(err.Error(), "cannot be found")
-				fmt.Printf("volume deleted?: %s\n", err)
-				break
-			}
+		if symID != f.remotesymID {
 			fmt.Printf("Waiting for volume %s %s to be deleted\n", id, symVolumeID)
-			time.Sleep(5 * time.Second)
-		}
-		if !deleted {
-			return fmt.Errorf("Volume was never deleted: %s", id)
+			max := 40 * nVols
+			if 300 > max {
+				max = 300
+			}
+			for i := 0; i < max; i++ {
+				vol, err := f.pmaxClient.GetVolumeByID(context.Background(), symID, symVolumeID)
+				if vol == nil {
+					deleted = strings.Contains(err.Error(), "cannot be found")
+					fmt.Printf("volume deleted?: %s\n", err)
+					break
+				}
+				fmt.Printf("Waiting for volume %s %s to be deleted\n", id, symVolumeID)
+				time.Sleep(5 * time.Second)
+			}
+			if !deleted {
+				return fmt.Errorf("Volume was never deleted: %s", id)
+			}
 		}
 	}
 	t1 := time.Now()
@@ -1884,14 +1895,36 @@ func (f *feature) iCallDeleteSnapshotAndCreateSnapshotInParallel() error {
 func (f *feature) iCallDeleteTargetVolume() error {
 	tgtID := len(f.volIDList) - 1
 	targetVolID := f.volIDList[tgtID]
-	err := f.deleteVolume(targetVolID)
+	volName, _, devID, err := f.parseCsiID(f.volID)
+	fmt.Printf("processing delete target volume (%s)\n", targetVolID)
+
+	volume, err := f.pmaxClient.GetVolumeByID(context.Background(), f.remotesymID, devID)
 	if err != nil {
-		fmt.Printf("DeleteVolume %s:\n", err.Error())
+		fmt.Printf("target GetVolumeByID %s:\n", err.Error())
+		f.addError(err)
+	}
+	// check if volume is part of any storage groups, remove volume if yes
+	if len(volume.StorageGroupIDList) > 0 {
+		for _, sgID := range volume.StorageGroupIDList {
+			_, err = f.pmaxClient.RemoveVolumesFromStorageGroup(context.Background(), f.remotesymID, sgID, true, devID)
+			if err != nil {
+				fmt.Printf("error: (%s) removing target volume (%s) from SG (%s)\n", err.Error(), devID, sgID)
+				f.addError(err)
+				return nil
+			}
+			fmt.Printf("TargetVolume (%s) removed from SG (%s):\n", devID, sgID)
+		}
+	}
+	// Delete target volume from remote array
+	err = f.pmaxClient.DeleteVolume(context.Background(), f.remotesymID, devID)
+	if err != nil {
+		fmt.Printf("Target DeleteVolume %s:\n", err.Error())
 		f.addError(err)
 	} else {
-		fmt.Printf("DeleteVolume %s completed successfully\n", targetVolID)
+		fmt.Printf("Target DeleteVolume %s completed successfully\n", targetVolID)
 	}
-	return nil
+	//Re-confirm volume is deleted
+	return f.checkIfVolumeIsDeleted(volName, f.remotesymID, devID)
 }
 
 func (f *feature) iCheckIfVolumeExist() error {
@@ -1918,7 +1951,11 @@ func (f *feature) iCheckIfVolumeIsDeleted() error {
 	if err != nil {
 		fmt.Printf("volID: %s malformed. Error: %s:\n", f.volID, err.Error())
 	}
-	vol, err := f.pmaxClient.GetVolumeByID(context.Background(), f.symID, devID)
+	return f.checkIfVolumeIsDeleted(volName, f.symID, devID)
+}
+
+func (f *feature) checkIfVolumeIsDeleted(volName, symID, devID string) error {
+	vol, err := f.pmaxClient.GetVolumeByID(context.Background(), symID, devID)
 	if err != nil {
 		fmt.Printf("GetVolumeByID : %s", err.Error())
 		fmt.Println(", Volume is successfully deleted")

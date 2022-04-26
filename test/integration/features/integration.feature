@@ -774,9 +774,9 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call DeleteTargetVolume
     Then there are no errors
-    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
@@ -799,7 +799,6 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     Then there are no errors
     And I call DeleteTargetVolume
     Then there are no errors
-    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
@@ -822,9 +821,9 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call DeleteTargetVolume
     Then there are no errors
-    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
@@ -843,9 +842,9 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call DeleteTargetVolume
     Then there are no errors
-    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
@@ -878,9 +877,9 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call DeleteTargetVolume
     Then there are no errors
-    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
@@ -913,9 +912,9 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call DeleteTargetVolume
     Then there are no errors
-    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
