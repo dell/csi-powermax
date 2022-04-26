@@ -643,7 +643,7 @@ func (s *service) NodeUnpublishVolume(
 		return nil, err
 	}
 
-	log.Infof("lastUmounted %v\n", lastUnmounted)
+	log.Infof("lastUnmounted %v", lastUnmounted)
 	if lastUnmounted {
 		removeWithRetry(target) // #nosec G20
 		return &csi.NodeUnpublishVolumeResponse{}, nil
@@ -882,7 +882,7 @@ func (s *service) NodeGetInfo(
 
 	topology, err := s.createTopologyMap(ctx)
 	if err != nil {
-		log.Errorf("Unable to get the list of symmetrix ids. (%s)\n", err.Error())
+		log.Errorf("Unable to get the list of symmetrix ids. (%s)", err.Error())
 		return nil, status.Error(codes.FailedPrecondition,
 			"Unable to get the list of symmetrix ids")
 	}
@@ -1111,7 +1111,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		log.Error("nodeStartup could not GetInitiatorIQNs")
 	}
 
-	log.Infof("TransportProtocol %s FC portWWNs: %s ... IQNs: %s\n", s.opts.TransportProtocol, portWWNs, IQNs)
+	log.Infof("TransportProtocol %s FC portWWNs: %s ... IQNs: %s", s.opts.TransportProtocol, portWWNs, IQNs)
 	// The driver needs at least one FC or iSCSI initiator to be defined
 	if len(portWWNs) == 0 && len(IQNs) == 0 {
 		return fmt.Errorf("No FC or iSCSI initiators were found and at least 1 is required")
@@ -1153,7 +1153,7 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 		}
 		for _, initiatorID := range initList.InitiatorIDs {
 			if initiatorID == nodeInitiator || strings.HasSuffix(initiatorID, nodeInitiator) {
-				log.Infof("Checking initiator %s against host %s\n", initiatorID, hostID)
+				log.Infof("Checking initiator %s against host %s", initiatorID, hostID)
 				initiator, err := pmaxClient.GetInitiatorByID(ctx, symID, initiatorID)
 				if err != nil {
 					log.Warning("Failed to fetch initiator details for initiator: " + initiatorID)
@@ -1177,7 +1177,7 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 						return 0, fmt.Errorf(errormsg)
 					}
 				}
-				log.Infof("valid initiator: %s\n", initiatorID)
+				log.Infof("valid initiator: %s", initiatorID)
 				nValidInitiators++
 			}
 		}
@@ -1195,8 +1195,8 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []string, symmetrixIDs []string) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	log.Info("**************************\nnodeHostSetup executing...\n*******************************")
-	defer log.Info("**************************\nnodeHostSetup completed...\n*******************************")
+	log.Info("**************************nodeHostSetup executing...*******************************")
+	defer log.Info("**************************nodeHostSetup completed...*******************************")
 
 	// we need to randomize a time before starting the interaction with unisphere
 	// in order to reduce the concurrent workload on the system
@@ -1224,7 +1224,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 		if err != nil {
 			log.Error("Could not validate FC initiators " + err.Error())
 		}
-		log.Infof("valid FC initiators: %d\n", validFC)
+		log.Infof("valid FC initiators: %d", validFC)
 		if validFC > 0 && (s.opts.TransportProtocol == "" || s.opts.TransportProtocol == FcTransportProtocol) {
 			// We do have to have pre-existing initiators that were zoned for FC
 			useFC = true
@@ -1236,7 +1236,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			// We do not have to have pre-existing initiators to use Iscsi (we can create them)
 			useIscsi = true
 		}
-		log.Infof("valid (existing) iSCSI initiators (must be manually created): %d\n", validIscsi)
+		log.Infof("valid (existing) iSCSI initiators (must be manually created): %d", validIscsi)
 
 		if !useFC && !useIscsi {
 			log.Error("No valid initiators- could not initialize FC or iSCSI")
@@ -1616,7 +1616,7 @@ func (s *service) createOrUpdateFCHost(ctx context.Context, array string, nodeNa
 			}
 		}
 	}
-	log.Infof("hostInitiators: %s\n", hostInitiators)
+	log.Infof("hostInitiators: %s", hostInitiators)
 
 	// See if the host is present
 	host, err := pmaxClient.GetHostByID(ctx, array, nodeName)
