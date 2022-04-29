@@ -89,7 +89,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csiext.VolumeMigrateRe
 		migrationFunc = versionUpgrade
 
 	}
-	if err := migrationFunc(ctx, params, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID, s, vol); err !=nil {
+	if err := migrationFunc(ctx, params, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID, s, vol); err != nil {
 		return nil, err
 	}
 
@@ -170,10 +170,10 @@ func nonReplToRepl(ctx context.Context, params map[string]string, storageGroupNa
 		protectedSGID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
 		if protectedSGID == "" {
 			// Volume is not present in Protected Storage Group, Add
-			_, err := pmaxClient.RemoveVolumesFromProtectedStorageGroup(ctx, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, true, vol.VolumeID)
+			err := pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, true, vol.VolumeID)
 			if err != nil {
-				log.Error(fmt.Sprintf("Could not remove volume from protected SG: %s: %s", localProtectionGroupID, err.Error()))
-				return  status.Errorf(codes.Internal, "Could not remove volume from protected SG: %s: %s", localProtectionGroupID, err.Error())
+				log.Error(fmt.Sprintf("Could not add volume to protected SG: %s: %s", localProtectionGroupID, err.Error()))
+				return status.Errorf(codes.Internal, "Could add volume to protected SG: %s: %s", localProtectionGroupID, err.Error())
 			}
 		}
 	}
@@ -181,11 +181,49 @@ func nonReplToRepl(ctx context.Context, params map[string]string, storageGroupNa
 }
 
 func replToNonRepl(ctx context.Context, params map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
-	return status.Error(codes.Unimplemented, "Unimplemented")
+	pmaxClient, err := s.GetPowerMaxClient(symID)
+	if err != nil {
+		log.Error(err.Error())
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	sgID := ""
+	if len(vol.StorageGroupIDList) > 0 {
+		for _, storageGroupID := range vol.StorageGroupIDList {
+			_, err := pmaxClient.GetStorageGroup(ctx, symID, storageGroupID)
+			if err != nil {
+				log.Error(fmt.Sprintf("Could not get Storage Group %s: %s", storageGroupID, err.Error()))
+				// return status.Error(codes.Internal, err.Error())
+			} else {
+				sgID = storageGroupID
+				break
+			}
+		}
+	}
+
+	ns, rdfNo, mode, err := GetRDFInfoFromSGID(sgID)
+	if err != nil {
+		log.Debugf("GetRDFInfoFromSGID failed for (%s) on symID (%s).", sgID, symID)
+		return status.Error(codes.Internal, err.Error())
+	}
+
+	remoteSGID := buildProtectionGroupID(ns, rdfNo, mode)
+	rdfInfo, err := pmaxClient.GetRDFGroup(ctx, symID, rdfNo)
+	if err != nil {
+		if err != nil {
+			log.Errorf("GetRDFGroup failed for (%s) on symID (%s)", sgID, symID)
+			return status.Error(codes.Internal, err.Error())
+		}
+	}
+	_, err = pmaxClient.RemoveVolumesFromProtectedStorageGroup(ctx, symID, sgID, rdfInfo.RemoteSymmetrix, remoteSGID, true, vol.VolumeID)
+	if err != nil {
+		log.Error(fmt.Sprintf("Could not remove volume from protected SG: %s: %s", sgID, err.Error()))
+		return status.Errorf(codes.Internal, "Could not remove volume from protected SG: %s: %s", sgID, err.Error())
+	}
+
+	return nil
 }
 
 func versionUpgrade(ctx context.Context, params map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
 	return status.Error(codes.Unimplemented, "Unimplemented")
 }
-
-
