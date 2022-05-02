@@ -26,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dell/gocsi"
+
 	csiext "github.com/dell/dell-csi-extensions/replication"
 
 	log "github.com/sirupsen/logrus"
@@ -170,23 +172,24 @@ type feature struct {
 }
 
 var inducedErrors struct {
-	invalidSymID        bool
-	invalidStoragePool  bool
-	invalidServiceLevel bool
-	rescanError         bool
-	noDeviceWWNError    bool
-	badVolumeIdentifier bool
-	invalidVolumeID     bool
-	noVolumeID          bool
-	invalidSnapID       bool
-	differentVolumeID   bool
-	portGroupError      bool
-	noSymID             bool
-	noNodeName          bool
-	noIQNs              bool
-	nonExistentVolume   bool
-	noVolumeSource      bool
-	noMountInfo         bool
+	invalidSymID           bool
+	invalidStoragePool     bool
+	invalidServiceLevel    bool
+	rescanError            bool
+	noDeviceWWNError       bool
+	badVolumeIdentifier    bool
+	invalidVolumeID        bool
+	noVolumeID             bool
+	invalidSnapID          bool
+	differentVolumeID      bool
+	portGroupError         bool
+	noSymID                bool
+	noNodeName             bool
+	noIQNs                 bool
+	nonExistentVolume      bool
+	noVolumeSource         bool
+	noMountInfo            bool
+	invalidTopologyPathEnv bool
 }
 
 type failedSnap struct {
@@ -1199,6 +1202,8 @@ func (f *feature) iInduceError(errtype string) error {
 		f.iInvalidateTheNodeID()
 	case "NoMountInfo":
 		inducedErrors.noMountInfo = true
+	case "InvalidTopologyConfigEnv":
+		inducedErrors.invalidTopologyPathEnv = true
 	case "none":
 		return nil
 	default:
@@ -1652,6 +1657,31 @@ func (f *feature) aValidNodeGetInfoResponseIsReturned() error {
 		}
 	}
 	fmt.Printf("NodeID %s\n", f.nodeGetInfoResponse.NodeId)
+	return nil
+}
+
+func (f *feature) iAddATopologyKeysFilterAnd(allowedList, deniedList string) error {
+	//  | "*-000197900046."         | "Node1-000197900047.iscsi"  |
+	allowed := strings.Split(allowedList, "-")
+	f.service.allowedTopologyKeys = map[string][]string{
+		allowed[0]: allowed[1:],
+	}
+	denied := strings.Split(deniedList, "-")
+	f.service.deniedTopologyKeys = map[string][]string{
+		denied[0]: denied[1:],
+	}
+	f.service.opts.IsTopologyControlEnabled = true
+	f.service.arrayTransportProtocolMap["000197900046"] = FcTransportProtocol
+	f.service.arrayTransportProtocolMap["000197900047"] = IscsiTransportProtocol
+	return nil
+}
+
+func (f *feature) topologyKeysAreCreatedProperly() error {
+	if f.nodeGetInfoResponse.AccessibleTopology == nil {
+		errors.New("toplogy keys not created properly")
+	} else {
+		fmt.Printf("TopologyKeys: (%+v)", f.nodeGetInfoResponse.AccessibleTopology)
+	}
 	return nil
 }
 
@@ -2399,6 +2429,24 @@ func (f *feature) iCallBeforeServeWithAnInvalidClusterPrefix() error {
 	ctxOSEnviron := interface{}("os.Environ")
 	stringSlice := f.getTypicalEnviron()
 	stringSlice = append(stringSlice, EnvClusterPrefix+"=LONG")
+	ctx := context.WithValue(context.Background(), ctxOSEnviron, stringSlice)
+	listener, err := net.Listen("tcp", "127.0.0.1:65000")
+	if err != nil {
+		return err
+	}
+	f.err = f.service.BeforeServe(ctx, nil, listener)
+	listener.Close()
+	return nil
+}
+
+func (f *feature) iCallBeforeServeWithTopologyConfigSetAt(path string) error {
+	ctxOSEnviron := interface{}("os.Environ")
+	stringSlice := f.getTypicalEnviron()
+	stringSlice = append(stringSlice, EnvClusterPrefix+"=TST")
+	if !inducedErrors.invalidTopologyPathEnv {
+		stringSlice = append(stringSlice, EnvTopoConfigFilePath+"="+path)
+	}
+	stringSlice = append(stringSlice, gocsi.EnvVarMode+"=node")
 	ctx := context.WithValue(context.Background(), ctxOSEnviron, stringSlice)
 	listener, err := net.Listen("tcp", "127.0.0.1:65000")
 	if err != nil {
@@ -4149,4 +4197,7 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call DeleteStorageProtectionGroup on "([^"]*)"$`, f.iCallDeleteStorageProtectionGroup)
 	s.Step(`^deletion worker timed out for "([^"]*)"$`, f.deletionWorkerTimedOutFor)
 	s.Step(`^I call CreateVolume "([^"]*)" with namespace "([^"]*)"$`, f.iCallCreateVolumeWithNamespace)
+	s.Step(`^I call BeforeServe with TopologyConfig set at "([^"]*)"$`, f.iCallBeforeServeWithTopologyConfigSetAt)
+	s.Step(`^I add a Topology keys filter "([^"]*)" and "([^"]*)"$`, f.iAddATopologyKeysFilterAnd)
+	s.Step(`^Topology keys are created properly$`, f.topologyKeysAreCreatedProperly)
 }

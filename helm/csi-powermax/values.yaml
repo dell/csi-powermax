@@ -219,6 +219,10 @@ node:
     # Default value: None
     enabled: false
 
+  # Topology control
+  topologyControl:
+    enabled: false
+
 # enableCHAP: Determine if the driver is going to configure
 # ISCSI node databases on the nodes with the CHAP credentials
 # If enabled, the CHAP secret must be provided in the credentials secret
@@ -384,4 +388,3 @@ authorization:
   #   "false" - TLS certificate will be verified 
   # Default value: "true" 
   skipCertificateValidation: true
-

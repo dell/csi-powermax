@@ -1,0 +1,15 @@
+allowedConnections:
+  - nodeName: "*"
+    rules:
+      - "000000000001:FC"
+      - "000000000002:FC"
+  - nodeName: "node2"
+    rules:
+      - "000000000002:FC"
+deniedConnections:
+  - nodeName: "node2"
+    rules:
+      - "000000000002:*"
+  - nodeName: "node3"
+    rules:
+      - "*:*"
