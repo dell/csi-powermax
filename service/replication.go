@@ -17,11 +17,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/dell/gopowermax/types/v90"
 	"strings"
 
 	pmax "github.com/dell/gopowermax"
 
-	"github.com/dell/gopowermax/types/v90"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -609,4 +609,35 @@ func validateRDFState(ctx context.Context, symID, action, sgName, rdfGrpNo strin
 func buildProtectionGroupID(namespace, localRdfGrpNo, repMode string) string {
 	protectionGrpID := CsiRepSGPrefix + namespace + "-" + localRdfGrpNo + "-" + repMode
 	return protectionGrpID
+}
+
+// ValidateRDFState checks if the given action is permissible on the protected storage group based on its current state
+//MigrateByStorageGroup(ctx, symID, remotesymmID, StorageGroup, pmaxClient)
+func MigrateByArray(ctx context.Context, symID, remotesymmID, pmaxClient pmax.Pmax) (string, error) {
+	// Environment Setup
+	err := pmaxClient.getorCreateMigrationEnvironment(ctx, symID, remotesymmID)
+	if err != nil {
+		log.Error(fmt.Sprintf("Failed to create array migration environment for target array (%s) - Error (%s)", remotesymmID, err.Error()))
+		return false, status.Errorf(codes.Internal, "to create array migration environment for target array(%s) - Error (%s)", remotesymmID, err.Error())
+	}
+	// Migrate
+	// get list of devices that are part of current storage group
+	// split from masking view storage group into a temp storage group
+	// remove devices from default(slo) storage group
+	err := pmaxClient.getorCreateMigrationEnvironment(ctx, symID, remotesymmID)
+	if err != nil {
+		log.Error(fmt.Sprintf("Failed to create array migration environment for target array (%s) - Error (%s)", remotesymmID, err.Error()))
+		return false, status.Errorf(codes.Internal, "to create array migration environment for target array(%s) - Error (%s)", remotesymmID, err.Error())
+	}
+
+	// Rescan (Host) - node sidecar
+	// Commit
+	// Remove Environment
+	psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, sgName, rdfGrpNo)
+	if err != nil {
+		log.Error(fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error()))
+		return false, status.Errorf(codes.Internal, "Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
+	}
+
+	return sg, nil
 }
