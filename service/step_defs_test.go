@@ -1678,10 +1678,9 @@ func (f *feature) iAddATopologyKeysFilterAnd(allowedList, deniedList string) err
 
 func (f *feature) topologyKeysAreCreatedProperly() error {
 	if f.nodeGetInfoResponse.AccessibleTopology == nil {
-		errors.New("toplogy keys not created properly")
-	} else {
-		fmt.Printf("TopologyKeys: (%+v)", f.nodeGetInfoResponse.AccessibleTopology)
+		return errors.New("toplogy keys not created properly")
 	}
+	fmt.Printf("TopologyKeys: (%+v)", f.nodeGetInfoResponse.AccessibleTopology)
 	return nil
 }
 

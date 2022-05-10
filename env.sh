@@ -2,8 +2,6 @@
 
 export X_CSI_POWERMAX_CONFIG_PATH="deploy/config.yaml"
 
-export X_CSI_POWERMAX_TOPOLOGY_CONFIG_PATH="deploy/topologyConfig.yaml"
-
 # Comma separated list of array managed by the driver
 export X_CSI_MANAGED_ARRAYS="000000000001"
 

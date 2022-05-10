@@ -714,6 +714,7 @@ Feature: PowerMax CSI interface
     And I add a Topology keys filter <allowedList> and <deniedList>
     When I call NodeGetInfo
     Then Topology keys are created properly
+    And no error was received
   Examples:
     | allowedList                 | deniedList                  |
     | "*-000197900046."           | "Node1-000197900047.iscsi"  |
