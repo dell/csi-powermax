@@ -796,7 +796,7 @@ func (s *service) isISCSIConnected(err error) bool {
 	return false
 }
 
-func (s *service) createTopologyMap(ctx context.Context) (map[string]string, error) {
+func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[string]string, error) {
 	topology := map[string]string{}
 	iscsiArrays := make([]string, 0)
 
@@ -850,20 +850,70 @@ func (s *service) createTopologyMap(ctx context.Context) (map[string]string, err
 	}
 
 	for array, protocol := range s.arrayTransportProtocolMap {
-		if protocol == FcTransportProtocol {
+		if protocol == FcTransportProtocol && s.checkIfArrayProtocolValid(nodeName, array, strings.ToLower(FcTransportProtocol)) {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(FcTransportProtocol)] = s.getDriverName()
 		}
 	}
 
 	for _, array := range iscsiArrays {
-		if _, ok := topology[s.getDriverName()+"/"+array]; !ok {
+		if _, ok := topology[s.getDriverName()+"/"+array]; !ok &&
+			s.checkIfArrayProtocolValid(nodeName, array, strings.ToLower(IscsiTransportProtocol)) {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(IscsiTransportProtocol)] = s.getDriverName()
 		}
 	}
 
 	return topology, nil
+}
+
+// checkIfArrayProtocolValid returns true if the  pair (array and protocol) is applicable for the given node based on config
+// if the pair is present in allow rules, it is applied in the topology keys map
+// if the pair is present in deny rules, it is skipped in the topology keys map
+func (s *service) checkIfArrayProtocolValid(nodeName string, array string, protocol string) bool {
+	if !s.opts.IsTopologyControlEnabled {
+		return true
+	}
+
+	key := fmt.Sprintf("%s.%s", array, protocol)
+	log.Debugf("Checking topology config for allow rules for key (%s)", key)
+	// Check topo key pair as per rules in allow list
+	if allowedList, ok := s.allowedTopologyKeys[nodeName]; ok {
+		if !checkIfKeyIsIncludedOrNot(allowedList, key) {
+			return false
+		}
+	} else if allowedList, ok := s.allowedTopologyKeys["*"]; ok {
+		if !checkIfKeyIsIncludedOrNot(allowedList, key) {
+			return false
+		}
+	}
+
+	log.Debugf("Checking topology config for deny rules for key (%s)", key)
+	// Check topo keys as per rules in denied list
+	if deniedList, ok := s.deniedTopologyKeys[nodeName]; ok {
+		if checkIfKeyIsIncludedOrNot(deniedList, key) {
+			return false
+		}
+	} else if deniedList, ok := s.deniedTopologyKeys["*"]; ok {
+		if checkIfKeyIsIncludedOrNot(deniedList, key) {
+			return false
+		}
+	}
+	log.Debugf("applied topo key for node %s : %+v \n", nodeName, key)
+	return true
+}
+
+// checkIfKeyIsIncludedOrNot will crosscheck the key with the applied rules in the config.
+// returns true if it founds the key in the rules.
+func checkIfKeyIsIncludedOrNot(rulesList []string, key string) bool {
+	found := false
+	for _, rule := range rulesList {
+		if strings.Contains(key, rule) {
+			found = true
+			break
+		}
+	}
+	return found
 }
 
 // NodeGetInfo minimal version. Returns the NodeId
@@ -880,7 +930,7 @@ func (s *service) NodeGetInfo(
 			"Unable to get Node Name from the environment")
 	}
 
-	topology, err := s.createTopologyMap(ctx)
+	topology, err := s.createTopologyMap(ctx, s.opts.NodeName)
 	if err != nil {
 		log.Errorf("Unable to get the list of symmetrix ids. (%s)", err.Error())
 		return nil, status.Error(codes.FailedPrecondition,

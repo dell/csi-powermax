@@ -695,3 +695,27 @@ Feature: PowerMax CSI interface
         | "GOFSInduceGetMountInfoFromDeviceError"  | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
         | "NoVolumeID"                             | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "Invalid volume id"      |
 	    | "NoMountInfo"                            | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"                | "none"                   |
+
+@v2.3.0
+  Scenario Outline: Test valid Topology ReadConfig in BeforeServe
+    Given a PowerMax service
+    And I induce error <induced>
+    When I call BeforeServe with TopologyConfig set at <configPath>
+    Then no error was received
+  Examples:
+    | induced                    | configPath                                 |
+    | "none"                     | "../samples/configmap/config.yaml"         |
+    | "none"                     | "../samples/configmap/topologyConfig.yaml" |
+    | "InvalidTopologyConfigEnv" | "../samples/configmap/topologyConfig.yaml" |
+
+@v2.3.0
+  Scenario Outline: Test Topology Filters in NodeGetInfo
+    Given a PowerMax service
+    And I add a Topology keys filter <allowedList> and <deniedList>
+    When I call NodeGetInfo
+    Then Topology keys are created properly
+    And no error was received
+  Examples:
+    | allowedList                 | deniedList                  |
+    | "*-000197900046."           | "Node1-000197900047.iscsi"  |
+    | "Node1-000197900046.fc"     | "*-000197900047."           |
