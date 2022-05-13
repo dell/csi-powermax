@@ -899,7 +899,7 @@ func (s *service) checkIfArrayProtocolValid(nodeName string, array string, proto
 			return false
 		}
 	}
-	log.Debugf("applied topo key for node %s : %+v \n", nodeName, key)
+	log.Debugf("applied topo key for node %s : %+v", nodeName, key)
 	return true
 }
 
