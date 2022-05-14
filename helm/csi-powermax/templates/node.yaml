@@ -207,8 +207,8 @@ spec:
               mountPath: /run/dbus/system_bus_socket
             - name: powermax-config-params
               mountPath: /powermax-config-params
-            {{ - if hasKey .Values.node "topologyControl" }}
-            {{ - if eq .Values.node.topologyControl.enabled true }}
+            {{- if hasKey .Values.node "topologyControl" }}
+            {{- if eq .Values.node.topologyControl.enabled true }}
             - name: node-topology-config
               mountPath: /node-topology-config
             {{- end }}
