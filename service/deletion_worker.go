@@ -487,7 +487,9 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 				log.Errorf("GetRDFGroup failed for (%s) on symID (%s)", sgID, queue.SymID)
 				return false
 			}
-			if mode == Metro {
+			// PMAX fails the delete of the last volume in a Metro RDFg if
+			// the RDFg is not suspended. So allow Suspend only if its the last volume in the RDFg
+			if (mode == Metro) && (rdfInfo.NumDevices == 1) {
 				state := psg.States[0]
 				if state != Suspended {
 					//SUSPEND the protected storage group
@@ -502,19 +504,6 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 			// build remoteSGID
 			remoteSGID := buildProtectionGroupID(ns, strconv.Itoa(rdfInfo.RemoteRdfgNumber), mode)
 			_, err = pmaxClient.RemoveVolumesFromProtectedStorageGroup(context.Background(), queue.SymID, sgID, rdfInfo.RemoteSymmetrix, remoteSGID, true, volumeIDs...)
-			if mode == Metro {
-				// After suspend, Establish the RDF group if it has volumes
-				var psg *types.RDFStorageGroup
-				psg, err = pmaxClient.GetProtectedStorageGroup(context.Background(), queue.SymID, sgID)
-				if err != nil {
-					log.Errorf("GetProtectedStorageGroup failed for (%s) on symID (%s)", sgID, queue.SymID)
-					return false
-				}
-				if psg.Rdf {
-					err = establish(context.Background(), queue.SymID, sgID, rdfNo, true, pmaxClient)
-					time.Sleep(WaitTillSyncInProgTime)
-				}
-			}
 		}
 
 		for _, volumeID := range volumeIDs {
