@@ -7,6 +7,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"path"
 	"time"
@@ -42,6 +43,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csiext.VolumeMigrateRe
 	// Get the parameters
 
 	params := req.GetScParameters()
+	sourceScParams := req.GetScSourceParameters()
 
 	applicationPrefix := ""
 	if params[ApplicationPrefixParam] != "" {
@@ -76,7 +78,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csiext.VolumeMigrateRe
 	}
 
 	migrateType := req.GetType()
-	var migrationFunc func(context.Context, map[string]string, string, string, string, string, string, *service, *types.Volume) error
+	var migrationFunc func(context.Context, map[string]string, map[string]string, string, string, string, string, string, *service, *types.Volume) error
 
 	switch migrateType {
 	case csiext.MigrateTypes_UNKNOWN_MIGRATE:
@@ -89,7 +91,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csiext.VolumeMigrateRe
 		migrationFunc = versionUpgrade
 
 	}
-	if err := migrationFunc(ctx, params, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID, s, vol); err != nil {
+	if err := migrationFunc(ctx, params, sourceScParams, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID, s, vol); err != nil {
 		return nil, err
 	}
 
@@ -115,13 +117,19 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csiext.VolumeMigrateRe
 	return csiResp, nil
 }
 
-func nonReplToRepl(ctx context.Context, params map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
+func nonReplToRepl(ctx context.Context, params map[string]string, sourceScParams map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
 	var replicationEnabled string
 	var remoteSymID string
 	var localRDFGrpNo string
 	var remoteRDFGrpNo string
 	var repMode string
-	var namespace string
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
 
 	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
@@ -136,7 +144,7 @@ func nonReplToRepl(ctx context.Context, params map[string]string, storageGroupNa
 		localRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, LocalRDFGroupParam)]
 		remoteRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
 		repMode = params[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)]
-		namespace = params[CSIPVCNamespace]
+		//namespace = params[CSIPVCNamespace]
 		if repMode == Metro {
 			log.Errorf("Unsupported Replication Mode: (%s)", repMode)
 			return status.Errorf(codes.InvalidArgument, "Unsupported Replication Mode: (%s)", repMode)
@@ -160,62 +168,86 @@ func nonReplToRepl(ctx context.Context, params map[string]string, storageGroupNa
 	var localProtectionGroupID string
 	var remoteProtectionGroupID string
 	if replicationEnabled == "true" {
-		localProtectionGroupID = buildProtectionGroupID(namespace, localRDFGrpNo, repMode)
-		remoteProtectionGroupID = buildProtectionGroupID(namespace, remoteRDFGrpNo, repMode)
+		localProtectionGroupID = buildProtectionGroupID(params[CSIPVCNamespace], localRDFGrpNo, repMode)
+		remoteProtectionGroupID = buildProtectionGroupID(params[CSIPVCNamespace], remoteRDFGrpNo, repMode)
 	}
 	if replicationEnabled == "true" {
+		isSGUnprotected := false
+		if replicationEnabled == "true" {
+			sg, err := s.getOrCreateProtectedStorageGroup(ctx, symID, localProtectionGroupID, params[CSIPVCNamespace], localRDFGrpNo, repMode, reqID, pmaxClient)
+			if err != nil {
+				return status.Errorf(codes.Internal, "Error in getOrCreateProtectedStorageGroup: (%s)", err.Error())
+			}
+			if sg != nil && sg.Rdf == true {
+				// Check the direction of SG
+				// Creation of replicated volume is allowed in an SG of type R1
+				err := s.VerifyProtectedGroupDirection(ctx, symID, localProtectionGroupID, localRDFGrpNo, pmaxClient)
+				if err != nil {
+					return err
+				}
+			} else {
+				isSGUnprotected = true
+			}
+		}
 		log.Debugf("RDF: Found Rdf enabled")
 		// remote storage group name is kept same as local storage group name
 		// Check if volume is already added in SG, else add it
+		log.Debug("StorageGroupName", storageGroupName, "localSGID", localProtectionGroupID, "remoteSGID", remoteProtectionGroupID)
+		sg, err := pmaxClient.GetStorageGroup(ctx, symID, storageGroupName)
+		if err != nil || sg == nil {
+			log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
+			thick := params[ThickVolumesParam]
+			_, err := pmaxClient.CreateStorageGroup(ctx, symID, storageGroupName, storagePoolID,
+				serviceLevel, thick == "true")
+			if err != nil {
+				log.Error("Error creating storage group: " + err.Error())
+				return status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
+			}
+			log.Debug("We created SG")
+		} else {
+			log.Debug("SG was found")
+		}
 		protectedSGID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
 		if protectedSGID == "" {
 			// Volume is not present in Protected Storage Group, Add
+			log.Info("ProtectedSG not found. Trying to create...")
 			err := pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, true, vol.VolumeID)
 			if err != nil {
 				log.Error(fmt.Sprintf("Could not add volume to protected SG: %s: %s", localProtectionGroupID, err.Error()))
-				return status.Errorf(codes.Internal, "Could add volume to protected SG: %s: %s", localProtectionGroupID, err.Error())
+				return status.Errorf(codes.Internal, "Could not add volume to protected SG: %s: %s", localProtectionGroupID, err.Error())
+			}
+		}
+
+		log.Info("Protected SG was created")
+		if isSGUnprotected {
+			// If the required SG is still unprotected, protect the local SG with RDF info
+			// If valid RDF group is supplied this will create a remote SG, a RDF pair and add the vol in respective SG created
+			// Remote storage group name is kept same as local storage group name
+			err := s.ProtectStorageGroup(ctx, symID, remoteSymID, localProtectionGroupID, remoteProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID, false, pmaxClient)
+			if err != nil {
+				return err
 			}
 		}
 	}
 	return nil
 }
 
-func replToNonRepl(ctx context.Context, params map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
+func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
 	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
 		log.Error(err.Error())
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	sgID := ""
-	if len(vol.StorageGroupIDList) > 0 {
-		for _, storageGroupID := range vol.StorageGroupIDList {
-			_, err := pmaxClient.GetStorageGroup(ctx, symID, storageGroupID)
-			if err != nil {
-				log.Error(fmt.Sprintf("Could not get Storage Group %s: %s", storageGroupID, err.Error()))
-				// return status.Error(codes.Internal, err.Error())
-			} else {
-				sgID = storageGroupID
-				break
-			}
-		}
-	}
+	remoteSymID := sourceScParams[path.Join(s.opts.ReplicationPrefix, RemoteSymIDParam)]
+	localRDFGrpNo := sourceScParams[path.Join(s.opts.ReplicationPrefix, LocalRDFGroupParam)]
+	remoteRDFGrpNo := sourceScParams[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
+	repMode := sourceScParams[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)]
 
-	ns, rdfNo, mode, err := GetRDFInfoFromSGID(sgID)
-	if err != nil {
-		log.Debugf("GetRDFInfoFromSGID failed for (%s) on symID (%s).", sgID, symID)
-		return status.Error(codes.Internal, err.Error())
-	}
+	sgID := buildProtectionGroupID(params[CSIPVCNamespace], localRDFGrpNo, repMode)
+	remoteSGID := buildProtectionGroupID(params[CSIPVCNamespace], remoteRDFGrpNo, repMode)
 
-	remoteSGID := buildProtectionGroupID(ns, rdfNo, mode)
-	rdfInfo, err := pmaxClient.GetRDFGroup(ctx, symID, rdfNo)
-	if err != nil {
-		if err != nil {
-			log.Errorf("GetRDFGroup failed for (%s) on symID (%s)", sgID, symID)
-			return status.Error(codes.Internal, err.Error())
-		}
-	}
-	_, err = pmaxClient.RemoveVolumesFromProtectedStorageGroup(ctx, symID, sgID, rdfInfo.RemoteSymmetrix, remoteSGID, true, vol.VolumeID)
+	_, err = pmaxClient.RemoveVolumesFromProtectedStorageGroup(ctx, symID, sgID, remoteSymID, remoteSGID, true, vol.VolumeID)
 	if err != nil {
 		log.Error(fmt.Sprintf("Could not remove volume from protected SG: %s: %s", sgID, err.Error()))
 		return status.Errorf(codes.Internal, "Could not remove volume from protected SG: %s: %s", sgID, err.Error())
@@ -224,6 +256,6 @@ func replToNonRepl(ctx context.Context, params map[string]string, storageGroupNa
 	return nil
 }
 
-func versionUpgrade(ctx context.Context, params map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
+func versionUpgrade(ctx context.Context, params map[string]string, sourceScParams map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
 	return status.Error(codes.Unimplemented, "Unimplemented")
 }

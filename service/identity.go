@@ -27,6 +27,7 @@ import (
 	wrappers "github.com/golang/protobuf/ptypes/wrappers"
 
 	"github.com/dell/csi-powermax/v2/core"
+	migrext "github.com/dell/dell-csi-extensions/migration"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 )
 
@@ -257,4 +258,33 @@ func (s *service) GetReplicationCapabilities(
 		})
 	}
 	return rep, nil
+}
+
+func (s *service) GetMigrationCapabilities(ctx context.Context, request *migrext.GetMigrationCapabilityRequest) (*migrext.GetMigrationCapabilityResponse, error) {
+	log.Debug("qqqq")
+	return &migrext.GetMigrationCapabilityResponse{
+		Capabilities: []*migrext.MigrationCapability{
+			{
+				Type: &migrext.MigrationCapability_Rpc{
+					Rpc: &migrext.MigrationCapability_RPC{
+						Type: migrext.MigrateTypes_NON_REPL_TO_REPL,
+					},
+				},
+			},
+			{
+				Type: &migrext.MigrationCapability_Rpc{
+					Rpc: &migrext.MigrationCapability_RPC{
+						Type: migrext.MigrateTypes_REPL_TO_NON_REPL,
+					},
+				},
+			},
+			{
+				Type: &migrext.MigrationCapability_Rpc{
+					Rpc: &migrext.MigrationCapability_RPC{
+						Type: migrext.MigrateTypes_VERSION_UPGRADE,
+					},
+				},
+			},
+		},
+	}, nil
 }
