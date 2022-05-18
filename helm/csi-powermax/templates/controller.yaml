@@ -328,7 +328,7 @@ spec:
         {{- end }}
         {{- end }}
         - name: driver
-          image: amaas-eos-mw1.cec.lab.emc.com:5017/csi-powermax:irn
+          image: {{ required "Must provide the PowerMax driver image repository." .Values.images.driverRepository }}/{{ .Chart.Name }}:{{ .Values.version }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           command: [ "/csi-powermax.sh" ]
           args:
