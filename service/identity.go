@@ -261,7 +261,6 @@ func (s *service) GetReplicationCapabilities(
 }
 
 func (s *service) GetMigrationCapabilities(ctx context.Context, request *migrext.GetMigrationCapabilityRequest) (*migrext.GetMigrationCapabilityResponse, error) {
-	log.Debug("qqqq")
 	return &migrext.GetMigrationCapabilityResponse{
 		Capabilities: []*migrext.MigrationCapability{
 			{
