@@ -43,6 +43,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/dell/csi-powermax/v2/core"
+	migrext "github.com/dell/dell-csi-extensions/migration"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 	pmax "github.com/dell/gopowermax"
 )
@@ -78,6 +79,7 @@ type Service interface {
 	csi.IdentityServer
 	csi.NodeServer
 	csiext.ReplicationServer
+	migrext.MigrationServer
 	BeforeServe(context.Context, *gocsi.StoragePlugin, net.Listener) error
 	RegisterAdditionalServers(server *grpc.Server)
 }
@@ -569,6 +571,7 @@ func ReadConfig(configPath string) (*TopologyConfig, error) {
 
 func (s *service) RegisterAdditionalServers(server *grpc.Server) {
 	csiext.RegisterReplicationServer(server, s)
+	migrext.RegisterMigrationServer(server, s)
 }
 
 func (s *service) getProxySettingsFromEnv() (string, string, bool) {

@@ -129,6 +129,7 @@ const (
 	RemoteServiceLevelParam              = "RemoteServiceLevel"
 	RemoteSRPParam                       = "RemoteSRP"
 	BiasParam                            = "Bias"
+	FsTypeParam                          = "csi.storage.k8s.io/fstype"
 )
 
 //Pair - structure which holds a pair
