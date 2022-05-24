@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	migrext "github.com/dell/dell-csi-extensions/migration"
 	"github.com/dell/gocsi"
 
 	csiext "github.com/dell/dell-csi-extensions/replication"
@@ -129,6 +130,7 @@ type feature struct {
 	listSnapshotsRequest                 *csi.ListSnapshotsRequest
 	listSnapshotsResponse                *csi.ListSnapshotsResponse
 	getVolumeByIDResponse                *GetVolumeByIDResponse
+	volumeMigrateResponse                *migrext.VolumeMigrateResponse
 	response                             string
 	listedVolumeIDs                      map[string]bool
 	listVolumesNextTokenCache            string
@@ -3996,6 +3998,180 @@ func (f *feature) deletionWorkerTimedOutFor(volID string) error {
 	return err
 }
 
+func (f *feature) iCallVolumeMigrate() error {
+	header := metadata.New(map[string]string{"csi.requestid": "2"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := &migrext.VolumeMigrateRequest{
+		VolumeHandle: f.createVolumeResponse.GetVolume().VolumeId,
+		ScParameters: map[string]string{
+			SymmetrixIDParam:     mock.DefaultSymmetrixID,
+			RemoteSymIDParam:     mock.DefaultRemoteSymID,
+			RepEnabledParam:      "true",
+			LocalRDFGroupParam:   "13",
+			RemoteRDFGroupParam:  "13",
+			ReplicationModeParam: Async,
+			CSIPVCNamespace:      Namespace,
+			ServiceLevelParam:    mock.DefaultServiceLevel,
+			StoragePoolParam:     mock.DefaultStoragePool,
+			RemoteSRPParam:       mock.DefaultStoragePool,
+			StorageGroupParam:    mock.DefaultStorageGroup,
+		},
+		ScSourceParameters: map[string]string{
+			RepEnabledParam:   "false",
+			StoragePoolParam:  mock.DefaultStoragePool,
+			CSIPVCNamespace:   Namespace,
+			SymmetrixIDParam:  mock.DefaultSymmetrixID,
+			ServiceLevelParam: mock.DefaultServiceLevel,
+		},
+		ShouldClone:  true,
+		StorageClass: "powermax",
+		MigrateTypes: &migrext.VolumeMigrateRequest_Type{Type: migrext.MigrateTypes_NON_REPL_TO_REPL},
+	}
+	f.volumeMigrateResponse, f.err = f.service.VolumeMigrate(ctx, req)
+	return nil
+}
+
+func (f *feature) aValidVolumeMigrateResponseIsReturned() error {
+	f.volumeMigrateResponse.MigratedVolume.FsType = "ext4"
+	f.volumeMigrateResponse.MigratedVolume.CapacityBytes = 3333333
+	return nil
+}
+
+func (f *feature) iCallVolumeMigrateReplToNonRepl() error {
+	header := metadata.New(map[string]string{"csi.requestid": "2"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := &migrext.VolumeMigrateRequest{
+		VolumeHandle: f.createVolumeResponse.GetVolume().VolumeId,
+		ScSourceParameters: map[string]string{
+			SymmetrixIDParam:     mock.DefaultSymmetrixID,
+			RemoteSymIDParam:     mock.DefaultRemoteSymID,
+			RepEnabledParam:      "true",
+			LocalRDFGroupParam:   "13",
+			RemoteRDFGroupParam:  "13",
+			ReplicationModeParam: Async,
+			CSIPVCNamespace:      "csi-test",
+			ServiceLevelParam:    mock.DefaultServiceLevel,
+			StoragePoolParam:     mock.DefaultStoragePool,
+			RemoteSRPParam:       mock.DefaultStoragePool,
+		},
+		ScParameters: map[string]string{
+			RepEnabledParam:   "false",
+			StoragePoolParam:  mock.DefaultStoragePool,
+			CSIPVCNamespace:   "csi-test",
+			SymmetrixIDParam:  mock.DefaultSymmetrixID,
+			ServiceLevelParam: mock.DefaultServiceLevel,
+		},
+		ShouldClone:  true,
+		StorageClass: "powermax",
+		MigrateTypes: &migrext.VolumeMigrateRequest_Type{Type: migrext.MigrateTypes_REPL_TO_NON_REPL},
+	}
+	f.volumeMigrateResponse, f.err = f.service.VolumeMigrate(ctx, req)
+	return nil
+}
+
+func (f *feature) iCallVolumeMigrateWithParams(repMode, sg, appPrefix string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "2"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := &migrext.VolumeMigrateRequest{
+		VolumeHandle: f.createVolumeResponse.GetVolume().VolumeId,
+		ScParameters: map[string]string{
+			SymmetrixIDParam:       mock.DefaultSymmetrixID,
+			RemoteSymIDParam:       mock.DefaultRemoteSymID,
+			RepEnabledParam:        "true",
+			LocalRDFGroupParam:     "13",
+			RemoteRDFGroupParam:    "13",
+			ReplicationModeParam:   repMode,
+			CSIPVCNamespace:        Namespace,
+			ServiceLevelParam:      mock.DefaultServiceLevel,
+			StoragePoolParam:       mock.DefaultStoragePool,
+			RemoteSRPParam:         mock.DefaultStoragePool,
+			StorageGroupParam:      sg,
+			ApplicationPrefixParam: appPrefix,
+		},
+		ScSourceParameters: map[string]string{
+			RepEnabledParam:   "false",
+			StoragePoolParam:  mock.DefaultStoragePool,
+			CSIPVCNamespace:   Namespace,
+			SymmetrixIDParam:  mock.DefaultSymmetrixID,
+			ServiceLevelParam: mock.DefaultServiceLevel,
+		},
+		ShouldClone:  true,
+		StorageClass: "powermax",
+		MigrateTypes: &migrext.VolumeMigrateRequest_Type{Type: migrext.MigrateTypes_NON_REPL_TO_REPL},
+	}
+	f.volumeMigrateResponse, f.err = f.service.VolumeMigrate(ctx, req)
+	return nil
+}
+
+func (f *feature) iCallVolumeMigrateWithVolID(volID string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "2"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := &migrext.VolumeMigrateRequest{
+		VolumeHandle: volID,
+		ScParameters: map[string]string{
+			SymmetrixIDParam:     mock.DefaultSymmetrixID,
+			RemoteSymIDParam:     mock.DefaultRemoteSymID,
+			RepEnabledParam:      "true",
+			LocalRDFGroupParam:   "13",
+			RemoteRDFGroupParam:  "13",
+			ReplicationModeParam: Async,
+			CSIPVCNamespace:      Namespace,
+			ServiceLevelParam:    mock.DefaultServiceLevel,
+			StoragePoolParam:     mock.DefaultStoragePool,
+			RemoteSRPParam:       mock.DefaultStoragePool,
+		},
+		ScSourceParameters: map[string]string{
+			RepEnabledParam:   "false",
+			StoragePoolParam:  mock.DefaultStoragePool,
+			CSIPVCNamespace:   Namespace,
+			SymmetrixIDParam:  mock.DefaultSymmetrixID,
+			ServiceLevelParam: mock.DefaultServiceLevel,
+		},
+		ShouldClone:  true,
+		StorageClass: "powermax",
+		MigrateTypes: &migrext.VolumeMigrateRequest_Type{Type: migrext.MigrateTypes_NON_REPL_TO_REPL},
+	}
+	f.volumeMigrateResponse, f.err = f.service.VolumeMigrate(ctx, req)
+	return nil
+}
+
+func (f *feature) iCallVolumeMigrateWithDifferentTypes(types string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "2"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	migrType := migrext.MigrateTypes_VERSION_UPGRADE
+	if types != "" {
+		migrType = migrext.MigrateTypes_UNKNOWN_MIGRATE
+	}
+	req := &migrext.VolumeMigrateRequest{
+		VolumeHandle: f.createVolumeResponse.GetVolume().VolumeId,
+		ScParameters: map[string]string{
+			SymmetrixIDParam:     mock.DefaultSymmetrixID,
+			RemoteSymIDParam:     mock.DefaultRemoteSymID,
+			RepEnabledParam:      "true",
+			LocalRDFGroupParam:   "13",
+			RemoteRDFGroupParam:  "13",
+			ReplicationModeParam: Async,
+			CSIPVCNamespace:      Namespace,
+			ServiceLevelParam:    mock.DefaultServiceLevel,
+			StoragePoolParam:     mock.DefaultStoragePool,
+			RemoteSRPParam:       mock.DefaultStoragePool,
+			StorageGroupParam:    mock.DefaultStorageGroup,
+		},
+		ScSourceParameters: map[string]string{
+			RepEnabledParam:   "false",
+			StoragePoolParam:  mock.DefaultStoragePool,
+			CSIPVCNamespace:   Namespace,
+			SymmetrixIDParam:  mock.DefaultSymmetrixID,
+			ServiceLevelParam: mock.DefaultServiceLevel,
+		},
+		ShouldClone:  true,
+		StorageClass: "powermax",
+		MigrateTypes: &migrext.VolumeMigrateRequest_Type{Type: migrType},
+	}
+	f.volumeMigrateResponse, f.err = f.service.VolumeMigrate(ctx, req)
+	return nil
+}
+
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -4199,4 +4375,10 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call BeforeServe with TopologyConfig set at "([^"]*)"$`, f.iCallBeforeServeWithTopologyConfigSetAt)
 	s.Step(`^I add a Topology keys filter "([^"]*)" and "([^"]*)"$`, f.iAddATopologyKeysFilterAnd)
 	s.Step(`^Topology keys are created properly$`, f.topologyKeysAreCreatedProperly)
+	s.Step(`^I call VolumeMigrate$`, f.iCallVolumeMigrate)
+	s.Step(`^I call VolumeMigrateReplToNonRepl$`, f.iCallVolumeMigrateReplToNonRepl)
+	s.Step(`^a valid VolumeMigrateResponse is returned$`, f.aValidVolumeMigrateResponseIsReturned)
+	s.Step(`^ICallWithVolIDVolumeMigrate "([^"]*)"$`, f.iCallVolumeMigrateWithVolID)
+	s.Step(`^ICallWithParamsVolumeMigrate "([^"]*)" "([^"]*)" "([^"]*)"$`, f.iCallVolumeMigrateWithParams)
+	s.Step(`^I call VolumeMigrateWithDifferentTypes "([^"]*)"$`, f.iCallVolumeMigrateWithDifferentTypes)
 }

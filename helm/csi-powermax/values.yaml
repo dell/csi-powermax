@@ -372,7 +372,7 @@ replication:
   enabled: false
   # Change this to use any specific version of the dell-csi-replicator sidecar
   # Default value: None
-  image: dellemc/dell-csi-replicator:v1.2.0
+  image: dellemc/dell-csi-replicator:v1.3.0
   # replicationContextPrefix enables side cars to read
   # required information from the volume context
   # Default value: "powermax"
@@ -382,6 +382,22 @@ replication:
   # Default value: "replication.storage.dell.com"
   # Examples: "replication.storage.dell.com", "rdf.storage.dell.com"
   replicationPrefix: "replication.storage.dell.com"
+
+# CSM module attributes
+# Set this to true to enable migration
+# Allowed values:
+#   "true" - migration is enabled
+#   "false" - migration is disabled
+# Default value: "false"
+migration:
+  enabled: false
+  # Change this to use any specific version of the dell-csi-migrator sidecar
+  # Default value: None
+  image: dellemc/dell-csi-migrator:v1.3.0
+  # migrationPrefix: Determine if migration is enabled
+  # Default value: "migration.storage.dell.com"
+  # Examples: "migration.storage.dell.com"
+  migrationPrefix: "migration.storage.dell.com"
 
 # CSM module attributes
 # authorization: enable csm-authorization for RBAC

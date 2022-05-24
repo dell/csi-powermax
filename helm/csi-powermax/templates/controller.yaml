@@ -81,6 +81,12 @@ rules:
     resources: ["configmaps"]
     verbs: ["create", "delete", "get", "list", "watch", "update", "patch"]
   {{- end}}
+  # below for dell-csi-migrator
+  {{- if eq .Values.migration.enabled true}}
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete", "get", "list", "watch", "update", "patch"]  
+  {{- end}}  
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -225,6 +231,32 @@ spec:
             - name: powermax-config-params
               mountPath: /powermax-config-params
         {{- end }}
+        {{- if eq .Values.migration.enabled true}}
+        - name: dell-csi-migrator
+          image: {{ required "Must provide the Dell CSI Migrator Resizer image." .Values.migration.image}}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--leader-election=true"
+            - "--worker-threads=2"
+            - "--retry-interval-start=1s"
+            - "--retry-interval-max=300s"
+            - "--timeout=300s"
+            - "--repl-prefix={{ .Values.replication.replicationPrefix}}"
+            - "--prefix={{ .Values.migration.migrationPrefix}}"
+          env:
+            - name: ADDRESS
+              value: /var/run/csi/csi.sock
+            - name: X_CSI_REPLICATION_CONFIG_DIR
+              value: /powermax-config-params
+            - name: X_CSI_REPLICATION_CONFIG_FILE_NAME
+              value: driver-config-params.yaml
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/csi
+            - name: powermax-config-params
+              mountPath: /powermax-config-params
+        {{- end }}  
         {{- if hasKey .Values.controller "resizer" }}
         {{- if eq .Values.controller.resizer.enabled true }}
         - name: resizer
@@ -374,6 +406,8 @@ spec:
               value: {{ .Values.replication.replicationContextPrefix | default "powermax"}}
             - name: X_CSI_REPLICATION_PREFIX
               value: {{ .Values.replication.replicationPrefix | default "replication.storage.dell.com"}}
+            - name: X_CSI_MIGRATION_PREFIX
+              value: {{ .Values.migration.migrationPrefix | default "migration.storage.dell.com"}}  
             - name: X_CSI_UNISPHERE_TIMEOUT
               value: {{.Values.unisphereTimeout | default "5m"}}
             {{- if hasKey .Values.controller "healthMonitor" }}
