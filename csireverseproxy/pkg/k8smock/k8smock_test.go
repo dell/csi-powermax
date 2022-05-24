@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 	}
 	err := utils.RemoveTempFiles()
 	if err != nil {
-		log.Fatalf("Failed to cleanup temp files. (%s)\n", err.Error())
+		log.Fatalf("Failed to cleanup temp files. (%s)", err.Error())
 		status = 1
 	}
 	os.Exit(status)

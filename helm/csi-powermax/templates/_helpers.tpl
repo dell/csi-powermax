@@ -3,7 +3,7 @@ Return the appropriate sidecar images based on k8s version
 */}}
 {{- define "csi-powermax.attacherImage" -}}
   {{- if eq .Capabilities.KubeVersion.Major "1" }}
-    {{- if and (ge (trimSuffix "+" .Capabilities.KubeVersion.Minor) "21") (le (trimSuffix "+" .Capabilities.KubeVersion.Minor) "23") -}}
+    {{- if and (ge (trimSuffix "+" .Capabilities.KubeVersion.Minor) "21") (le (trimSuffix "+" .Capabilities.KubeVersion.Minor) "24") -}}
       {{- print "k8s.gcr.io/sig-storage/csi-attacher:v3.4.0" -}}
     {{- end -}}
   {{- end -}}
@@ -11,7 +11,7 @@ Return the appropriate sidecar images based on k8s version
 
 {{- define "csi-powermax.provisionerImage" -}}
   {{- if eq .Capabilities.KubeVersion.Major "1" }}
-    {{- if and (ge (trimSuffix "+" .Capabilities.KubeVersion.Minor) "21") (le (trimSuffix "+" .Capabilities.KubeVersion.Minor) "23") -}}
+    {{- if and (ge (trimSuffix "+" .Capabilities.KubeVersion.Minor) "21") (le (trimSuffix "+" .Capabilities.KubeVersion.Minor) "24") -}}
       {{- print "k8s.gcr.io/sig-storage/csi-provisioner:v3.1.0" -}}
     {{- end -}}
   {{- end -}}
@@ -19,7 +19,7 @@ Return the appropriate sidecar images based on k8s version
 
 {{- define "csi-powermax.snapshotterImage" -}}
   {{- if eq .Capabilities.KubeVersion.Major "1" }}
-    {{- if and (ge (trimSuffix "+" .Capabilities.KubeVersion.Minor) "21") (le (trimSuffix "+" .Capabilities.KubeVersion.Minor) "23") -}}
+    {{- if and (ge (trimSuffix "+" .Capabilities.KubeVersion.Minor) "21") (le (trimSuffix "+" .Capabilities.KubeVersion.Minor) "24") -}}
       {{- print "k8s.gcr.io/sig-storage/csi-snapshotter:v5.0.1" -}}
     {{- end -}}
   {{- end -}}
@@ -27,7 +27,7 @@ Return the appropriate sidecar images based on k8s version
 
 {{- define "csi-powermax.resizerImage" -}}
   {{- if eq .Capabilities.KubeVersion.Major "1" }}
-    {{- if and (ge (trimSuffix "+" .Capabilities.KubeVersion.Minor) "21") (le (trimSuffix "+" .Capabilities.KubeVersion.Minor) "23") -}}
+    {{- if and (ge (trimSuffix "+" .Capabilities.KubeVersion.Minor) "21") (le (trimSuffix "+" .Capabilities.KubeVersion.Minor) "24") -}}
       {{- print "k8s.gcr.io/sig-storage/csi-resizer:v1.4.0" -}}
     {{- end -}}
   {{- end -}}
@@ -35,16 +35,16 @@ Return the appropriate sidecar images based on k8s version
 
 {{- define "csi-powermax.registrarImage" -}}
   {{- if eq .Capabilities.KubeVersion.Major "1" }}
-    {{- if and (ge (trimSuffix "+" .Capabilities.KubeVersion.Minor) "21") (le (trimSuffix "+" .Capabilities.KubeVersion.Minor) "23") -}}
-      {{- print "k8s.gcr.io/sig-storage/csi-node-driver-registrar:v2.5.0" -}}
+    {{- if and (ge (trimSuffix "+" .Capabilities.KubeVersion.Minor) "21") (le (trimSuffix "+" .Capabilities.KubeVersion.Minor) "24") -}}
+      {{- print "k8s.gcr.io/sig-storage/csi-node-driver-registrar:v2.5.1" -}}
     {{- end -}}
   {{- end -}}
 {{- end -}}
 
 {{- define "csi-powermax.healthmonitorImage" -}}
   {{- if eq .Capabilities.KubeVersion.Major "1" }}
-    {{- if and (ge (trimSuffix "+" .Capabilities.KubeVersion.Minor) "21") (le (trimSuffix "+" .Capabilities.KubeVersion.Minor) "23") -}}
-      {{- print "gcr.io/k8s-staging-sig-storage/csi-external-health-monitor-controller:v0.4.0" -}}
+    {{- if and (ge (trimSuffix "+" .Capabilities.KubeVersion.Minor) "21") (le (trimSuffix "+" .Capabilities.KubeVersion.Minor) "24") -}}
+      {{- print "gcr.io/k8s-staging-sig-storage/csi-external-health-monitor-controller:v0.5.0" -}}
     {{- end -}}
   {{- end -}}
 {{- end -}}

@@ -70,7 +70,7 @@ global:
 
 # Current version of the driver
 # Don't modify this value as this value will be used by the install script
-version: "v2.2.0"
+version: "v2.3.0"
 
 images:
   # "driver" defines the container image, used for the driver container.
@@ -111,6 +111,16 @@ imagePullPolicy: IfNotPresent
 # Ensure that the config.yaml file is present at this path.
 # Default value: None
 kubeletConfigDir: /var/lib/kubelet
+
+# fsGroupPolicy: Defines if the underlying volume supports changing ownership and permission of the volume before being mounted.
+# Allowed values:
+#   ReadWriteOnceWithFSType: supports volume ownership and permissions change only if the fsType is defined
+#   and the volume's accessModes contains ReadWriteOnce.
+#   File: kubernetes may use fsGroup to change permissions and ownership of the volume 
+#   to match user requested fsGroup in the pod's security policy regardless of fstype or access mode.
+#   None: volumes will be mounted with no modifications.
+# Default value: ReadWriteOnceWithFSType
+fsGroupPolicy: ReadWriteOnceWithFSType
 
 # controller: configure controller specific parameters
 controller:
@@ -216,7 +226,17 @@ node:
     # Allowed values:
     #   true: enable checking of health condition of CSI volumes
     #   false: disable checking of health condition of CSI volumes
-    # Default value: None
+    # Default value: false
+    enabled: false
+
+  # Topology control provides a way to filter topology keys
+  # Please refer to the doc website about a detailed explanation on its configuration and usage
+  topologyControl:
+    # enabled: Enable/Disable Topology Control
+    # Allowed values:
+    #   true: enable the filtration based on config map
+    #   false: disable the filtration based on config map
+    # Default value: false
     enabled: false
 
 # enableCHAP: Determine if the driver is going to configure
@@ -400,4 +420,3 @@ authorization:
   #   "false" - TLS certificate will be verified 
   # Default value: "true" 
   skipCertificateValidation: true
-

@@ -27,7 +27,10 @@ import (
 	"time"
 
 	migrext "github.com/dell/dell-csi-extensions/migration"
+	"github.com/dell/gocsi"
+
 	csiext "github.com/dell/dell-csi-extensions/replication"
+
 	log "github.com/sirupsen/logrus"
 
 	pmax "github.com/dell/gopowermax"
@@ -171,23 +174,24 @@ type feature struct {
 }
 
 var inducedErrors struct {
-	invalidSymID        bool
-	invalidStoragePool  bool
-	invalidServiceLevel bool
-	rescanError         bool
-	noDeviceWWNError    bool
-	badVolumeIdentifier bool
-	invalidVolumeID     bool
-	noVolumeID          bool
-	invalidSnapID       bool
-	differentVolumeID   bool
-	portGroupError      bool
-	noSymID             bool
-	noNodeName          bool
-	noIQNs              bool
-	nonExistentVolume   bool
-	noVolumeSource      bool
-	noMountInfo         bool
+	invalidSymID           bool
+	invalidStoragePool     bool
+	invalidServiceLevel    bool
+	rescanError            bool
+	noDeviceWWNError       bool
+	badVolumeIdentifier    bool
+	invalidVolumeID        bool
+	noVolumeID             bool
+	invalidSnapID          bool
+	differentVolumeID      bool
+	portGroupError         bool
+	noSymID                bool
+	noNodeName             bool
+	noIQNs                 bool
+	nonExistentVolume      bool
+	noVolumeSource         bool
+	noMountInfo            bool
+	invalidTopologyPathEnv bool
 }
 
 type failedSnap struct {
@@ -362,7 +366,7 @@ func (f *feature) aPowerMaxService() error {
 			f.server = httptest.NewServer(handler)
 		}
 		f.service.opts.Endpoint = f.server.URL
-		log.Printf("server url: %s\n", f.server.URL)
+		log.Printf("server url: %s", f.server.URL)
 	} else {
 		f.server = nil
 	}
@@ -671,6 +675,29 @@ func (f *feature) iCallCreateVolume(name string) error {
 
 	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
 	if f.err != nil {
+		log.Printf("CreateVolume called failed: %s", f.err.Error())
+	}
+	if f.createVolumeResponse != nil {
+		log.Printf("vol id %s", f.createVolumeResponse.GetVolume().VolumeId)
+		f.volumeID = f.createVolumeResponse.GetVolume().VolumeId
+		f.volumeNameToID[name] = f.volumeID
+	}
+	return nil
+}
+
+func (f *feature) iCallCreateVolumeWithNamespace(name string, namespace string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	if f.createVolumeRequest == nil {
+		req := f.getTypicalCreateVolumeRequest()
+		f.createVolumeRequest = req
+	}
+	req := f.createVolumeRequest
+	req.Name = name
+	req.Parameters[CSIPVCNamespace] = namespace
+
+	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
+	if f.err != nil {
 		log.Printf("CreateVolume called failed: %s\n", f.err.Error())
 	}
 	if f.createVolumeResponse != nil {
@@ -678,6 +705,20 @@ func (f *feature) iCallCreateVolume(name string) error {
 		f.volumeID = f.createVolumeResponse.GetVolume().VolumeId
 		f.volumeNameToID[name] = f.volumeID
 	}
+
+	vol, _, _, _, _, err := f.service.parseCsiID(f.volumeID)
+	if err != nil {
+		log.Printf("volID: %s malformed. Error: %s", vol, f.err.Error())
+	}
+
+	// get the namespace from volume name and validate
+	volNameComponents := strings.Split(vol, "-")
+	numOfIDComponents := len(volNameComponents)
+	namespaceValue := volNameComponents[numOfIDComponents-1]
+	if namespaceValue != namespace {
+		return errors.New("Namespace is not appended")
+	}
+
 	return nil
 }
 
@@ -695,10 +736,10 @@ func (f *feature) iCallRDFEnabledCreateVolume(volName, namespace, mode string, r
 	req.Parameters[LocalRDFGroupParam] = fmt.Sprintf("%d", rdfgNo)
 	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
 	if f.err != nil {
-		log.Printf("CreateVolume called failed: %s\n", f.err.Error())
+		log.Printf("CreateVolume called failed: %s", f.err.Error())
 	}
 	if f.createVolumeResponse != nil {
-		log.Printf("vol id %s\n", f.createVolumeResponse.GetVolume().VolumeId)
+		log.Printf("vol id %s", f.createVolumeResponse.GetVolume().VolumeId)
 		f.volumeID = f.createVolumeResponse.GetVolume().VolumeId
 		f.volumeNameToID[volName] = f.volumeID
 	}
@@ -847,10 +888,10 @@ func (f *feature) iCallCreateVolumeSize(name string, size int64) error {
 
 	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
 	if f.err != nil {
-		log.Printf("CreateVolumeSize called failed: %s\n", f.err.Error())
+		log.Printf("CreateVolumeSize called failed: %s", f.err.Error())
 	}
 	if f.createVolumeResponse != nil {
-		log.Printf("vol id %s\n", f.createVolumeResponse.GetVolume().VolumeId)
+		log.Printf("vol id %s", f.createVolumeResponse.GetVolume().VolumeId)
 		f.volumeID = f.createVolumeResponse.GetVolume().VolumeId
 		f.volumeNameToID[name] = f.volumeID
 	}
@@ -867,7 +908,7 @@ func (f *feature) iChangeTheStoragePool(storagePoolName string) error {
 }
 
 func (f *feature) iInduceError(errtype string) error {
-	log.Printf("set induce error %s\n", errtype)
+	log.Printf("set induce error %s", errtype)
 	f.errType = errtype
 	switch errtype {
 	case "InvalidSymID":
@@ -1163,6 +1204,8 @@ func (f *feature) iInduceError(errtype string) error {
 		f.iInvalidateTheNodeID()
 	case "NoMountInfo":
 		inducedErrors.noMountInfo = true
+	case "InvalidTopologyConfigEnv":
+		inducedErrors.invalidTopologyPathEnv = true
 	case "none":
 		return nil
 	default:
@@ -1459,7 +1502,7 @@ func (f *feature) iCallPublishVolumeWithTo(accessMode, nodeID string) error {
 	log.Printf("Calling controllerPublishVolume")
 	f.publishVolumeResponse, f.err = f.service.ControllerPublishVolume(ctx, req)
 	if f.err != nil {
-		log.Printf("PublishVolume call failed: %s\n", f.err.Error())
+		log.Printf("PublishVolume call failed: %s", f.err.Error())
 	}
 	f.publishVolumeRequest = nil
 	return nil
@@ -1578,7 +1621,7 @@ func (f *feature) iCallUnpublishVolumeFrom(nodeID string) error {
 	log.Printf("Calling controllerUnpublishVolume: %s", req.VolumeId)
 	f.unpublishVolumeResponse, f.err = f.service.ControllerUnpublishVolume(ctx, req)
 	if f.err != nil {
-		log.Printf("UnpublishVolume call failed: %s\n", f.err.Error())
+		log.Printf("UnpublishVolume call failed: %s", f.err.Error())
 	}
 	return nil
 }
@@ -1619,6 +1662,30 @@ func (f *feature) aValidNodeGetInfoResponseIsReturned() error {
 	return nil
 }
 
+func (f *feature) iAddATopologyKeysFilterAnd(allowedList, deniedList string) error {
+	//  | "*-000197900046."         | "Node1-000197900047.iscsi"  |
+	allowed := strings.Split(allowedList, "-")
+	f.service.allowedTopologyKeys = map[string][]string{
+		allowed[0]: allowed[1:],
+	}
+	denied := strings.Split(deniedList, "-")
+	f.service.deniedTopologyKeys = map[string][]string{
+		denied[0]: denied[1:],
+	}
+	f.service.opts.IsTopologyControlEnabled = true
+	f.service.arrayTransportProtocolMap["000197900046"] = FcTransportProtocol
+	f.service.arrayTransportProtocolMap["000197900047"] = IscsiTransportProtocol
+	return nil
+}
+
+func (f *feature) topologyKeysAreCreatedProperly() error {
+	if f.nodeGetInfoResponse.AccessibleTopology == nil {
+		return errors.New("toplogy keys not created properly")
+	}
+	fmt.Printf("TopologyKeys: (%+v)", f.nodeGetInfoResponse.AccessibleTopology)
+	return nil
+}
+
 func (f *feature) iCallDeleteVolumeWith(arg1 string) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
@@ -1630,7 +1697,7 @@ func (f *feature) iCallDeleteVolumeWith(arg1 string) error {
 	log.Printf("Calling DeleteVolume")
 	f.deleteVolumeResponse, f.err = f.service.DeleteVolume(ctx, req)
 	if f.err != nil {
-		log.Printf("DeleteVolume called failed: %s\n", f.err.Error())
+		log.Printf("DeleteVolume called failed: %s", f.err.Error())
 	}
 	return nil
 }
@@ -1685,7 +1752,7 @@ func (f *feature) iCallGetCapacityWithStoragePool(srpID string) error {
 		req.Parameters[StoragePoolParam], req.Parameters[SymmetrixIDParam])
 	f.getCapacityResponse, f.err = f.service.GetCapacity(ctx, req)
 	if f.err != nil {
-		log.Printf("GetCapacity call failed: %s\n", f.err.Error())
+		log.Printf("GetCapacity call failed: %s", f.err.Error())
 		return nil
 	}
 	return nil
@@ -1700,7 +1767,7 @@ func (f *feature) iCallGetCapacityWithoutSymmetrixID() error {
 	req.Parameters = parameters
 	f.getCapacityResponse, f.err = f.service.GetCapacity(ctx, req)
 	if f.err != nil {
-		log.Printf("GetCapacity call failed: %s\n", f.err.Error())
+		log.Printf("GetCapacity call failed: %s", f.err.Error())
 		return nil
 	}
 	return nil
@@ -1713,7 +1780,7 @@ func (f *feature) iCallGetCapacityWithoutParameters() error {
 	req.Parameters = nil
 	f.getCapacityResponse, f.err = f.service.GetCapacity(ctx, req)
 	if f.err != nil {
-		log.Printf("GetCapacity call failed: %s\n", f.err.Error())
+		log.Printf("GetCapacity call failed: %s", f.err.Error())
 		return nil
 	}
 	return nil
@@ -1728,7 +1795,7 @@ func (f *feature) iCallGetCapacityWithInvalidCapabilities() error {
 	req.Parameters = parameters
 	f.getCapacityResponse, f.err = f.service.GetCapacity(ctx, req)
 	if f.err != nil {
-		log.Printf("GetCapacity call failed: %s\n", f.err.Error())
+		log.Printf("GetCapacity call failed: %s", f.err.Error())
 		return nil
 	}
 	return nil
@@ -1755,7 +1822,7 @@ func (f *feature) iCallControllerGetCapabilities() error {
 	log.Printf("Calling ControllerGetCapabilities")
 	f.controllerGetCapabilitiesResponse, f.err = f.service.ControllerGetCapabilities(ctx, req)
 	if f.err != nil {
-		log.Printf("ControllerGetCapabilities call failed: %s\n", f.err.Error())
+		log.Printf("ControllerGetCapabilities call failed: %s", f.err.Error())
 		return f.err
 	}
 	return nil
@@ -1829,7 +1896,7 @@ func (f *feature) iCallListVolumesWith(dt *messages.PickleStepArgument_PickleTab
 	log.Printf("Calling ListVolumes with req=%+v", f.listVolumesRequest)
 	f.listVolumesResponse, f.err = f.service.ListVolumes(ctx, req)
 	if f.err != nil {
-		log.Printf("ListVolume called failed: %s\n", f.err.Error())
+		log.Printf("ListVolume called failed: %s", f.err.Error())
 	} else if f.listVolumesResponse == nil {
 		log.Printf("Received null response from ListVolumes")
 	} else {
@@ -2363,6 +2430,24 @@ func (f *feature) iCallBeforeServeWithAnInvalidClusterPrefix() error {
 	ctxOSEnviron := interface{}("os.Environ")
 	stringSlice := f.getTypicalEnviron()
 	stringSlice = append(stringSlice, EnvClusterPrefix+"=LONG")
+	ctx := context.WithValue(context.Background(), ctxOSEnviron, stringSlice)
+	listener, err := net.Listen("tcp", "127.0.0.1:65000")
+	if err != nil {
+		return err
+	}
+	f.err = f.service.BeforeServe(ctx, nil, listener)
+	listener.Close()
+	return nil
+}
+
+func (f *feature) iCallBeforeServeWithTopologyConfigSetAt(path string) error {
+	ctxOSEnviron := interface{}("os.Environ")
+	stringSlice := f.getTypicalEnviron()
+	stringSlice = append(stringSlice, EnvClusterPrefix+"=TST")
+	if !inducedErrors.invalidTopologyPathEnv {
+		stringSlice = append(stringSlice, EnvTopoConfigFilePath+"="+path)
+	}
+	stringSlice = append(stringSlice, gocsi.EnvVarMode+"=node")
 	ctx := context.WithValue(context.Background(), ctxOSEnviron, stringSlice)
 	listener, err := net.Listen("tcp", "127.0.0.1:65000")
 	if err != nil {
@@ -4286,6 +4371,10 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call DiscoverRemoteVolume$`, f.iCallDiscoverRemoteVolume)
 	s.Step(`^I call DeleteStorageProtectionGroup on "([^"]*)"$`, f.iCallDeleteStorageProtectionGroup)
 	s.Step(`^deletion worker timed out for "([^"]*)"$`, f.deletionWorkerTimedOutFor)
+	s.Step(`^I call CreateVolume "([^"]*)" with namespace "([^"]*)"$`, f.iCallCreateVolumeWithNamespace)
+	s.Step(`^I call BeforeServe with TopologyConfig set at "([^"]*)"$`, f.iCallBeforeServeWithTopologyConfigSetAt)
+	s.Step(`^I add a Topology keys filter "([^"]*)" and "([^"]*)"$`, f.iAddATopologyKeysFilterAnd)
+	s.Step(`^Topology keys are created properly$`, f.topologyKeysAreCreatedProperly)
 	s.Step(`^I call VolumeMigrate$`, f.iCallVolumeMigrate)
 	s.Step(`^I call VolumeMigrateReplToNonRepl$`, f.iCallVolumeMigrateReplToNonRepl)
 	s.Step(`^a valid VolumeMigrateResponse is returned$`, f.aValidVolumeMigrateResponseIsReturned)

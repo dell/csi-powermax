@@ -400,7 +400,7 @@ func (revProxy *StandAloneProxy) GetRouter() http.Handler {
 func (revProxy *StandAloneProxy) ifNoSymIDInvoke(customHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if symid, ok := revProxy.getSymID(r); ok {
-			log.Debugf("Invoking revproxy client for %s.\n", symid)
+			log.Debugf("Invoking revproxy client for %s.", symid)
 			revProxy.ServeReverseProxy(w, r)
 		} else {
 			log.Debug("Invoking the common handler.")

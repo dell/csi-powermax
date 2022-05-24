@@ -155,7 +155,7 @@ func CleanupMapEntries(duration time.Duration) {
 						break
 					}
 					if lockInfo.CurrentLockNumber == -1 {
-						log.Debugf("CleanupMapEntries: Removing stale entry from the lockmap for: %s\n", resourceID)
+						log.Debugf("CleanupMapEntries: Removing stale entry from the lockmap for: %s", resourceID)
 						delete(fifolocks, resourceID)
 					}
 				}

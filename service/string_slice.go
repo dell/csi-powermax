@@ -37,7 +37,7 @@ func stringSlicesEqual(a, b []string) bool {
 // stringSliceRegexMatcher returns an updated slice with members from the original slice that matched the regexpPattern
 // The input slice is not changed
 func stringSliceRegexMatcher(slice []string, regexpPattern string) []string {
-	//log.Debug("Regex pattern %s slice: %s\n", regexpPattern, slice)
+	//log.Debug("Regex pattern %s slice: %s", regexpPattern, slice)
 	out := make([]string, 0)
 	for _, str := range slice {
 		matched, err := regexp.MatchString(regexpPattern, str)
@@ -49,7 +49,7 @@ func stringSliceRegexMatcher(slice []string, regexpPattern string) []string {
 			out = append(out, str)
 		}
 	}
-	//log.Debug("Regex out: %s\n", out)
+	//log.Debug("Regex out: %s", out)
 	return out
 }
 
@@ -60,7 +60,7 @@ func stringSliceRegexReplace(slice []string, regexpPattern string, replacement s
 	for i := range slice {
 		slice[i] = re.ReplaceAllString(slice[i], replacement)
 	}
-	//log.Debug("ReplaceAll slice: %s\n", slice)
+	//log.Debug("ReplaceAll slice: %s", slice)
 }
 
 // AppendIfMissing - Appends a string to a slice if not already present

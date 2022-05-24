@@ -165,6 +165,8 @@ spec:
               value: /certs
             - name: X_CSI_POWERMAX_CONFIG_PATH
               value: /powermax-config-params/driver-config-params.yaml
+            - name: X_CSI_POWERMAX_TOPOLOGY_CONFIG_PATH
+              value: /node-topology-config/topologyConfig.yaml
             - name: X_CSI_IG_NODENAME_TEMPLATE
               value: {{ .Values.nodeNameTemplate | default "" }}
             - name: X_CSI_IG_MODIFY_HOSTNAME
@@ -175,6 +177,12 @@ spec:
             {{- if eq .Values.node.healthMonitor.enabled true }}
             - name: X_CSI_HEALTH_MONITOR_ENABLED
               value: "{{ .Values.node.healthMonitor.enabled }}"
+            {{- end }}
+            {{- end }}
+            {{- if hasKey .Values.node "topologyControl" }}
+            {{- if eq .Values.node.topologyControl.enabled true }}
+            - name: X_CSI_TOPOLOGY_CONTROL_ENABLED
+              value: "{{ .Values.node.topologyControl.enabled }}"
             {{- end }}
             {{- end }}
           volumeMounts:
@@ -199,6 +207,12 @@ spec:
               mountPath: /run/dbus/system_bus_socket
             - name: powermax-config-params
               mountPath: /powermax-config-params
+            {{- if hasKey .Values.node "topologyControl" }}
+            {{- if eq .Values.node.topologyControl.enabled true }}
+            - name: node-topology-config
+              mountPath: /node-topology-config
+            {{- end }}
+            {{- end }}
         - name: registrar
           image: {{ required "Must provide the CSI node registrar container image." ( include "csi-powermax.registrarImage" . ) }}
           args:
@@ -288,6 +302,13 @@ spec:
         - name: powermax-config-params
           configMap:
             name: {{ .Release.Name }}-config-params
+      {{- if hasKey .Values "topologyControl" }}
+      {{- if eq .Values.topologyControl.enabled true }}
+        - name: node-topology-config
+          configMap:
+            name: node-topology-config
+      {{- end }}
+      {{- end }}
         - name: certs
           secret:
               secretName: {{ .Release.Name }}-certs

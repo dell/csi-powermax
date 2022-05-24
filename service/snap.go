@@ -367,10 +367,10 @@ func (s *service) IsVolumeInSnapSession(ctx context.Context, symID, deviceID str
 func (s *service) GetSnapSessions(ctx context.Context, symID, deviceID string, pmaxClient pmax.Pmax) (srcSession []SnapSession, tgtSession *SnapSession, err error) {
 	snapInfo, err := pmaxClient.GetVolumeSnapInfo(ctx, symID, deviceID)
 	if err != nil {
-		log.Errorf("GetVolumeSnapInfo failed for (%s): (%s)\n", deviceID, err.Error())
+		log.Errorf("GetVolumeSnapInfo failed for (%s): (%s)", deviceID, err.Error())
 		return
 	}
-	log.Debugf("For Volume (%s), Snap Info: %v\n", deviceID, snapInfo)
+	log.Debugf("For Volume (%s), Snap Info: %v", deviceID, snapInfo)
 	for _, volumeSnapshotSource := range snapInfo.VolumeSnapshotSource {
 		snapSession := SnapSession{
 			Source:     deviceID,
@@ -393,10 +393,10 @@ func (s *service) GetSnapSessions(ctx context.Context, symID, deviceID string, p
 		var pVolInfo *types.VolumeResultPrivate
 		pVolInfo, err = pmaxClient.GetPrivVolumeByID(ctx, symID, deviceID)
 		if err != nil {
-			log.Errorf("GetPrivVolumeByID failed for (%s): (%s)\n", deviceID, err.Error())
+			log.Errorf("GetPrivVolumeByID failed for (%s): (%s)", deviceID, err.Error())
 			return
 		}
-		log.Debugf("For Volume (%s), Priv Vol Info: %v\n", deviceID, pVolInfo)
+		log.Debugf("For Volume (%s), Priv Vol Info: %v", deviceID, pVolInfo)
 		//Ensure that this indeed is a target device
 		if &pVolInfo.TimeFinderInfo != nil &&
 			pVolInfo.TimeFinderInfo.SnapVXTgt {
