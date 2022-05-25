@@ -89,7 +89,7 @@ parameters:
   replication.storage.dell.com/remoteStorageClassName: <RemoteStorageClassName>
   # ClusterID to which resources will get replicated
   # Optional: false
-  # Examples: "clustermaster", "masternode"
+  # Examples: "remotecluster", "remotenode"
   replication.storage.dell.com/remoteClusterID: <RemoteClusterID>
 # If using custom driver name, change the following to point to the custom name
 # Optional: true, Default value: csi-powermax.dellemc.com
