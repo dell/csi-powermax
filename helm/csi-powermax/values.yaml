@@ -178,7 +178,6 @@ controller:
   # Leave as blank to install controller on worker nodes
   # Allowed values: map of key-value pairs
   # Default value: None
-  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
   tolerations:
   # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
   #  - key: "node-role.kubernetes.io/master"
