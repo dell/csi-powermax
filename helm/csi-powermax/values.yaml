@@ -180,15 +180,12 @@ controller:
   # Default value: None
   # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
   tolerations:
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
   #  - key: "node-role.kubernetes.io/master"
-  #    operator: "Exists"
-  #    effect: "NoSchedule"
   # Uncomment if nodes you wish to use have the node-role.kubernetes.io/control-plane taint
-  tolerations:
   #  - key: "node-role.kubernetes.io/control-plane"
   #    operator: "Exists"
   #    effect: "NoSchedule"
-
 
   # health monitor showcase the volume usage and volume condition
   healthMonitor:
