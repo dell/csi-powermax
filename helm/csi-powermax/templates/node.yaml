@@ -302,8 +302,8 @@ spec:
         - name: powermax-config-params
           configMap:
             name: {{ .Release.Name }}-config-params
-      {{- if hasKey .Values "topologyControl" }}
-      {{- if eq .Values.topologyControl.enabled true }}
+      {{- if hasKey .Values.node "topologyControl" }}
+      {{- if eq .Values.node.topologyControl.enabled true }}
         - name: node-topology-config
           configMap:
             name: node-topology-config
