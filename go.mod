@@ -15,7 +15,7 @@ require (
 	github.com/dell/gobrick v1.3.1-0.20220525051543-433fed5396a4
 	github.com/dell/gocsi v1.5.2-0.20220525142554-48ff29a07e1e
 	github.com/dell/gofsutil v1.8.0
-	github.com/dell/goiscsi v1.3.1-0.20220525051619-3944cb24c7f4
+	github.com/dell/goiscsi v1.3.1-0.20220602105959-3ba7fba52ffd
 	github.com/dell/gopowermax v1.7.1-0.20220426071218-d075b644561b
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.2
