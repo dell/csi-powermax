@@ -643,7 +643,7 @@ func (s *service) NodeUnpublishVolume(
 		return nil, err
 	}
 
-	log.Infof("lastUmounted %v\n", lastUnmounted)
+	log.Infof("lastUnmounted %v", lastUnmounted)
 	if lastUnmounted {
 		removeWithRetry(target) // #nosec G20
 		return &csi.NodeUnpublishVolumeResponse{}, nil
@@ -796,7 +796,7 @@ func (s *service) isISCSIConnected(err error) bool {
 	return false
 }
 
-func (s *service) createTopologyMap(ctx context.Context) (map[string]string, error) {
+func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[string]string, error) {
 	topology := map[string]string{}
 	iscsiArrays := make([]string, 0)
 
@@ -850,20 +850,70 @@ func (s *service) createTopologyMap(ctx context.Context) (map[string]string, err
 	}
 
 	for array, protocol := range s.arrayTransportProtocolMap {
-		if protocol == FcTransportProtocol {
+		if protocol == FcTransportProtocol && s.checkIfArrayProtocolValid(nodeName, array, strings.ToLower(FcTransportProtocol)) {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(FcTransportProtocol)] = s.getDriverName()
 		}
 	}
 
 	for _, array := range iscsiArrays {
-		if _, ok := topology[s.getDriverName()+"/"+array]; !ok {
+		if _, ok := topology[s.getDriverName()+"/"+array]; !ok &&
+			s.checkIfArrayProtocolValid(nodeName, array, strings.ToLower(IscsiTransportProtocol)) {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(IscsiTransportProtocol)] = s.getDriverName()
 		}
 	}
 
 	return topology, nil
+}
+
+// checkIfArrayProtocolValid returns true if the  pair (array and protocol) is applicable for the given node based on config
+// if the pair is present in allow rules, it is applied in the topology keys map
+// if the pair is present in deny rules, it is skipped in the topology keys map
+func (s *service) checkIfArrayProtocolValid(nodeName string, array string, protocol string) bool {
+	if !s.opts.IsTopologyControlEnabled {
+		return true
+	}
+
+	key := fmt.Sprintf("%s.%s", array, protocol)
+	log.Debugf("Checking topology config for allow rules for key (%s)", key)
+	// Check topo key pair as per rules in allow list
+	if allowedList, ok := s.allowedTopologyKeys[nodeName]; ok {
+		if !checkIfKeyIsIncludedOrNot(allowedList, key) {
+			return false
+		}
+	} else if allowedList, ok := s.allowedTopologyKeys["*"]; ok {
+		if !checkIfKeyIsIncludedOrNot(allowedList, key) {
+			return false
+		}
+	}
+
+	log.Debugf("Checking topology config for deny rules for key (%s)", key)
+	// Check topo keys as per rules in denied list
+	if deniedList, ok := s.deniedTopologyKeys[nodeName]; ok {
+		if checkIfKeyIsIncludedOrNot(deniedList, key) {
+			return false
+		}
+	} else if deniedList, ok := s.deniedTopologyKeys["*"]; ok {
+		if checkIfKeyIsIncludedOrNot(deniedList, key) {
+			return false
+		}
+	}
+	log.Debugf("applied topo key for node %s : %+v", nodeName, key)
+	return true
+}
+
+// checkIfKeyIsIncludedOrNot will crosscheck the key with the applied rules in the config.
+// returns true if it founds the key in the rules.
+func checkIfKeyIsIncludedOrNot(rulesList []string, key string) bool {
+	found := false
+	for _, rule := range rulesList {
+		if strings.Contains(key, rule) {
+			found = true
+			break
+		}
+	}
+	return found
 }
 
 // NodeGetInfo minimal version. Returns the NodeId
@@ -880,9 +930,9 @@ func (s *service) NodeGetInfo(
 			"Unable to get Node Name from the environment")
 	}
 
-	topology, err := s.createTopologyMap(ctx)
+	topology, err := s.createTopologyMap(ctx, s.opts.NodeName)
 	if err != nil {
-		log.Errorf("Unable to get the list of symmetrix ids. (%s)\n", err.Error())
+		log.Errorf("Unable to get the list of symmetrix ids. (%s)", err.Error())
 		return nil, status.Error(codes.FailedPrecondition,
 			"Unable to get the list of symmetrix ids")
 	}
@@ -1111,7 +1161,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		log.Error("nodeStartup could not GetInitiatorIQNs")
 	}
 
-	log.Infof("TransportProtocol %s FC portWWNs: %s ... IQNs: %s\n", s.opts.TransportProtocol, portWWNs, IQNs)
+	log.Infof("TransportProtocol %s FC portWWNs: %s ... IQNs: %s", s.opts.TransportProtocol, portWWNs, IQNs)
 	// The driver needs at least one FC or iSCSI initiator to be defined
 	if len(portWWNs) == 0 && len(IQNs) == 0 {
 		return fmt.Errorf("No FC or iSCSI initiators were found and at least 1 is required")
@@ -1154,7 +1204,7 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 		}
 		for _, initiatorID := range initList.InitiatorIDs {
 			if initiatorID == nodeInitiator || strings.HasSuffix(initiatorID, nodeInitiator) {
-				log.Infof("Checking initiator %s against host %s\n", initiatorID, hostID)
+				log.Infof("Checking initiator %s against host %s", initiatorID, hostID)
 				initiator, err := pmaxClient.GetInitiatorByID(ctx, symID, initiatorID)
 				if err != nil {
 					log.Warning("Failed to fetch initiator details for initiator: " + initiatorID)
@@ -1200,8 +1250,8 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []string, symmetrixIDs []string) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	log.Info("**************************\nnodeHostSetup executing...\n*******************************")
-	defer log.Info("**************************\nnodeHostSetup completed...\n*******************************")
+	log.Info("**************************nodeHostSetup executing...*******************************")
+	defer log.Info("**************************nodeHostSetup completed...*******************************")
 
 	// we need to randomize a time before starting the interaction with unisphere
 	// in order to reduce the concurrent workload on the system
@@ -1229,9 +1279,9 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 		if err != nil {
 			log.Error("Could not validate FC initiators " + err.Error())
 		}
-		log.Infof("valid FC initiators: %v\n", validFCs)
+		log.Infof("valid FC initiators: %v", validFCs)
 		if len(validFCs) > 0 && (s.opts.TransportProtocol == "" || s.opts.TransportProtocol == FcTransportProtocol) {
-			// We do have to have pre-existing initiators that were zoned for FC
+		  // We do have to have pre-existing initiators that were zoned for FC
 			useFC = true
 		}
 		validIscsis, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, IQNs, hostIDIscsi, pmaxClient)
@@ -1241,7 +1291,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			// We do not have to have pre-existing initiators to use Iscsi (we can create them)
 			useIscsi = true
 		}
-		log.Infof("valid (existing) iSCSI initiators (must be manually created): %v\n", validIscsis)
+		log.Infof("valid (existing) iSCSI initiators (must be manually created): %v", validIscsis)
 
 		if !useFC && !useIscsi {
 			log.Error("No valid initiators- could not initialize FC or iSCSI")
@@ -1626,7 +1676,7 @@ func (s *service) createOrUpdateFCHost(ctx context.Context, array string, nodeNa
 			}
 		}
 	}
-	log.Infof("hostInitiators: %s\n", hostInitiators)
+	log.Infof("hostInitiators: %s", hostInitiators)
 
 	// See if the host is present
 	host, err := pmaxClient.GetHostByID(ctx, array, nodeName)

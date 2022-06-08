@@ -123,9 +123,15 @@ const (
 	// EnvManagedArrays is an env variable with a list of space separated arrays.
 	EnvManagedArrays = "X_CSI_MANAGED_ARRAYS"
 
-	//EnvConfigFilePath is an env variable which contains the full path for the config file
+	// EnvConfigFilePath is an env variable which contains the full path for the config file
 	EnvConfigFilePath = "X_CSI_POWERMAX_CONFIG_PATH"
 
-	//EnvHealthMonitorEnabled is an env variable which indicated if volume health monitor is enabled
+	// EnvHealthMonitorEnabled is an env variable which indicated if volume health monitor is enabled
 	EnvHealthMonitorEnabled = "X_CSI_HEALTH_MONITOR_ENABLED"
+
+	// EnvTopoConfigFilePath is an env variable which contains the full path for topology config file
+	EnvTopoConfigFilePath = "X_CSI_POWERMAX_TOPOLOGY_CONFIG_PATH"
+
+	// EnvTopologyFilterEnabled is an env variable which indicated if volume health monitor is enabled
+	EnvTopologyFilterEnabled = "X_CSI_TOPOLOGY_CONTROL_ENABLED"
 )

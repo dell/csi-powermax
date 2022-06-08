@@ -70,8 +70,11 @@ global:
 
 # Current version of the driver
 # Don't modify this value as this value will be used by the install script
-version: "2.2.0"
+version: "v2.3.0"
 
+images:
+  # "driver" defines the container image, used for the driver container.
+  driverRepository: dellemc
 ## K8S/DRIVER ATTRIBUTES
 ########################
 # customDriverName: If enabled, sets the driver name to the
@@ -108,6 +111,16 @@ imagePullPolicy: IfNotPresent
 # Ensure that the config.yaml file is present at this path.
 # Default value: None
 kubeletConfigDir: /var/lib/kubelet
+
+# fsGroupPolicy: Defines if the underlying volume supports changing ownership and permission of the volume before being mounted.
+# Allowed values:
+#   ReadWriteOnceWithFSType: supports volume ownership and permissions change only if the fsType is defined
+#   and the volume's accessModes contains ReadWriteOnce.
+#   File: kubernetes may use fsGroup to change permissions and ownership of the volume 
+#   to match user requested fsGroup in the pod's security policy regardless of fstype or access mode.
+#   None: volumes will be mounted with no modifications.
+# Default value: ReadWriteOnceWithFSType
+fsGroupPolicy: ReadWriteOnceWithFSType
 
 # controller: configure controller specific parameters
 controller:
@@ -151,16 +164,25 @@ controller:
   # Allowed values: map of key-value pairs
   # Default value: None
   # Examples:
-  #   node-role.kubernetes.io/master: ""
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
+  #  node-role.kubernetes.io/master
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/control-plane taint
+  #  node-role.kubernetes.io/control-plane
   nodeSelector:
-  #   node-role.kubernetes.io/master: ""
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
+  #  node-role.kubernetes.io/master: ""
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/control-plane taint
+  #  node-role.kubernetes.io/control-plane: ""
 
   # tolerations: Define tolerations that would be applied to controller deployment
   # Leave as blank to install controller on worker nodes
   # Allowed values: map of key-value pairs
   # Default value: None
   tolerations:
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
   #  - key: "node-role.kubernetes.io/master"
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/control-plane taint
+  #  - key: "node-role.kubernetes.io/control-plane"
   #    operator: "Exists"
   #    effect: "NoSchedule"
 
@@ -187,9 +209,15 @@ node:
   # Allowed values: map of key-value pairs
   # Default value: None
   # Examples:
-  #   node-role.kubernetes.io/master: ""
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
+  #  node-role.kubernetes.io/master
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/control-plane taint
+  #  node-role.kubernetes.io/control-plane
   nodeSelector:
-  #   node-role.kubernetes.io/master: ""
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
+  #  node-role.kubernetes.io/master: ""
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/control-plane taint
+  #  node-role.kubernetes.io/control-plane: ""
 
   # tolerations: Define tolerations that would be applied to node daemonset
   # Add/Remove tolerations as per requirement
@@ -213,7 +241,17 @@ node:
     # Allowed values:
     #   true: enable checking of health condition of CSI volumes
     #   false: disable checking of health condition of CSI volumes
-    # Default value: None
+    # Default value: false
+    enabled: false
+
+  # Topology control provides a way to filter topology keys
+  # Please refer to the doc website about a detailed explanation on its configuration and usage
+  topologyControl:
+    # enabled: Enable/Disable Topology Control
+    # Allowed values:
+    #   true: enable the filtration based on config map
+    #   false: disable the filtration based on config map
+    # Default value: false
     enabled: false
 
 # enableCHAP: Determine if the driver is going to configure
@@ -349,7 +387,7 @@ replication:
   enabled: false
   # Change this to use any specific version of the dell-csi-replicator sidecar
   # Default value: None
-  image: dellemc/dell-csi-replicator:v1.2.0
+  image: dellemc/dell-csi-replicator:v1.3.0
   # replicationContextPrefix enables side cars to read
   # required information from the volume context
   # Default value: "powermax"
@@ -359,6 +397,22 @@ replication:
   # Default value: "replication.storage.dell.com"
   # Examples: "replication.storage.dell.com", "rdf.storage.dell.com"
   replicationPrefix: "replication.storage.dell.com"
+
+# CSM module attributes
+# Set this to true to enable migration
+# Allowed values:
+#   "true" - migration is enabled
+#   "false" - migration is disabled
+# Default value: "false"
+migration:
+  enabled: false
+  # Change this to use any specific version of the dell-csi-migrator sidecar
+  # Default value: None
+  image: dellemc/dell-csi-migrator:v1.3.0
+  # migrationPrefix: Determine if migration is enabled
+  # Default value: "migration.storage.dell.com"
+  # Examples: "migration.storage.dell.com"
+  migrationPrefix: "migration.storage.dell.com"
 
 # CSM module attributes
 # authorization: enable csm-authorization for RBAC
@@ -381,4 +435,3 @@ authorization:
   #   "false" - TLS certificate will be verified 
   # Default value: "true" 
   skipCertificateValidation: true
-

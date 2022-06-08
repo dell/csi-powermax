@@ -1,6 +1,6 @@
 module github.com/dell/csi-powermax/v2
 
-go 1.17
+go 1.18
 
 replace github.com/coreos/go-systemd => github.com/coreos/go-systemd/v22 v22.0.0
 
@@ -10,16 +10,17 @@ require (
 	github.com/cucumber/godog v0.10.0
 	github.com/cucumber/messages-go/v10 v10.0.3
 	github.com/dell/dell-csi-extensions/common v1.0.0
-	github.com/dell/dell-csi-extensions/replication v1.1.0
-	github.com/dell/gobrick v1.3.0
-	github.com/dell/gocsi v1.5.1
+	github.com/dell/dell-csi-extensions/migration v0.0.0-20220518094004-fd4b2bd2f440
+	github.com/dell/dell-csi-extensions/replication v0.0.0-20220518094004-fd4b2bd2f440
+	github.com/dell/gobrick v1.3.1-0.20220525051543-433fed5396a4
+	github.com/dell/gocsi v1.5.2-0.20220525142554-48ff29a07e1e
 	github.com/dell/gofsutil v1.8.0
-	github.com/dell/goiscsi v1.3.0
-	github.com/dell/gopowermax v1.7.0
+	github.com/dell/goiscsi v1.3.1-0.20220602105959-3ba7fba52ffd
+	github.com/dell/gopowermax v1.7.1-0.20220426071218-d075b644561b
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.2
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
-	github.com/sirupsen/logrus v1.6.0
+	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f
@@ -33,7 +34,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/cucumber/gherkin-go/v11 v11.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dell/gonvme v1.0.0 // indirect
+	github.com/dell/gonvme v1.0.1-0.20220520152834-0080a57f5475 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/gofrs/uuid v3.2.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -49,7 +50,6 @@ require (
 	github.com/imdario/mergo v0.3.5 // indirect
 	github.com/jinzhu/copier v0.2.4 // indirect
 	github.com/json-iterator/go v1.1.11 // indirect
-	github.com/konsorten/go-windows-terminal-sequences v1.0.3 // indirect
 	github.com/magiconair/properties v1.8.1 // indirect
 	github.com/mitchellh/mapstructure v1.1.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
