@@ -1198,6 +1198,7 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 		log.Warning("Failed to fetch initiator list for the SYM :" + symID)
 		return validInitiators, err
 	}
+	hostUpdated := false
 	for _, nodeInitiator := range nodeInitiators {
 		if strings.HasPrefix(nodeInitiator, "0x") {
 			nodeInitiator = strings.Replace(nodeInitiator, "0x", "", 1)
@@ -1213,11 +1214,19 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 				if initiator.HostID != "" {
 					if initiator.HostID != hostID &&
 						s.opts.ModifyHostName {
-						// User has set ModifyHostName to modify host name in case of a mismatch
-						log.Infof("UpdateHostName processing: %s to %s", initiator.HostID, hostID)
-						_, err := pmaxClient.UpdateHostName(ctx, symID, initiator.HostID, hostID)
-						if err != nil {
-							errormsg = fmt.Sprintf("Failed to change host name from %s to %s: %s", initiator.HostID, hostID, err)
+						if !hostUpdated {
+							// User has set ModifyHostName to modify host name in case of a mismatch
+							log.Infof("UpdateHostName processing: %s to %s", initiator.HostID, hostID)
+							_, err := pmaxClient.UpdateHostName(ctx, symID, initiator.HostID, hostID)
+							if err != nil {
+								errormsg = fmt.Sprintf("Failed to change host name from %s to %s: %s", initiator.HostID, hostID, err)
+								log.Warning(errormsg)
+								continue
+							}
+							hostUpdated = true
+						} else {
+							errormsg = fmt.Sprintf("Skipping Updating Host %s for initiator: %s as updated host already present on: %s", initiator.HostID,
+								initiatorID, symID)
 							log.Warning(errormsg)
 							continue
 						}
@@ -1292,6 +1301,10 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			useIscsi = true
 		}
 		log.Infof("valid (existing) iSCSI initiators (must be manually created): %v", validIscsis)
+		if len(validIscsis) == 0 {
+			// IQNs are not yet part of any host on Unisphere
+			validIscsis = IQNs
+		}
 
 		if !useFC && !useIscsi {
 			log.Error("No valid initiators- could not initialize FC or iSCSI")
