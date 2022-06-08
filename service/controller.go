@@ -2941,6 +2941,11 @@ func (s *service) ControllerExpandVolume(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	// Check if volume is replicated and has RDF info
+	var rdfGNo int
+	if len(vol.RDFGroupIDList) > 0 {
+		rdfGNo = vol.RDFGroupIDList[0].RDFGroupNumber
+	}
 	// log all parameters used in ExpandVolume call
 	fields := map[string]interface{}{
 		"RequestID":     reqID,
@@ -2948,6 +2953,7 @@ func (s *service) ControllerExpandVolume(
 		"VolumeName":    volName,
 		"DeviceID":      devID,
 		"RequestedSize": requestedSize,
+		"RDF group":     rdfGNo,
 	}
 	log.WithFields(fields).Info("Executing ExpandVolume with following fields")
 
@@ -2967,7 +2973,7 @@ func (s *service) ControllerExpandVolume(
 	}
 
 	//Expand the volume
-	vol, err = pmaxClient.ExpandVolume(ctx, symID, devID, requestedSize)
+	vol, err = pmaxClient.ExpandVolume(ctx, symID, devID, rdfGNo, requestedSize)
 	if err != nil {
 		log.Errorf("Failed to execute ExpandVolume() with error (%s)", err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
