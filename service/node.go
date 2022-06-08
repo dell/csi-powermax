@@ -1190,13 +1190,14 @@ func isValidHostID(hostID string) bool {
 // These can be either FC initiators (hex numbers) or iSCSI initiators (starting with iqn.)
 // It returns the number of initiators for the host that were found.
 // Do not mix both FC and iSCSI initiators in a single call.
-func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symID string, nodeInitiators []string, hostID string, pmaxClient pmax.Pmax) (int, error) {
+func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symID string, nodeInitiators []string, hostID string, pmaxClient pmax.Pmax) ([]string, error) {
+	var validInitiators = make([]string, 0)
+	var errormsg string
 	initList, err := pmaxClient.GetInitiatorList(ctx, symID, "", false, false)
 	if err != nil {
 		log.Warning("Failed to fetch initiator list for the SYM :" + symID)
-		return 0, err
+		return validInitiators, err
 	}
-	var nValidInitiators int
 	for _, nodeInitiator := range nodeInitiators {
 		if strings.HasPrefix(nodeInitiator, "0x") {
 			nodeInitiator = strings.Replace(nodeInitiator, "0x", "", 1)
@@ -1216,23 +1217,27 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 						log.Infof("UpdateHostName processing: %s to %s", initiator.HostID, hostID)
 						_, err := pmaxClient.UpdateHostName(ctx, symID, initiator.HostID, hostID)
 						if err != nil {
-							errormsg := fmt.Sprintf("Failed to change host name from %s to %s: %s", initiator.HostID, hostID, err)
-							log.Error(errormsg)
-							return 0, fmt.Errorf(errormsg)
+							errormsg = fmt.Sprintf("Failed to change host name from %s to %s: %s", initiator.HostID, hostID, err)
+							log.Warning(errormsg)
+							continue
 						}
 					} else if initiator.HostID != hostID {
-						errormsg := fmt.Sprintf("initiator: %s is already a part of a different host: %s on: %s",
+						errormsg = fmt.Sprintf("initiator: %s is already a part of a different host: %s on: %s",
 							initiatorID, initiator.HostID, symID)
-						log.Error(errormsg)
-						return 0, fmt.Errorf(errormsg)
+						log.Warning(errormsg)
+						continue
 					}
 				}
-				log.Infof("valid initiator: %s", initiatorID)
-				nValidInitiators++
+				log.Infof("valid initiator: %s\n", initiatorID)
+				validInitiators = appendIfMissing(validInitiators, nodeInitiator)
+				errormsg = ""
 			}
 		}
 	}
-	return nValidInitiators, nil
+	if 0 < len(errormsg) {
+		return validInitiators, fmt.Errorf(errormsg)
+	}
+	return validInitiators, nil
 }
 
 // nodeHostSeup performs a few necessary functions for the nodes to function properly
@@ -1270,23 +1275,23 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			log.Error(err.Error())
 			continue
 		}
-		validFC, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, portWWNs, hostIDFC, pmaxClient)
+		validFCs, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, portWWNs, hostIDFC, pmaxClient)
 		if err != nil {
 			log.Error("Could not validate FC initiators " + err.Error())
 		}
-		log.Infof("valid FC initiators: %d", validFC)
-		if validFC > 0 && (s.opts.TransportProtocol == "" || s.opts.TransportProtocol == FcTransportProtocol) {
+		log.Infof("valid FC initiators: %v", validFCs)
+		if len(validFCs) > 0 && (s.opts.TransportProtocol == "" || s.opts.TransportProtocol == FcTransportProtocol) {
 			// We do have to have pre-existing initiators that were zoned for FC
 			useFC = true
 		}
-		validIscsi, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, IQNs, hostIDIscsi, pmaxClient)
+		validIscsis, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, IQNs, hostIDIscsi, pmaxClient)
 		if err != nil {
 			log.Error("Could not validate iSCSI initiators" + err.Error())
 		} else if s.opts.TransportProtocol == "" || s.opts.TransportProtocol == IscsiTransportProtocol {
 			// We do not have to have pre-existing initiators to use Iscsi (we can create them)
 			useIscsi = true
 		}
-		log.Infof("valid (existing) iSCSI initiators (must be manually created): %d", validIscsi)
+		log.Infof("valid (existing) iSCSI initiators (must be manually created): %v", validIscsis)
 
 		if !useFC && !useIscsi {
 			log.Error("No valid initiators- could not initialize FC or iSCSI")
@@ -1298,7 +1303,12 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 		}
 		iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
 		if useFC {
-			err := s.setupArrayForFC(ctx, symID, portWWNs, pmaxClient)
+			formattedFCs := make([]string, 0)
+			for _, initiatorID := range validFCs {
+				elems := strings.Split(initiatorID, ":")
+				formattedFCs = appendIfMissing(formattedFCs, "0x"+elems[len(elems)-1])
+			}
+			err := s.setupArrayForFC(ctx, symID, formattedFCs, pmaxClient)
 			if err != nil {
 				log.Errorf("Failed to do the FC setup the Array(%s). Error - %s", symID, err.Error())
 			}
@@ -1310,7 +1320,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			if err != nil {
 				log.Errorf("Failed to start the ISCSI Daemon. Error - %s", err.Error())
 			}
-			err = s.setupArrayForIscsi(ctx, symID, IQNs, pmaxClient)
+			err = s.setupArrayForIscsi(ctx, symID, validIscsis, pmaxClient)
 			if err != nil {
 				log.Errorf("Failed to do the ISCSI setup for the Array(%s). Error - %s", symID, err.Error())
 			}
