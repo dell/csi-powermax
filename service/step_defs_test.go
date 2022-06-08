@@ -3430,7 +3430,9 @@ func (f *feature) iCallverifyAndUpdateInitiatorsInADiffHostForNode(nodeID string
 	initiators = append(initiators, defaultIscsiInitiator)
 	symID := f.symmetrixID
 	hostID, _, _ := f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
-	f.ninitiators, f.err = f.service.verifyAndUpdateInitiatorsInADiffHost(context.Background(), symID, initiators, hostID, f.service.adminClient)
+	var validInitiators []string
+	validInitiators, f.err = f.service.verifyAndUpdateInitiatorsInADiffHost(context.Background(), symID, initiators, hostID, f.service.adminClient)
+	f.ninitiators = len(validInitiators)
 	return nil
 }
 
