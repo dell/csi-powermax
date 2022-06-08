@@ -1281,7 +1281,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 		}
 		log.Infof("valid FC initiators: %v", validFCs)
 		if len(validFCs) > 0 && (s.opts.TransportProtocol == "" || s.opts.TransportProtocol == FcTransportProtocol) {
-		  // We do have to have pre-existing initiators that were zoned for FC
+			// We do have to have pre-existing initiators that were zoned for FC
 			useFC = true
 		}
 		validIscsis, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, IQNs, hostIDIscsi, pmaxClient)
