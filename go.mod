@@ -9,14 +9,14 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20190612170431-362f06ec6bc1
 	github.com/cucumber/godog v0.10.0
 	github.com/cucumber/messages-go/v10 v10.0.3
-	github.com/dell/dell-csi-extensions/common v1.0.0
-	github.com/dell/dell-csi-extensions/migration v0.0.0-20220518094004-fd4b2bd2f440
-	github.com/dell/dell-csi-extensions/replication v0.0.0-20220518094004-fd4b2bd2f440
-	github.com/dell/gobrick v1.3.1-0.20220525051543-433fed5396a4
-	github.com/dell/gocsi v1.5.2-0.20220525142554-48ff29a07e1e
-	github.com/dell/gofsutil v1.8.0
-	github.com/dell/goiscsi v1.3.1-0.20220602105959-3ba7fba52ffd
-	github.com/dell/gopowermax v1.7.1-0.20220426071218-d075b644561b
+	github.com/dell/dell-csi-extensions/common v1.1.0
+	github.com/dell/dell-csi-extensions/migration v1.0.1
+	github.com/dell/dell-csi-extensions/replication v1.2.1
+	github.com/dell/gobrick v1.4.0
+	github.com/dell/gocsi v1.6.0
+	github.com/dell/gofsutil v1.9.0
+	github.com/dell/goiscsi v1.4.0
+	github.com/dell/gopowermax v1.8.0
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.2
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
@@ -34,17 +34,17 @@ require (
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/cucumber/gherkin-go/v11 v11.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dell/gonvme v1.0.1-0.20220520152834-0080a57f5475 // indirect
+	github.com/dell/gonvme v1.1.0 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
-	github.com/gofrs/uuid v3.2.0+incompatible // indirect
+	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
 	github.com/golang/mock v1.3.1 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/googleapis/gnostic v0.4.0 // indirect
 	github.com/gorilla/mux v1.7.3 // indirect
-	github.com/hashicorp/go-immutable-radix v1.2.0 // indirect
-	github.com/hashicorp/go-memdb v1.2.1 // indirect
+	github.com/hashicorp/go-immutable-radix v1.3.0 // indirect
+	github.com/hashicorp/go-memdb v1.3.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/imdario/mergo v0.3.5 // indirect
@@ -70,7 +70,7 @@ require (
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9 // indirect
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
-	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
+	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	google.golang.org/appengine v1.6.1 // indirect
