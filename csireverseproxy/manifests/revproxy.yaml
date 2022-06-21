@@ -61,7 +61,7 @@ spec:
       containers:
         - name: powermax-revproxy
           # Replace this with the built image name
-          image: dellemc/csipowermax-reverseproxy:v2.1.0
+          image: dellemc/csipowermax-reverseproxy:v2.2.0
           imagePullPolicy: Always
           env:
             - name: X_CSI_REVPROXY_CONFIG_DIR
