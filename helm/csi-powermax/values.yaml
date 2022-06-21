@@ -282,8 +282,8 @@ csireverseproxy:
   enabled: false
   # image: Define the container images used for the reverse proxy
   # Default value: None
-  # Example: "csipowermax-reverseproxy:v2.1.0"
-  image: dellemc/csipowermax-reverseproxy:v2.1.0
+  # Example: "csipowermax-reverseproxy:v2.2.0"
+  image: dellemc/csipowermax-reverseproxy:v2.2.0
   # "tlsSecret" defines the TLS secret that is created with certificate
   # and its associated key
   # Default value: None
@@ -408,7 +408,7 @@ migration:
   enabled: false
   # Change this to use any specific version of the dell-csi-migrator sidecar
   # Default value: None
-  image: dellemc/dell-csi-migrator:v1.3.0
+  image: dellemc/dell-csi-migrator:v1.0.0
   # migrationPrefix: Determine if migration is enabled
   # Default value: "migration.storage.dell.com"
   # Examples: "migration.storage.dell.com"
