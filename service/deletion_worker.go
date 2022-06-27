@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
-
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
 	log "github.com/sirupsen/logrus"
@@ -138,7 +137,7 @@ func (vol *symVolumeCache) getOrUpdateVolume(symID, volumeID string, pmaxClient 
 			vol.volume = nil
 			return nil, err
 		}
-		log.Debugf("(Device ID: %s, Sym ID: %s): Successfully refreshed cache\n", volumeID, symID)
+		log.Debugf("(Device ID: %s, Sym ID: %s): Successfully refreshed cache", volumeID, symID)
 		vol.volume = volume
 		vol.lastUpdate = time.Now()
 	}
@@ -157,7 +156,7 @@ func (device *csiDevice) updateStatus(state, errorMsg string) {
 	updateTime := time.Now()
 	device.Status.LastUpdate = updateTime
 	if device.Status.State != state {
-		log.Infof("%s: State change from %s to %s\n", device.print(), device.Status.State, state)
+		log.Infof("%s: State change from %s to %s", device.print(), device.Status.State, state)
 	}
 	device.Status.State = state
 	if errorMsg != "" {
@@ -169,11 +168,11 @@ func (device *csiDevice) updateStatus(state, errorMsg string) {
 			// Push the device to prune state when max error is reached
 			device.Status.ErrorMsgs = append(device.Status.ErrorMsgs, FinalError)
 			log.Infof("Max Error count reached for: %s", device.print())
-			log.Infof("%s: State change from %s to %s\n", device.print(), device.Status.State, maxedOutState)
+			log.Infof("%s: State change from %s to %s", device.print(), device.Status.State, maxedOutState)
 			device.Status.State = maxedOutState
 		} else {
 			device.Status.ErrorMsgs = append(device.Status.ErrorMsgs, errorMsg)
-			log.Debugf("%s: Current Error: %s, Total Number of errors: %d\n", device.print(), errorMsg, device.Status.nErrors)
+			log.Debugf("%s: Current Error: %s, Total Number of errors: %d", device.print(), errorMsg, device.Status.nErrors)
 		}
 	}
 }
@@ -183,14 +182,14 @@ func (queue *deletionQueue) QueueDeviceForDeletion(device csiDevice) error {
 	defer queue.lock.Unlock()
 	for _, dev := range queue.DeviceList {
 		if dev.equals(device) {
-			msg := fmt.Sprintf("%s: found existing entry in deletion queue with volume handle: %s, added at: %v\n",
+			msg := fmt.Sprintf("%s: found existing entry in deletion queue with volume handle: %s, added at: %v",
 				dev.print(), dev.VolumeIdentifier, dev.Status.AdditionTime)
 			return fmt.Errorf(msg)
 		}
 	}
 	queue.DeviceList = append(queue.DeviceList, &device)
-	log.Infof("%s: Added to deletion queue. Initial State: %s\n", device.print(), device.Status.State)
-	log.Debugf("%s: Time spent in deletion queue channel: %v\n", device.print(), time.Since(device.Status.LastUpdate))
+	log.Infof("%s: Added to deletion queue. Initial State: %s", device.print(), device.Status.State)
+	log.Debugf("%s: Time spent in deletion queue channel: %v", device.print(), time.Since(device.Status.LastUpdate))
 	return nil
 }
 
@@ -203,9 +202,9 @@ func (queue *deletionQueue) Print() {
 }
 
 func (queue *deletionQueue) print() {
-	log.Debugf("Length of deletion queue for: %s - %d\n", queue.SymID, len(queue.DeviceList))
+	log.Debugf("Length of deletion queue for: %s - %d", queue.SymID, len(queue.DeviceList))
 	for _, dev := range queue.DeviceList {
-		log.Infof("%s: State: %s\n", dev.print(), dev.Status.State)
+		log.Infof("%s: State: %s", dev.print(), dev.Status.State)
 	}
 }
 
@@ -315,7 +314,7 @@ func unlinkTargetsAndTerminateSnapshot(srcVol *types.Volume, symID string, pmaxC
 						}
 					}
 				} else {
-					log.Debugf("Ignoring snapshot %s as it can't be deleted by the deletion worker\n", snapName)
+					log.Debugf("Ignoring snapshot %s as it can't be deleted by the deletion worker", snapName)
 					continue
 				}
 			}
@@ -415,7 +414,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 							continue
 						} else {
 							if sg.NumOfMaskingViews > 0 {
-								log.Warningf("%s: SG: %s in masking view. Can't proceed with deletion of devices\n",
+								log.Warningf("%s: SG: %s in masking view. Can't proceed with deletion of devices",
 									device.print(), storageGroupID)
 								device.updateStatus(device.Status.State, "device is in masking view, can't delete")
 								continue
@@ -425,7 +424,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 						}
 					}
 					if sgID == "" {
-						log.Debugf("%s: couldn't find any sg from which this volume could be removed. Proceeding to the next volume\n",
+						log.Debugf("%s: couldn't find any sg from which this volume could be removed. Proceeding to the next volume",
 							device.print())
 						continue
 					}
@@ -457,7 +456,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 		sg, err := pmaxClient.GetStorageGroup(context.Background(), queue.SymID, sgID)
 		if err == nil {
 			if sg.NumOfMaskingViews > 0 {
-				log.Errorf("SG: %s in masking view. Can't proceed with deletion of devices\n", sgID)
+				log.Errorf("SG: %s in masking view. Can't proceed with deletion of devices", sgID)
 				return false
 			}
 		} else {
@@ -487,7 +486,9 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 				log.Errorf("GetRDFGroup failed for (%s) on symID (%s)", sgID, queue.SymID)
 				return false
 			}
-			if mode == Metro {
+			// PMAX fails the delete of the last volume in a Metro RDFg if
+			// the RDFg is not suspended. So allow Suspend only if its the last volume in the RDFg
+			if (mode == Metro) && (rdfInfo.NumDevices == 1) {
 				state := psg.States[0]
 				if state != Suspended {
 					//SUSPEND the protected storage group
@@ -502,19 +503,6 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 			// build remoteSGID
 			remoteSGID := buildProtectionGroupID(ns, strconv.Itoa(rdfInfo.RemoteRdfgNumber), mode)
 			_, err = pmaxClient.RemoveVolumesFromProtectedStorageGroup(context.Background(), queue.SymID, sgID, rdfInfo.RemoteSymmetrix, remoteSGID, true, volumeIDs...)
-			if mode == Metro {
-				// After suspend, Establish the RDF group if it has volumes
-				var psg *types.RDFStorageGroup
-				psg, err = pmaxClient.GetProtectedStorageGroup(context.Background(), queue.SymID, sgID)
-				if err != nil {
-					log.Errorf("GetProtectedStorageGroup failed for (%s) on symID (%s)", sgID, queue.SymID)
-					return false
-				}
-				if psg.Rdf {
-					err = establish(context.Background(), queue.SymID, sgID, rdfNo, true, pmaxClient)
-					time.Sleep(WaitTillSyncInProgTime)
-				}
-			}
 		}
 
 		for _, volumeID := range volumeIDs {
@@ -568,7 +556,7 @@ func (queue *deletionQueue) deleteVolumes(pmaxClient pmax.Pmax) bool {
 				continue
 			}
 			if len(vol.StorageGroupIDList) != 0 {
-				log.Errorf("%s: is part of some storage groups\n", device.print())
+				log.Errorf("%s: is part of some storage groups", device.print())
 				device.updateStatus(deletionStateDisAssociateSG, "")
 				continue
 			}
@@ -617,7 +605,7 @@ func (queue *deletionQueue) deleteVolumes(pmaxClient pmax.Pmax) bool {
 			}
 		}
 		if err == nil {
-			log.Infof("Number of devices deleted: %d\n", len(volumeIDs))
+			log.Infof("Number of devices deleted: %d", len(volumeIDs))
 		}
 	} else {
 		return false
@@ -650,7 +638,7 @@ func (worker *deletionWorker) pruneDeletionQueues() {
 				queue.DeviceList[i] = dev
 				i++
 			} else {
-				log.Infof("%s: removed from deletion queue. Total time spent: %v\n",
+				log.Infof("%s: removed from deletion queue. Total time spent: %v",
 					dev.print(), time.Since(dev.Status.AdditionTime))
 			}
 		}
@@ -670,11 +658,11 @@ func (worker *deletionWorker) updateDeletionQueues(duration time.Duration) {
 			if ok {
 				err := queue.QueueDeviceForDeletion(device)
 				if err != nil {
-					log.Errorf("%s: Failed to add device to the deletion queue. Error: %s\n",
+					log.Errorf("%s: Failed to add device to the deletion queue. Error: %s",
 						device.print(), err.Error())
 				}
 			} else {
-				log.Errorf("unexpected error - SymID: %s is not managed by the deletion worker\n", device.SymID)
+				log.Errorf("unexpected error - SymID: %s is not managed by the deletion worker", device.SymID)
 			}
 		case <-afterCh:
 			return
@@ -696,7 +684,7 @@ func (worker *deletionWorker) QueueDeviceForDeletion(devID string, volumeIdentif
 		if err != nil {
 			return err
 		}
-		log.Debugf("(Device ID: %s, SymID: %s): Successfully queued request\n", devID, symID)
+		log.Debugf("(Device ID: %s, SymID: %s): Successfully queued request", devID, symID)
 	default:
 		log.Error("Deletion request queue full. Retry after sometime")
 		return fmt.Errorf("deletion request queue full. retry after sometime")
@@ -707,7 +695,7 @@ func (worker *deletionWorker) QueueDeviceForDeletion(devID string, volumeIdentif
 func (worker *deletionWorker) deletionRequestHandler() {
 	log.Info("Starting deletion request handler goroutine")
 	for req := range worker.DeletionRequestChan {
-		log.Infof("Received deletion request for Device ID: %s, Sym ID: %s\n", req.DeviceID, req.SymID)
+		log.Infof("Received deletion request for Device ID: %s, Sym ID: %s", req.DeviceID, req.SymID)
 		if !isStringInSlice(req.SymID, worker.SymmetrixIDs) {
 			req.errChan <- fmt.Errorf("unable to process device deletion request as sym id is not managed by deletion worker")
 			continue
@@ -835,9 +823,9 @@ func (worker *deletionWorker) populateDeletionQueue() {
 			log.Errorf("Could not retrieve volume IDs to be deleted. Error: %s", err.Error())
 			continue
 		} else {
-			log.Infof("Total number of volumes found which have been tagged for deletion: %d\n", len(volList))
+			log.Infof("Total number of volumes found which have been tagged for deletion: %d", len(volList))
 			if len(volList) > 0 {
-				log.Infof("Volumes with the prefix: %s - %v\n", volDeletePrefix, volList)
+				log.Infof("Volumes with the prefix: %s - %v", volDeletePrefix, volList)
 			}
 			for _, id := range volList {
 				volume, err := pmaxClient.GetVolumeByID(context.Background(), symID, id)
@@ -852,7 +840,7 @@ func (worker *deletionWorker) populateDeletionQueue() {
 							log.Errorf("Error in queuing device for deletion. Error: %s", err.Error())
 						}
 					} else {
-						log.Warningf("(Device ID: %s, SymID: %s): skipping as it is not tagged for deletion\n",
+						log.Warningf("(Device ID: %s, SymID: %s): skipping as it is not tagged for deletion",
 							volume.VolumeID, symID)
 					}
 				}

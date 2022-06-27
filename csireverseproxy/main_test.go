@@ -250,7 +250,7 @@ func writeYAMLConfig(val interface{}, fileName, fileDir string) error {
 func createTempConfig(mode string) error {
 	proxyConfigMap, err := readYAMLConfig(common.TestConfigFileName, common.TestConfigDir)
 	if err != nil {
-		log.Fatalf("Failed to read sample config file. (%s)\n", err.Error())
+		log.Fatalf("Failed to read sample config file. (%s)", err.Error())
 		return err
 	}
 	// set proxy mode for respective server
@@ -276,7 +276,7 @@ func createTempConfig(mode string) error {
 	proxyConfigMap.StandAloneConfig.StorageArrayConfig = tempStorageArrayConfig
 	err = writeYAMLConfig(proxyConfigMap, filename, common.TempConfigDir)
 	if err != nil {
-		log.Fatalf("Failed to create a temporary config file. (%s)\n", err.Error())
+		log.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
 	}
 	return err
 }
@@ -323,18 +323,18 @@ func TestMain(m *testing.M) {
 	log.Info("Creating primary mock server...")
 	primaryMockServer, err = createMockServer(primaryPort)
 	if err != nil {
-		log.Fatalf("Failed to create primary mock server. (%s)\n", err.Error())
+		log.Fatalf("Failed to create primary mock server. (%s)", err.Error())
 		os.Exit(1)
 	}
-	log.Infof("Primary mock server listening on %s\n", primaryMockServer.server.URL)
+	log.Infof("Primary mock server listening on %s", primaryMockServer.server.URL)
 	log.Info("Creating backup mock server...")
 	backupMockServer, err = createMockServer(backupPort)
 	if err != nil {
-		log.Fatalf("Failed to create backup mock server. (%s)\n", err.Error())
+		log.Fatalf("Failed to create backup mock server. (%s)", err.Error())
 		stopServers()
 		os.Exit(1)
 	}
-	log.Infof("Backup mock server listening on %s\n", backupMockServer.server.URL)
+	log.Infof("Backup mock server listening on %s", backupMockServer.server.URL)
 	// Start proxy server and other services
 	log.Info("Starting proxy server...")
 	err = startTestServer()

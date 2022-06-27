@@ -644,7 +644,7 @@ func (s *service) NodeUnpublishVolume(
 		return nil, err
 	}
 
-	log.Infof("lastUmounted %v\n", lastUnmounted)
+	log.Infof("lastUnmounted %v", lastUnmounted)
 	if lastUnmounted {
 		removeWithRetry(target) // #nosec G20
 		return &csi.NodeUnpublishVolumeResponse{}, nil
@@ -723,24 +723,50 @@ func (s *service) NodeGetCapabilities(
 	ctx context.Context,
 	req *csi.NodeGetCapabilitiesRequest) (
 	*csi.NodeGetCapabilitiesResponse, error) {
-
-	return &csi.NodeGetCapabilitiesResponse{
-		Capabilities: []*csi.NodeServiceCapability{
-			{
-				Type: &csi.NodeServiceCapability_Rpc{
-					Rpc: &csi.NodeServiceCapability_RPC{
-						Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
-					},
-				},
-			},
-			{
-				Type: &csi.NodeServiceCapability_Rpc{
-					Rpc: &csi.NodeServiceCapability_RPC{
-						Type: csi.NodeServiceCapability_RPC_EXPAND_VOLUME,
-					},
+	capabilities := []*csi.NodeServiceCapability{
+		{
+			Type: &csi.NodeServiceCapability_Rpc{
+				Rpc: &csi.NodeServiceCapability_RPC{
+					Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
 				},
 			},
 		},
+		{
+			Type: &csi.NodeServiceCapability_Rpc{
+				Rpc: &csi.NodeServiceCapability_RPC{
+					Type: csi.NodeServiceCapability_RPC_EXPAND_VOLUME,
+				},
+			},
+		},
+		{
+			Type: &csi.NodeServiceCapability_Rpc{
+				Rpc: &csi.NodeServiceCapability_RPC{
+					Type: csi.NodeServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
+				},
+			},
+		},
+	}
+	if s.opts.IsHealthMonitorEnabled {
+		healthMonitorCapabilities := []*csi.NodeServiceCapability{
+			{
+				Type: &csi.NodeServiceCapability_Rpc{
+					Rpc: &csi.NodeServiceCapability_RPC{
+						Type: csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
+					},
+				},
+			}, {
+				Type: &csi.NodeServiceCapability_Rpc{
+					Rpc: &csi.NodeServiceCapability_RPC{
+						Type: csi.NodeServiceCapability_RPC_VOLUME_CONDITION,
+					},
+				},
+			},
+		}
+		capabilities = append(capabilities, healthMonitorCapabilities...)
+	}
+
+	return &csi.NodeGetCapabilitiesResponse{
+		Capabilities: capabilities,
 	}, nil
 }
 
@@ -771,7 +797,7 @@ func (s *service) isISCSIConnected(err error) bool {
 	return false
 }
 
-func (s *service) createTopologyMap(ctx context.Context) (map[string]string, error) {
+func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[string]string, error) {
 	topology := map[string]string{}
 	iscsiArrays := make([]string, 0)
 
@@ -825,14 +851,16 @@ func (s *service) createTopologyMap(ctx context.Context) (map[string]string, err
 	}
 
 	for array, protocol := range s.arrayTransportProtocolMap {
-		if protocol == FcTransportProtocol {
+
+		if protocol == FcTransportProtocol && s.checkIfArrayProtocolValid(nodeName, array, strings.ToLower(FcTransportProtocol)) {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(FcTransportProtocol)] = s.getDriverName()
 		}
 	}
 
 	for _, array := range iscsiArrays {
-		if _, ok := topology[s.getDriverName()+"/"+array]; !ok {
+		if _, ok := topology[s.getDriverName()+"/"+array]; !ok &&
+			s.checkIfArrayProtocolValid(nodeName, array, strings.ToLower(IscsiTransportProtocol)) {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(IscsiTransportProtocol)] = s.getDriverName()
 		}
@@ -841,7 +869,56 @@ func (s *service) createTopologyMap(ctx context.Context) (map[string]string, err
 	return topology, nil
 }
 
-// Minimal version of NodeGetInfo. Returns the NodeId
+// checkIfArrayProtocolValid returns true if the  pair (array and protocol) is applicable for the given node based on config
+// if the pair is present in allow rules, it is applied in the topology keys map
+// if the pair is present in deny rules, it is skipped in the topology keys map
+func (s *service) checkIfArrayProtocolValid(nodeName string, array string, protocol string) bool {
+	if !s.opts.IsTopologyControlEnabled {
+		return true
+	}
+
+	key := fmt.Sprintf("%s.%s", array, protocol)
+	log.Debugf("Checking topology config for allow rules for key (%s)", key)
+	// Check topo key pair as per rules in allow list
+	if allowedList, ok := s.allowedTopologyKeys[nodeName]; ok {
+		if !checkIfKeyIsIncludedOrNot(allowedList, key) {
+			return false
+		}
+	} else if allowedList, ok := s.allowedTopologyKeys["*"]; ok {
+		if !checkIfKeyIsIncludedOrNot(allowedList, key) {
+			return false
+		}
+	}
+
+	log.Debugf("Checking topology config for deny rules for key (%s)", key)
+	// Check topo keys as per rules in denied list
+	if deniedList, ok := s.deniedTopologyKeys[nodeName]; ok {
+		if checkIfKeyIsIncludedOrNot(deniedList, key) {
+			return false
+		}
+	} else if deniedList, ok := s.deniedTopologyKeys["*"]; ok {
+		if checkIfKeyIsIncludedOrNot(deniedList, key) {
+			return false
+		}
+	}
+	log.Debugf("applied topo key for node %s : %+v", nodeName, key)
+	return true
+}
+
+// checkIfKeyIsIncludedOrNot will crosscheck the key with the applied rules in the config.
+// returns true if it founds the key in the rules.
+func checkIfKeyIsIncludedOrNot(rulesList []string, key string) bool {
+	found := false
+	for _, rule := range rulesList {
+		if strings.Contains(key, rule) {
+			found = true
+			break
+		}
+	}
+	return found
+}
+
+// NodeGetInfo minimal version. Returns the NodeId
 // MaxVolumesPerNode (optional) is left as 0 which means unlimited, and AccessibleTopology is left nil.
 func (s *service) NodeGetInfo(
 	ctx context.Context,
@@ -855,9 +932,9 @@ func (s *service) NodeGetInfo(
 			"Unable to get Node Name from the environment")
 	}
 
-	topology, err := s.createTopologyMap(ctx)
+	topology, err := s.createTopologyMap(ctx, s.opts.NodeName)
 	if err != nil {
-		log.Errorf("Unable to get the list of symmetrix ids. (%s)\n", err.Error())
+		log.Errorf("Unable to get the list of symmetrix ids. (%s)", err.Error())
 		return nil, status.Error(codes.FailedPrecondition,
 			"Unable to get the list of symmetrix ids")
 	}
@@ -876,7 +953,175 @@ func (s *service) NodeGetInfo(
 
 func (s *service) NodeGetVolumeStats(
 	ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+
+	// Get the VolumeID and parse it
+	id := req.GetVolumeId()
+	volName, symID, _, _, _, err := s.parseCsiID(id)
+	if err != nil {
+		log.Errorf("Invalid volumeid: %s", id)
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
+	}
+
+	volPath := req.GetVolumePath()
+	if volPath == "" {
+		log.Error("Volume path required")
+		return nil, status.Error(codes.InvalidArgument, "no Volume path found in request, a volume path is required")
+	}
+
+	// Probe the node if required and make sure startup called
+	err = s.nodeProbe(ctx)
+	if err != nil {
+		log.Error("nodeProbe failed with error :" + err.Error())
+		return nil, err
+	}
+
+	f := log.Fields{
+		"CSIRequestID":      reqID,
+		"VolumePath":        volPath,
+		"ID":                id,
+		"VolumeName":        volName,
+		"StagingTargetPath": req.GetStagingTargetPath(),
+	}
+	log.WithFields(f).Info("Calling NodeGetVolumeStats")
+
+	pmaxClient, err := s.GetPowerMaxClient(symID)
+	if err != nil {
+		log.Error(err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// abnormal and msg tells the condition of the volume
+	var abnormal bool
+	var msg string
+
+	// check if volume exist
+	_, _, _, err = s.GetVolumeByID(ctx, id, pmaxClient)
+	if err != nil {
+		abnormal = true
+		msg = fmt.Sprintf("volume %s not found", id)
+	}
+
+	// check if volume is mounted
+	if !abnormal {
+		log.Debug("---- check 1 ----")
+		replace := CSIPrefix + "-" + s.getClusterPrefix() + "-"
+		volName = strings.Replace(volName, replace, "", 1)
+		isMounted, err := isVolumeMounted(ctx, volName, volPath)
+		log.Debug("---- isMounted ----", isMounted)
+		if err != nil {
+			abnormal = true
+			msg = fmt.Sprintf("Error getting mount info for volume %s", id)
+		}
+		if err == nil && !isMounted {
+			abnormal = true
+			msg = fmt.Sprintf("no mount info for volume %s", id)
+		}
+	}
+
+	if !abnormal {
+		log.Debug("---- check 2 ----")
+		// check if volume path is accessible
+		_, err = os.ReadDir(volPath)
+		if err != nil {
+			abnormal = true
+			msg = fmt.Sprintf("volume Path is not accessible: %s", err)
+		}
+		log.Debug("---- path is readable ----")
+	}
+	if abnormal {
+		// return the response based on abnormal condition
+		return &csi.NodeGetVolumeStatsResponse{
+			Usage: []*csi.VolumeUsage{
+				{
+					Unit:      csi.VolumeUsage_UNKNOWN,
+					Available: 0,
+					Total:     0,
+					Used:      0,
+				},
+			},
+			VolumeCondition: &csi.VolumeCondition{
+				Abnormal: abnormal,
+				Message:  msg,
+			},
+		}, nil
+	}
+	// Get Volume stats metrics
+	availableBytes, totalBytes, usedBytes, totalInodes, freeInodes, usedInodes, err := getVolumeStats(ctx, volPath)
+	if err != nil {
+		return &csi.NodeGetVolumeStatsResponse{
+			Usage: []*csi.VolumeUsage{
+				{
+					Unit:      csi.VolumeUsage_UNKNOWN,
+					Available: availableBytes,
+					Total:     totalBytes,
+					Used:      usedBytes,
+				},
+			},
+			VolumeCondition: &csi.VolumeCondition{
+				Abnormal: false,
+				Message:  fmt.Sprintf("failed to get volume stats metrics : %s", err),
+			},
+		}, nil
+	}
+
+	// return the response with all the usage
+	return &csi.NodeGetVolumeStatsResponse{
+		Usage: []*csi.VolumeUsage{
+			{
+				Unit:      csi.VolumeUsage_BYTES,
+				Available: availableBytes,
+				Total:     totalBytes,
+				Used:      usedBytes,
+			},
+			{
+				Unit:      csi.VolumeUsage_INODES,
+				Available: freeInodes,
+				Total:     totalInodes,
+				Used:      usedInodes,
+			},
+		},
+		VolumeCondition: &csi.VolumeCondition{
+			Abnormal: abnormal,
+			Message:  "Volume in use",
+		},
+	}, nil
+}
+
+//getVolumeStats - Returns the stats for the volume mounted on given volume path
+func getVolumeStats(ctx context.Context, volumePath string) (int64, int64, int64, int64, int64, int64, error) {
+	availableBytes, totalBytes, usedBytes, totalInodes, freeInodes, usedInodes, err := gofsutil.FsInfo(ctx, volumePath)
+
+	if err != nil {
+		return 0, 0, 0, 0, 0, 0, status.Error(codes.Internal, fmt.Sprintf(
+			"failed to get volume stats: %s", err))
+	}
+	return availableBytes, totalBytes, usedBytes, totalInodes, freeInodes, usedInodes, err
+}
+
+// isVolumeMounted fetches the mount info for a volume
+// and compare the volume mount path with the target
+func isVolumeMounted(ctx context.Context, volName string, target string) (bool, error) {
+
+	devmnt, err := gofsutil.GetMountInfoFromDevice(ctx, volName)
+	if err != nil {
+		return false, status.Errorf(codes.Internal,
+			"could not reliably determine existing mount status: '%s'",
+			err.Error())
+	}
+	if strings.Contains(devmnt.MountPoint, target) {
+		return true, nil
+	}
+
+	// No mount exists, volume is not published
+	log.Debugf("target '%s' does not exist", target)
+	return false, nil
 }
 
 // nodeStartup performs a few necessary functions for the nodes to function properly
@@ -918,7 +1163,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		log.Error("nodeStartup could not GetInitiatorIQNs")
 	}
 
-	log.Infof("TransportProtocol %s FC portWWNs: %s ... IQNs: %s\n", s.opts.TransportProtocol, portWWNs, IQNs)
+	log.Infof("TransportProtocol %s FC portWWNs: %s ... IQNs: %s", s.opts.TransportProtocol, portWWNs, IQNs)
 	// The driver needs at least one FC or iSCSI initiator to be defined
 	if len(portWWNs) == 0 && len(IQNs) == 0 {
 		return fmt.Errorf("No FC or iSCSI initiators were found and at least 1 is required")
@@ -947,20 +1192,22 @@ func isValidHostID(hostID string) bool {
 // These can be either FC initiators (hex numbers) or iSCSI initiators (starting with iqn.)
 // It returns the number of initiators for the host that were found.
 // Do not mix both FC and iSCSI initiators in a single call.
-func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symID string, nodeInitiators []string, hostID string, pmaxClient pmax.Pmax) (int, error) {
+func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symID string, nodeInitiators []string, hostID string, pmaxClient pmax.Pmax) ([]string, error) {
+	var validInitiators = make([]string, 0)
+	var errormsg string
 	initList, err := pmaxClient.GetInitiatorList(ctx, symID, "", false, false)
 	if err != nil {
 		log.Warning("Failed to fetch initiator list for the SYM :" + symID)
-		return 0, err
+		return validInitiators, err
 	}
-	var nValidInitiators int
+	hostUpdated := false
 	for _, nodeInitiator := range nodeInitiators {
 		if strings.HasPrefix(nodeInitiator, "0x") {
 			nodeInitiator = strings.Replace(nodeInitiator, "0x", "", 1)
 		}
 		for _, initiatorID := range initList.InitiatorIDs {
 			if initiatorID == nodeInitiator || strings.HasSuffix(initiatorID, nodeInitiator) {
-				log.Infof("Checking initiator %s against host %s\n", initiatorID, hostID)
+				log.Infof("Checking initiator %s against host %s", initiatorID, hostID)
 				initiator, err := pmaxClient.GetInitiatorByID(ctx, symID, initiatorID)
 				if err != nil {
 					log.Warning("Failed to fetch initiator details for initiator: " + initiatorID)
@@ -969,27 +1216,39 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 				if initiator.HostID != "" {
 					if initiator.HostID != hostID &&
 						s.opts.ModifyHostName {
-						// User has set ModifyHostName to modify host name in case of a mismatch
-						log.Infof("UpdateHostName processing: %s to %s", initiator.HostID, hostID)
-						_, err := pmaxClient.UpdateHostName(ctx, symID, initiator.HostID, hostID)
-						if err != nil {
-							errormsg := fmt.Sprintf("Failed to change host name from %s to %s: %s", initiator.HostID, hostID, err)
-							log.Error(errormsg)
-							return 0, fmt.Errorf(errormsg)
+						if !hostUpdated {
+							// User has set ModifyHostName to modify host name in case of a mismatch
+							log.Infof("UpdateHostName processing: %s to %s", initiator.HostID, hostID)
+							_, err := pmaxClient.UpdateHostName(ctx, symID, initiator.HostID, hostID)
+							if err != nil {
+								errormsg = fmt.Sprintf("Failed to change host name from %s to %s: %s", initiator.HostID, hostID, err)
+								log.Warning(errormsg)
+								continue
+							}
+							hostUpdated = true
+						} else {
+							errormsg = fmt.Sprintf("Skipping Updating Host %s for initiator: %s as updated host already present on: %s", initiator.HostID,
+								initiatorID, symID)
+							log.Warning(errormsg)
+							continue
 						}
 					} else if initiator.HostID != hostID {
-						errormsg := fmt.Sprintf("initiator: %s is already a part of a different host: %s on: %s",
+						errormsg = fmt.Sprintf("initiator: %s is already a part of a different host: %s on: %s",
 							initiatorID, initiator.HostID, symID)
-						log.Error(errormsg)
-						return 0, fmt.Errorf(errormsg)
+						log.Warning(errormsg)
+						continue
 					}
 				}
 				log.Infof("valid initiator: %s\n", initiatorID)
-				nValidInitiators++
+				validInitiators = appendIfMissing(validInitiators, nodeInitiator)
+				errormsg = ""
 			}
 		}
 	}
-	return nValidInitiators, nil
+	if 0 < len(errormsg) {
+		return validInitiators, fmt.Errorf(errormsg)
+	}
+	return validInitiators, nil
 }
 
 // nodeHostSeup performs a few necessary functions for the nodes to function properly
@@ -1002,8 +1261,8 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []string, symmetrixIDs []string) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	log.Info("**************************\nnodeHostSetup executing...\n*******************************")
-	defer log.Info("**************************\nnodeHostSetup completed...\n*******************************")
+	log.Info("**************************nodeHostSetup executing...*******************************")
+	defer log.Info("**************************nodeHostSetup completed...*******************************")
 
 	// we need to randomize a time before starting the interaction with unisphere
 	// in order to reduce the concurrent workload on the system
@@ -1027,23 +1286,27 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			log.Error(err.Error())
 			continue
 		}
-		validFC, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, portWWNs, hostIDFC, pmaxClient)
+		validFCs, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, portWWNs, hostIDFC, pmaxClient)
 		if err != nil {
 			log.Error("Could not validate FC initiators " + err.Error())
 		}
-		log.Infof("valid FC initiators: %d\n", validFC)
-		if validFC > 0 && (s.opts.TransportProtocol == "" || s.opts.TransportProtocol == FcTransportProtocol) {
+		log.Infof("valid FC initiators: %v", validFCs)
+		if len(validFCs) > 0 && (s.opts.TransportProtocol == "" || s.opts.TransportProtocol == FcTransportProtocol) {
 			// We do have to have pre-existing initiators that were zoned for FC
 			useFC = true
 		}
-		validIscsi, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, IQNs, hostIDIscsi, pmaxClient)
+		validIscsis, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, IQNs, hostIDIscsi, pmaxClient)
 		if err != nil {
 			log.Error("Could not validate iSCSI initiators" + err.Error())
 		} else if s.opts.TransportProtocol == "" || s.opts.TransportProtocol == IscsiTransportProtocol {
 			// We do not have to have pre-existing initiators to use Iscsi (we can create them)
 			useIscsi = true
 		}
-		log.Infof("valid (existing) iSCSI initiators (must be manually created): %d\n", validIscsi)
+		log.Infof("valid (existing) iSCSI initiators (must be manually created): %v", validIscsis)
+		if len(validIscsis) == 0 {
+			// IQNs are not yet part of any host on Unisphere
+			validIscsis = IQNs
+		}
 
 		if !useFC && !useIscsi {
 			log.Error("No valid initiators- could not initialize FC or iSCSI")
@@ -1055,7 +1318,12 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 		}
 		iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
 		if useFC {
-			err := s.setupArrayForFC(ctx, symID, portWWNs, pmaxClient)
+			formattedFCs := make([]string, 0)
+			for _, initiatorID := range validFCs {
+				elems := strings.Split(initiatorID, ":")
+				formattedFCs = appendIfMissing(formattedFCs, "0x"+elems[len(elems)-1])
+			}
+			err := s.setupArrayForFC(ctx, symID, formattedFCs, pmaxClient)
 			if err != nil {
 				log.Errorf("Failed to do the FC setup the Array(%s). Error - %s", symID, err.Error())
 			}
@@ -1067,7 +1335,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			if err != nil {
 				log.Errorf("Failed to start the ISCSI Daemon. Error - %s", err.Error())
 			}
-			err = s.setupArrayForIscsi(ctx, symID, IQNs, pmaxClient)
+			err = s.setupArrayForIscsi(ctx, symID, validIscsis, pmaxClient)
 			if err != nil {
 				log.Errorf("Failed to do the ISCSI setup for the Array(%s). Error - %s", symID, err.Error())
 			}
@@ -1423,7 +1691,7 @@ func (s *service) createOrUpdateFCHost(ctx context.Context, array string, nodeNa
 			}
 		}
 	}
-	log.Infof("hostInitiators: %s\n", hostInitiators)
+	log.Infof("hostInitiators: %s", hostInitiators)
 
 	// See if the host is present
 	host, err := pmaxClient.GetHostByID(ctx, array, nodeName)

@@ -61,18 +61,13 @@ ONBUILD RUN microdnf install -y tar
 FROM driver as trivy-others
 ONBUILD RUN echo "Not a UBI minimal image"
 
-FROM trivy-${IMAGE_TYPE} as trivy
-RUN curl https://raw.githubusercontent.com/aquasecurity/trivy/master/contrib/install.sh | sh
-RUN trivy fs -s CRITICAL --ignore-unfixed --exit-code 1 / && \
-    trivy fs -s HIGH /
-
 # final stage
 FROM driver as final
 
 LABEL vendor="Dell Inc." \
       name="csi-powermax" \
-      summary="CSI Driver for Dell EMC PowerMax" \
-      description="CSI Driver for provisioning persistent storage from Dell EMC PowerMax" \
-      version="2.0.0" \
+      summary="CSI Driver for Dell PowerMax" \
+      description="CSI Driver for provisioning persistent storage from Dell PowerMax" \
+      version="2.3.0" \
       license="Apache-2.0"
 COPY csi-powermax/licenses /licenses

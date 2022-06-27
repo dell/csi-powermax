@@ -56,10 +56,10 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotcontents"]
-    verbs: ["get", "list", "watch", "update", "create", "delete"]
+    verbs: ["get", "list", "watch", "update", "create", "delete", "patch"]
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotcontents/status"]
-    verbs: ["update"]
+    verbs: ["update", "patch"]
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotclasses"]
     verbs: ["get", "list", "watch"]
@@ -81,6 +81,12 @@ rules:
     resources: ["configmaps"]
     verbs: ["create", "delete", "get", "list", "watch", "update", "patch"]
   {{- end}}
+  # below for dell-csi-migrator
+  {{- if eq .Values.migration.enabled true}}
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete", "get", "list", "watch", "update", "patch"]  
+  {{- end}}  
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -108,6 +114,12 @@ kind: Deployment
 metadata:
   name: {{ .Release.Name }}-controller
   namespace: {{ .Release.Namespace }}
+  {{- if hasKey .Values "authorization" }}
+  {{- if eq .Values.authorization.enabled true }}
+  annotations:
+      com.dell.karavi-authorization-proxy: "true"
+  {{ end }}
+  {{ end }}
 spec:
   replicas: {{ required "Must provide the number of controller instances to create." .Values.controller.controllerCount }}
   selector:
@@ -139,7 +151,7 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
         - name: attacher
-          image: {{ required "Must provide the CSI attacher container image." .Values.images.attacher }}
+          image: {{ required "Must provide the CSI attacher container image." ( include "csi-powermax.attacherImage" . ) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
@@ -154,7 +166,7 @@ spec:
             - name: socket-dir
               mountPath: /var/run/csi
         - name: provisioner
-          image: {{ required "Must provide the CSI provisioner container image." .Values.images.provisioner }}
+          image: {{ required "Must provide the CSI provisioner container image." ( include "csi-powermax.provisionerImage" . ) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
@@ -176,7 +188,7 @@ spec:
         {{- if hasKey .Values.controller "snapshot" }}
         {{- if eq .Values.controller.snapshot.enabled true }}      
         - name: snapshotter
-          image: {{ required "Must provide the CSI snapshotter container image." .Values.images.snapshotter }}
+          image: {{ required "Must provide the CSI snapshotter container image." ( include "csi-powermax.snapshotterImage" . ) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
@@ -219,10 +231,36 @@ spec:
             - name: powermax-config-params
               mountPath: /powermax-config-params
         {{- end }}
+        {{- if eq .Values.migration.enabled true}}
+        - name: dell-csi-migrator
+          image: {{ required "Must provide the Dell CSI Migrator Resizer image." .Values.migration.image}}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--leader-election=true"
+            - "--worker-threads=2"
+            - "--retry-interval-start=1s"
+            - "--retry-interval-max=300s"
+            - "--timeout=300s"
+            - "--repl-prefix={{ .Values.replication.replicationPrefix}}"
+            - "--prefix={{ .Values.migration.migrationPrefix}}"
+          env:
+            - name: ADDRESS
+              value: /var/run/csi/csi.sock
+            - name: X_CSI_REPLICATION_CONFIG_DIR
+              value: /powermax-config-params
+            - name: X_CSI_REPLICATION_CONFIG_FILE_NAME
+              value: driver-config-params.yaml
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/csi
+            - name: powermax-config-params
+              mountPath: /powermax-config-params
+        {{- end }}  
         {{- if hasKey .Values.controller "resizer" }}
         {{- if eq .Values.controller.resizer.enabled true }}
         - name: resizer
-          image: {{ required "Must provide the CSI resizer container image." .Values.images.resizer }}
+          image: {{ required "Must provide the CSI resizer container image." ( include "csi-powermax.resizerImage" . ) }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
@@ -235,10 +273,62 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi
-          {{- end }}
-          {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- if hasKey .Values "authorization" }}
+        {{- if eq .Values.authorization.enabled true }}
+        - name: karavi-authorization-proxy
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          image: {{ required "Must provide the authorization sidecar container image." .Values.authorization.sidecarProxyImage }}
+          env:
+            - name: PROXY_HOST
+              value: "{{ .Values.authorization.proxyHost }}"
+            - name: INSECURE
+              value: "{{ .Values.authorization.skipCertificateValidation }}"
+            - name: PLUGIN_IDENTIFIER
+              value: powermax
+            - name: ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: proxy-authz-tokens
+                  key: access
+            - name: REFRESH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: proxy-authz-tokens
+                  key: refresh
+          volumeMounts:
+            - name: karavi-authorization-config
+              mountPath: /etc/karavi-authorization/config
+            - name: proxy-server-root-certificate
+              mountPath: /etc/karavi-authorization/root-certificates
+            - name: powermax-config-params
+              mountPath: /etc/karavi-authorization
+        {{- end }}
+        {{- end }}
+        {{- if hasKey .Values.controller "healthMonitor" }}
+        {{- if eq .Values.controller.healthMonitor.enabled true }}
+        - name: csi-external-health-monitor-controller
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          image: {{ required "Must provide the CSI external health monitor controller image." ( include "csi-powermax.healthmonitorImage" . ) }}
+          args:
+            - "--v=5"
+            - "--csi-address=$(ADDRESS)"
+            - "--leader-election"
+            - "--http-endpoint=:8080"
+            - "--enable-node-watcher=true"
+            - "--monitor-interval={{ .Values.controller.healthMonitor.interval | default "60s" }}"
+            - "--timeout=180s"
+          env:
+            - name: ADDRESS
+              value: /var/run/csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/csi
+        {{- end }}
+        {{- end }}
         - name: driver
-          image: {{ required "Must provide the PowerMax driver container image." .Values.images.driver }}
+          image: {{ required "Must provide the PowerMax driver image repository." .Values.images.driverRepository }}/{{ .Chart.Name }}:{{ .Values.version }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           command: [ "/csi-powermax.sh" ]
           args:
@@ -316,8 +406,16 @@ spec:
               value: {{ .Values.replication.replicationContextPrefix | default "powermax"}}
             - name: X_CSI_REPLICATION_PREFIX
               value: {{ .Values.replication.replicationPrefix | default "replication.storage.dell.com"}}
+            - name: X_CSI_MIGRATION_PREFIX
+              value: {{ .Values.migration.migrationPrefix | default "migration.storage.dell.com"}}  
             - name: X_CSI_UNISPHERE_TIMEOUT
               value: {{.Values.unisphereTimeout | default "5m"}}
+            {{- if hasKey .Values.controller "healthMonitor" }}
+            {{- if eq .Values.controller.healthMonitor.enabled true }}
+            - name: X_CSI_HEALTH_MONITOR_ENABLED
+              value: "{{ .Values.controller.healthMonitor.enabled }}"
+            {{- end }}
+            {{- end }}
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/csi
@@ -370,3 +468,13 @@ spec:
         - name: powermax-config-params
           configMap:
             name: {{ .Release.Name }}-config-params
+        {{- if hasKey .Values "authorization" }}
+        {{- if eq .Values.authorization.enabled true }}
+        - name: karavi-authorization-config
+          secret:
+            secretName: karavi-authorization-config
+        - name: proxy-server-root-certificate
+          secret:
+            secretName: proxy-server-root-certificate
+        {{ end }}
+        {{ end }}

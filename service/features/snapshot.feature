@@ -518,7 +518,33 @@ Feature: PowerMax CSI Interface
         And I induce error "DeleteSnapshotError"
         When I call DeleteSnapshot
         Then no error was received
-
+@v1.2.0
+    Scenario: Validate snapshot for deletion
+        Given a PowerMax service
+        And I call CreateVolume "volume1"
+        And a valid CreateVolumeResponse is returned
+        And I call CreateSnapshot "snapshot1" on "volume1"
+        And a valid CreateSnapshotResponse is returned
+        When I call IsSnapshotSource
+        Then IsSnapshotSource returns "true"
+        And no error was received
+@v1.2.0
+    Scenario: Validate snapshot for deletion with no errors
+        Given a PowerMax service
+        And I call CreateVolume "volume1"
+        And a valid CreateVolumeResponse is returned
+        When I call IsSnapshotSource
+        Then IsSnapshotSource returns "false"
+        Then no error was received
+@v1.4.0
+    Scenario: Validate snapshot for deletion but get error
+        Given a PowerMax service
+        And I call CreateVolume "volume1"
+        And a valid CreateVolumeResponse is returned
+        And I induce error "GetVolSnapsError"
+        When I call IsSnapshotSource
+        Then IsSnapshotSource returns "false"
+        Then the error contains "induced error"
 @v1.2.0
     Scenario: Soft Deleting a volume
         Given a PowerMax service

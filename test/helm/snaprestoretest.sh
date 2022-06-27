@@ -4,21 +4,6 @@ DEFAULT_NAMESPACE="test"
 DEFAULT_SC="powermax"
 DEFAULT_SC_SUFFIX="xfs"
 
-function isv1SnapSupported() {
-  kMajorVersion=$(kubectl version | grep 'Server Version' | sed -e 's/^.*Major:"//' -e 's/[^0-9].*//g')
-  kMinorVersion=$(kubectl version | grep 'Server Version' | sed -e 's/^.*Minor:"//' -e 's/[^0-9].*//g')
-  local K8SV120="1.20"
-  local V="${kMajorVersion}.${kMinorVersion}"
-  if [[ ${V} < ${K8SV120} ]]; then
-    v1Snap="false"
-  else
-    echo "Detected k8s version >= 1.20. Will default to v1 VolumeSnapshot. Make sure v1 snapshot CRDs are installed in the cluster"
-    v1Snap="true"
-  fi
-}
-
-isv1SnapSupported
-
 # Usage information
 function usage {
    echo
@@ -95,11 +80,7 @@ kubectl exec -n $NAMESPACE powermaxtest-0 -- ls -l /data0
 kubectl exec -n $NAMESPACE powermaxtest-0 -- sync
 kubectl exec -n $NAMESPACE powermaxtest-0 -- sync
 echo "creating snap1 of pvol0"
-if [ "$v1Snap" = true ]; then
-     kubectl create -f snap1.yaml --namespace $NAMESPACE
-else
-  kubectl create -f betaSnap1.yaml --namespace $NAMESPACE
-fi
+kubectl create -f snap1.yaml --namespace $NAMESPACE
 sleep 10
 kubectl get volumesnapshot -n $NAMESPACE
 echo "updating container to add a volume sourced from snapshot"

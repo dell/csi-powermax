@@ -20,9 +20,8 @@ import (
 	"sync"
 	"time"
 
-	pmax "github.com/dell/gopowermax/v2"
-
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
+	pmax "github.com/dell/gopowermax/v2"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	types "github.com/dell/gopowermax/v2/types/v100"
@@ -518,6 +517,8 @@ func (g *storageGroupSvc) addVolumeToSGMVVolumeCheck(ctx context.Context, client
 	}
 	switch am.Mode {
 	case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER,
+		csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER,
 		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
 		// Check if the volume is already mapped to some host
 		if vol.NumberOfFrontEndPaths > 0 {

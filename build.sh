@@ -166,7 +166,7 @@ function build_image {
                 $DOCKEROPT)
        if [ "$BUILD_REVPROXY" = true ]; then
          echo $BUILDCMD build -t "$REVPROXY_IMAGE_VERSION_TAG"
-         (cd .. && $BUILDCMD build -f csi-powermax/csireverseproxy/Dockerfile -t "$REVPROXY_IMAGE_VERSION_TAG" . )
+         (cd csireverseproxy && $BUILDCMD build -t "$REVPROXY_IMAGE_VERSION_TAG" . )
        fi
    else
       echo $BUILDCMD build -t $IMAGE_VERSION_TAG\

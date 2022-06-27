@@ -59,7 +59,7 @@ func (lockProp *LockProperties) Queue(request LockRequest) {
 		case lockProp.WaitChannel <- request.WaitChannel:
 			log.Infof("Request queued: %s\n", request.ResourceID)
 		default:
-			log.Infof("Max number of outstanding requests already queued for: %s\n", request.ResourceID)
+			log.Infof("Max number of outstanding requests already queued for: %s", request.ResourceID)
 			request.WaitChannel <- false
 		}
 	}
@@ -87,7 +87,7 @@ func (lockProp *LockProperties) Release(request LockRequest, fifoLocks map[strin
 
 // String - helper function which helps log the current state of lock
 func (lockProp *LockProperties) String() string {
-	return fmt.Sprintf("Active(%d/%d), Queued(%d/%d)\n", lockProp.Active, lockProp.MaxActive,
+	return fmt.Sprintf("Active(%d/%d), Queued(%d/%d)", lockProp.Active, lockProp.MaxActive,
 		len(lockProp.WaitChannel), lockProp.MaxOutStanding)
 }
 
@@ -180,7 +180,7 @@ func (l *Lock) Lock() error {
 	if !isLocked {
 		return fmt.Errorf("failed to obtain lock")
 	}
-	log.Infof("Request ID: %s - Obtained %s lock\n", l.RequestID, string(l.LockType))
+	log.Infof("Request ID: %s - Obtained %s lock", l.RequestID, string(l.LockType))
 	return nil
 }
 

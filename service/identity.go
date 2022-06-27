@@ -16,6 +16,8 @@ package service
 
 import (
 	"fmt"
+
+	commonext "github.com/dell/dell-csi-extensions/common"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -26,6 +28,8 @@ import (
 	wrappers "github.com/golang/protobuf/ptypes/wrappers"
 
 	"github.com/dell/csi-powermax/v2/core"
+
+	migrext "github.com/dell/dell-csi-extensions/migration"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 )
 
@@ -113,9 +117,8 @@ func (s *service) Probe(
 }
 
 func (s *service) ProbeController(ctx context.Context,
-	req *csiext.ProbeControllerRequest) (
-	*csiext.ProbeControllerResponse, error) {
-
+	req *commonext.ProbeControllerRequest) (
+	*commonext.ProbeControllerResponse, error) {
 	if !strings.EqualFold(s.mode, "node") {
 		log.Debug("controllerProbe")
 		if err := s.controllerProbe(ctx); err != nil {
@@ -126,7 +129,7 @@ func (s *service) ProbeController(ctx context.Context,
 
 	ready := new(wrappers.BoolValue)
 	ready.Value = true
-	rep := new(csiext.ProbeControllerResponse)
+	rep := new(commonext.ProbeControllerResponse)
 	rep.Ready = ready
 	rep.Name = s.getDriverName()
 	rep.VendorVersion = core.SemVer
@@ -256,4 +259,32 @@ func (s *service) GetReplicationCapabilities(
 		})
 	}
 	return rep, nil
+}
+
+func (s *service) GetMigrationCapabilities(ctx context.Context, request *migrext.GetMigrationCapabilityRequest) (*migrext.GetMigrationCapabilityResponse, error) {
+	return &migrext.GetMigrationCapabilityResponse{
+		Capabilities: []*migrext.MigrationCapability{
+			{
+				Type: &migrext.MigrationCapability_Rpc{
+					Rpc: &migrext.MigrationCapability_RPC{
+						Type: migrext.MigrateTypes_NON_REPL_TO_REPL,
+					},
+				},
+			},
+			{
+				Type: &migrext.MigrationCapability_Rpc{
+					Rpc: &migrext.MigrationCapability_RPC{
+						Type: migrext.MigrateTypes_REPL_TO_NON_REPL,
+					},
+				},
+			},
+			{
+				Type: &migrext.MigrationCapability_Rpc{
+					Rpc: &migrext.MigrationCapability_RPC{
+						Type: migrext.MigrateTypes_VERSION_UPGRADE,
+					},
+				},
+			},
+		},
+	}, nil
 }

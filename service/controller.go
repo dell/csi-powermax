@@ -129,6 +129,7 @@ const (
 	RemoteServiceLevelParam              = "RemoteServiceLevel"
 	RemoteSRPParam                       = "RemoteSRP"
 	BiasParam                            = "Bias"
+	FsTypeParam                          = "csi.storage.k8s.io/fstype"
 )
 
 //Pair - structure which holds a pair
@@ -217,7 +218,7 @@ func (s *service) GetPortIdentifier(ctx context.Context, symID string, dirPortKe
 	}
 	log.Debugf("Symmetrix ID: %s, DirPortKey: %s, Port type: %s",
 		symID, dirPortKey, port.SymmetrixPort.Type)
-	if !strings.Contains(port.SymmetrixPort.Identifier, "iqn") {
+	if strings.Contains(port.SymmetrixPort.Type, "FibreChannel") {
 		// Add "0x" to the FC Port WWN as that is used by gofsutils to differentiate between FC and ISCSI
 		portIdentifier = "0x"
 	}
@@ -324,6 +325,12 @@ func (s *service) CreateVolume(
 		storageGroupName = params[StorageGroupParam]
 	}
 
+	// Get the namespace
+	namespace := ""
+	if params[CSIPVCNamespace] != "" {
+		namespace = params[CSIPVCNamespace]
+	}
+
 	// Remote Replication based params
 	var replicationEnabled string
 	var remoteSymID string
@@ -332,7 +339,6 @@ func (s *service) CreateVolume(
 	var remoteServiceLevel string
 	var remoteSRPID string
 	var repMode string
-	var namespace string
 	var bias string
 
 	if params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)] == "true" {
@@ -345,7 +351,6 @@ func (s *service) CreateVolume(
 		remoteServiceLevel = params[path.Join(s.opts.ReplicationPrefix, RemoteServiceLevelParam)]
 		remoteSRPID = params[path.Join(s.opts.ReplicationPrefix, RemoteSRPParam)]
 		bias = params[path.Join(s.opts.ReplicationPrefix, BiasParam)]
-		namespace = params[CSIPVCNamespace]
 		if repMode == Metro {
 			return s.createMetroVolume(ctx, req, reqID, storagePoolID, symmetrixID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias)
 		}
@@ -452,9 +457,12 @@ func (s *service) CreateVolume(
 	maxLength := MaxVolIdentifierLength - len(volumePrefix) - len(s.getClusterPrefix()) - len(CsiVolumePrefix) - 1
 	//First get the short volume name
 	shortVolumeName := truncateString(volumeName, maxLength)
-	//Form the volume identifier using short volume name
-	volumeIdentifier := fmt.Sprintf("%s%s-%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName)
-
+	//Form the volume identifier using short volume name and namespace
+	var namespaceSuffix string
+	if namespace != "" {
+		namespaceSuffix = "-" + namespace
+	}
+	volumeIdentifier := fmt.Sprintf("%s%s-%s%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespaceSuffix)
 	// Storage Group is required to be derived from the parameters (such as service level and storage resource pool which are supplied in parameters)
 	// Storage Group Name can optionally be supplied in the parameters (for testing) to over-ride the default.
 	if storageGroupName == "" {
@@ -762,9 +770,12 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	maxLength := MaxVolIdentifierLength - len(volumePrefix) - len(s.getClusterPrefix()) - len(CsiVolumePrefix) - 1
 	//First get the short volume name
 	shortVolumeName := truncateString(volumeName, maxLength)
-	//Form the volume identifier using short volume name
-	volumeIdentifier := fmt.Sprintf("%s%s-%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName)
-
+	//Form the volume identifier using short volume name and namespace
+	var namespaceSuffix string
+	if namespace != "" {
+		namespaceSuffix = "-" + namespace
+	}
+	volumeIdentifier := fmt.Sprintf("%s%s-%s%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespaceSuffix)
 	// Storage Group is required to be derived from the parameters (such as service level and storage resource pool which are supplied in parameters)
 	// Storage Group Name can optionally be supplied in the parameters (for testing) to over-ride the default.
 	var remoteStorageGroupName string
@@ -978,13 +989,13 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 
 	remoteVolumeID, err := s.GetRemoteVolumeID(ctx, symID, localRDFGrpNo, vol.VolumeID, pmaxClient)
 	if err != nil {
-		log.Errorf("Failed to fetch remote volume details: %s\n", err.Error())
+		log.Errorf("Failed to fetch remote volume details: %s", err.Error())
 		return nil, err
 	}
 	// RESET SRP of Protected SG on remote array
 	r2PSG, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteProtectionGroupID)
 	if err != nil {
-		log.Errorf("Failed to fetch remote PSG details: %s\n", err.Error())
+		log.Errorf("Failed to fetch remote PSG details: %s", err.Error())
 		return nil, status.Errorf(codes.Internal, "Failed to fetch remote PSG details %s", err.Error())
 	}
 	if r2PSG.SRP != "" && r2PSG.SRP != "NONE" {
@@ -998,7 +1009,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		}
 		err = pmaxClient.UpdateStorageGroupS(ctx, remoteSymID, remoteProtectionGroupID, resetSRPPayload)
 		if err != nil {
-			log.Errorf("Failed to Update Remote SG SRP to NONE: %s\n", err.Error())
+			log.Errorf("Failed to Update Remote SG SRP to NONE: %s", err.Error())
 			return nil, status.Errorf(codes.Internal, "Failed to Update Remote SG SRP to NONE: %s", err.Error())
 		}
 	}
@@ -1083,14 +1094,19 @@ func (s *service) verifyProtectionGroupID(ctx context.Context, symID, storageGro
 	}
 	for _, value := range sgList.StorageGroupIDs {
 		// Is it trying to create more than one SG in async mode for one rdf group
-		if (repMode == Async || repMode == Metro) &&
-			(strings.Contains(value, localRdfGrpNo+"-"+Async) || strings.Contains(value, localRdfGrpNo+"-"+Sync) || strings.Contains(value, localRdfGrpNo+"-"+Metro)) {
+		if (repMode == Async) &&
+			(strings.Contains(value, "-"+localRdfGrpNo+"-"+Async) || strings.Contains(value, "-"+localRdfGrpNo+"-"+Sync) || strings.Contains(value, "-"+localRdfGrpNo+"-"+Metro)) {
 			return fmt.Errorf("RDF group (%s) is already a part of ReplicationGroup (%s) in Sync/Async/Metro mode", localRdfGrpNo, value)
 		}
 
 		// Is it trying to create a SG with a rdf group which is already used in Async/Metro mode
-		if repMode == Sync && (strings.Contains(value, localRdfGrpNo+"-"+Async) || strings.Contains(value, localRdfGrpNo+"-"+Metro)) {
+		if repMode == Sync && (strings.Contains(value, "-"+localRdfGrpNo+"-"+Async) || strings.Contains(value, "-"+localRdfGrpNo+"-"+Metro)) {
 			return fmt.Errorf("RDF group (%s) is already part of another Async/Metro mode ReplicationGroup (%s)", localRdfGrpNo, value)
+		}
+
+		// Is it trying to create a SG with a rdf group which is already used in Async/Sync mode
+		if repMode == Metro && (strings.Contains(value, "-"+localRdfGrpNo+"-"+Async) || strings.Contains(value, "-"+localRdfGrpNo+"-"+Sync)) {
+			return fmt.Errorf("RDF group (%s) is already part of another Async/Sync mode ReplicationGroup (%s)", localRdfGrpNo, value)
 		}
 	}
 	return nil
@@ -1426,7 +1442,8 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 	log.WithFields(fields).Info("Executing DeleteVolume with following fields")
 
 	vol, err := pmaxClient.GetVolumeByID(ctx, symID, devID)
-	log.Debugf("vol: %#v, error: %#v\n", vol, err)
+	log.Debugf("vol: %#v, error: %#v", vol, err)
+
 	if err != nil {
 		if strings.Contains(err.Error(), cannotBeFound) {
 			// The volume is already deleted
@@ -1437,7 +1454,7 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 	}
 
 	if vol.VolumeIdentifier != volName {
-		// This volume is aready deleted or marked for deletion,
+		// This volume is already deleted or marked for deletion,
 		// or volume id is an old stale identifier not matching a volume.
 		// Either way idempotence calls for doing nothing and returning ok.
 		log.Info(fmt.Sprintf("DeleteVolume: VolumeIdentifier %s did not match volume name %s so assume it's already deleted",
@@ -1587,14 +1604,14 @@ func (s *service) ControllerPublishVolume(
 	cacheID := symID + ":" + nodeID
 	tempHostID, ok := nodeCache.Load(cacheID)
 	if ok {
-		log.Debugf("REQ ID: %s Loaded nodeID: %s, hostID: %s from node cache\n",
+		log.Debugf("REQ ID: %s Loaded nodeID: %s, hostID: %s from node cache",
 			reqID, nodeID, tempHostID.(string))
 		nodeInCache = true
 		if !strings.Contains(tempHostID.(string), "-FC") {
 			isISCSI = true
 		}
 	} else {
-		log.Debugf("REQ ID: %s nodeID: %s not present in node cache\n", reqID, nodeID)
+		log.Debugf("REQ ID: %s nodeID: %s not present in node cache", reqID, nodeID)
 		isISCSI, err = s.IsNodeISCSI(ctx, symID, nodeID, pmaxClient)
 		if err != nil {
 			return nil, status.Error(codes.NotFound, err.Error())
@@ -1605,12 +1622,12 @@ func (s *service) ControllerPublishVolume(
 		// Update the map
 		val, ok := nodeCache.LoadOrStore(cacheID, hostID)
 		if !ok {
-			log.Debugf("REQ ID: %s Added nodeID: %s, hostID: %s to node cache\n", reqID, nodeID, hostID)
+			log.Debugf("REQ ID: %s Added nodeID: %s, hostID: %s to node cache", reqID, nodeID, hostID)
 		} else {
-			log.Debugf("REQ ID: %s Some other goroutine added hostID: %s for node: %s to node cache\n",
+			log.Debugf("REQ ID: %s Some other goroutine added hostID: %s for node: %s to node cache",
 				reqID, val.(string), nodeID)
 			if hostID != val.(string) {
-				log.Warningf("REQ ID: %s Mismatch between calculated value: %s and latest value: %s from node cache\n",
+				log.Warningf("REQ ID: %s Mismatch between calculated value: %s and latest value: %s from node cache",
 					reqID, val.(string), hostID)
 			}
 		}
@@ -1627,7 +1644,7 @@ func (s *service) ControllerPublishVolume(
 
 	if remoteSymID != "" && remoteVolumeID != "" {
 		remoteVol, err := pmaxClient.GetVolumeByID(ctx, remoteSymID, remoteVolumeID)
-		log.Debugf("remote-vol: %#v, error: %#v\n", remoteVol, err)
+		log.Debugf("remote-vol: %#v, error: %#v", remoteVol, err)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "PublishVolume: Could not retrieve remote volume: (%s)", err.Error())
 		}
@@ -2272,6 +2289,10 @@ func valVolumeCaps(
 			break
 		case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:
 			break
+		case csi.VolumeCapability_AccessMode_SINGLE_NODE_SINGLE_WRITER:
+			break
+		case csi.VolumeCapability_AccessMode_SINGLE_NODE_MULTI_WRITER:
+			break
 		case csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
 			break
 		case csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
@@ -2353,7 +2374,7 @@ func (s *service) GetCapacity(
 			log.Error("GetVolumeCapabilities failed with error: " + reason)
 			return nil, status.Errorf(codes.InvalidArgument, reason)
 		}
-		log.Infof("Supported capabilities - Error(%s)\n", reason)
+		log.Infof("Supported capabilities - Error(%s)", reason)
 	}
 
 	// Storage (resource) Pool. Validate it against exist Pools
@@ -2430,51 +2451,81 @@ func (s *service) ControllerGetCapabilities(
 	req *csi.ControllerGetCapabilitiesRequest) (
 	*csi.ControllerGetCapabilitiesResponse, error) {
 
-	return &csi.ControllerGetCapabilitiesResponse{
-		Capabilities: []*csi.ControllerServiceCapability{
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
-					},
-				},
-			},
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
-					},
-				},
-			},
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_GET_CAPACITY,
-					},
-				},
-			},
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
-					},
-				},
-			},
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_CLONE_VOLUME,
-					},
-				},
-			},
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
-					},
+	capabilities := []*csi.ControllerServiceCapability{
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 				},
 			},
 		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
+				},
+			},
+		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_GET_CAPACITY,
+				},
+			},
+		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
+				},
+			},
+		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_CLONE_VOLUME,
+				},
+			},
+		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
+				},
+			},
+		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_SINGLE_NODE_MULTI_WRITER,
+				},
+			},
+		},
+	}
+
+	healthMonitorCapabilities := []*csi.ControllerServiceCapability{
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_VOLUME_CONDITION,
+				},
+			},
+		},
+		{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: csi.ControllerServiceCapability_RPC_GET_VOLUME,
+				},
+			},
+		},
+	}
+
+	if s.opts.IsHealthMonitorEnabled {
+		capabilities = append(capabilities, healthMonitorCapabilities...)
+	}
+
+	return &csi.ControllerGetCapabilitiesResponse{
+		Capabilities: capabilities,
 	}, nil
 }
 
@@ -3270,7 +3321,7 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 	// RESET SRP of Protected SG on remote array
 	r2PSG, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteProtectionGroupID)
 	if err != nil {
-		log.Errorf("Failed to fetch remote PSG details: %s\n", err.Error())
+		log.Errorf("Failed to fetch remote PSG details: %s", err.Error())
 		return nil, status.Errorf(codes.Internal, "Failed to fetch remote PSG details %s", err.Error())
 	}
 	if r2PSG.SRP != "" && r2PSG.SRP != "NONE" {
@@ -3284,7 +3335,7 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 		}
 		err = pmaxClient.UpdateStorageGroupS(ctx, remoteSymID, remoteProtectionGroupID, resetSRPPayload)
 		if err != nil {
-			log.Errorf("Failed to Update Remote SG SRP to NONE: %s\n", err.Error())
+			log.Errorf("Failed to Update Remote SG SRP to NONE: %s", err.Error())
 			return nil, status.Errorf(codes.Internal, "Failed to Update Remote SG SRP to NONE: %s", err.Error())
 		}
 	}
@@ -3389,8 +3440,106 @@ func addMetaData(params map[string]string) map[string][]string {
 	return headerMetadata
 }
 
-func (s *service) ControllerGetVolume(ctx context.Context, request *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented yet")
+func (s *service) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+	id := req.GetVolumeId()
+	volName, symID, devID, _, _, err := s.parseCsiID(id)
+	if err != nil {
+		log.Errorf("Invalid volumeid: %s", id)
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
+	}
+	pmaxClient, err := s.GetPowerMaxClient(symID)
+	if err != nil {
+		log.Error(err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Requires probe
+	if err := s.requireProbe(ctx, pmaxClient); err != nil {
+		return nil, err
+	}
+
+	fields := map[string]interface{}{
+		"RequestID":   reqID,
+		"SymmetrixID": symID,
+		"VolumeName":  volName,
+		"DeviceID":    devID,
+	}
+	log.WithFields(fields).Info("Executing ControllerGetVolume with following fields")
+
+	symID, devID, vol, err := s.GetVolumeByID(ctx, id, pmaxClient)
+	if err != nil {
+		log.Errorf("GetVolumeByID failed with (%s) for devID (%s)", err.Error(), devID)
+		return &csi.ControllerGetVolumeResponse{
+			Volume: nil,
+			Status: &csi.ControllerGetVolumeResponse_VolumeStatus{
+				VolumeCondition: &csi.VolumeCondition{
+					Abnormal: true,
+					Message:  fmt.Sprintf("error in getting volume (%s): (%s)", devID, err.Error()),
+				},
+			},
+		}, nil
+	}
+
+	volResp := s.getCSIVolume(vol)
+	if len(vol.StorageGroupIDList) < 2 {
+		return &csi.ControllerGetVolumeResponse{
+			Volume: volResp,
+			Status: &csi.ControllerGetVolumeResponse_VolumeStatus{
+				VolumeCondition: &csi.VolumeCondition{
+					Abnormal: false,
+					Message:  fmt.Sprintf("volume (%s) is not published", devID),
+				},
+			},
+		}, nil
+	}
+	// fetch node ID's published
+	var nodeIDs []string
+	for _, sgID := range vol.StorageGroupIDList {
+		if strings.Contains(sgID, "no-srp") {
+			// fetch the SG details, and see if masking view is present
+			sg, err := pmaxClient.GetStorageGroup(ctx, symID, sgID)
+			if err != nil {
+				log.Errorf("GetStorageGroup failed with (%s) for devID (%s) sgID (%s)", err.Error(), devID, sgID)
+				return &csi.ControllerGetVolumeResponse{
+					Volume: nil,
+					Status: &csi.ControllerGetVolumeResponse_VolumeStatus{
+						VolumeCondition: &csi.VolumeCondition{
+							Abnormal: true,
+							Message:  fmt.Sprintf("error in getting SG masking view details (%s): (%s)", devID, err.Error()),
+						},
+					},
+				}, nil
+			}
+			for _, mv := range sg.MaskingView {
+				hostID := getHostIDFromMaskingView(mv)
+				nodeIDs = append(nodeIDs, hostID)
+			}
+		}
+	}
+	return &csi.ControllerGetVolumeResponse{
+		Volume: volResp,
+		Status: &csi.ControllerGetVolumeResponse_VolumeStatus{
+			PublishedNodeIds: nodeIDs,
+			VolumeCondition: &csi.VolumeCondition{
+				Abnormal: false,
+				Message:  "Volume is available",
+			},
+		},
+	}, nil
+}
+
+// getHostIDFromMaskingView will return hostID from the given maskingview
+// maskingview is CsiMVPrefix-ClusterPrefix-nodeID, eg. csi-mv-ABC-node1
+func getHostIDFromMaskingView(maskingView string) string {
+	subParts := strings.SplitAfterN(maskingView, "-", 4)
+	return subParts[3]
 }
 
 func (s *service) ExecuteAction(ctx context.Context, req *csiext.ExecuteActionRequest) (*csiext.ExecuteActionResponse, error) {

@@ -17,11 +17,10 @@ package symmetrix
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
-
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
+	"sync"
+	"time"
 )
 
 const (

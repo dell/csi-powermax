@@ -20,7 +20,6 @@ import (
 	"strings"
 
 	pmax "github.com/dell/gopowermax/v2"
-
 	types "github.com/dell/gopowermax/v2/types/v100"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"

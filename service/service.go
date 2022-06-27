@@ -43,6 +43,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/dell/csi-powermax/v2/core"
+	migrext "github.com/dell/dell-csi-extensions/migration"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 	pmax "github.com/dell/gopowermax/v2"
 )
@@ -78,6 +79,7 @@ type Service interface {
 	csi.IdentityServer
 	csi.NodeServer
 	csiext.ReplicationServer
+	migrext.MigrationServer
 	BeforeServe(context.Context, *gocsi.StoragePlugin, net.Listener) error
 	RegisterAdditionalServers(server *grpc.Server)
 }
@@ -115,6 +117,20 @@ type Opts struct {
 	IsReverseProxyEnabled      bool
 	ReplicationContextPrefix   string // Enables sidecars to read required information from volume context
 	ReplicationPrefix          string // Used as a prefix to find out if replication is enabled
+	IsHealthMonitorEnabled     bool   // used to check if health monitor for volume is enabled
+	IsTopologyControlEnabled   bool   // used to filter topology keys based on user config
+}
+
+// NodeConfig defines rules for given node
+type NodeConfig struct {
+	NodeName string   `yaml:"nodeName, omitempty"`
+	Rules    []string `yaml:"rules, omitempty"`
+}
+
+// TopologyConfig defines set of allow and deny rules for multiple nodes
+type TopologyConfig struct {
+	AllowedConnections []NodeConfig `yaml:"allowedConnections, omitempty" mapstructure:"allowedConnections"`
+	DeniedConnections  []NodeConfig `yaml:"deniedConnections, omitempty" mapstructure:"deniedConnections"`
 }
 
 type service struct {
@@ -146,6 +162,10 @@ type service struct {
 	arrayTransportProtocolMap map[string]string // map of array SN to IscsiTransportProtocol or FcTransportProtocol
 
 	sgSvc *storageGroupSvc
+
+	topologyConfig      *TopologyConfig
+	allowedTopologyKeys map[string][]string // map of nodes to allowed topology keys
+	deniedTopologyKeys  map[string][]string // map of nodes to denied topology keys
 }
 
 // New returns a new Service.
@@ -212,31 +232,33 @@ func (s *service) BeforeServe(
 
 	defer func() {
 		fields := map[string]interface{}{
-			"endpoint":                s.opts.Endpoint,
-			"useProxy":                s.opts.UseProxy,
-			"ProxyServiceHost":        s.opts.ProxyServiceHost,
-			"ProxyServicePort":        s.opts.ProxyServicePort,
-			"user":                    s.opts.User,
-			"password":                "",
-			"systemname":              s.opts.SystemName,
-			"nodename":                s.opts.NodeName,
-			"insecure":                s.opts.Insecure,
-			"thickprovision":          s.opts.Thick,
-			"privatedir":              s.privDir,
-			"autoprobe":               s.opts.AutoProbe,
-			"enableblock":             s.opts.EnableBlock,
-			"enablechap":              s.opts.EnableCHAP,
-			"portgroups":              s.opts.PortGroups,
-			"clusterprefix":           s.opts.ClusterPrefix,
-			"transport":               s.opts.TransportProtocol,
-			"mode":                    s.mode,
-			"drivername":              s.opts.DriverName,
-			"iscsichapuser":           s.opts.CHAPUserName,
-			"iscsichappassword":       "",
-			"nodenametemplate":        s.opts.NodeNameTemplate,
-			"modifyHostName":          s.opts.ModifyHostName,
-			"replicationContextPreix": s.opts.ReplicationContextPrefix,
-			"replicationPrefix":       s.opts.ReplicationPrefix,
+			"endpoint":                 s.opts.Endpoint,
+			"useProxy":                 s.opts.UseProxy,
+			"ProxyServiceHost":         s.opts.ProxyServiceHost,
+			"ProxyServicePort":         s.opts.ProxyServicePort,
+			"user":                     s.opts.User,
+			"password":                 "",
+			"systemname":               s.opts.SystemName,
+			"nodename":                 s.opts.NodeName,
+			"insecure":                 s.opts.Insecure,
+			"thickprovision":           s.opts.Thick,
+			"privatedir":               s.privDir,
+			"autoprobe":                s.opts.AutoProbe,
+			"enableblock":              s.opts.EnableBlock,
+			"enablechap":               s.opts.EnableCHAP,
+			"portgroups":               s.opts.PortGroups,
+			"clusterprefix":            s.opts.ClusterPrefix,
+			"transport":                s.opts.TransportProtocol,
+			"mode":                     s.mode,
+			"drivername":               s.opts.DriverName,
+			"iscsichapuser":            s.opts.CHAPUserName,
+			"iscsichappassword":        "",
+			"nodenametemplate":         s.opts.NodeNameTemplate,
+			"modifyHostName":           s.opts.ModifyHostName,
+			"replicationContextPreix":  s.opts.ReplicationContextPrefix,
+			"replicationPrefix":        s.opts.ReplicationPrefix,
+			"isHealthMonitorEnabled":   s.opts.IsHealthMonitorEnabled,
+			"isTopologyControlEnabled": s.opts.IsTopologyControlEnabled,
 		}
 
 		if s.opts.Password != "" {
@@ -285,6 +307,21 @@ func (s *service) BeforeServe(
 	// get the SP's operating mode.
 	s.mode = csictx.Getenv(ctx, gocsi.EnvVarMode)
 
+	if s.mode == "node" {
+		// Reading Topology filters from the config file
+		topoConfigFilePath, ok := csictx.LookupEnv(ctx, EnvTopoConfigFilePath)
+		if !ok {
+			log.Warningf("Unable to read X_CSI_POWERMAX_TOPOLOGY_CONFIG_PATH from env. Continuing with default topology keys")
+		} else {
+			s.topologyConfig, err = ReadConfig(topoConfigFilePath)
+			if err != nil {
+				log.Warningf("continuing with default topology keys")
+			} else {
+				log.Debug("processing topology config map")
+				s.ParseConfig()
+			}
+		}
+	}
 	opts := Opts{}
 	if ep, ok := csictx.LookupEnv(ctx, EnvDriverName); ok {
 		opts.DriverName = ep
@@ -407,6 +444,8 @@ func (s *service) BeforeServe(
 		// reverseproxy is enabled is set
 		opts.IsReverseProxyEnabled = pb(EnvProxyEnabled)
 	}
+	opts.IsHealthMonitorEnabled = pb(EnvHealthMonitorEnabled)
+	opts.IsTopologyControlEnabled = pb(EnvTopologyFilterEnabled)
 	s.opts = opts
 
 	// setup the iscsi client
@@ -443,7 +482,7 @@ func (s *service) BeforeServe(
 	}
 
 	// Start the deletion worker thread
-	log.Printf("s.mode: %s\n", s.mode)
+	log.Printf("s.mode: %s", s.mode)
 	if !strings.EqualFold(s.mode, "node") {
 		/*symIDs, err := s.adminClient.GetSymmetrixIDList()
 		if err != nil {
@@ -468,8 +507,70 @@ func (s *service) BeforeServe(
 	return nil
 }
 
+// ParseConfig will make respective allowed and denied list as per the topology config
+func (s *service) ParseConfig() {
+	// make allowed list
+	s.allowedTopologyKeys = readNodesRules(s.topologyConfig.AllowedConnections)
+	// make denied list
+	s.deniedTopologyKeys = readNodesRules(s.topologyConfig.DeniedConnections)
+
+	log.Infof("proccessed allowed list: (%+v)", s.allowedTopologyKeys)
+	log.Infof("proccessed denied list: (%+v)", s.deniedTopologyKeys)
+
+}
+
+func readNodesRules(connections []NodeConfig) map[string][]string {
+	keys := map[string][]string{}
+	for _, nodeConfig := range connections {
+		nodeName := nodeConfig.NodeName
+		var arrayToConTyp []string
+		for _, rule := range nodeConfig.Rules {
+			arrayHW := strings.Split(rule, ":")
+			array := arrayHW[0]
+			if array == "*" {
+				array = ""
+			}
+			if len(arrayHW) < 2 {
+				log.Warningf("incorrect config for %s skipping rule (%s)", nodeName, rule)
+				continue
+			}
+			hws := strings.Split(arrayHW[1], "/")
+			for _, typ := range hws {
+				if typ == "*" {
+					typ = ""
+				}
+				arrayToConTyp = append(arrayToConTyp, array+"."+strings.ToLower(typ))
+			}
+			keys[nodeName] = arrayToConTyp
+		}
+	}
+	return keys
+}
+
+// ReadConfig will read topology configmap on the default path into TopologyConfig struct
+func ReadConfig(configPath string) (*TopologyConfig, error) {
+	topoViper := viper.New()
+	topoViper.SetConfigFile(configPath)
+	topoViper.SetConfigType("yaml")
+
+	err := topoViper.ReadInConfig()
+	// if unable to read configuration file, set defaults
+	if err != nil {
+		log.WithError(err).Error("unable to read topology config file")
+		return nil, err
+	}
+	var config TopologyConfig
+	err = topoViper.Unmarshal(&config)
+	if err != nil {
+		log.WithError(err).Error("unable to unmarshal topology config")
+		return nil, err
+	}
+	return &config, nil
+}
+
 func (s *service) RegisterAdditionalServers(server *grpc.Server) {
 	csiext.RegisterReplicationServer(server, s)
+	migrext.RegisterMigrationServer(server, s)
 }
 
 func (s *service) getProxySettingsFromEnv() (string, string, bool) {

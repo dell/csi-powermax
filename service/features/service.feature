@@ -35,6 +35,12 @@ Feature: PowerMax CSI interface
       And I call CreateVolume "volume1"
       Then a valid CreateVolumeResponse is returned
 
+@v2.3.0
+    Scenario: Create volume with namespace
+      Given a PowerMax service
+      And I call CreateVolume "volume1" with namespace "test_namespace"
+      Then a valid CreateVolumeResponse is returned
+
 @v1.0.0
      Scenario: Idempotent create volume with duplicate volume name
       Given a PowerMax service
@@ -317,6 +323,8 @@ Feature: PowerMax CSI interface
       | "mount"    | "single-writer"            | "ext4"    | "SRP_1" | "bad"       | "Unable to validate context (SRP=true, SLO=false)"                |
       | "mount"    | "single-writer"            | "ext4"    | ""      | "Optimized" | "none"                                                            |
       | "mount"    | "single-writer"            | "ext4"    | "SRP_1" | ""          | "none"                                                            |
+      | "mount"    | "single-node-single-writer"| "ext4"    | ""      | ""          | "none"                                                            |
+      | "mount"    | "single-node-multi-writer" | "ext4"    | ""      | ""          | "none"                                                            |
 
 @v1.0.0
      Scenario Outline: Call validate volume capabilities with non-existent volume
@@ -367,12 +375,6 @@ Feature: PowerMax CSI interface
       Given a PowerMax service
       When I call BeforeServe with an invalid ClusterPrefix
       Then the error contains "exceeds maximum length"
-
-@v1.0.0
-     Scenario: Call NodeGetVolumeStats, should get unimplemented
-      Given a PowerMax service
-      When I call NodeGetVolumeStats
-      Then the error contains "Unimplemented"
 
 @v1.0.0
      Scenario: Call ListVolumes, should get unimplemented
@@ -675,3 +677,44 @@ Feature: PowerMax CSI interface
       And I have a Node "Node1" with MaskingView
       When I invoke nodeHostSetup with a "node" service
       Then no error was received
+
+@v2.2.0
+    Scenario Outline: Call NodeGetVolumeStats
+      Given a PowerMax service
+      And a valid volume
+      And I induce error <induced>
+      When I call NodeGetVolumeStats with volumePath as <volPath>
+      Then the error contains <errormsg>
+      And a valid NodeGetVolumeStatsResponse is returned
+
+      Examples:
+        | induced                                  | volPath                                                        | errormsg                 |
+        | "none"                                   | ""                                                             | "no Volume path found"   |
+        | "none"                                   | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
+        | "GOFSInduceGetMountInfoFromDeviceError"  | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
+        | "NoVolumeID"                             | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "Invalid volume id"      |
+	    | "NoMountInfo"                            | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"                | "none"                   |
+
+@v2.3.0
+  Scenario Outline: Test valid Topology ReadConfig in BeforeServe
+    Given a PowerMax service
+    And I induce error <induced>
+    When I call BeforeServe with TopologyConfig set at <configPath>
+    Then no error was received
+  Examples:
+    | induced                    | configPath                                 |
+    | "none"                     | "../samples/configmap/config.yaml"         |
+    | "none"                     | "../samples/configmap/topologyConfig.yaml" |
+    | "InvalidTopologyConfigEnv" | "../samples/configmap/topologyConfig.yaml" |
+
+@v2.3.0
+  Scenario Outline: Test Topology Filters in NodeGetInfo
+    Given a PowerMax service
+    And I add a Topology keys filter <allowedList> and <deniedList>
+    When I call NodeGetInfo
+    Then Topology keys are created properly
+    And no error was received
+  Examples:
+    | allowedList                 | deniedList                  |
+    | "*-000197900046."           | "Node1-000197900047.iscsi"  |
+    | "Node1-000197900046.fc"     | "*-000197900047."           |

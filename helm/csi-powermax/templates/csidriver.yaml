@@ -4,7 +4,8 @@ metadata:
   {{- if eq .Values.customDriverName.enabled true}}
     name: {{ printf "%s-%s" .Release.Namespace .Values.customDriverName.value }}
   {{- else }}
-    name: powermax
+    name: csi-powermax
   {{- end }}
 spec:
     attachRequired: true
+    fsGroupPolicy: {{ .Values.fsGroupPolicy }}

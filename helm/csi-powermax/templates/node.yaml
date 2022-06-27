@@ -46,6 +46,12 @@ apiVersion: apps/v1
 metadata:
   name: {{ .Release.Name }}-node
   namespace: {{ .Release.Namespace }}
+  {{- if hasKey .Values "authorization" }}
+  {{- if eq .Values.authorization.enabled true }}
+  annotations:
+    com.dell.karavi-authorization-proxy: "true"
+  {{ end }}
+  {{ end }}
 spec:
   selector:
     matchLabels:
@@ -81,7 +87,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: {{ required "Must provide the PowerMax driver container image." .Values.images.driver }}
+          image: {{ required "Must provide the PowerMax driver image repository." .Values.images.driverRepository }}/{{ .Chart.Name }}:{{ .Values.version }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           command: [ "/csi-powermax.sh" ]
           env:
@@ -159,12 +165,26 @@ spec:
               value: /certs
             - name: X_CSI_POWERMAX_CONFIG_PATH
               value: /powermax-config-params/driver-config-params.yaml
+            - name: X_CSI_POWERMAX_TOPOLOGY_CONFIG_PATH
+              value: /node-topology-config/topologyConfig.yaml
             - name: X_CSI_IG_NODENAME_TEMPLATE
               value: {{ .Values.nodeNameTemplate | default "" }}
             - name: X_CSI_IG_MODIFY_HOSTNAME
               value: {{ .Values.modifyHostName | default "false" | lower | quote }}
             - name: X_CSI_POWERMAX_PORTGROUPS
               value: {{ .Values.portGroups | toJson }}
+            {{- if hasKey .Values.node "healthMonitor" }}
+            {{- if eq .Values.node.healthMonitor.enabled true }}
+            - name: X_CSI_HEALTH_MONITOR_ENABLED
+              value: "{{ .Values.node.healthMonitor.enabled }}"
+            {{- end }}
+            {{- end }}
+            {{- if hasKey .Values.node "topologyControl" }}
+            {{- if eq .Values.node.topologyControl.enabled true }}
+            - name: X_CSI_TOPOLOGY_CONTROL_ENABLED
+              value: "{{ .Values.node.topologyControl.enabled }}"
+            {{- end }}
+            {{- end }}
           volumeMounts:
             - name: driver-path
               mountPath: {{ .Values.kubeletConfigDir }}/plugins/powermax.emc.dell.com
@@ -187,8 +207,14 @@ spec:
               mountPath: /run/dbus/system_bus_socket
             - name: powermax-config-params
               mountPath: /powermax-config-params
+            {{- if hasKey .Values.node "topologyControl" }}
+            {{- if eq .Values.node.topologyControl.enabled true }}
+            - name: node-topology-config
+              mountPath: /node-topology-config
+            {{- end }}
+            {{- end }}
         - name: registrar
-          image: {{ required "Must provide the CSI node registrar container image." .Values.images.registrar }}
+          image: {{ required "Must provide the CSI node registrar container image." ( include "csi-powermax.registrarImage" . ) }}
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
@@ -209,6 +235,37 @@ spec:
               mountPath: /registration
             - name: driver-path
               mountPath: /csi
+        {{- if hasKey .Values "authorization" }}
+        {{- if eq .Values.authorization.enabled true }}
+        - name: karavi-authorization-proxy
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          image: {{ required "Must provide the authorization sidecar container image." .Values.authorization.sidecarProxyImage }}
+          env:
+            - name: PROXY_HOST
+              value: "{{ .Values.authorization.proxyHost }}"
+            - name: INSECURE
+              value: "{{ .Values.authorization.skipCertificateValidation }}"
+            - name: PLUGIN_IDENTIFIER
+              value: powermax
+            - name: ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: proxy-authz-tokens
+                  key: access
+            - name: REFRESH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: proxy-authz-tokens
+                  key: refresh
+          volumeMounts:
+            - name: karavi-authorization-config
+              mountPath: /etc/karavi-authorization/config
+            - name: proxy-server-root-certificate
+              mountPath: /etc/karavi-authorization/root-certificates
+            - name: powermax-config-params
+              mountPath: /etc/karavi-authorization
+        {{ end }}
+        {{ end }}
       volumes:
         - name: registration-dir
           hostPath:
@@ -245,7 +302,24 @@ spec:
         - name: powermax-config-params
           configMap:
             name: {{ .Release.Name }}-config-params
+      {{- if hasKey .Values.node "topologyControl" }}
+      {{- if eq .Values.node.topologyControl.enabled true }}
+        - name: node-topology-config
+          configMap:
+            name: node-topology-config
+      {{- end }}
+      {{- end }}
         - name: certs
           secret:
               secretName: {{ .Release.Name }}-certs
               optional: true
+      {{- if hasKey .Values "authorization" }}
+      {{- if eq .Values.authorization.enabled true }}
+        - name: karavi-authorization-config
+          secret:
+            secretName: karavi-authorization-config
+        - name: proxy-server-root-certificate
+          secret:
+            secretName: proxy-server-root-certificate
+      {{ end }}
+      {{ end }}

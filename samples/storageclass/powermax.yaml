@@ -13,8 +13,17 @@ metadata:
     #   "true"  - default storage class
     #   "false" - non-default storage class
     # Default value: "false"
-    storageclass.beta.kubernetes.io/is-default-class: <isDefault>
+    storageclass.kubernetes.io/is-default-class: <isDefault>
 parameters:
+  # "csi.storage.k8s.io/fstype" is used to set the filesystem type which will be used to format the new volume
+  # Allowed values:
+  #   "ext4" - EXT4 File system
+  #   "xfs"  - XFS File system
+  # Optional: true
+  # Default value: None if defaultFsType is not mentioned in values.yaml
+  # Else defaultFsType value mentioned in values.yaml
+  # will be used as default value
+  csi.storage.k8s.io/fstype: xfs
   # Name of SRP on the PowerMax array that should be used for provisioning
   # Optional: false
   # Examples: "DEFAULT_SRP" , "SRP_1"
@@ -27,6 +36,11 @@ parameters:
   # Optional: true, Default value: Optimized
   # Examples: "Diamond" , "Bronze"
   ServiceLevel: <Service Level>
+  # Name of application to be used to group volumes
+  # This is used in naming storage group
+  # Optional: true, Default value: None
+  # Examples: APP, app, sanity, tests
+  ApplicationPrefix: <application prefix>
 # If using custom driver name, change the following to point to the custom name
 # Optional: true, Default value: csi-powermax.dellemc.com
 # Examples: "csi-driver-powermax", "csi-powermax.dellemc.com"

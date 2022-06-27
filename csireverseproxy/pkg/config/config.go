@@ -168,10 +168,10 @@ func (proxy *LinkedProxyConfig) Log() {
 	log.Debug("-----------------------")
 	log.Debug("-----------------------")
 	log.Debug("primary config")
-	log.Debugf("%+v\n", proxy.Primary)
+	log.Debugf("%+v", proxy.Primary)
 	log.Debug("-----------------------")
 	log.Debug("backup config")
-	log.Debugf("%+v\n", proxy.Backup)
+	log.Debugf("%+v", proxy.Backup)
 	log.Debug("-----------------------")
 }
 

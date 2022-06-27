@@ -29,7 +29,7 @@ const (
 	// EnvPassword is the name of the enviroment variable used to set the
 	// user's password when authenticating to Unisphere
 	// #nosec G101
-	EnvPassword = "X_CSI_POWERMAX_PASSWORD"
+	EnvPassword = "X_CSI_POWERMAX_PASSWORD" // #nosec G101
 
 	// EnvSkipCertificateValidation is the name of the environment variable used
 	// to specify Unisphere's certificate chain and host name should not
@@ -98,7 +98,7 @@ const (
 	// EnvISCSICHAPPassword is the the password for the ISCSI CHAP
 	// authentication for the host initiator(s)
 	// #nosec G101
-	EnvISCSICHAPPassword = "X_CSI_POWERMAX_ISCSI_CHAP_PASSWORD"
+	EnvISCSICHAPPassword = "X_CSI_POWERMAX_ISCSI_CHAP_PASSWORD" // #nosec 101
 
 	// EnvNodeNameTemplate is the templatized name to construct node names
 	// by the driver based on a name format as specified by the user in this
@@ -123,6 +123,15 @@ const (
 	// EnvManagedArrays is an env variable with a list of space separated arrays.
 	EnvManagedArrays = "X_CSI_MANAGED_ARRAYS"
 
-	//EnvConfigFilePath is an env variable which contains the full path for the config file
+	// EnvConfigFilePath is an env variable which contains the full path for the config file
 	EnvConfigFilePath = "X_CSI_POWERMAX_CONFIG_PATH"
+
+	// EnvHealthMonitorEnabled is an env variable which indicated if volume health monitor is enabled
+	EnvHealthMonitorEnabled = "X_CSI_HEALTH_MONITOR_ENABLED"
+
+	// EnvTopoConfigFilePath is an env variable which contains the full path for topology config file
+	EnvTopoConfigFilePath = "X_CSI_POWERMAX_TOPOLOGY_CONFIG_PATH"
+
+	// EnvTopologyFilterEnabled is an env variable which indicated if volume health monitor is enabled
+	EnvTopologyFilterEnabled = "X_CSI_TOPOLOGY_CONTROL_ENABLED"
 )

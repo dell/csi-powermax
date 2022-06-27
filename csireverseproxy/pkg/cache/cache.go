@@ -95,6 +95,6 @@ func (c *cache) cleanupCallback(key string) func() {
 		c.cmu.Lock()
 		defer c.cmu.Unlock()
 		delete(c.store, key)
-		log.Debugf("Removed %s from store: %s\n", key, c.name)
+		log.Debugf("Removed %s from store: %s", key, c.name)
 	}
 }

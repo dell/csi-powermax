@@ -302,6 +302,9 @@ Feature: Powermax OS CSI interface
     | "block"      | "single-writer"                | "none"     | "none"                                       |
     | "block"      | "multi-writer"                 | "none"     | "none"                                       |
     | "block"      | "single-writer"                | "none"     | "none"                                       |
+    | "mount"      | "single-node-single-writer"    | "xfs"      | "none"                                       |
+    | "mount"      | "single-node-single-writer"    | "ext4"     | "none"                                       |
+    | "block"      | "single-node-single-writer"    | "none"     | "none"                                       |
     
 
   Scenario: Create publish, unpublish, and delete basic volume
@@ -771,9 +774,9 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call DeleteTargetVolume
     Then there are no errors
-    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
@@ -796,7 +799,6 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     Then there are no errors
     And I call DeleteTargetVolume
     Then there are no errors
-    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
@@ -819,9 +821,9 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call DeleteTargetVolume
     Then there are no errors
-    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
@@ -840,9 +842,9 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call DeleteTargetVolume
     Then there are no errors
-    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
@@ -875,9 +877,9 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call DeleteTargetVolume
     Then there are no errors
-    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
@@ -910,10 +912,37 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call DeleteTargetVolume
     Then there are no errors
-    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
     And there are no errors
+
+@v2.2.0
+  Scenario: Volume Health Montioring method
+    Given a Powermax service
+    And a mount volume request "integration6"
+    When I call CreateVolume
+    And there are no errors
+    And when I call PublishVolume "Node1"
+    And there are no errors
+    And when I call NodeStageVolume "Node1"
+    And there are no errors
+    And when I call NodePublishVolume "Node1"
+    And there are no errors
+    And when I call ControllerGetVolume
+    And there are no errors
+    And when I call NodeGetVolumeStats
+    And there are no errors
+    And when I call NodeUnpublishVolume "Node1"
+    And there are no errors
+    And when I call NodeUnstageVolume "Node1"
+    And there are no errors
+    And when I call UnpublishVolume "Node1"
+    And there are no errors
+    And when I call DeleteVolume
+    Then there are no errors
+    And all volumes are deleted successfully
+

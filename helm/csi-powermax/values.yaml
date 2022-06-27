@@ -26,13 +26,12 @@ global:
     - storageArrayId: "000000000001"
     - storageArrayId: "000000000002"
   # Address of the Unisphere server that is managing the PowerMax arrays
+  # If authorization is enabled, endpoint should be the HTTPS localhost endpoint that 
+  # the authorization sidecar will listen on
   # Default value: None
   # Example: https://0.0.0.1:8443
   managementServers:
     - endpoint: https://unisphere-address:8443
-  # Current version of the driver
-  # Don't modify this value as this value will be used by the install script
-  version: "2.0.0" 
 # If you are using the CSI PowerMax ReverseProxy then comment the section
 # 'without reverse proxy configuration' above and uncomment the following section
 # and fill out the required configuration
@@ -69,6 +68,13 @@ global:
 #      credentialsSecret: backup-2-secret
 #      skipCertificateValidation: true
 
+# Current version of the driver
+# Don't modify this value as this value will be used by the install script
+version: "v2.3.0"
+
+images:
+  # "driver" defines the container image, used for the driver container.
+  driverRepository: dellemc
 ## K8S/DRIVER ATTRIBUTES
 ########################
 # customDriverName: If enabled, sets the driver name to the
@@ -105,6 +111,16 @@ imagePullPolicy: IfNotPresent
 # Ensure that the config.yaml file is present at this path.
 # Default value: None
 kubeletConfigDir: /var/lib/kubelet
+
+# fsGroupPolicy: Defines if the underlying volume supports changing ownership and permission of the volume before being mounted.
+# Allowed values:
+#   ReadWriteOnceWithFSType: supports volume ownership and permissions change only if the fsType is defined
+#   and the volume's accessModes contains ReadWriteOnce.
+#   File: kubernetes may use fsGroup to change permissions and ownership of the volume 
+#   to match user requested fsGroup in the pod's security policy regardless of fstype or access mode.
+#   None: volumes will be mounted with no modifications.
+# Default value: ReadWriteOnceWithFSType
+fsGroupPolicy: ReadWriteOnceWithFSType
 
 # controller: configure controller specific parameters
 controller:
@@ -148,18 +164,41 @@ controller:
   # Allowed values: map of key-value pairs
   # Default value: None
   # Examples:
-  #   node-role.kubernetes.io/master: ""
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
+  #  node-role.kubernetes.io/master
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/control-plane taint
+  #  node-role.kubernetes.io/control-plane
   nodeSelector:
-  #   node-role.kubernetes.io/master: ""
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
+  #  node-role.kubernetes.io/master: ""
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/control-plane taint
+  #  node-role.kubernetes.io/control-plane: ""
 
   # tolerations: Define tolerations that would be applied to controller deployment
   # Leave as blank to install controller on worker nodes
   # Allowed values: map of key-value pairs
   # Default value: None
   tolerations:
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
   #  - key: "node-role.kubernetes.io/master"
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/control-plane taint
+  #  - key: "node-role.kubernetes.io/control-plane"
   #    operator: "Exists"
   #    effect: "NoSchedule"
+
+  # health monitor showcase the volume usage and volume condition
+  healthMonitor:
+    # enabled: Enable/Disable health monitor of CSI volumes- volume status, volume condition
+    # Allowed values:
+    #   true: enable checking of health condition of CSI volumes
+    #   false: disable checking of health condition of CSI volumes
+    # Default value: None
+    enabled: false
+
+    # interval: Interval of monitoring volume health condition
+    # Allowed values: Number followed by unit of time (s,m,h)
+    # Default value: 60s
+    interval: 60s
 
 # node: configure node specific parameters
 node:
@@ -170,9 +209,15 @@ node:
   # Allowed values: map of key-value pairs
   # Default value: None
   # Examples:
-  #   node-role.kubernetes.io/master: ""
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
+  #  node-role.kubernetes.io/master
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/control-plane taint
+  #  node-role.kubernetes.io/control-plane
   nodeSelector:
-  #   node-role.kubernetes.io/master: ""
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/master taint
+  #  node-role.kubernetes.io/master: ""
+  # Uncomment if nodes you wish to use have the node-role.kubernetes.io/control-plane taint
+  #  node-role.kubernetes.io/control-plane: ""
 
   # tolerations: Define tolerations that would be applied to node daemonset
   # Add/Remove tolerations as per requirement
@@ -189,6 +234,25 @@ node:
     - key: "node.kubernetes.io/network-unavailable"
       operator: "Exists"
       effect: "NoExecute"
+
+  # health monitor showcase the volume usage and volume condition
+  healthMonitor:
+    # enabled: Enable/Disable health monitor of CSI volumes- volume usage, volume condition
+    # Allowed values:
+    #   true: enable checking of health condition of CSI volumes
+    #   false: disable checking of health condition of CSI volumes
+    # Default value: false
+    enabled: false
+
+  # Topology control provides a way to filter topology keys
+  # Please refer to the doc website about a detailed explanation on its configuration and usage
+  topologyControl:
+    # enabled: Enable/Disable Topology Control
+    # Allowed values:
+    #   true: enable the filtration based on config map
+    #   false: disable the filtration based on config map
+    # Default value: false
+    enabled: false
 
 # enableCHAP: Determine if the driver is going to configure
 # ISCSI node databases on the nodes with the CHAP credentials
@@ -218,8 +282,8 @@ csireverseproxy:
   enabled: false
   # image: Define the container images used for the reverse proxy
   # Default value: None
-  # Example: "csipowermax-reverseproxy:v1.4.0"
-  image: dellemc/csipowermax-reverseproxy:v1.4.0
+  # Example: "csipowermax-reverseproxy:v2.2.0"
+  image: dellemc/csipowermax-reverseproxy:v2.2.0
   # "tlsSecret" defines the TLS secret that is created with certificate
   # and its associated key
   # Default value: None
@@ -245,7 +309,7 @@ csireverseproxy:
 # This should be unique per K8s/CSI deployment
 # maximum length of this value is 3 characters
 # Default value: None
-# Examples: "XYZ", "EMC"
+# Examples: "XYZ"
 clusterPrefix: ABC
 
 # portGroups: Define the set of existing port groups that the driver will use.
@@ -323,8 +387,7 @@ replication:
   enabled: false
   # Change this to use any specific version of the dell-csi-replicator sidecar
   # Default value: None
-  # Example: 0.0.0.1:5000/dell-csi-replicator:v0.0.1
-  image: dellemc/dell-csi-replicator:v1.0.0
+  image: dellemc/dell-csi-replicator:v1.3.0
   # replicationContextPrefix enables side cars to read
   # required information from the volume context
   # Default value: "powermax"
@@ -334,3 +397,41 @@ replication:
   # Default value: "replication.storage.dell.com"
   # Examples: "replication.storage.dell.com", "rdf.storage.dell.com"
   replicationPrefix: "replication.storage.dell.com"
+
+# CSM module attributes
+# Set this to true to enable migration
+# Allowed values:
+#   "true" - migration is enabled
+#   "false" - migration is disabled
+# Default value: "false"
+migration:
+  enabled: false
+  # Change this to use any specific version of the dell-csi-migrator sidecar
+  # Default value: None
+  image: dellemc/dell-csi-migrator:v1.0.0
+  # migrationPrefix: Determine if migration is enabled
+  # Default value: "migration.storage.dell.com"
+  # Examples: "migration.storage.dell.com"
+  migrationPrefix: "migration.storage.dell.com"
+
+# CSM module attributes
+# authorization: enable csm-authorization for RBAC
+# Deploy and configure authorization before installing driver
+# Allowed values:
+#   "true" - authorization is enabled
+#   "false" - authorization is disabled
+# Default value: "false"
+authorization:
+  enabled: false
+  # sidecarProxyImage: the container image used for the csm-authorization-sidecar.
+  # Default value: dellemc/csm-authorization-sidecar:v1.2.0
+  sidecarProxyImage: dellemc/csm-authorization-sidecar:v1.2.0
+  # proxyHost: hostname of the csm-authorization server
+  # Default value: None
+  proxyHost:
+  # skipCertificateValidation: certificate validation of the csm-authorization server
+  # Allowed Values:
+  #   "true" - TLS certificate verification will be skipped
+  #   "false" - TLS certificate will be verified 
+  # Default value: "true" 
+  skipCertificateValidation: true
