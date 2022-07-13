@@ -1,9 +1,9 @@
 name: Workflow
 on:
   push:
-    branches: [ main ]
+    branches: [ use-gosec-fix ]
   pull_request:
-    branches: [ main ]
+    branches: [ use-gosec-fix ]
 jobs:
   code-check:
     name: Check Go formatting, linting, vetting
@@ -17,15 +17,17 @@ jobs:
           directories: ./...
   
   go_security_scan:
-    name: Go security
+    name: Run gosec to check for security vulnerabilities
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the code
         uses: actions/checkout@v2
-      - name: Run Go Security
-        uses: securego/gosec@master
+      - name: Run unit tests and check package coverage
+        uses: dell/common-github-actions/gosec-runner@gosec-temp-fix
         with:
-          args: -exclude=G108,G402 -exclude-dir=csireverseproxy ./...
+          directories: "./..."
+          excludes: "G108,G402"
+          exclude-dir: "csireverseproxy"
   malware_security_scan:
     name: Malware Scanner
     runs-on: ubuntu-latest
