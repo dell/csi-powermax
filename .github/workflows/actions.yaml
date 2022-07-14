@@ -1,9 +1,9 @@
 name: Workflow
 on:
   push:
-    branches: [ use-gosec-fix ]
+    branches: [ main ]
   pull_request:
-    branches: [ use-gosec-fix ]
+    branches: [ main ]
 jobs:
   code-check:
     name: Check Go formatting, linting, vetting
@@ -15,7 +15,6 @@ jobs:
         uses: dell/common-github-actions/go-code-formatter-linter-vetter@main
         with:
           directories: ./...
-  
   go_security_scan:
     name: Run gosec
     runs-on: ubuntu-latest
@@ -23,7 +22,7 @@ jobs:
       - name: Checkout the code
         uses: actions/checkout@v2
       - name: Run gosec to check for security vulnerabilities
-        uses: dell/common-github-actions/gosec-runner@gosec-temp-fix
+        uses: dell/common-github-actions/gosec-runner@main
         with:
           directories: "./..."
           excludes: "G108,G402"
