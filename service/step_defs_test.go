@@ -31,18 +31,16 @@ import (
 
 	csiext "github.com/dell/dell-csi-extensions/replication"
 
-	log "github.com/sirupsen/logrus"
-
-	pmax "github.com/dell/gopowermax"
-	mock "github.com/dell/gopowermax/mock"
-
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cucumber/godog"
 	"github.com/cucumber/messages-go/v10"
 	"github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
-	types "github.com/dell/gopowermax/types/v90"
+	pmax "github.com/dell/gopowermax/v2"
+	mock "github.com/dell/gopowermax/v2/mock"
+	types "github.com/dell/gopowermax/v2/types/v100"
 	ptypes "github.com/golang/protobuf/ptypes"
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/metadata"
 )
@@ -705,7 +703,6 @@ func (f *feature) iCallCreateVolumeWithNamespace(name string, namespace string) 
 		f.volumeID = f.createVolumeResponse.GetVolume().VolumeId
 		f.volumeNameToID[name] = f.volumeID
 	}
-
 	vol, _, _, _, _, err := f.service.parseCsiID(f.volumeID)
 	if err != nil {
 		log.Printf("volID: %s malformed. Error: %s", vol, f.err.Error())
@@ -718,7 +715,6 @@ func (f *feature) iCallCreateVolumeWithNamespace(name string, namespace string) 
 	if namespaceValue != namespace {
 		return errors.New("Namespace is not appended")
 	}
-
 	return nil
 }
 
@@ -3142,7 +3138,6 @@ func (f *feature) aValidNodeGetVolumeStatsResponseIsReturned() error {
 			return errors.New("expected nodeGetVolumeStatsResponse to have volume usage info unit as unknown")
 		}
 	}
-
 	fmt.Printf("NodeGetVolumeStats: %v\n", f.nodeGetVolumeStatsResponse.GetVolumeCondition())
 	return nil
 }
@@ -3610,7 +3605,7 @@ func (f *feature) iCallIsSnapshotSource() error {
 		_, arrayID, deviceID, _, _, f.err = f.service.parseCsiID(f.createVolumeResponse.GetVolume().GetVolumeId())
 	}
 
-	f.isSnapSrc, f.err = f.service.IsSnapshotSource(context.Background(), arrayID, deviceID, f.service.adminClient)
+	f.isSnapSrc, f.err = f.IsSnapshotSource(context.Background(), arrayID, deviceID, f.service.adminClient)
 	return nil
 }
 
@@ -4174,6 +4169,31 @@ func (f *feature) iCallVolumeMigrateWithDifferentTypes(types string) error {
 	return nil
 }
 
+func (f *feature) IsSnapshotSource(ctx context.Context, symID string, devID string, pmaxClient pmax.Pmax) (bool, error) {
+	var tempSnapTag string
+	var delSnapTag string
+
+	srcSessions, _, err := s.GetSnapSessions(ctx, symID, devID, pmaxClient)
+	if err != nil {
+		log.Error("Failed to determine volume as a snapshot source: Error - ", err.Error())
+		if strings.Contains(err.Error(), "Volume is neither a source nor target") {
+			err = nil
+		}
+		return false, err
+	}
+	tempSnapTag = fmt.Sprintf("%s%s", TempSnap, s.getClusterPrefix())
+	delSnapTag = fmt.Sprintf("%s-%s%s", SnapDelPrefix, CsiVolumePrefix, s.getClusterPrefix())
+	if len(srcSessions) > 0 {
+		for _, session := range srcSessions {
+			if !strings.HasPrefix(session.Name, tempSnapTag) &&
+				!strings.HasPrefix(session.Name, delSnapTag) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -4343,8 +4363,8 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^no volume source$`, f.noVolumeSource)
 	s.Step(`^I reset the license cache$`, f.iResetTheLicenseCache)
 	s.Step(`^I call IsSnapshotSource$`, f.iCallIsSnapshotSource)
-	s.Step(`^I call DeleteSnapshot with "([^"]*)"$`, f.iCallDeleteSnapshotWith)
 	s.Step(`^IsSnapshotSource returns "([^"]*)"$`, f.isSnapshotSourceReturns)
+	s.Step(`^I call DeleteSnapshot with "([^"]*)"$`, f.iCallDeleteSnapshotWith)
 	s.Step(`^I queue snapshots for termination$`, f.iQueueSnapshotsForTermination)
 	s.Step(`^the deletion worker processes the snapshots successfully$`, f.theDeletionWorkerProcessesTheSnapshotsSuccessfully)
 	s.Step(`^I call ensureISCSIDaemonStarted$`, f.iCallEnsureISCSIDaemonStarted)

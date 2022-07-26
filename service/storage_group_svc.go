@@ -20,12 +20,11 @@ import (
 	"sync"
 	"time"
 
-	pmax "github.com/dell/gopowermax"
-
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
+	pmax "github.com/dell/gopowermax/v2"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	types "github.com/dell/gopowermax/types/v90"
+	types "github.com/dell/gopowermax/v2/types/v100"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

@@ -3,7 +3,7 @@ package service
 import (
 	"fmt"
 	csiext "github.com/dell/dell-csi-extensions/migration"
-	"github.com/dell/gopowermax/types/v90"
+	types "github.com/dell/gopowermax/v2/types/v100"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"

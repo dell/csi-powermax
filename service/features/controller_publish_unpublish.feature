@@ -219,6 +219,10 @@ Feature: PowerMax CSI interface
       And a valid CreateVolumeResponse is returned
       And I have a Node "node1" with initiators "initlist1" with MaskingView
       And I have a Node "node2" with initiators "initlist1" with MaskingView
+      And I call PublishVolume with "single-writer" to "node1"
+      Then a valid PublishVolumeResponse is returned
+      And I call PublishVolume with "single-writer" to "node2"
+      Then the error contains "volume already present in a different masking view"
       And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
       And I call PublishVolume with <access> to "node2"
@@ -299,6 +303,7 @@ Feature: PowerMax CSI interface
       | "single-writer"             |
       | "single-node-single-writer" |
       | "single-node-multi-writer"  |
+
 
 @controllerPublish
 @v1.0.0
