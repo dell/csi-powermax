@@ -15,13 +15,12 @@
 package symmetrix
 
 import (
+	pmax "github.com/dell/gopowermax/v2"
 	"testing"
-
-	pmax "github.com/dell/gopowermax"
 )
 
 func TestGetPowerMaxClient(t *testing.T) {
-	c, err := pmax.NewClientWithArgs("/", "90", "test", true, true)
+	c, err := pmax.NewClientWithArgs("/", "test", true, true)
 	if err != nil {
 		t.Fatalf("Faild to create a pmax client: %s", err.Error())
 	}

@@ -37,7 +37,7 @@ import (
 	"github.com/dell/gocsi"
 	csictx "github.com/dell/gocsi/context"
 	"github.com/dell/goiscsi"
-	"github.com/dell/gopowermax/types/v90"
+	types "github.com/dell/gopowermax/v2/types/v100"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -45,7 +45,7 @@ import (
 	"github.com/dell/csi-powermax/v2/core"
 	migrext "github.com/dell/dell-csi-extensions/migration"
 	csiext "github.com/dell/dell-csi-extensions/replication"
-	pmax "github.com/dell/gopowermax"
+	pmax "github.com/dell/gopowermax/v2"
 )
 
 // Constants for the service
@@ -322,7 +322,6 @@ func (s *service) BeforeServe(
 			}
 		}
 	}
-
 	opts := Opts{}
 	if ep, ok := csictx.LookupEnv(ctx, EnvDriverName); ok {
 		opts.DriverName = ep
@@ -665,8 +664,7 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 	// Create our PowerMax API client, if needed
 	if s.adminClient == nil {
 		applicationName := ApplicationName + "/" + "v" + core.SemVer
-		c, err := pmax.NewClientWithArgs(
-			endPoint, defaultU4PVersion, applicationName, s.opts.Insecure, !s.opts.DisableCerts)
+		c, err := pmax.NewClientWithArgs(endPoint, applicationName, s.opts.Insecure, !s.opts.DisableCerts)
 		if err != nil {
 			return status.Errorf(codes.FailedPrecondition,
 				"unable to create PowerMax client: %s", err.Error())
@@ -678,7 +676,6 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 				Endpoint: endPoint,
 				Username: s.opts.User,
 				Password: s.opts.Password,
-				Version:  defaultU4PVersion,
 			})
 			if err == nil {
 				break

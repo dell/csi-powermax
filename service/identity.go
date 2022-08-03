@@ -117,7 +117,6 @@ func (s *service) Probe(
 func (s *service) ProbeController(ctx context.Context,
 	req *commonext.ProbeControllerRequest) (
 	*commonext.ProbeControllerResponse, error) {
-
 	if !strings.EqualFold(s.mode, "node") {
 		log.Debug("controllerProbe")
 		if err := s.controllerProbe(ctx); err != nil {

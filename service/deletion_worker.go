@@ -24,9 +24,8 @@ import (
 	"time"
 
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
-
-	pmax "github.com/dell/gopowermax"
-	"github.com/dell/gopowermax/types/v90"
+	pmax "github.com/dell/gopowermax/v2"
+	types "github.com/dell/gopowermax/v2/types/v100"
 	log "github.com/sirupsen/logrus"
 )
 

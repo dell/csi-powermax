@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	pmax "github.com/dell/gopowermax"
+	pmax "github.com/dell/gopowermax/v2"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/coreos/go-systemd/dbus"
@@ -37,10 +37,11 @@ import (
 	"github.com/dell/goiscsi"
 	log "github.com/sirupsen/logrus"
 
-	types "github.com/dell/gopowermax/types/v90"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	types "github.com/dell/gopowermax/v2/types/v100"
 )
 
 var (

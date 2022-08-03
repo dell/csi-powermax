@@ -35,7 +35,6 @@ Feature: PowerMax CSI interface
       And I call CreateVolume "volume1"
       Then a valid CreateVolumeResponse is returned
 
-
 @v2.3.0
     Scenario: Create volume with namespace
       Given a PowerMax service
@@ -565,7 +564,7 @@ Feature: PowerMax CSI interface
 @v1.4.0
      Scenario Outline: Call NodeExpandVolume
       Given a PowerMax service
-      And a valid volume
+      And I call CreateVolume "volume1" with namespace "ns"
       And I induce error <induced>
       When I call NodeExpandVolume with volumePath as <volPath>
       Then the error contains <errormsg>

@@ -34,7 +34,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	v90 "github.com/dell/gopowermax/types/v90"
+	types "github.com/dell/gopowermax/v2/types/v100"
 	"github.com/gorilla/mux"
 
 	"revproxy/v2/pkg/cache"
@@ -200,8 +200,8 @@ func (revProxy *StandAloneProxy) getIteratorByID(iterID string) (common.SymmURL,
 	return u4p, fmt.Errorf("no symm info found for this iterator")
 }
 
-func (revProxy *StandAloneProxy) setIteratorID(resp *http.Response, URL url.URL, symID string) (*v90.VolumeIterator, error) {
-	volumeIterator := &v90.VolumeIterator{}
+func (revProxy *StandAloneProxy) setIteratorID(resp *http.Response, URL url.URL, symID string) (*types.VolumeIterator, error) {
+	volumeIterator := &types.VolumeIterator{}
 	decoder := json.NewDecoder(resp.Body)
 	if err := decoder.Decode(volumeIterator); err != nil {
 		return nil, err
@@ -552,7 +552,8 @@ func (revProxy *StandAloneProxy) ServeSymmetrix(res http.ResponseWriter, req *ht
 	if err != nil {
 		return
 	}
-	allSymmetrixIDList := new(v90.SymmetrixIDList)
+	allSymmetrixIDList := new(types.SymmetrixIDList)
+
 	for _, symID := range symIDs {
 		func() {
 			resp, err := revProxy.getResponseIfAuthorised(res, req, symID)
@@ -564,7 +565,7 @@ func (revProxy *StandAloneProxy) ServeSymmetrix(res http.ResponseWriter, req *ht
 			if err != nil {
 				log.Errorf("Get Symmetrix step fails for: (%s) symID with error (%s)", symID, err.Error())
 			} else {
-				symmetrixList := new(v90.SymmetrixIDList)
+				symmetrixList := new(types.SymmetrixIDList)
 				if err := json.NewDecoder(resp.Body).Decode(symmetrixList); err != nil {
 					utils.WriteHTTPError(res, "decoding error: "+err.Error(), 400)
 					log.Errorf("decoding error: %s", err.Error())
@@ -589,7 +590,7 @@ func (revProxy *StandAloneProxy) ServeReplicationCapabilities(res http.ResponseW
 	if err != nil {
 		return
 	}
-	symRepCapabilities := new(v90.SymReplicationCapabilities)
+	symRepCapabilities := new(types.SymReplicationCapabilities)
 	for _, symID := range symIDs {
 		func() {
 			resp, err := revProxy.getResponseIfAuthorised(res, req, symID)
@@ -601,7 +602,7 @@ func (revProxy *StandAloneProxy) ServeReplicationCapabilities(res http.ResponseW
 			if err != nil {
 				log.Errorf("Get Repelication capabilities step fails for: (%s) symID with error (%s)", symID, err.Error())
 			} else {
-				symCapabilities := new(v90.SymReplicationCapabilities)
+				symCapabilities := new(types.SymReplicationCapabilities)
 				if err := json.NewDecoder(resp.Body).Decode(symCapabilities); err != nil {
 					utils.WriteHTTPError(res, "decoding error: "+err.Error(), 400)
 					log.Errorf("decoding error: %s", err.Error())

@@ -24,23 +24,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
-
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cucumber/godog"
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 	service "github.com/dell/csi-powermax/v2/service"
 	csiext "github.com/dell/dell-csi-extensions/replication"
-	pmax "github.com/dell/gopowermax"
+	pmax "github.com/dell/gopowermax/v2"
 	ptypes "github.com/golang/protobuf/ptypes"
 )
 
 const (
-	MaxRetries        = 10
-	RetrySleepTime    = 10 * time.Second
-	ShortSleepTime    = 3 * time.Second
-	SleepTime         = 100 * time.Millisecond
-	ApplicationName   = "CSI Driver Integration Tests"
-	defaultApiVersion = "91"
+	MaxRetries      = 10
+	RetrySleepTime  = 10 * time.Second
+	ShortSleepTime  = 3 * time.Second
+	SleepTime       = 100 * time.Millisecond
+	ApplicationName = "CSI Driver Integration Tests"
 )
 
 type feature struct {
@@ -120,7 +118,7 @@ func (f *feature) aPowermaxService() error {
 		if endpoint == "" {
 			return fmt.Errorf("Cannot read X_CSI_POWERMAX_ENDPOINT")
 		}
-		f.pmaxClient, err = pmax.NewClientWithArgs(endpoint, defaultApiVersion, ApplicationName, true, false)
+		f.pmaxClient, err = pmax.NewClientWithArgs(endpoint, ApplicationName, true, false)
 		if err != nil {
 			return fmt.Errorf("Cannot attach to pmax library: %s", err)
 		}
@@ -146,10 +144,12 @@ func (f *feature) aPowermaxService() error {
 	f.replicationContextPrefix = os.Getenv("X_CSI_REPLICATION_CONTEXT_PREFIX")
 	symIDList := []string{f.remotesymID}
 	// Add remote array to managed sym by csi driver
-	err := symmetrix.Initialize(symIDList, f.pmaxClient)
-	if err != nil {
-		fmt.Printf("initialize remote array error: %s", err.Error())
-		return err
+	if _, err := symmetrix.GetPowerMax(f.remotesymID); err != nil {
+		err := symmetrix.Initialize(symIDList, f.pmaxClient)
+		if err != nil {
+			fmt.Printf("initialize remote array error: %s", err.Error())
+			return err
+		}
 	}
 	return nil
 }
@@ -2147,7 +2147,6 @@ func (f *feature) iCallControllerGetVolume() error {
 	time.Sleep(RetrySleepTime)
 	return nil
 }
-
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a Powermax service$`, f.aPowermaxService)
