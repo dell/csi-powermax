@@ -80,7 +80,6 @@ else
   exit 1
 fi
 
-
 echo "******************Begin Test*********************"
 echo "creating snapshot of pvol1 (xfs volume)"
 echo "************************************************"

@@ -20,9 +20,8 @@ import (
 	"sync"
 	"time"
 
+	pmax "github.com/dell/gopowermax/v2"
 	log "github.com/sirupsen/logrus"
-
-	pmax "github.com/dell/gopowermax"
 )
 
 var metroClients sync.Map
