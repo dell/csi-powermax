@@ -394,6 +394,9 @@ func (revProxy *StandAloneProxy) GetRouter() http.Handler {
 
 	//Snapshot
 	router.HandleFunc(utils.Prefix+"/{version}/replication/capabilities/symmetrix", revProxy.ifNoSymIDInvoke(revProxy.ServeReplicationCapabilities))
+
+	// file
+	router.PathPrefix(utils.InternalPrefix + "/{version}/file/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 	return revProxy.loggingMiddleware(router)
 }
 

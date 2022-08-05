@@ -41,6 +41,7 @@ const (
 	StatusNotFound      = 404
 	Prefix              = "/univmax/restapi"
 	PrivatePrefix       = "/univmax/restapi/private"
+	InternalPrefix      = Prefix + "/internal"
 )
 
 // WriteHTTPError - given a statuscode and error message, writes a HTTP error using the

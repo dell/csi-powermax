@@ -712,6 +712,10 @@ Scenario: Expand Mount Volume
     And there are no errors
     And when I call ExpandVolume to 0 cylinders
     Then the error message should contain "Invalid argument"
+    And when I call UnpublishVolume "Node1"
+    And there are no errors
+    And when I call DeleteVolume
+    Then there are no errors
     And all volumes are deleted successfully
 
 @wip
@@ -946,3 +950,23 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     Then there are no errors
     And all volumes are deleted successfully
 
+@v2.4.0
+  Scenario: Create and delete replication volume with auto SRDF group
+    Given a Powermax service
+    And a basic block volume request "integration1" "100"
+    And adds auto SRDFG replication capability with mode "ASYNC" namespace "INT"
+    When I call CreateVolume
+    And I receive a valid volume
+    And I call CreateStorageProtectionGroup with mode "ASYNC"
+    And there are no errors
+    And I call CreateRemoteVolume with mode "ASYNC"
+    And there are no errors
+    And when I call DeleteVolume
+    Then there are no errors
+    And all volumes are deleted successfully
+    And I call DeleteTargetVolume
+    Then there are no errors
+    And I call Delete LocalStorageProtectionGroup
+    And there are no errors
+    And I call Delete RemoteStorageProtectionGroup
+    And there are no errors
