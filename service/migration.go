@@ -22,7 +22,9 @@ import (
 	"strconv"
 	"time"
 
-	csiext "github.com/dell/dell-csi-extensions/migration"
+	"github.com/dell/csi-powermax/v2/pkg/migration"
+
+	csimgr "github.com/dell/dell-csi-extensions/migration"
 	types "github.com/dell/gopowermax/v2/types/v100"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
@@ -31,7 +33,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (s *service) VolumeMigrate(ctx context.Context, req *csiext.VolumeMigrateRequest) (*csiext.VolumeMigrateResponse, error) {
+func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRequest) (*csimgr.VolumeMigrateResponse, error) {
 
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
@@ -115,13 +117,13 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csiext.VolumeMigrateRe
 	var migrationFunc func(context.Context, map[string]string, map[string]string, string, string, string, string, string, *service, *types.Volume) error
 
 	switch migrateType {
-	case csiext.MigrateTypes_UNKNOWN_MIGRATE:
+	case csimgr.MigrateTypes_UNKNOWN_MIGRATE:
 		return nil, status.Errorf(codes.Unknown, "Unknown Migration Type")
-	case csiext.MigrateTypes_NON_REPL_TO_REPL:
+	case csimgr.MigrateTypes_NON_REPL_TO_REPL:
 		migrationFunc = nonReplToRepl
-	case csiext.MigrateTypes_REPL_TO_NON_REPL:
+	case csimgr.MigrateTypes_REPL_TO_NON_REPL:
 		migrationFunc = replToNonRepl
-	case csiext.MigrateTypes_VERSION_UPGRADE:
+	case csimgr.MigrateTypes_VERSION_UPGRADE:
 		migrationFunc = versionUpgrade
 
 	}
@@ -138,13 +140,13 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csiext.VolumeMigrateRe
 		//Format the time output
 		"MigrationTime": time.Now().Format("20060102150405"),
 	}
-	volume := new(csiext.Volume)
+	volume := new(csimgr.Volume)
 	volume.VolumeId = volID
 	volume.FsType = params[FsTypeParam]
 	volume.VolumeContext = attributes
 	csiVol := s.getCSIVolume(vol)
 	volume.CapacityBytes = csiVol.CapacityBytes
-	csiResp := &csiext.VolumeMigrateResponse{
+	csiResp := &csimgr.VolumeMigrateResponse{
 		MigratedVolume: volume,
 	}
 
@@ -307,10 +309,124 @@ func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams
 	return nil
 }
 
-func (s *service) ArrayMigrate(ctx context.Context, req *csiext.ArrayMigrateRequest) (*csiext.ArrayMigrateResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "Unimplemented")
-}
-
 func versionUpgrade(ctx context.Context, params map[string]string, sourceScParams map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
 	return status.Error(codes.Unimplemented, "Unimplemented")
+}
+
+func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequest) (*csimgr.ArrayMigrateResponse, error) {
+
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
+	params := req.GetParameters()
+	if len(params) <= 0 {
+		log.Error("Invalid Arguments")
+		return nil, status.Errorf(codes.InvalidArgument, "Invalid argument")
+	}
+	localSymID := params[SymmetrixIDParam]
+	remoteSymID := params[RemoteSymIDParam]
+	if localSymID == "" || remoteSymID == "" {
+		log.Error("A SYMID parameter is required")
+		return nil, status.Errorf(codes.InvalidArgument, "A SYMID parameter is required")
+	}
+	action := req.GetAction()
+	fields := map[string]interface{}{
+		"RequestID":   reqID,
+		"LocalSymID":  localSymID,
+		"RemoteSymID": remoteSymID,
+		"Action":      action,
+	}
+	log.WithFields(fields).Info("Executing ArrayMigration with following fields")
+
+	pmaxClient, err := s.GetPowerMaxClient(localSymID)
+	if err != nil {
+		log.Error(err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	clusterPrefix := s.getClusterPrefix()
+
+	switch action.GetActionTypes() {
+	case csimgr.ActionTypes_MG_MIGRATE:
+		//env setup call
+		_, err := migration.GetOrCreateMigrationEnvironment(ctx, localSymID, remoteSymID, pmaxClient)
+		if err != nil {
+			csiMgrResp := &csimgr.ArrayMigrateResponse{
+				Success: false,
+				ActionTypes: &csimgr.ArrayMigrateResponse_Action{
+					Action: action,
+				},
+			}
+			log.Errorf("failed to create array migration environment for target array (%s) - Error (%s)", remoteSymID, err.Error())
+			return csiMgrResp, status.Errorf(codes.Internal, "failed to create array migration environment for target array (%s) - Error (%s)", remoteSymID, err.Error())
+		}
+		sgStatus, err := migration.StorageGroupMigration(ctx, localSymID, remoteSymID, clusterPrefix, pmaxClient)
+		if err != nil {
+			return nil, err
+		}
+		csiMgrResp := &csimgr.ArrayMigrateResponse{
+			Success: sgStatus,
+			ActionTypes: &csimgr.ArrayMigrateResponse_Action{
+				Action: action,
+			},
+		}
+		return csiMgrResp, nil
+	case csimgr.ActionTypes_MG_COMMIT:
+		// call function to commit SG for migration session
+		modified, err := migration.StorageGroupCommit(ctx, localSymID, MigrationActionCommit, pmaxClient)
+		if err != nil {
+			csiMgrResp := &csimgr.ArrayMigrateResponse{
+				Success: modified,
+				ActionTypes: &csimgr.ArrayMigrateResponse_Action{
+					Action: action,
+				},
+			}
+			return csiMgrResp, err
+		}
+		// Add remote volumes to remote storage groups
+		added, err := migration.AddVolumesToRemoteSG(ctx, remoteSymID, pmaxClient)
+		if err != nil {
+			csiMgrResp := &csimgr.ArrayMigrateResponse{
+				Success: added,
+				ActionTypes: &csimgr.ArrayMigrateResponse_Action{
+					Action: action,
+				},
+			}
+			return csiMgrResp, err
+
+		}
+
+		//reset env
+		err = pmaxClient.DeleteMigrationEnvironment(ctx, localSymID, remoteSymID)
+		if err != nil {
+			csiMgrResp := &csimgr.ArrayMigrateResponse{
+				Success: false,
+				ActionTypes: &csimgr.ArrayMigrateResponse_Action{
+					Action: action,
+				},
+			}
+			log.Error(fmt.Sprintf("Failed to remove array migration environment for target array (%s) - Error (%s)", remoteSymID, err.Error()))
+			return csiMgrResp, status.Errorf(codes.Internal, "to remove array migration environment for target array(%s) - Error (%s)", remoteSymID, err.Error())
+		}
+
+		csiMgrResp := &csimgr.ArrayMigrateResponse{
+			Success: true,
+			ActionTypes: &csimgr.ArrayMigrateResponse_Action{
+				Action: action,
+			},
+		}
+		return csiMgrResp, nil
+	default:
+		csiMgResp := &csimgr.ArrayMigrateResponse{
+			Success: false,
+			ActionTypes: &csimgr.ArrayMigrateResponse_Action{
+				Action: action,
+			},
+		}
+		return csiMgResp, status.Errorf(codes.InvalidArgument, "Invalid action")
+	}
 }
