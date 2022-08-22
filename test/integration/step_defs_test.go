@@ -207,6 +207,14 @@ func (f *feature) addsReplicationCapability(replicationMode string, namespace st
 	return nil
 }
 
+func (f *feature) addsAutoSRDFReplicationCapability(replicationMode string, namespace string) error {
+	f.createVolumeRequest.Parameters[path.Join(f.replicationPrefix, service.RepEnabledParam)] = "true"
+	f.createVolumeRequest.Parameters[path.Join(f.replicationPrefix, service.RemoteSymIDParam)] = f.remotesymID
+	f.createVolumeRequest.Parameters[path.Join(f.replicationPrefix, service.ReplicationModeParam)] = replicationMode
+	f.createVolumeRequest.Parameters[service.CSIPVCNamespace] = namespace
+	return nil
+}
+
 func (f *feature) iCallCreateStorageProtectionGroup(replicationMode string) error {
 	req := new(csiext.CreateStorageProtectionGroupRequest)
 	params := make(map[string]string)
@@ -2152,6 +2160,7 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^a Powermax service$`, f.aPowermaxService)
 	s.Step(`^a basic block volume request "([^"]*)" "(\d+)"$`, f.aBasicBlockVolumeRequest)
 	s.Step(`^adds replication capability with mode "([^"]*)" namespace "([^"]*)"$`, f.addsReplicationCapability)
+	s.Step(`^adds auto SRDFG replication capability with mode "([^"]*)" namespace "([^"]*)"$`, f.addsAutoSRDFReplicationCapability)
 	s.Step(`^I call CreateVolume$`, f.iCallCreateVolume)
 	s.Step(`^when I call DeleteVolume$`, f.whenICallDeleteVolume)
 	s.Step(`^there are no errors$`, f.thereAreNoErrors)

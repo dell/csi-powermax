@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	pmax "github.com/dell/gopowermax/v2"
@@ -28,14 +29,169 @@ import (
 
 // Supported actions
 const (
-	Establish = "Establish"
-	Resume    = "Resume"
-	Suspend   = "Suspend"
-	FailOver  = "Failover"
-	Swap      = "Swap"
-	FailBack  = "Failback"
-	Reprotect = "Reprotect"
+	Establish     = "Establish"
+	Resume        = "Resume"
+	Suspend       = "Suspend"
+	FailOver      = "Failover"
+	Swap          = "Swap"
+	FailBack      = "Failback"
+	Reprotect     = "Reprotect"
+	QueryRDFMode  = "rdf_mode"
+	QueryRemSymID = "remote_symmetrix_id"
+	QueryAsync    = "Asynchronous"
+	QuerySync     = "Synchronous"
+	QueryMetro    = "Active"
 )
+
+func getQueryMode(mode string) string {
+	switch mode {
+	case Async:
+		return QueryAsync
+	case Sync:
+		return QuerySync
+	case Metro:
+		return QueryMetro
+	default:
+		return ""
+	}
+}
+
+// BuildRdfLabel builds an RDF Label using Local and Remote RDFg
+// Format: "csi-<mode>"
+func buildRdfLabel(mode, namespace string) string {
+	label := fmt.Sprintf("%s%s", csiPrefix, mode)
+	if mode == Async {
+		label = fmt.Sprintf("%s-%s", label, namespace)
+	}
+	return label
+
+}
+
+// LocalRDFPortsNotAdded checks if the RDF ports are already added to the create RDF payload
+// and return accordingly.
+func LocalRDFPortsNotAdded(createRDFPayload *types.RDFGroupCreate, localSymID string, dir string, port int) bool {
+	result := false
+	localPorts := createRDFPayload.LocalPorts
+	if len(localPorts) < 1 {
+		return true
+	}
+	for _, prtDetails := range localPorts {
+		if prtDetails.SymmID != localSymID && prtDetails.DirID != dir && prtDetails.PortNum != port {
+			result = true
+		} else {
+			result = false
+		}
+	}
+	return result
+}
+
+// GetOrCreateRDFGroup get or creates an RDF group automatically.
+// 0. Return if there is already a RDFG pair exist
+// 1. Get the Next Free RDF group number for Local and Remote
+// 2. Get all RDF Directors which are 'ONLINE' from Local Sym
+// 3. Get all 'ONLINE' RDF Ports for each obtained 'ONLINE' Director
+// 4. SAN SCAN from each 'ONLINE' RDFDir:Port to see which ports on the Remote site are available
+// 5. Choose all Ports associated with the remoteSite Provided
+// 6. Use all the details above to create a RDFg
+func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, remoteSymID string, repMode string, namespace string, pmaxClient pmax.Pmax) (string, string) {
+	createRDFgPayload := new(types.RDFGroupCreate)
+	proceedWithCreate := false
+	rdfLabel := ""
+	status := false
+
+	// check if there is already a RDFG exist for symmetrix pair and the mode
+	rdfLabel = buildRdfLabel(repMode, namespace)
+	rDFGList, err := pmaxClient.GetRDFGroupList(ctx, localSymID, types.QueryParams{
+		QueryRemSymID: remoteSymID,
+	})
+	for _, rDFGID := range rDFGList.RDFGroupIDs {
+		if strings.Compare(rdfLabel, rDFGID.Label) == 0 {
+			log.Debugf("found pre existing label for given array pair and RDF mode: %+v", rDFGID)
+			rDFG, err := pmaxClient.GetRDFGroupByID(ctx, localSymID, strconv.Itoa(rDFGID.RDFGNumber))
+			if err != nil {
+				log.Error(fmt.Sprintf("Failed to fetch RDF pre existing group, Error (%s)", err.Error()))
+				return "", ""
+			}
+			return strconv.Itoa(rDFG.RdfgNumber), strconv.Itoa(rDFG.RemoteRdfgNumber)
+		}
+	}
+
+	// Create new RDFG pair, no pre-existing pair for symIDs and rep mode
+	nextFreeRDFG, err := pmaxClient.GetFreeLocalAndRemoteRDFg(ctx, localSymID, remoteSymID)
+	if err != nil {
+		log.Error(fmt.Sprintf("Failed to fetch free RDF groups, Error (%s)", err.Error()))
+		return "", ""
+	}
+	localRDFG := nextFreeRDFG.LocalRdfGroup[0]
+	remoteRDFG := nextFreeRDFG.RemoteRdfGroup[0]
+	log.Infof("Fetched Local RDFg:(%d), remote RDFg:(%d)", localRDFG, remoteRDFG)
+
+	// We are only bothered about ONLINE RDF dirs, so get only those
+	onlineDirList, err := pmaxClient.GetLocalOnlineRDFDirs(ctx, localSymID)
+	if err != nil {
+		log.Error(fmt.Sprintf("Failed to fetch local ONLINE RDF Directors, Error (%s)", err.Error()))
+		return "", ""
+	}
+	//For each of the onlineDirs Obtained, get the ONLINE ports
+	for _, dirs := range onlineDirList.RdfDirs {
+		onlinePortList, err := pmaxClient.GetLocalOnlineRDFPorts(ctx, dirs, localSymID)
+		if err != nil {
+			log.Error(fmt.Sprintf("Unable to get Port list for Online RDF Director:%s", dirs))
+			goto EXIT // If the Dir is online we have to get the port list otherwise something gone wrong
+		}
+		for _, ports := range onlinePortList.RdfPorts {
+			// SAN Scan per ONLINE DIR:PORT is quite time-consuming. Check for timeouts.
+			// Scan time also increases if multiple sites are zoned over the same RDF Port
+			onlinePortInfo, err := pmaxClient.GetRemoteRDFPortOnSAN(ctx, localSymID, dirs, ports)
+			if err != nil {
+				log.Error(fmt.Sprintf("Unable to get Remote Port on SAN for Local RDF port:(%s:%s)", dirs, ports))
+				goto EXIT // RDF Dir:Ports were online, yet we didn't get any Remote ports connected on SAN. something is wrong! Exit
+			}
+			//Start Building the Req structure if the SAN SCAN reports a hit on the SID of the remoteSymm
+			for _, remArray := range onlinePortInfo.RemotePorts {
+				log.Debugf("rem array ports: %+v", remArray)
+				if remArray.SymmID == remoteSymID {
+					log.Infof("remote array matched symm we provided:%s", remoteSymID)
+					// WHen there is a match on the SID, it means from the given local RDFDir:Port
+					// combo has been zoned to the remote site. So Get the Local Dir:Port and
+					// build the Local RDF list , if its not already present.
+					// Build the Array one by one.
+					ports, _ := strconv.Atoi(ports)
+					LocalRDFDirPortInfo, err := pmaxClient.GetLocalRDFPortDetails(ctx, localSymID, dirs, ports)
+					if err != nil {
+						log.Error(fmt.Sprintf("Unable to get Remote Port on SAN for Local RDF port:(%s:%d)", dirs, ports))
+						status = false
+						goto EXIT
+					}
+					log.Infof("checking if dir:%s,port:%d is already added to rdfpayload", dirs, ports)
+					if LocalRDFPortsNotAdded(createRDFgPayload, localSymID, dirs, ports) {
+						log.Error(fmt.Sprintf("appending dir:%s,port:%d ", dirs, ports))
+						createRDFgPayload.LocalPorts = append(createRDFgPayload.LocalPorts, *LocalRDFDirPortInfo)
+					}
+					//Add Remote Ports
+					createRDFgPayload.RemotePorts = append(createRDFgPayload.RemotePorts, remArray)
+				}
+			}
+		}
+		proceedWithCreate = true
+	}
+	if proceedWithCreate {
+		// Add the remaining parameters to the create Call and fire it
+		createRDFgPayload.Label = rdfLabel
+		createRDFgPayload.LocalRDFNum = localRDFG
+		createRDFgPayload.RemoteRDFNum = remoteRDFG
+
+		// Fire the call
+		status = pmaxClient.ExecuteCreateRDFGroup(ctx, localSymID, createRDFgPayload)
+		goto EXIT
+	}
+
+EXIT:
+	if status == true {
+		return strconv.Itoa(localRDFG), strconv.Itoa(remoteRDFG)
+	}
+	return "", ""
+}
 
 // GetRDFDevicePairInfo returns the RDF informtaion of a volume
 func (s *service) GetRDFDevicePairInfo(ctx context.Context, symID, rdfGrpNo, localVolID string, pmaxClient pmax.Pmax) (*types.RDFDevicePair, error) {
@@ -65,7 +221,7 @@ func (s *service) ProtectStorageGroup(ctx context.Context, symID, remoteSymID, s
 	}
 
 	// Proceed to Protect the SG
-	rdfg, err := pmaxClient.GetRDFGroup(ctx, symID, rdfGrpNo)
+	rdfg, err := pmaxClient.GetRDFGroupByID(ctx, symID, rdfGrpNo)
 	if err != nil {
 		log.Errorf("Could not get rdf group (%s) information on symID (%s)", symID, rdfGrpNo)
 		return status.Errorf(codes.Internal, "Could not get rdf group (%s) information on symID (%s). Error (%s)", symID, rdfGrpNo, err.Error())
@@ -112,12 +268,12 @@ func (s *service) verifyAndDeleteRemoteStorageGroup(ctx context.Context, remoteS
 }
 
 // GetRemoteVolumeID returns a remote volume ID for give local volume
-func (s *service) GetRemoteVolumeID(ctx context.Context, symID, rdfGrpNo, localVolID string, pmaxClient pmax.Pmax) (string, error) {
+func (s *service) GetRemoteVolumeID(ctx context.Context, symID, rdfGrpNo, localVolID string, pmaxClient pmax.Pmax) (string, string, error) {
 	rdfPair, err := s.GetRDFDevicePairInfo(ctx, symID, rdfGrpNo, localVolID, pmaxClient)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return rdfPair.RemoteVolumeName, nil
+	return rdfPair.RemoteVolumeName, strconv.Itoa(rdfPair.RemoteRdfGroupNumber), nil
 }
 
 // VerifyProtectedGroupDirection returns the direction of protected SG

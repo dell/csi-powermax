@@ -481,7 +481,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 				return true
 			}
 			log.Debugf("LocalSG: (%s), Mode: (%s), RDF No: (%s), Namespace: (%s)", sgID, mode, rdfNo, ns)
-			rdfInfo, err := pmaxClient.GetRDFGroup(context.Background(), queue.SymID, rdfNo)
+			rdfInfo, err := pmaxClient.GetRDFGroupByID(context.Background(), queue.SymID, rdfNo)
 			if err != nil {
 				log.Errorf("GetRDFGroup failed for (%s) on symID (%s)", sgID, queue.SymID)
 				return false

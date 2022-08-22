@@ -16,11 +16,11 @@ require (
 	github.com/dell/gocsi v1.6.0
 	github.com/dell/gofsutil v1.9.1-0.20220804050348-2b1cbfd2b12e
 	github.com/dell/goiscsi v1.4.0
-	github.com/dell/gopowermax/v2 v2.0.0-20220801063136-61bb0123111e
+	github.com/dell/gopowermax/v2 v2.0.0-20220818034616-a85ab3cf9394
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.2
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
-	github.com/sirupsen/logrus v1.8.1
+	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f
@@ -34,7 +34,6 @@ require (
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/cucumber/gherkin-go/v11 v11.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dell/dell-csi-extensions v0.0.0-20220531081201-ea223a47fae4 // indirect
 	github.com/dell/gonvme v1.1.1-0.20220704070618-c22e60197ee5 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
@@ -71,7 +70,7 @@ require (
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9 // indirect
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
-	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect
+	golang.org/x/sys v0.0.0-20220817070843-5a390386f1f2 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	google.golang.org/appengine v1.6.1 // indirect
