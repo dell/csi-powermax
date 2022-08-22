@@ -345,12 +345,30 @@ func (s *service) CreateVolume(
 		replicationEnabled = params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)]
 		// remote symmetrix ID and rdf group name are mandatory params when replication is enabled
 		remoteSymID = params[path.Join(s.opts.ReplicationPrefix, RemoteSymIDParam)]
-		localRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, LocalRDFGroupParam)]
-		remoteRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
+		// check if storage class contains SRDG details
+		if params[path.Join(s.opts.ReplicationPrefix, LocalRDFGroupParam)] != "" {
+			localRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, LocalRDFGroupParam)]
+		}
+		if params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)] != "" {
+			remoteRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
+		}
 		repMode = params[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)]
 		remoteServiceLevel = params[path.Join(s.opts.ReplicationPrefix, RemoteServiceLevelParam)]
 		remoteSRPID = params[path.Join(s.opts.ReplicationPrefix, RemoteSRPParam)]
 		bias = params[path.Join(s.opts.ReplicationPrefix, BiasParam)]
+
+		// Get Local and remote RDFg Numbers from a rest call
+		// Create RDFg for a namespace if it doens't exist?
+		// Create RDFg when the volume gets added first time for a replication sssn
+		if localRDFGrpNo == "" && remoteRDFGrpNo == "" {
+			localRDFGrpNo, remoteRDFGrpNo = s.GetOrCreateRDFGroup(ctx, symmetrixID, remoteSymID, repMode, namespace, pmaxClient)
+			if localRDFGrpNo == "" || remoteRDFGrpNo == "" {
+				log.Errorf("Received INVALID RDF Group Numbers LocalRDFg:%s, RemoteRdfg:%s", localRDFGrpNo, remoteRDFGrpNo)
+				return nil, status.Errorf(codes.NotFound, "Received INVALID RDF Group Numbers LocalRDFg:%s, RemoteRdfg:%s", localRDFGrpNo, remoteRDFGrpNo)
+			}
+			log.Debugf("found pre existing group for given array pair and RDF mode: local(%s), remote(%s)", localRDFGrpNo, remoteRDFGrpNo)
+
+		}
 		if repMode == Metro {
 			return s.createMetroVolume(ctx, req, reqID, storagePoolID, symmetrixID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias)
 		}
@@ -581,7 +599,7 @@ func (s *service) CreateVolume(
 			}
 			var remoteVolumeID string
 			if replicationEnabled == "true" {
-				remoteVolumeID, err = s.GetRemoteVolumeID(ctx, symmetrixID, localRDFGrpNo, vol.VolumeID, pmaxClient)
+				remoteVolumeID, _, err = s.GetRemoteVolumeID(ctx, symmetrixID, localRDFGrpNo, vol.VolumeID, pmaxClient)
 				if err != nil && !strings.Contains(err.Error(), "The device must be an RDF device") {
 					return nil, status.Errorf(codes.Internal, "Failed to fetch rdf pair information for (%s) - Error (%s)", vol.VolumeID, err.Error())
 				}
@@ -609,7 +627,7 @@ func (s *service) CreateVolume(
 				"CreationTime": time.Now().Format("20060102150405"),
 			}
 			if replicationEnabled == "true" {
-				addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID)
+				addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID, localRDFGrpNo, remoteRDFGrpNo)
 			}
 			volResp.VolumeContext = attributes
 			csiResp := &csi.CreateVolumeResponse{
@@ -701,11 +719,11 @@ func (s *service) CreateVolume(
 		"CreationTime": time.Now().Format("20060102150405"),
 	}
 	if replicationEnabled == "true" {
-		remoteVolumeID, err := s.GetRemoteVolumeID(ctx, symmetrixID, localRDFGrpNo, volID, pmaxClient)
+		remoteVolumeID, _, err := s.GetRemoteVolumeID(ctx, symmetrixID, localRDFGrpNo, volID, pmaxClient)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "Failed to fetch rdf pair information for (%s) - Error (%s)", vol.VolumeID, err.Error())
 		}
-		addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID)
+		addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID, localRDFGrpNo, remoteRDFGrpNo)
 	}
 	volResp.VolumeContext = attributes
 	if accessibility != nil {
@@ -900,7 +918,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 				continue
 			}
 			var remoteVolumeID string
-			remoteVolumeID, err = s.GetRemoteVolumeID(ctx, symID, localRDFGrpNo, vol.VolumeID, pmaxClient)
+			remoteVolumeID, _, err = s.GetRemoteVolumeID(ctx, symID, localRDFGrpNo, vol.VolumeID, pmaxClient)
 			if err != nil && !strings.Contains(err.Error(), "The device must be an RDF device") {
 				return nil, status.Errorf(codes.Internal, "Failed to fetch rdf pair information for (%s) - Error (%s)", vol.VolumeID, err.Error())
 			}
@@ -937,7 +955,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 				//Format the time output
 				"CreationTime": time.Now().Format("20060102150405"),
 			}
-			addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID)
+			addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID, localRDFGrpNo, remoteRDFGrpNo)
 			volResp.VolumeContext = attributes
 			csiResp := &csi.CreateVolumeResponse{
 				Volume: volResp,
@@ -987,7 +1005,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		}
 	}
 
-	remoteVolumeID, err := s.GetRemoteVolumeID(ctx, symID, localRDFGrpNo, vol.VolumeID, pmaxClient)
+	remoteVolumeID, _, err := s.GetRemoteVolumeID(ctx, symID, localRDFGrpNo, vol.VolumeID, pmaxClient)
 	if err != nil {
 		log.Errorf("Failed to fetch remote volume details: %s", err.Error())
 		return nil, err
@@ -1033,7 +1051,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		//Format the time output
 		"CreationTime": time.Now().Format("20060102150405"),
 	}
-	addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID)
+	addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID, localRDFGrpNo, remoteRDFGrpNo)
 	attributes[path.Join(s.opts.ReplicationContextPrefix, RemoteVolumeIDParam)] = remoteVolumeID
 
 	volResp.VolumeContext = attributes
@@ -1047,10 +1065,12 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	return csiResp, nil
 }
 
-func addReplicationParamsToVolumeAttributes(attributes map[string]string, prefix, remoteSymID, repMode, remoteVolID string) {
+func addReplicationParamsToVolumeAttributes(attributes map[string]string, prefix, remoteSymID, repMode, remoteVolID, localRDFGrpNo, remoteRDFGrpNo string) {
 	attributes[path.Join(prefix, RemoteSymIDParam)] = remoteSymID
 	attributes[path.Join(prefix, ReplicationModeParam)] = repMode
 	attributes[path.Join(prefix, RemoteVolumeIDParam)] = remoteVolID
+	attributes[path.Join(prefix, LocalRDFGroupParam)] = localRDFGrpNo
+	attributes[path.Join(prefix, RemoteRDFGroupParam)] = remoteRDFGrpNo
 }
 
 func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID string, pmaxClient pmax.Pmax) (*types.RDFStorageGroup, error) {
@@ -1066,7 +1086,7 @@ func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, l
 	sg, err := pmaxClient.GetProtectedStorageGroup(ctx, symID, localProtectionGroupID)
 	if err != nil || sg == nil {
 		// Verify the creation of new protected storage group is valid
-		err = s.verifyProtectionGroupID(ctx, symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, pmaxClient)
+		err = s.verifyProtectionGroupID(ctx, symID, localRDFGrpNo, repMode, pmaxClient)
 		if err != nil {
 			log.Errorf("VerifyProtectionGroupID failed:(%s)", err.Error())
 			return nil, status.Errorf(codes.Internal, "VerifyProtectionGroupID failed:(%s)", err.Error())
@@ -1083,11 +1103,11 @@ func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, l
 }
 
 // verifyProtectionGroupID verify's the ProtectionGroupID's uniqueness w.r.t the srdf mode
-// For metro mode, one srdf group can only have rdf pairing from one namespace
+// For metro mode, one srdf group can have rdf pairing from many namespace
 // For sync mode, one srdf group can have rdf pairing from many namespaces
 // For async mode, one srdf group can only have rdf pairing from one namespace
 // In async rdf mode there should be One to One correspondence between namespace and srdf group
-func (s *service) verifyProtectionGroupID(ctx context.Context, symID, storageGroupName, namespace, localRdfGrpNo, repMode string, pmaxClient pmax.Pmax) error {
+func (s *service) verifyProtectionGroupID(ctx context.Context, symID, localRdfGrpNo, repMode string, pmaxClient pmax.Pmax) error {
 	sgList, err := pmaxClient.GetStorageGroupIDList(ctx, symID)
 	if err != nil {
 		return err
@@ -3112,11 +3132,18 @@ func (s *service) CreateStorageProtectionGroup(ctx context.Context, req *csiext.
 	repMode := params[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)]
 	remoteRDFGroup := params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
 
-	remoteVolumeID, err := s.GetRemoteVolumeID(ctx, symID, localRDFGroup, devID, pmaxClient)
+	if len(localRDFGroup) < 1 {
+		localRDFGroup = strconv.Itoa(vol.RDFGroupIDList[0].RDFGroupNumber)
+	}
+	remoteVolumeID, rmRDFG, err := s.GetRemoteVolumeID(ctx, symID, localRDFGroup, devID, pmaxClient)
 	if err != nil {
 		log.Errorf("GetRemoteVolumeID failed with (%s) for devID (%s)", err.Error(), devID)
 		return nil, err
 	}
+	if len(remoteRDFGroup) < 1 {
+		remoteRDFGroup = rmRDFG
+	}
+
 	// log all parameters used in CreateStorageProtectionGroup call
 	fields := map[string]interface{}{
 		"RequestID":         reqID,
@@ -3248,11 +3275,17 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 		log.Error("An invalid Remote Service Level parameter was specified")
 		return nil, status.Errorf(codes.InvalidArgument, "An invalid Remote Service Level parameter was specified")
 	}
-
-	remoteVolumeID, err := s.GetRemoteVolumeID(ctx, symID, localRDFGroup, devID, pmaxClient)
+	// check if localRDFGroup is present in req, else fetch it from volume context
+	if len(localRDFGroup) < 1 {
+		localRDFGroup = strconv.Itoa(vol.RDFGroupIDList[0].RDFGroupNumber)
+	}
+	remoteVolumeID, rmRDFG, err := s.GetRemoteVolumeID(ctx, symID, localRDFGroup, devID, pmaxClient)
 	if err != nil {
 		log.Errorf("GetRemoteVolumeID failed with (%s) for devID (%s)", err.Error(), devID)
 		return nil, err
+	}
+	if len(remoteRDFGroup) < 1 {
+		remoteRDFGroup = rmRDFG
 	}
 
 	// Check existence of Storage Group and create if necessary on R2.
