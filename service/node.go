@@ -1963,7 +1963,7 @@ func (s *service) NodeExpandVolume(
 	log.Infof("Found %s filesystem mounted on volume %s", fsType, devMnt.MountPoint)
 
 	//Resize the filesystem
-	err = gofsutil.ResizeFS(context.Background(), devMnt.MountPoint, devicePath, devMnt.MPathName, fsType)
+	err = gofsutil.ResizeFS(context.Background(), devMnt.MountPoint, devicePath, devMnt.PPathName, devMnt.MPathName, fsType)
 	if err != nil {
 		log.Errorf("Failed to resize filesystem: mountpoint (%s) device (%s) with error (%s)",
 			devMnt.MountPoint, devicePath, err.Error())
