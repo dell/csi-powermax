@@ -12,9 +12,9 @@ require (
 	github.com/dell/dell-csi-extensions/common v1.1.0
 	github.com/dell/dell-csi-extensions/migration v1.0.1
 	github.com/dell/dell-csi-extensions/replication v1.2.1
-	github.com/dell/gobrick v1.4.1-0.20220704095946-b521c024c35e
+	github.com/dell/gobrick v1.4.1-0.20220823065955-2d30973dbd48
 	github.com/dell/gocsi v1.6.0
-	github.com/dell/gofsutil v1.9.1-0.20220804050348-2b1cbfd2b12e
+	github.com/dell/gofsutil v1.9.1-0.20220826112338-7e76776fb6cb
 	github.com/dell/goiscsi v1.4.0
 	github.com/dell/gopowermax/v2 v2.0.0-20220818034616-a85ab3cf9394
 	github.com/fsnotify/fsnotify v1.4.9
@@ -39,7 +39,7 @@ require (
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
-	github.com/golang/mock v1.3.1 // indirect
+	github.com/golang/mock v1.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/googleapis/gnostic v0.4.0 // indirect
 	github.com/gorilla/mux v1.7.3 // indirect
@@ -69,8 +69,8 @@ require (
 	go.uber.org/zap v1.17.0 // indirect
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9 // indirect
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
-	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
-	golang.org/x/sys v0.0.0-20220817070843-5a390386f1f2 // indirect
+	golang.org/x/sync v0.0.0-20220819030929-7fc1605a5dde // indirect
+	golang.org/x/sys v0.0.0-20220825204002-c680a09ffe64 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	google.golang.org/appengine v1.6.1 // indirect

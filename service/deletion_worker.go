@@ -473,6 +473,10 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 			// RemoveVolumesFromProtectedStorageGroup should be done only from r1 type
 			psg, err := pmaxClient.GetStorageGroupRDFInfo(context.Background(), queue.SymID, sgID, rdfNo)
 			if err != nil {
+				if strings.Contains(err.Error(), "No SRDF records found") {
+					// it is empty protected storage group
+					return true
+				}
 				log.Errorf("GetStorageGroupRDFInfo failed for (%s) on symID (%s)", sgID, queue.SymID)
 				return false
 			}
