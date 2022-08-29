@@ -361,13 +361,11 @@ func (s *service) CreateVolume(
 		// Create RDFg for a namespace if it doens't exist?
 		// Create RDFg when the volume gets added first time for a replication sssn
 		if localRDFGrpNo == "" && remoteRDFGrpNo == "" {
-			localRDFGrpNo, remoteRDFGrpNo = s.GetOrCreateRDFGroup(ctx, symmetrixID, remoteSymID, repMode, namespace, pmaxClient)
-			if localRDFGrpNo == "" || remoteRDFGrpNo == "" {
-				log.Errorf("Received INVALID RDF Group Numbers LocalRDFg:%s, RemoteRdfg:%s", localRDFGrpNo, remoteRDFGrpNo)
-				return nil, status.Errorf(codes.NotFound, "Received INVALID RDF Group Numbers LocalRDFg:%s, RemoteRdfg:%s", localRDFGrpNo, remoteRDFGrpNo)
+			localRDFGrpNo, remoteRDFGrpNo, err = s.GetOrCreateRDFGroup(ctx, symmetrixID, remoteSymID, repMode, namespace, pmaxClient)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "Received error get/create RDFG, err: %s", err.Error())
 			}
-			log.Debugf("found pre existing group for given array pair and RDF mode: local(%s), remote(%s)", localRDFGrpNo, remoteRDFGrpNo)
-
+			log.Debugf("RDF group for given array pair and RDF mode: local(%s), remote(%s)", localRDFGrpNo, remoteRDFGrpNo)
 		}
 		if repMode == Metro {
 			return s.createMetroVolume(ctx, req, reqID, storagePoolID, symmetrixID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias)

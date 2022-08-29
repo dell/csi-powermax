@@ -2,6 +2,10 @@ package service
 
 import (
 	"fmt"
+	"path"
+	"strconv"
+	"time"
+
 	csiext "github.com/dell/dell-csi-extensions/migration"
 	types "github.com/dell/gopowermax/v2/types/v100"
 	log "github.com/sirupsen/logrus"
@@ -9,14 +13,19 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"path"
-	"time"
 )
 
 func (s *service) VolumeMigrate(ctx context.Context, req *csiext.VolumeMigrateRequest) (*csiext.VolumeMigrateResponse, error) {
 
-	volID := req.GetVolumeHandle()
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
 
+	volID := req.GetVolumeHandle()
 	_, symID, _, _, _, err := s.parseCsiID(volID)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", volID)
@@ -24,7 +33,6 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csiext.VolumeMigrateRe
 	}
 
 	pmaxClient, err := s.GetPowerMaxClient(symID)
-
 	if err != nil {
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -78,6 +86,16 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csiext.VolumeMigrateRe
 	}
 
 	migrateType := req.GetType()
+	fields := log.Fields{
+		"RequestID":   reqID,
+		"SymmetrixID": symID,
+		"RemoteSymID": sourceScParams[path.Join(s.opts.ReplicationPrefix, RemoteSymIDParam)],
+		"MigrateType": migrateType,
+		"VolID":       devID,
+		"Namespace":   params[CSIPVCNamespace],
+	}
+	log.WithFields(fields).Info("Executing VolumeMigrate with following fields")
+
 	var migrationFunc func(context.Context, map[string]string, map[string]string, string, string, string, string, string, *service, *types.Volume) error
 
 	switch migrateType {
@@ -124,6 +142,8 @@ func nonReplToRepl(ctx context.Context, params map[string]string, sourceScParams
 	var remoteRDFGrpNo string
 	var repMode string
 	var reqID string
+	var namespace string
+
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
 		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
@@ -144,7 +164,14 @@ func nonReplToRepl(ctx context.Context, params map[string]string, sourceScParams
 		localRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, LocalRDFGroupParam)]
 		remoteRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
 		repMode = params[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)]
-		//namespace = params[CSIPVCNamespace]
+		namespace = params[CSIPVCNamespace]
+		if localRDFGrpNo == "" && remoteRDFGrpNo == "" {
+			localRDFGrpNo, remoteRDFGrpNo, err = s.GetOrCreateRDFGroup(ctx, symID, remoteSymID, repMode, namespace, pmaxClient)
+			if err != nil {
+				return status.Errorf(codes.NotFound, "Received error get/create RDFG, err: %s", err.Error())
+			}
+			log.Debugf("found pre existing group for given array pair and RDF mode: local(%s), remote(%s)", localRDFGrpNo, remoteRDFGrpNo)
+		}
 		if repMode == Metro {
 			log.Errorf("Unsupported Replication Mode: (%s)", repMode)
 			return status.Errorf(codes.InvalidArgument, "Unsupported Replication Mode: (%s)", repMode)
@@ -168,13 +195,13 @@ func nonReplToRepl(ctx context.Context, params map[string]string, sourceScParams
 	var localProtectionGroupID string
 	var remoteProtectionGroupID string
 	if replicationEnabled == "true" {
-		localProtectionGroupID = buildProtectionGroupID(params[CSIPVCNamespace], localRDFGrpNo, repMode)
-		remoteProtectionGroupID = buildProtectionGroupID(params[CSIPVCNamespace], remoteRDFGrpNo, repMode)
+		localProtectionGroupID = buildProtectionGroupID(namespace, localRDFGrpNo, repMode)
+		remoteProtectionGroupID = buildProtectionGroupID(namespace, remoteRDFGrpNo, repMode)
 	}
 	if replicationEnabled == "true" {
 		isSGUnprotected := false
 		if replicationEnabled == "true" {
-			sg, err := s.getOrCreateProtectedStorageGroup(ctx, symID, localProtectionGroupID, params[CSIPVCNamespace], localRDFGrpNo, repMode, reqID, pmaxClient)
+			sg, err := s.getOrCreateProtectedStorageGroup(ctx, symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID, pmaxClient)
 			if err != nil {
 				return status.Errorf(codes.Internal, "Error in getOrCreateProtectedStorageGroup: (%s)", err.Error())
 			}
@@ -243,7 +270,15 @@ func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams
 	localRDFGrpNo := sourceScParams[path.Join(s.opts.ReplicationPrefix, LocalRDFGroupParam)]
 	remoteRDFGrpNo := sourceScParams[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
 	repMode := sourceScParams[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)]
-
+	if localRDFGrpNo == "" {
+		localRDFGrpNo = strconv.Itoa(vol.RDFGroupIDList[0].RDFGroupNumber)
+		rdfInfo, err := pmaxClient.GetRDFGroupByID(ctx, symID, localRDFGrpNo)
+		if err != nil {
+			log.Error(fmt.Sprintf("Could not get remote rdfG for %s: %s:", localRDFGrpNo, err.Error()))
+			return status.Errorf(codes.Internal, fmt.Sprintf("Could not get remote rdfG for %s: %s:", localRDFGrpNo, err.Error()))
+		}
+		remoteRDFGrpNo = strconv.Itoa(rdfInfo.RemoteRdfgNumber)
+	}
 	sgID := buildProtectionGroupID(params[CSIPVCNamespace], localRDFGrpNo, repMode)
 	remoteSGID := buildProtectionGroupID(params[CSIPVCNamespace], remoteRDFGrpNo, repMode)
 
