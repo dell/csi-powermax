@@ -36,7 +36,6 @@ const (
 	Swap          = "Swap"
 	FailBack      = "Failback"
 	Reprotect     = "Reprotect"
-	QueryRDFMode  = "rdf_mode"
 	QueryRemSymID = "remote_symmetrix_id"
 	QueryAsync    = "Asynchronous"
 	QuerySync     = "Synchronous"
@@ -57,11 +56,13 @@ func getQueryMode(mode string) string {
 }
 
 // BuildRdfLabel builds an RDF Label using Local and Remote RDFg
-// Format: "csi-<mode>"
-func buildRdfLabel(mode, namespace string) string {
-	label := fmt.Sprintf("%s%s", csiPrefix, mode)
+// Format: "csi-<clusterPrefix>-<mode> for sync, metro. e.g. csi-ABC-<M,S>"
+// <clusterPrefix><Namespace> for async. e.g. ABCnamespc
+// There is a limit of 10 char of RDF label
+func buildRdfLabel(mode, namespace, clusterPrefix string) string {
+	label := fmt.Sprintf("%s%s-%s", csiPrefix, clusterPrefix, string(mode[0]))
 	if mode == Async {
-		label = fmt.Sprintf("%s-%s", label, namespace)
+		label = fmt.Sprintf("%s%s", clusterPrefix, namespace)
 	}
 	return label
 
@@ -93,14 +94,17 @@ func LocalRDFPortsNotAdded(createRDFPayload *types.RDFGroupCreate, localSymID st
 // 4. SAN SCAN from each 'ONLINE' RDFDir:Port to see which ports on the Remote site are available
 // 5. Choose all Ports associated with the remoteSite Provided
 // 6. Use all the details above to create a RDFg
-func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, remoteSymID string, repMode string, namespace string, pmaxClient pmax.Pmax) (string, string) {
+func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, remoteSymID string, repMode string, namespace string, pmaxClient pmax.Pmax) (string, string, error) {
 	createRDFgPayload := new(types.RDFGroupCreate)
 	proceedWithCreate := false
 	rdfLabel := ""
-	status := false
+	createStatus := false
 
 	// check if there is already a RDFG exist for symmetrix pair and the mode
-	rdfLabel = buildRdfLabel(repMode, namespace)
+	rdfLabel = buildRdfLabel(repMode, namespace, s.opts.ClusterPrefix)
+	if len(rdfLabel) > 10 {
+		return "", "", fmt.Errorf("rdfLabel: %s for mode: %s exceeds 10 char limit, rename the namespace within 7 char or use pre-existing RDFG via storage class", rdfLabel, repMode)
+	}
 	rDFGList, err := pmaxClient.GetRDFGroupList(ctx, localSymID, types.QueryParams{
 		QueryRemSymID: remoteSymID,
 	})
@@ -110,9 +114,10 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 			rDFG, err := pmaxClient.GetRDFGroupByID(ctx, localSymID, strconv.Itoa(rDFGID.RDFGNumber))
 			if err != nil {
 				log.Error(fmt.Sprintf("Failed to fetch RDF pre existing group, Error (%s)", err.Error()))
-				return "", ""
+				return "", "", err
 			}
-			return strconv.Itoa(rDFG.RdfgNumber), strconv.Itoa(rDFG.RemoteRdfgNumber)
+			log.Debugf("found pre-existing RDF group with label: %s", rDFGID.Label)
+			return strconv.Itoa(rDFG.RdfgNumber), strconv.Itoa(rDFG.RemoteRdfgNumber), nil
 		}
 	}
 
@@ -120,7 +125,7 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 	nextFreeRDFG, err := pmaxClient.GetFreeLocalAndRemoteRDFg(ctx, localSymID, remoteSymID)
 	if err != nil {
 		log.Error(fmt.Sprintf("Failed to fetch free RDF groups, Error (%s)", err.Error()))
-		return "", ""
+		return "", "", err
 	}
 	localRDFG := nextFreeRDFG.LocalRdfGroup[0]
 	remoteRDFG := nextFreeRDFG.RemoteRdfGroup[0]
@@ -130,7 +135,7 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 	onlineDirList, err := pmaxClient.GetLocalOnlineRDFDirs(ctx, localSymID)
 	if err != nil {
 		log.Error(fmt.Sprintf("Failed to fetch local ONLINE RDF Directors, Error (%s)", err.Error()))
-		return "", ""
+		return "", "", err
 	}
 	//For each of the onlineDirs Obtained, get the ONLINE ports
 	for _, dirs := range onlineDirList.RdfDirs {
@@ -160,7 +165,7 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 					LocalRDFDirPortInfo, err := pmaxClient.GetLocalRDFPortDetails(ctx, localSymID, dirs, ports)
 					if err != nil {
 						log.Error(fmt.Sprintf("Unable to get Remote Port on SAN for Local RDF port:(%s:%d)", dirs, ports))
-						status = false
+						createStatus = false
 						goto EXIT
 					}
 					log.Infof("checking if dir:%s,port:%d is already added to rdfpayload", dirs, ports)
@@ -182,15 +187,15 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 		createRDFgPayload.RemoteRDFNum = remoteRDFG
 
 		// Fire the call
-		status = pmaxClient.ExecuteCreateRDFGroup(ctx, localSymID, createRDFgPayload)
+		createStatus = pmaxClient.ExecuteCreateRDFGroup(ctx, localSymID, createRDFgPayload)
 		goto EXIT
 	}
 
 EXIT:
-	if status == true {
-		return strconv.Itoa(localRDFG), strconv.Itoa(remoteRDFG)
+	if createStatus == true {
+		return strconv.Itoa(localRDFG), strconv.Itoa(remoteRDFG), nil
 	}
-	return "", ""
+	return "", "", err
 }
 
 // GetRDFDevicePairInfo returns the RDF informtaion of a volume
@@ -295,11 +300,14 @@ func GetRDFInfoFromSGID(storageGroupID string) (namespace string, rDFGno string,
 	sgComponents := strings.Split(storageGroupID, "-")
 
 	compLength := len(sgComponents)
-	if compLength < 6 || !strings.Contains(storageGroupID, CsiRepSGPrefix) {
+	if compLength < 5 || !strings.Contains(storageGroupID, CsiRepSGPrefix) {
 		err = fmt.Errorf("The protected SGID %s is not formed correctly", storageGroupID)
 		return
 	}
-	namespace = strings.Join(sgComponents[3:compLength-2], "-")
+	if compLength > 5 {
+		// this is ASYNC/SYNC rep sg, it will have namespace
+		namespace = strings.Join(sgComponents[3:compLength-2], "-")
+	}
 	rDFGno = sgComponents[compLength-2]
 	repMode = sgComponents[compLength-1]
 	return
@@ -762,6 +770,11 @@ func validateRDFState(ctx context.Context, symID, action, sgName, rdfGrpNo strin
 }
 
 func buildProtectionGroupID(namespace, localRdfGrpNo, repMode string) string {
-	protectionGrpID := CsiRepSGPrefix + namespace + "-" + localRdfGrpNo + "-" + repMode
+	var protectionGrpID string
+	if repMode == Metro {
+		protectionGrpID = CsiRepSGPrefix + localRdfGrpNo + "-" + repMode
+	} else {
+		protectionGrpID = CsiRepSGPrefix + namespace + "-" + localRdfGrpNo + "-" + repMode
+	}
 	return protectionGrpID
 }
