@@ -137,6 +137,7 @@ function install_driver() {
   else
     log step "Installing Driver"
   fi
+  warning "CSI Driver for Powermax v2.4.0 requires 10.0 Unisphere REST endpoint support"
 
   # run driver specific install script
   local SCRIPTNAME="install-${DRIVER}.sh"
