@@ -546,7 +546,7 @@ func (s *service) startSnapCleanupWorker() error {
 	if s.adminClient == nil {
 		err := s.controllerProbe(context.Background())
 		if err != nil {
-			fmt.Printf("Failed to controller probe\n")
+			fmt.Printf("Failed to controller probe: (%s)\n", err.Error())
 			return err
 		}
 	}

@@ -63,9 +63,6 @@ export X_CSI_REPLICATION_PREFIX="replication.storage.dell.com"
 # Valid values are "FC" or "ISCSI" or "". Value "" will choose FC if both are available.
 # This is mainly for testing.
 export X_CSI_TRANSPORT_PROTOCOL=""
-# Setting X_CSI_REVERSE_PROXY_ENABLED tells the driver that the endpoint being connected to is
-# actually the reverse proxy server
-export X_CSI_REVERSE_PROXY_ENABLED=""
 # Set this value to a higher number is a proxy is being used
 export X_CSI_GRPC_MAX_THREADS="50"
 # Set this value to the timeout as: "300ms", "1.5h" or "2h45m".

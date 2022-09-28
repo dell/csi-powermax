@@ -18,13 +18,13 @@ standAloneConfig:
   storageArrays:
     - storageArrayId: "000000000001"
       primaryURL: https://primary-1.unisphe.re:8443
-      backupURL: https://backup-1.unisphe.re
+      backupURL: https://backup-1.unisphe.re:8443
       proxyCredentialSecrets:
         - proxy-secret-11
         - proxy-secret-12
     - storageArrayId: "000000000002"
       primaryURL: https://primary-2.unisphe.re:8443
-      backupURL: https://backup-2.unisphe.re
+      backupURL: https://backup-2.unisphe.re:8443
       proxyCredentialSecrets:
         - proxy-secret-21
         - proxy-secret-22

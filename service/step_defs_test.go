@@ -219,6 +219,7 @@ func (f *feature) aPowerMaxService() error {
 	f.lastTime = now
 	induceOverloadError = false
 	inducePendingError = false
+	inducedMockReverseProxy = true
 	gofsutil.GOFSWWNPath = "test/dev/disk/by-id/wwn-0x"
 	nodePublishSleepTime = 5 * time.Millisecond
 	removeDeviceSleepTime = 5 * time.Millisecond
