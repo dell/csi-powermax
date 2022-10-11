@@ -971,7 +971,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	protectedSGID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
 	if protectedSGID == "" {
 		// Volume is not present in Protected Storage Group, Add
-		err = pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, true, vol.VolumeID)
+		err = pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, false, vol.VolumeID)
 		if err != nil {
 			log.Error(fmt.Sprintf("Could not add volume in protected SG: %s: %s", volumeName, err.Error()))
 			return nil, status.Errorf(codes.Internal, "Could not add volume in protected SG: %s: %s", volumeName, err.Error())

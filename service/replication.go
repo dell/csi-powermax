@@ -75,7 +75,7 @@ func (s *service) ProtectStorageGroup(ctx context.Context, symID, remoteSymID, s
 	if rdfg.Async && rdfg.NumDevices > 0 {
 		return status.Errorf(codes.Internal, "RDF group (%s) cannot be used for ASYNC, as it already has volume pairing", rdfGrpNo)
 	}
-	log.Debugf("RDF: rdfg has 0 device ! vol(%s)", localVolID)
+	log.Debugf("RDF: rdfg has %d devices ! for vol(%s)", rdfg.NumDevices, localVolID)
 	err = s.verifyAndDeleteRemoteStorageGroup(ctx, remoteSymID, remoteStorageGroupName, pmaxClient)
 	if err != nil {
 		log.Error(fmt.Sprintf("Could not verify remote storage group (%s)", storageGroupName))
