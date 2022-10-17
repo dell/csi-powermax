@@ -610,3 +610,16 @@ func buildProtectionGroupID(namespace, localRdfGrpNo, repMode string) string {
 	protectionGrpID := CsiRepSGPrefix + namespace + "-" + localRdfGrpNo + "-" + repMode
 	return protectionGrpID
 }
+
+func (s *service) addVolumesToProtectedStorageGroup(ctx context.Context, reqID, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID string, force bool, volID string, pmaxClient pmax.Pmax) error {
+	lockHandle := fmt.Sprintf("%s%s", localProtectionGroupID, symID)
+	lockNum := RequestLock(lockHandle, reqID)
+	defer ReleaseLock(lockHandle, reqID, lockNum)
+	err := pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, false, volID)
+	if err != nil {
+		log.Error(fmt.Sprintf("Could not add volume in protected SG: %s: %s", volID, err.Error()))
+		return status.Errorf(codes.Internal, "Could not add volume in protected SG: %s: %s", volID, err.Error())
+	}
+	log.Debugf("volume (%s) added to protected SG (%s)", volID, localProtectionGroupID)
+	return nil
+}
