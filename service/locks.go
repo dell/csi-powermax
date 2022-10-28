@@ -136,7 +136,7 @@ func LockRequestHandler() {
 	}()
 }
 
-//CleanupMapEntries - clean up stale entries from the map
+// CleanupMapEntries - clean up stale entries from the map
 func CleanupMapEntries(duration time.Duration) {
 	ticker := time.NewTicker(duration)
 	go func() {
