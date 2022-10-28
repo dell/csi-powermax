@@ -34,16 +34,19 @@ type ProxyMode string
 
 // Constants for the proxy configuration
 // Linked :- In linked mode, proxy simply forwards
-//           all the request to one of the configured
-//           primary or backup unispheres based on a fail-over
-//           mechanism which is triggered automatically, in case one
-//           of the unispheres go down.
+//
+//	all the request to one of the configured
+//	primary or backup unispheres based on a fail-over
+//	mechanism which is triggered automatically, in case one
+//	of the unispheres go down.
+//
 // StandAlone :- In stand-alone mode, proxy provides multi-array
-//				 support with ACL to authenticate and authorize
-//               users based on credentials set via k8s secrets.
-//               Each array can have a primary and a backup unisphere
-//               which follows the same fail-over mechanism as Linked
-//               proxy
+//
+//					 support with ACL to authenticate and authorize
+//	              users based on credentials set via k8s secrets.
+//	              Each array can have a primary and a backup unisphere
+//	              which follows the same fail-over mechanism as Linked
+//	              proxy
 const (
 	Linked     = ProxyMode("Linked")
 	StandAlone = ProxyMode("StandAlone")
