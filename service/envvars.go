@@ -109,11 +109,6 @@ const (
 	// modify the existing host name to a new name as specified in the EnvNodeNameTemplate
 	EnvModifyHostName = "X_CSI_IG_MODIFY_HOSTNAME"
 
-	// EnvProxyEnabled is the flag which indicates if the REST endpoint URL
-	// is pointing to the reverse proxy
-	// Only used for testing
-	EnvProxyEnabled = "X_CSI_REVERSE_PROXY_ENABLED"
-
 	// EnvReplicationContextPrefix enables sidecars to read required information from volume context
 	EnvReplicationContextPrefix = "X_CSI_REPLICATION_CONTEXT_PREFIX"
 

@@ -351,11 +351,6 @@ spec:
               value: controller
             - name: X_CSI_MANAGED_ARRAYS
               value: {{ $arraysStr | replace " " "," | quote }}
-            {{- if ne .Values.csireverseproxy.enabled true }}
-            {{- $managementServer := first .Values.global.managementServers }}
-            - name: X_CSI_POWERMAX_ENDPOINT
-              value: {{ required "Must provide a Unisphere HTTPS endpoint." $managementServer.endpoint }}
-            {{- end }}
             - name: X_CSI_POWERMAX_USER
               valueFrom:
                 secretKeyRef:
@@ -372,7 +367,6 @@ spec:
               value: {{ .Values.powerMaxDebug | default "false" | lower | quote }}
             - name: X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION
               value: {{ .Values.skipCertificateValidation | default "true" | lower | quote }}
-            {{- if eq .Values.csireverseproxy.enabled true }}
               {{- if eq .Values.csireverseproxy.deployAsSidecar true }}
             - name: X_CSI_POWERMAX_SIDECAR_PROXY_PORT
               value: {{ .Values.csireverseproxy.port | quote }}
@@ -380,20 +374,12 @@ spec:
             - name: X_CSI_POWERMAX_PROXY_SERVICE_NAME
               value: {{ .Release.Name }}-reverseproxy
               {{- end }}
-            {{- else }}
-            - name: X_CSI_POWERMAX_PROXY_SERVICE_NAME
-              value: "none"
-            {{- end }}
             - name: X_CSI_POWERMAX_PORTGROUPS
               value: {{ .Values.portGroups | toJson }}
             - name: X_CSI_K8S_CLUSTER_PREFIX
               value: {{ required "Must provide a Cluster Prefix." .Values.clusterPrefix }}
             - name: X_CSI_GRPC_MAX_THREADS
-            {{- if eq .Values.csireverseproxy.enabled true }}
               value: "50"
-            {{- else }}
-              value: "4"
-            {{- end }}
             - name: X_CSI_TRANSPORT_PROTOCOL
               value: {{ .Values.transportProtocol | default "" }}
             - name: SSL_CERT_DIR
@@ -424,7 +410,7 @@ spec:
               readOnly: true
             - name: powermax-config-params
               mountPath: /powermax-config-params
-        {{- if and (eq .Values.csireverseproxy.enabled true) (eq .Values.csireverseproxy.deployAsSidecar true) }}
+        {{- if eq .Values.csireverseproxy.deployAsSidecar true }}
         - name: reverseproxy
           image: {{ required "Must provided an image for reverseproxy container." .Values.csireverseproxy.image }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}

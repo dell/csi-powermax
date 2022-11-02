@@ -705,7 +705,7 @@ func (proxyConfig *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUt
 			if managementServer.CertSecret != "" {
 				certFile, err = k8sUtils.GetCertFileFromSecretName(managementServer.CertSecret)
 				if err != nil {
-					return nil
+					return err
 				}
 			}
 			proxy.managementServers[*mgmtURL] = &ManagementServer{

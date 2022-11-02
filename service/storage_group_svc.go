@@ -622,7 +622,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(ctx context.Context, reqID, symID, tg
 		} else {
 			// Attempt to create SG
 			log.WithFields(f).Info("calling CreateStorageGroup")
-			tgtStorageGroup, err = pmaxClient.CreateStorageGroup(ctx, symID, tgtStorageGroupID, "None", "", false)
+			tgtStorageGroup, err = pmaxClient.CreateStorageGroup(ctx, symID, tgtStorageGroupID, "None", "", false, nil)
 			if err != nil {
 				log.WithFields(f).Errorf("ControllerPublishVolume: Failed to create storage group: %s", err)
 				return status.Error(codes.Internal, "Failed to create storage group")

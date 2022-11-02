@@ -548,7 +548,7 @@ func (s *service) CreateVolume(
 	if err != nil || sg == nil {
 		log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
 		_, err := pmaxClient.CreateStorageGroup(ctx, symmetrixID, storageGroupName, storagePoolID,
-			serviceLevel, thick == "true")
+			serviceLevel, thick == "true", nil)
 		if err != nil {
 			log.Error("Error creating storage group: " + err.Error())
 			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
@@ -648,7 +648,7 @@ func (s *service) CreateVolume(
 
 	// Let's create the volume
 	if !isLocalVolumePresent {
-		vol, err = pmaxClient.CreateVolumeInStorageGroupS(ctx, symmetrixID, storageGroupName, volumeIdentifier, requiredCylinders, headerMetadata)
+		vol, err = pmaxClient.CreateVolumeInStorageGroupS(ctx, symmetrixID, storageGroupName, volumeIdentifier, requiredCylinders, nil, headerMetadata)
 		if err != nil {
 			log.Error(fmt.Sprintf("Could not create volume: %s: %s", volumeName, err.Error()))
 			return nil, status.Errorf(codes.Internal, "Could not create volume: %s: %s", volumeName, err.Error())
@@ -856,7 +856,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	if err != nil || sgOnR1 == nil {
 		log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
 		_, err := pmaxClient.CreateStorageGroup(ctx, symID, storageGroupName, storagePoolID,
-			serviceLevel, thick == "true")
+			serviceLevel, thick == "true", nil)
 		if err != nil {
 			log.Error("Error creating storage group on R1: " + err.Error())
 			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
@@ -867,7 +867,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	if err != nil || sgOnR2 == nil {
 		log.Debug(fmt.Sprintf("Unable to find storage group: %s", remoteStorageGroupName))
 		_, err := pmaxClient.CreateStorageGroup(ctx, remoteSymID, remoteStorageGroupName, remoteSRPID,
-			remoteServiceLevel, thick == "true")
+			remoteServiceLevel, thick == "true", nil)
 		if err != nil {
 			log.Error("Error creating storage group on R2: " + err.Error())
 			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
@@ -975,7 +975,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 
 	// Let's create the volume
 	if !isLocalVolumePresent {
-		vol, err = pmaxClient.CreateVolumeInStorageGroupS(ctx, symID, storageGroupName, volumeIdentifier, requiredCylinders, headerMetadata)
+		vol, err = pmaxClient.CreateVolumeInStorageGroupS(ctx, symID, storageGroupName, volumeIdentifier, requiredCylinders, nil, headerMetadata)
 		if err != nil {
 			log.Error(fmt.Sprintf("Could not create volume: %s: %s", volumeName, err.Error()))
 			return nil, status.Errorf(codes.Internal, "Could not create volume: %s: %s", volumeName, err.Error())
@@ -1091,7 +1091,7 @@ func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, l
 		}
 		// this SG is valid, new and will need protection if working in replication mode
 		// Create protected SG
-		_, err := pmaxClient.CreateStorageGroup(ctx, symID, localProtectionGroupID, "None", "", false)
+		_, err := pmaxClient.CreateStorageGroup(ctx, symID, localProtectionGroupID, "None", "", false, nil)
 		if err != nil {
 			log.Errorf("Error creating protected storage group (%s): (%s)", localProtectionGroupID, err.Error())
 			return nil, status.Errorf(codes.Internal, "Error creating protected storage group (%s): (%s)", localProtectionGroupID, err.Error())
@@ -2553,7 +2553,6 @@ func (s *service) controllerProbe(ctx context.Context) error {
 
 	log.Debug("Entering controllerProbe")
 	defer log.Debug("Exiting controllerProbe")
-
 	// Check that we have the details needed to login to the Gateway
 	if !s.opts.UseProxy && s.opts.Endpoint == "" {
 		return status.Error(codes.FailedPrecondition,
@@ -2583,8 +2582,8 @@ func (s *service) controllerProbe(ctx context.Context) error {
 func (s *service) requireProbe(ctx context.Context, pmaxClient pmax.Pmax) error {
 	// If we're using the proxy, the throttling is in the proxy in front of U4V.
 	// so we can handle a large number of pending requests.
-	// Otherwise a small number since there's no protection for U4V.
-	if s.opts.UseProxy || s.opts.IsReverseProxyEnabled {
+	// Otherwise, a small number since there's no protection for U4V.
+	if s.opts.UseProxy {
 		controllerPendingState.maxPending = 50
 		snapshotPendingState.maxPending = 50
 	} else {
@@ -3302,7 +3301,7 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 	if err != nil || sg == nil {
 		log.Debug(fmt.Sprintf("Unable to find storage group: %s", remoteStorageGroupName))
 		_, err := pmaxClient.CreateStorageGroup(ctx, remoteSymID, remoteStorageGroupName, remoteSRPID,
-			remoteServiceLevel, thick == "true")
+			remoteServiceLevel, thick == "true", nil)
 		if err != nil {
 			log.Errorf("Error: (%s) creating storage group on R2 (%s): ", err.Error(), remoteSymID)
 			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())

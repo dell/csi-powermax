@@ -225,7 +225,7 @@ func nonReplToRepl(ctx context.Context, params map[string]string, sourceScParams
 			log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
 			thick := params[ThickVolumesParam]
 			_, err := pmaxClient.CreateStorageGroup(ctx, symID, storageGroupName, storagePoolID,
-				serviceLevel, thick == "true")
+				serviceLevel, thick == "true", nil)
 			if err != nil {
 				log.Error("Error creating storage group: " + err.Error())
 				return status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
