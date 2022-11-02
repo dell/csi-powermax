@@ -63,8 +63,8 @@ const (
 	CSILogFormatParam          = "CSI_LOG_FORMAT"
 )
 
-type contextKey string // specific string type used for context keys
-
+type contextKey string           // specific string type used for context keys
+var inducedMockReverseProxy bool // for testing only
 // Manifest is the SP's manifest.
 var Manifest = map[string]string{
 	"url":    "http://github.com/dell/csi-powermax",
@@ -114,7 +114,6 @@ type Opts struct {
 	NonDefaultRetries          bool   // Indicates if non-default retry values to be used for deletion worker, only for unit testing
 	NodeNameTemplate           string
 	ModifyHostName             bool
-	IsReverseProxyEnabled      bool
 	ReplicationContextPrefix   string // Enables sidecars to read required information from volume context
 	ReplicationPrefix          string // Used as a prefix to find out if replication is enabled
 	IsHealthMonitorEnabled     bool   // used to check if health monitor for volume is enabled
@@ -376,6 +375,11 @@ func (s *service) BeforeServe(
 
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
 	opts.ProxyServiceHost, opts.ProxyServicePort, opts.UseProxy = s.getProxySettingsFromEnv()
+	if !opts.UseProxy && !inducedMockReverseProxy {
+		err := fmt.Errorf("CSI reverseproxy service host or port not found, CSI reverseproxy not installed properly")
+		log.Error(err.Error())
+		return err
+	}
 	opts.GrpcMaxThreads = 4
 	if maxThreads, ok := csictx.LookupEnv(ctx, EnvGrpcMaxThreads); ok {
 		maxIntThreads, err := strconv.Atoi(maxThreads)
@@ -439,11 +443,6 @@ func (s *service) BeforeServe(
 	}
 	opts.EnableCHAP = pb(EnvEnableCHAP)
 	opts.ModifyHostName = pb(EnvModifyHostName)
-	if !opts.UseProxy {
-		// If proxy is not set, then check if the env indicating that
-		// reverseproxy is enabled is set
-		opts.IsReverseProxyEnabled = pb(EnvProxyEnabled)
-	}
 	opts.IsHealthMonitorEnabled = pb(EnvHealthMonitorEnabled)
 	opts.IsTopologyControlEnabled = pb(EnvTopologyFilterEnabled)
 	s.opts = opts

@@ -557,13 +557,12 @@ func TestConfigUpdate(t *testing.T) {
 	config.LinkProxyConfig.Primary.URL, config.LinkProxyConfig.Backup.URL = config.LinkProxyConfig.Backup.URL, config.LinkProxyConfig.Primary.URL
 	linkedServer.GetRevProxy().UpdateConfig(*config)
 	linkedServer.SetConfig(config)
-
+	time.Sleep(time.Second * 10)
 	secondaryHost, err := doHTTPRequest(linkedServer.Port, defaultEndpoint)
 	if err != nil {
 		t.Errorf("Failed to make HTTP request. (%s)\n", err.Error())
 		return
 	}
-
 	if primaryHost == secondaryHost {
 		t.Error("Config update failed!\n")
 	} else {

@@ -146,19 +146,11 @@ spec:
               value: "false"
             {{- end }}
             - name: X_CSI_POWERMAX_PROXY_SERVICE_NAME
-            {{- if eq .Values.csireverseproxy.enabled true }}
               value: {{ .Release.Name }}-reverseproxy
-            {{- else }}
-              value: "none"
-            {{- end }}
             - name: X_CSI_ISCSI_CHROOT
               value: {{ .Values.ISCSIChroot | default "/noderoot" }}
             - name: X_CSI_GRPC_MAX_THREADS
-            {{- if eq .Values.csireverseproxy.enabled true }}
               value: "50"
-            {{- else }}
-              value: "4"
-            {{- end }}
             - name: X_CSI_TRANSPORT_PROTOCOL
               value: {{ .Values.transportProtocol | default "" }}
             - name: SSL_CERT_DIR

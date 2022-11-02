@@ -9,57 +9,36 @@ global:
   # Allowed values: "TEXT" or "JSON"
   # Default value: "TEXT"
   logFormat: "TEXT"
-  
-  # without reverse proxy configuration 
-  # Name of secret containing credentials of Unisphere for PowerMax server
-  # Default value: "" <empty>
-  # Examples: "powermax-creds", "secret-creds"
-  defaultCredentialsSecret: powermax-creds
-  
+
   ##########################
   # PLATFORM ATTRIBUTES
   ##########################
-  # Serial ID of the arrays that will be used for provisioning
-  # Default value: None
-  # Examples: "000000000001", "000000000002"
+  # The CSI PowerMax ReverseProxy section to fill out the required configuration
+  # Please refer to the doc website about a
+  # detailed explanation of each configuration parameter
+  # and the various ReverseProxy modes
+
+  defaultCredentialsSecret: powermax-creds
   storageArrays:
     - storageArrayId: "000000000001"
-    - storageArrayId: "000000000002"
-  # Address of the Unisphere server that is managing the PowerMax arrays
-  # If authorization is enabled, endpoint should be the HTTPS localhost endpoint that 
-  # the authorization sidecar will listen on
-  # Default value: None
-  # Example: https://0.0.0.1:8443
-  managementServers:
-    - endpoint: https://unisphere-address:8443
-# If you are using the CSI PowerMax ReverseProxy then comment the section
-# 'without reverse proxy configuration' above and uncomment the following section
-# and fill out the required configuration
-# Please refer to the doc website about a
-# detailed explanation of each configuration parameter
-# and the various ReverseProxy modes
-
-#  defaultCredentialsSecret: powermax-creds
-#  storageArrays:
-#    - storageArrayId: "000000000001"
-#      endpoint: https://primary-1.unisphe.re:8443
-#      backupEndpoint: https://backup-1.unisphe.re:8443
+      endpoint: https://primary-1.unisphe.re:8443
+      backupEndpoint: https://backup-1.unisphe.re:8443
 #    - storageArrayId: "000000000002"
 #      endpoint: https://primary-2.unisphe.re:8443
 #      backupEndpoint: https://backup-2.unisphe.re:8443
-#  managementServers:
-#    - endpoint: https://primary-1.unisphe.re:8443
-#      credentialsSecret: primary-1-secret
-#      skipCertificateValidation: false
-#      certSecret: primary-cert
-#      limits:
-#        maxActiveRead: 5
-#        maxActiveWrite: 4
-#        maxOutStandingRead: 50
-#        maxOutStandingWrite: 50
-#    - endpoint: https://backup-1.unisphe.re:8443
-#      credentialsSecret: backup-1-secret
-#      skipCertificateValidation: false
+  managementServers:
+    - endpoint: https://primary-1.unisphe.re:8443
+      credentialsSecret: primary-1-secret
+      skipCertificateValidation: false
+      certSecret: primary-cert
+      limits:
+        maxActiveRead: 5
+        maxActiveWrite: 4
+        maxOutStandingRead: 50
+        maxOutStandingWrite: 50
+    - endpoint: https://backup-1.unisphe.re:8443
+      credentialsSecret: backup-1-secret
+      skipCertificateValidation: false
 #    - endpoint: https://primary-2.unisphe.re:8443
 #      credentialsSecret: primary-2-secret
 #      skipCertificateValidation: true
@@ -274,12 +253,6 @@ enableCHAP: false
 
 # csireverseproxy: Refers to the subchart csireverseproxy
 csireverseproxy:
-  # Set enabled to true if you want to use proxy
-  # Allowed values:
-  #   "true"  - CSI reverse proxy is enabled
-  #   "false" - CSI reverse proxy is disabled
-  # Default value: "false"
-  enabled: false
   # image: Define the container images used for the reverse proxy
   # Default value: None
   # Example: "csipowermax-reverseproxy:v2.3.0"
