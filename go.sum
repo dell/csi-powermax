@@ -25,6 +25,8 @@ github.com/NYTimes/gziphandler v0.0.0-20170623195520-56545f4a5d46/go.mod h1:3wb0
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/PuerkitoBio/purell v1.0.0/go.mod h1:c11w/QuzBsJSee3cPx9rAFu61PvFxuPbtSwDGJws/X0=
 github.com/PuerkitoBio/urlesc v0.0.0-20160726150825-5bd2802263f2/go.mod h1:uGdkoq3SwY9Y+13GIhn11/XLaGBb4BfwItxLd5jeuXE=
+github.com/akutz/goof v0.1.2 h1:ZgsmzbhfcFTh1KhkWrWNAvlDobBUBEKAkSpowCuqOn4=
+github.com/akutz/goof v0.1.2/go.mod h1:w8jsAAm0/n4Tst8M4xYwGPMzn54u4pCA3wh4e2rNLlk=
 github.com/akutz/gosync v0.1.0 h1:naxPT/aDYDh79PMwM3XmencmNQeYmpNFSZy4ZE9zIW0=
 github.com/akutz/gosync v0.1.0/go.mod h1:I8I4aiqJI1nqaeYOOB1WS+CgRJVVPqhct9Y4njywM84=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
@@ -93,10 +95,6 @@ github.com/dell/goiscsi v1.5.0 h1:0WRBBbJrrZgPc4lNtzcoPJJvL8vFOJZO2KMjLuWcbxM=
 github.com/dell/goiscsi v1.5.0/go.mod h1:oDkUXDPAYqSOc0t6PpU+BpOqF45mzv+9eLFRkAoQYKs=
 github.com/dell/gonvme v1.2.0 h1:iPOduJiOqWRxJmM02gttQ+GBZtLldZj+EaoQx48jhic=
 github.com/dell/gonvme v1.2.0/go.mod h1:qLlZNduxrt1hLR/JaU6OXe8+QkU6dtwa5wHM8EWQ58Y=
-github.com/dell/gopowermax/v2 v2.0.0 h1:k4/p6ml8yHQXw8nECCwY0UriIhpcB/VPoueb80AiMTE=
-github.com/dell/gopowermax/v2 v2.0.0/go.mod h1:eJEsDN0O0nFqiSdgOXZK73Cv/LlP/+psnkyFSXLR/wI=
-github.com/dell/gopowermax/v2 v2.0.1-0.20221003132944-ea48dc44302b h1:PVjGNkZ7LiuPCzxADYgI0yn7lcZwU9qfCt2+bIw3nG4=
-github.com/dell/gopowermax/v2 v2.0.1-0.20221003132944-ea48dc44302b/go.mod h1:eJEsDN0O0nFqiSdgOXZK73Cv/LlP/+psnkyFSXLR/wI=
 github.com/dell/gopowermax/v2 v2.0.1-0.20221028112327-88b470745d3f h1:IopqY8xV/ScmJB1n6FdM/d5vgEDiJJWzdn/x2xyb+wI=
 github.com/dell/gopowermax/v2 v2.0.1-0.20221028112327-88b470745d3f/go.mod h1:eJEsDN0O0nFqiSdgOXZK73Cv/LlP/+psnkyFSXLR/wI=
 github.com/dgrijalva/jwt-go v3.2.0+incompatible/go.mod h1:E3ru+11k8xSBh+hMPgOLZmtrrCbhqsmaPHjLKYnJCaQ=
@@ -194,6 +192,7 @@ github.com/google/pprof v0.0.0-20190515194954-54271f7e092f/go.mod h1:zfwlbNMJ+OI
 github.com/google/renameio v0.1.0/go.mod h1:KWCgfxg9yswjAJkECMjeO8J8rahYeXnNhOm40UhjYkI=
 github.com/google/uuid v1.1.1/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/google/uuid v1.1.2/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
+github.com/google/uuid v1.3.0 h1:t6JiXgmwXMjEs8VusXIJk2BXHsn+wx8BZdTaoZ5fu7I=
 github.com/googleapis/gax-go/v2 v2.0.4/go.mod h1:0Wqv26UfaUD9n4G6kQubkQ+KchISgw+vpHVxEJEs9eg=
 github.com/googleapis/gax-go/v2 v2.0.5/go.mod h1:DWXyrwAJ9X0FpwwEdw+IPEYBICEFu5mhpdKc/us6bOk=
 github.com/googleapis/gnostic v0.0.0-20170729233727-0c5108395e2d/go.mod h1:sJBsCZ4ayReDTBIg8b9dl28c5xFWyhBTVRp3pOg5EKY=
@@ -390,6 +389,8 @@ github.com/subosito/gotenv v1.2.0 h1:Slr1R9HxAlEKefgq5jn9U+DnETlIUa6HfgEzj0g5d7s
 github.com/subosito/gotenv v1.2.0/go.mod h1:N0PQaV/YGNqwC0u51sEeR/aUtSLEXKX9iv69rRypqCw=
 github.com/thecodeteam/gosync v0.1.0 h1:RcD9owCaiK0Jg1rIDPgirdcLCL1jCD6XlDVSg0MfHmE=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5/go.mod h1:ncp9v5uamzpCO7NfCPTXjqaC+bZgJeR0sMTm6dMHP7U=
+github.com/vmware/govmomi v0.29.0 h1:SHJQ7DUc4fltFZv16znJNGHR1/XhiDK5iKxm2OqwkuU=
+github.com/vmware/govmomi v0.29.0/go.mod h1:F7adsVewLNHsW/IIm7ziFURaXDaHEwcc+ym4r3INMdY=
 github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2/go.mod h1:UETIi67q53MR2AWcXfiuqkDkRtnGDLqkBTpCHuJHxtU=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

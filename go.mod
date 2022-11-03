@@ -5,6 +5,7 @@ go 1.19
 replace github.com/coreos/go-systemd => github.com/coreos/go-systemd/v22 v22.0.0
 
 require (
+	github.com/akutz/goof v0.1.2
 	github.com/container-storage-interface/spec v1.5.0
 	github.com/coreos/go-systemd v0.0.0-20190612170431-362f06ec6bc1
 	github.com/cucumber/godog v0.10.0
@@ -23,6 +24,7 @@ require (
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
+	github.com/vmware/govmomi v0.29.0
 	golang.org/x/net v0.1.0
 	google.golang.org/grpc v1.43.0
 	k8s.io/client-go v0.18.6
