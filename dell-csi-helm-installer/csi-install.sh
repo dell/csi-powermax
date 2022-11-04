@@ -15,7 +15,7 @@ PROG="${0}"
 NODE_VERIFY=1
 VERIFY=1
 MODE="install"
-DEFAULT_DRIVER_VERSION="v2.4.0"
+DEFAULT_DRIVER_VERSION="v2.5.0"
 WATCHLIST=""
 
 # export the name of the debug log, so child processes will see it
@@ -137,7 +137,7 @@ function install_driver() {
   else
     log step "Installing Driver"
   fi
-  warning "CSI Driver for Powermax v2.4.0 requires 10.0 Unisphere REST endpoint support"
+  warning "CSI Driver for Powermax v2.5.0 requires 10.0 Unisphere REST endpoint support"
 
   # run driver specific install script
   local SCRIPTNAME="install-${DRIVER}.sh"
