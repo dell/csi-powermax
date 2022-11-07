@@ -32,17 +32,18 @@ import (
 	"golang.org/x/net/context"
 )
 
+// VMHost - structure to hold the VM host
 type VMHost struct {
 	client *govmomi.Client
 	Ctx    context.Context
 	mac    string
-	Vm     *object.VirtualMachine
+	VM     *object.VirtualMachine
 }
 
 // NewVMHost connects to a ESXi or vCenter instance and returns a *VMHost
-func NewVMHost(insecure bool, hostURL_param, user, pass string) (*VMHost, error) {
+func NewVMHost(insecure bool, hostURLparam, user, pass string) (*VMHost, error) {
 	ctx, _ := context.WithCancel(context.Background())
-	hostURL, err := url.Parse("https://" + hostURL_param + "/sdk")
+	hostURL, err := url.Parse("https://" + hostURLparam + "/sdk")
 	hostURL.User = url.UserPassword(user, pass)
 
 	cli, err := govmomi.NewClient(ctx, hostURL, insecure)
@@ -65,7 +66,7 @@ func NewVMHost(insecure bool, hostURL_param, user, pass string) (*VMHost, error)
 	if err != nil {
 		return nil, err
 	}
-	vmh.Vm = vm
+	vmh.VM = vm
 
 	return vmh, nil
 }
@@ -119,12 +120,12 @@ func (vmh *VMHost) findVM(targetMACAddress string) (vm *object.VirtualMachine, e
 			return nil, errors.New("Could not get List of VMs")
 		}
 		for _, vm := range allVMs {
-			VM_MAC, err := vmh.getMACAddressOfVM(vm)
-			VM_MAC = strings.ToUpper(VM_MAC)
+			VMMac, err := vmh.getMACAddressOfVM(vm)
+			VMMac = strings.ToUpper(VMMac)
 			if err != nil {
 				return nil, errors.New("Could not get MAC Address of VM")
 			}
-			if VM_MAC == targetMACAddress {
+			if VMMac == targetMACAddress {
 				return vm, nil
 			}
 		}
@@ -132,19 +133,19 @@ func (vmh *VMHost) findVM(targetMACAddress string) (vm *object.VirtualMachine, e
 	return nil, errors.New("Could not find VM with specified MAC Address of " + targetMACAddress)
 }
 
-func (vmh *VMHost) getVmScsiDiskDeviceInfo(vm *object.VirtualMachine) ([]types.VirtualMachineScsiDiskDeviceInfo, error) {
-	var VM_withProp mo.VirtualMachine
-	err := vm.Properties(vmh.Ctx, vm.Reference(), []string{"environmentBrowser"}, &VM_withProp)
+func (vmh *VMHost) getVMScsiDiskDeviceInfo(vm *object.VirtualMachine) ([]types.VirtualMachineScsiDiskDeviceInfo, error) {
+	var VMwithProp mo.VirtualMachine
+	err := vm.Properties(vmh.Ctx, vm.Reference(), []string{"environmentBrowser"}, &VMwithProp)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Error finding Environment Browser for VM - %S", err))
+		return nil, fmt.Errorf("Error finding Environment Browser for VM - %S", err)
 	}
 
 	//Query VM To Find Devices avilable for attaching to VM
 	var queryConfigRequest types.QueryConfigTarget
-	queryConfigRequest.This = VM_withProp.EnvironmentBrowser
+	queryConfigRequest.This = VMwithProp.EnvironmentBrowser
 	queryConfigResp, err := methods.QueryConfigTarget(vmh.Ctx, vmh.client.Client, &queryConfigRequest)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Error Obtaining Configuration Options of Host System that VM is On - %S", err))
+		return nil, fmt.Errorf("Error Obtaining Configuration Options of Host System that VM is On - %S", err)
 	}
 	vmConfigOptions := *queryConfigResp.Returnval
 
@@ -167,17 +168,18 @@ func (vmh *VMHost) getAvailableSCSIController() (*types.VirtualSCSIController, e
 }
 
 func (vmh *VMHost) getSCSIControllers() (object.VirtualDeviceList, error) {
-	virtualDeviceList, err := vmh.Vm.Device(vmh.Ctx)
+	virtualDeviceList, err := vmh.VM.Device(vmh.Ctx)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Error Obtaining List of Devices Attached to VM - %s", err))
+		return nil, fmt.Errorf("Error Obtaining List of Devices Attached to VM - %s", err)
 	}
 
 	var c types.VirtualSCSIController
 	return virtualDeviceList.SelectByType(&c), nil
 }
 
+// GetSCSILuns fetches all the SCSILuns discovered on the host
 func (vmh *VMHost) GetSCSILuns() ([]*types.ScsiLun, error) {
-	host, err := vmh.Vm.HostSystem(vmh.Ctx)
+	host, err := vmh.VM.HostSystem(vmh.Ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +205,7 @@ func (vmh *VMHost) GetSCSILuns() ([]*types.ScsiLun, error) {
 
 func (vmh *VMHost) createController(controller *types.BaseVirtualDevice) error {
 
-	devices, err := vmh.Vm.Device(context.TODO())
+	devices, err := vmh.VM.Device(context.TODO())
 	if err != nil {
 		return err
 	}
@@ -213,17 +215,18 @@ func (vmh *VMHost) createController(controller *types.BaseVirtualDevice) error {
 		return err
 	}
 
-	err = vmh.Vm.AddDevice(vmh.Ctx, d)
+	err = vmh.VM.AddDevice(vmh.Ctx, d)
 	if err != nil {
-		return errors.New(fmt.Sprintf("Error creating new SCSI Controller for RDM - %s", err))
+		return fmt.Errorf("Error creating new SCSI Controller for RDM - %s", err)
 	}
 
 	return nil
 }
 
+// AttachRDM adds the device to the VM as an RDM
 func (vmh *VMHost) AttachRDM(vm *object.VirtualMachine, deviceNAA string) (err error) {
 
-	vmScsiDiskDeviceInfo, err := vmh.getVmScsiDiskDeviceInfo(vm)
+	vmScsiDiskDeviceInfo, err := vmh.getVMScsiDiskDeviceInfo(vm)
 	if err != nil {
 		return err
 	}
@@ -286,7 +289,7 @@ func (vmh *VMHost) AttachRDM(vm *object.VirtualMachine, deviceNAA string) (err e
 
 		err = vm.AddDevice(vmh.Ctx, &rdmDisk)
 		if err != nil {
-			return errors.New(fmt.Sprintf("Error adding device %+v \n Logged Item:  %s", rdmDisk, err))
+			return fmt.Errorf("Error adding device %+v \n Logged Item:  %s", rdmDisk, err)
 		}
 		return nil
 
@@ -306,6 +309,7 @@ func (vmh *VMHost) AttachRDM(vm *object.VirtualMachine, deviceNAA string) (err e
 	return errors.New("no device detected on VM host to add")
 }
 
+// DetachRDM removes the device from the VM
 func (vmh *VMHost) DetachRDM(vm *object.VirtualMachine, deviceNAA string) error {
 
 	scsiLuns, err := vmh.GetSCSILuns()
@@ -327,11 +331,11 @@ func (vmh *VMHost) DetachRDM(vm *object.VirtualMachine, deviceNAA string) error 
 		device2 := device.(types.BaseVirtualDevice).GetVirtualDevice()
 		if device2.Backing != nil {
 			elem := reflect.ValueOf(device2.Backing).Elem()
-			lunUuid := elem.FieldByName("LunUuid")
-			if lunUuid.Kind() == reflect.Invalid {
+			lunUUID := elem.FieldByName("LunUuid")
+			if lunUUID.Kind() == reflect.Invalid {
 				continue
 			}
-			if sd, ok := mapSDI[lunUuid.String()]; ok && strings.Contains(sd.CanonicalName, deviceNAA) {
+			if sd, ok := mapSDI[lunUUID.String()]; ok && strings.Contains(sd.CanonicalName, deviceNAA) {
 				deviceName := devices.Name(device)
 				newDevice := devices.Find(deviceName)
 				if newDevice == nil {
