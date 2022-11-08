@@ -8,7 +8,7 @@ FROM golang:$GO_VERSION as builder
 # Install git + SSL ca certificates.
 # Git is required for fetching the dependencies.
 # Ca-certificates is required to call HTTPS endpoints.
-RUN apt-get update && apt-get add --no-cache tzdata && update-ca-certificates
+RUN apt-get update && apt-get -y install tzdata && update-ca-certificates
 
 # Create revproxy
 ENV USER=revproxy
