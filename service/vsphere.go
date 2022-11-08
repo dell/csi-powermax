@@ -353,6 +353,7 @@ func (vmh *VMHost) DetachRDM(vm *object.VirtualMachine, deviceNAA string) error 
 	return nil
 }
 
+// RescanAllHba rediscovers new devices added to the ESX
 func (vmh *VMHost) RescanAllHba(hostSystem *object.HostSystem) error {
 	storageSystem, err := hostSystem.ConfigManager().StorageSystem(vmh.Ctx)
 	if err != nil {
