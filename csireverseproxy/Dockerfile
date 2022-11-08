@@ -1,7 +1,8 @@
 ############################
 # STEP 1 build executable binary
 ############################
-# golang alpine 1.14.1
+ARG GO_VERSION
+
 FROM golang@$GO_VERSION as builder
 
 # Install git + SSL ca certificates.
