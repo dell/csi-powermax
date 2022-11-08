@@ -3,7 +3,7 @@
 ############################
 ARG GO_VERSION
 
-FROM golang:@$GO_VERSION as builder
+FROM golang:$GO_VERSION as builder
 
 # Install git + SSL ca certificates.
 # Git is required for fetching the dependencies.
