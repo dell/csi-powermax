@@ -352,3 +352,16 @@ func (vmh *VMHost) DetachRDM(vm *object.VirtualMachine, deviceNAA string) error 
 
 	return nil
 }
+
+func (vmh *VMHost) RescanAllHba(hostSystem *object.HostSystem) error {
+	storageSystem, err := hostSystem.ConfigManager().StorageSystem(vmh.Ctx)
+	if err != nil {
+		return err
+	}
+
+	err = storageSystem.RescanAllHba(vmh.Ctx)
+	if err != nil {
+		return err
+	}
+	return nil
+}
