@@ -1,13 +1,14 @@
 ############################
 # STEP 1 build executable binary
 ############################
-# golang alpine 1.14.1
-FROM golang@sha256:244a736db4a1d2611d257e7403c729663ce2eb08d4628868f9d9ef2735496659 as builder
+ARG GO_VERSION
+
+FROM golang:$GO_VERSION as builder
 
 # Install git + SSL ca certificates.
 # Git is required for fetching the dependencies.
 # Ca-certificates is required to call HTTPS endpoints.
-RUN apk update && apk add --no-cache tzdata && update-ca-certificates
+RUN apt-get update && apt-get -y install tzdata && update-ca-certificates
 
 # Create revproxy
 ENV USER=revproxy
