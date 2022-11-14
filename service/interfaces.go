@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+
 	"github.com/coreos/go-systemd/dbus"
 	"github.com/dell/gobrick"
 	log "github.com/sirupsen/logrus"
@@ -40,6 +41,7 @@ type iSCSIConnector interface {
 }
 
 type fcConnector interface {
+	ConnectRDMVolume(ctx context.Context, info gobrick.RDMVolumeInfo) (gobrick.Device, error)
 	ConnectVolume(ctx context.Context, info gobrick.FCVolumeInfo) (gobrick.Device, error)
 	DisconnectVolumeByDeviceName(ctx context.Context, name string) error
 	GetInitiatorPorts(ctx context.Context) ([]string, error)

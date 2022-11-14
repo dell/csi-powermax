@@ -127,6 +127,24 @@ const (
 	// EnvTopoConfigFilePath is an env variable which contains the full path for topology config file
 	EnvTopoConfigFilePath = "X_CSI_POWERMAX_TOPOLOGY_CONFIG_PATH"
 
-	// EnvTopologyFilterEnabled is an env variable which indicated if volume health monitor is enabled
+	// EnvTopologyFilterEnabled is an env variable which indicates if volume health monitor is enabled
 	EnvTopologyFilterEnabled = "X_CSI_TOPOLOGY_CONTROL_ENABLED"
+
+	// EnvVSphereEnabled is an env variable which indicates if FC vsphere is enabled
+	EnvVSphereEnabled = "X_CSI_VSPHERE_ENABLED"
+
+	// EnvVSpherePortGroup is an env variable which has FC portGroup for vSphere
+	EnvVSpherePortGroup = "X_CSI_VSPHERE_PORTGROUP"
+
+	// EnvVSphereHostGroup is an env variable which has FC hostGroup for vSphere
+	EnvVSphereHostGroup = "X_CSI_VSPHERE_HOSTGROUP"
+
+	// EnvVCHost is an env variable that has vCenter Host endpoint
+	EnvVCHost = "X_CSI_VCenter_HOST"
+
+	// EnvVCUsername is an env variable that has vCenter username
+	EnvVCUsername = "X_CSI_VCenter_USERNAME"
+
+	// EnvVCPassword is an env variable that has vCenter password
+	EnvVCPassword = "X_CSI_VCenter_PWD" // #nosec G101
 )

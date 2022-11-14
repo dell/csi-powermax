@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vmware/govmomi/object"
+
 	pmax "github.com/dell/gopowermax/v2"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
@@ -88,6 +90,9 @@ func (s *service) InvalidateSymToMaskingViewTargets() {
 	symToMaskingViewTargets.Range(deletefunc)
 }
 
+// vmHost is vCenter obj
+var vmHost *VMHost
+
 func (s *service) NodeStageVolume(
 	ctx context.Context,
 	req *csi.NodeStageVolumeRequest) (
@@ -138,12 +143,21 @@ func (s *service) NodeStageVolume(
 		// If the volume isn't found, we cannot stage it
 		return nil, err
 	}
-	volumeWWN := vol.WWN
+	volumeWWN := vol.EffectiveWWN
 
 	// Save volume WWN to node disk
 	err = s.writeWWNFile(id, volumeWWN)
 	if err != nil {
 		log.Error("Could not write WWN file: " + volumeWWN)
+	}
+
+	// Attach RDM
+	if s.opts.IsVsphereEnabled {
+		err := s.attachRDM(devID, volumeWWN)
+		if err != nil {
+			return nil, err
+		}
+		log.Debugf("attach RDM on VM complete...")
 	}
 
 	// Get publishContext
@@ -279,7 +293,11 @@ func (s *service) connectDevice(ctx context.Context, data publishContextData, us
 	}
 	var device gobrick.Device
 	if useFC {
-		device, err = s.connectFCDevice(ctx, int(lun), data)
+		if s.opts.IsVsphereEnabled {
+			device, err = s.connectRDMDevice(ctx, int(lun), data)
+		} else {
+			device, err = s.connectFCDevice(ctx, int(lun), data)
+		}
 	} else {
 		device, err = s.connectISCSIDevice(ctx, int(lun), data)
 	}
@@ -331,6 +349,25 @@ func (s *service) connectFCDevice(ctx context.Context,
 	})
 }
 
+func (s *service) connectRDMDevice(ctx context.Context,
+	lun int, data publishContextData) (gobrick.Device, error) {
+	logFields := getLogFields(ctx)
+	var targets []gobrick.FCTargetInfo
+	for _, t := range data.fcTargets {
+		targets = append(targets, gobrick.FCTargetInfo{WWPN: t.WWPN})
+	}
+	// separate context to prevent 15 seconds cancel from kubernetes
+	connectorCtx, cFunc := context.WithTimeout(context.Background(), time.Second*120)
+	connectorCtx = setLogFields(connectorCtx, logFields)
+	defer cFunc()
+	// TBD connectorCtx = copyTraceObj(ctx, connectorCtx)
+	connectorCtx = setLogFields(connectorCtx, logFields)
+	return s.fcConnector.ConnectRDMVolume(connectorCtx, gobrick.RDMVolumeInfo{
+		Targets: targets,
+		Lun:     lun,
+		WWN:     strings.Replace(data.deviceWWN, "0x", "", 1),
+	})
+}
 func (s *service) NodeUnstageVolume(
 	ctx context.Context,
 	req *csi.NodeUnstageVolumeRequest) (
@@ -419,10 +456,72 @@ func (s *service) NodeUnstageVolume(
 	}
 	s.removeWWNFile(id)
 
+	if s.opts.IsVsphereEnabled {
+		err := s.detachRDM(devID, volumeWWN)
+		if err != nil {
+			return nil, err
+		}
+		log.Debugf("rescanning HBAs on host done...")
+	}
+
 	return &csi.NodeUnstageVolumeResponse{}, nil
 }
 
-// disconnectVolume disconnects a volume from a node and will verify it is disonnected
+// attachRDM attaches an RDM using volumeWWN to the host
+func (s *service) attachRDM(volID, volumeWWN string) error {
+	host, err := s.getVMHostSystem()
+	if err != nil {
+		log.Errorf("Could not find host system (%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
+		return fmt.Errorf("Could not find host system (%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
+	}
+	log.Debugf("found host: (%v)", host)
+
+	// Rescan the HBA
+	if err := vmHost.RescanAllHba(host); err != nil {
+		log.Errorf("rescan all HBA failed(%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
+		return fmt.Errorf("rescan all HBA failed(%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
+	}
+	log.Debugf("rescanning HBAs on host done...")
+
+	//Attach RDM
+	err = vmHost.AttachRDM(vmHost.VM, volumeWWN)
+	if err != nil {
+		log.Errorf("Could not attach RDM (%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
+		return fmt.Errorf("could not attach RDM (%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
+	}
+	return nil
+}
+
+// detachRDM detaches an RDM using volumeWWN from the host
+func (s *service) detachRDM(volID, volumeWWN string) error {
+	// perform detach RDM call
+
+	// Find the host system
+	host, err := s.getVMHostSystem()
+	if err != nil {
+		log.Errorf("Could not find host system (%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
+		return fmt.Errorf("Could not find host system (%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
+	}
+	log.Debugf("found host: (%v)", host)
+
+	//Detach RDM
+	err = vmHost.DetachRDM(vmHost.VM, volumeWWN)
+	if err != nil {
+		log.Errorf("Could not detach RDM (%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
+		return fmt.Errorf("could not detach RDM (%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
+	}
+	log.Debugf("detach RDM complete ...")
+
+	// Rescan the HBA
+	if err := vmHost.RescanAllHba(host); err != nil {
+		log.Errorf("rescan all HBA failed(%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
+		return fmt.Errorf("rescan all HBA failed(%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
+	}
+
+	return nil
+}
+
+// disconnectVolume disconnects a volume from a node and will verify it is disconnected
 // by no more /dev/disk/by-id entry, retrying if necessary.
 func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error {
 	for i := 0; i < 3; i++ {
@@ -474,7 +573,7 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 	return status.Errorf(codes.Internal, "disconnectVolume exceeded retry limit WWN %s devPath %s", volumeWWN, devPath)
 }
 
-// NodePublish volume handles the CSI request to publish a volume to a target directory.
+// NodePublishVolume handles the CSI request to publish a volume to a target directory.
 func (s *service) NodePublishVolume(
 	ctx context.Context,
 	req *csi.NodePublishVolumeRequest) (
@@ -708,8 +807,8 @@ func (s *service) nodeProbe(ctx context.Context) error {
 
 	// make sure we are logged into all arrays
 	if s.nodeIsInitialized {
-		// nothing to do for FC
-		if s.opts.TransportProtocol != FcTransportProtocol {
+		// nothing to do for FC / FC vsphere
+		if s.opts.TransportProtocol != FcTransportProtocol && !s.opts.IsVsphereEnabled {
 			// Make sure that there is only discovery/login attempt at one time
 			s.nodeProbeMutex.Lock()
 			defer s.nodeProbeMutex.Unlock()
@@ -813,7 +912,7 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[s
 			continue
 		}
 		if s.arrayTransportProtocolMap != nil {
-			if protocol, ok := s.arrayTransportProtocolMap[id]; ok && protocol == FcTransportProtocol {
+			if protocol, ok := s.arrayTransportProtocolMap[id]; ok && (protocol == FcTransportProtocol || protocol == Vsphere) {
 				continue
 			}
 		}
@@ -854,6 +953,10 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[s
 		if protocol == FcTransportProtocol && s.checkIfArrayProtocolValid(nodeName, array, strings.ToLower(FcTransportProtocol)) {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(FcTransportProtocol)] = s.getDriverName()
+		}
+		if protocol == Vsphere {
+			topology[s.getDriverName()+"/"+array] = s.getDriverName()
+			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(Vsphere)] = s.getDriverName()
 		}
 	}
 
@@ -938,6 +1041,9 @@ func (s *service) NodeGetInfo(
 			"Unable to get the list of symmetrix ids")
 	}
 	if len(topology) == 0 {
+		if s.opts.IsVsphereEnabled {
+			// array:vsphere
+		}
 		log.Errorf("No topology keys could be generated")
 		return nil, status.Error(codes.FailedPrecondition, "no topology keys could be generate")
 	}
@@ -1145,27 +1251,35 @@ func (s *service) nodeStartup(ctx context.Context) error {
 	if s.adminClient == nil {
 		return fmt.Errorf("There is no Unisphere connection")
 	}
-
 	portWWNs := make([]string, 0)
 	IQNs := make([]string, 0)
 	var err error
 
-	// Get fibrechannel initiators
-	portWWNs, err = gofsutil.GetFCHostPortWWNs(context.Background())
-	if err != nil {
-		log.Error("nodeStartup could not GetFCHostPortWWNs")
-	}
+	if !s.opts.IsVsphereEnabled {
 
-	// Get iscsi initiators.
-	IQNs, err = s.iscsiClient.GetInitiators("")
-	if err != nil {
-		log.Error("nodeStartup could not GetInitiatorIQNs")
-	}
+		// Get fibre channel initiators
+		portWWNs, err = gofsutil.GetFCHostPortWWNs(context.Background())
+		if err != nil {
+			log.Error("nodeStartup could not GetFCHostPortWWNs")
+		}
 
-	log.Infof("TransportProtocol %s FC portWWNs: %s ... IQNs: %s", s.opts.TransportProtocol, portWWNs, IQNs)
-	// The driver needs at least one FC or iSCSI initiator to be defined
-	if len(portWWNs) == 0 && len(IQNs) == 0 {
-		return fmt.Errorf("No FC or iSCSI initiators were found and at least 1 is required")
+		// Get iscsi initiators.
+		IQNs, err = s.iscsiClient.GetInitiators("")
+		if err != nil {
+			log.Error("nodeStartup could not GetInitiatorIQNs")
+		}
+
+		log.Infof("TransportProtocol %s FC portWWNs: %s ... IQNs: %s", s.opts.TransportProtocol, portWWNs, IQNs)
+		// The driver needs at least one FC or iSCSI initiator to be defined
+		if len(portWWNs) == 0 && len(IQNs) == 0 {
+			return fmt.Errorf("No FC or iSCSI initiators were found and at least 1 is required")
+		}
+	} else {
+		err := s.setVMHost()
+		if err != nil {
+			return err
+		}
+		log.Debug("vmhost created successfully")
 	}
 
 	arrays, err := s.retryableGetSymmetrixIDList()
@@ -1179,6 +1293,39 @@ func (s *service) nodeStartup(ctx context.Context) error {
 	s.nodeHostSetup(ctx, portWWNs, IQNs, symmetrixIDs) // #nosec G20
 
 	return err
+}
+
+func (s *service) setVMHost() error {
+	// Create a VM host
+	host, err := NewVMHost(true, s.opts.VCenterHostURL, s.opts.VCenterHostUserName, s.opts.VCenterHostPassword)
+	if err != nil {
+		log.Errorf("can not create VM host object: (%s)", err.Error())
+		return fmt.Errorf("Can not create VM host object: (%s)", err.Error())
+	}
+	vmHost = host
+	return nil
+}
+
+func (s *service) getVMHostSystem() (*object.HostSystem, error) {
+	// Find the host system
+	host, err := vmHost.VM.HostSystem(vmHost.Ctx)
+	if err != nil {
+		if strings.Contains(err.Error(), "NotAuthenticated") {
+			// Missing VMhost object, recreate
+			err = s.setVMHost()
+			if err != nil {
+				return nil, err
+			}
+			// Find the host system
+			host, err := vmHost.VM.HostSystem(vmHost.Ctx)
+			if err != nil {
+				return nil, err
+			}
+			return host, nil
+		}
+		return nil, err
+	}
+	return host, nil
 }
 
 func isValidHostID(hostID string) bool {
@@ -1285,6 +1432,13 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			log.Error(err.Error())
 			continue
 		}
+		if s.arrayTransportProtocolMap == nil {
+			s.arrayTransportProtocolMap = make(map[string]string)
+		}
+		if s.opts.IsVsphereEnabled {
+			s.arrayTransportProtocolMap[symID] = Vsphere
+			continue
+		}
 		validFCs, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, portWWNs, hostIDFC, pmaxClient)
 		if err != nil {
 			log.Error("Could not validate FC initiators " + err.Error())
@@ -1312,9 +1466,6 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			return err
 		}
 
-		if s.arrayTransportProtocolMap == nil {
-			s.arrayTransportProtocolMap = make(map[string]string)
-		}
 		iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
 		if useFC {
 			formattedFCs := make([]string, 0)
