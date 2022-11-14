@@ -1654,7 +1654,7 @@ func (s *service) ControllerPublishVolume(
 	}
 
 	publishContext := map[string]string{
-		PublishContextDeviceWWN: vol.WWN,
+		PublishContextDeviceWWN: vol.EffectiveWWN,
 	}
 
 	ctrlPubRes, ctrlPubErr := s.publishVolume(ctx, publishContext, tgtStorageGroupID, hostID, symID, symID, tgtMaskingViewID, devID, reqID, am, pmaxClient, true)
@@ -1668,7 +1668,7 @@ func (s *service) ControllerPublishVolume(
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "PublishVolume: Could not retrieve remote volume: (%s)", err.Error())
 		}
-		publishContext[RemotePublishContextDeviceWWN] = remoteVol.WWN
+		publishContext[RemotePublishContextDeviceWWN] = remoteVol.EffectiveWWN
 		return s.publishVolume(ctx, publishContext, tgtStorageGroupID, hostID, symID, remoteSymID, tgtMaskingViewID, remoteVolumeID, reqID, am, pmaxClient, false)
 	}
 	return ctrlPubRes, ctrlPubErr
