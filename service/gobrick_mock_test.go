@@ -109,3 +109,22 @@ func (g *mockISCSIGobrick) GetInitiatorName(ctx context.Context) ([]string, erro
 	result := make([]string, 0)
 	return result, nil
 }
+
+func (g *mockFCGobrick) ConnectRDMVolume(ctx context.Context, info gobrick.RDMVolumeInfo) (gobrick.Device, error) {
+	dev := gobrick.Device{
+		WWN:         nodePublishWWN,
+		Name:        goodVolumeName,
+		MultipathID: "sdb",
+	}
+	if len(info.Targets) < 1 {
+		return dev, fmt.Errorf("No targets specified")
+	}
+	if info.Lun < 1 {
+		return dev, fmt.Errorf("Invalid LUN")
+	}
+	if mockGobrickInducedErrors.ConnectVolumeError {
+		return dev, fmt.Errorf("induced ConnectVolumeError")
+	}
+	gofsutil.GOFSMockWWNToDevice[nodePublishWWN] = nodePublishBlockDevicePath
+	return dev, nil
+}

@@ -320,10 +320,10 @@ Feature: PowerMax CSI interface
     | induced                    | induced2                   | errormsg                                            |
     | "none"                     | "none"                     | "none"                                              |
     | "InduceOverloadError"      | "none"                     | "overload"                                          |
-    | "GOFSMockUnmountError"     | "none"                     | "none"                             |
+    | "GOFSMockUnmountError"     | "none"                     | "none"                                              |
     | "GobrickDisconnectError"   | "none"                     | "disconnectVolume exceeded retry limit"             |
     | "NodeUnpublishNoTargetPath"| "none"                     | "Staging Target argument is required"               |
-    | "InvalidVolumeID"          | "none"                     | "badVolumeID"                           |
+    | "InvalidVolumeID"          | "none"                     | "badVolumeID"                                       |
 #    | "InvalidVolumeID"          | "InvalidateNodeID"         | "Error getting NodeName from the environment"       |
 
 @nodePublish

@@ -65,6 +65,7 @@ const (
 
 type contextKey string           // specific string type used for context keys
 var inducedMockReverseProxy bool // for testing only
+
 // Manifest is the SP's manifest.
 var Manifest = map[string]string{
 	"url":    "http://github.com/dell/csi-powermax",
@@ -118,6 +119,12 @@ type Opts struct {
 	ReplicationPrefix          string // Used as a prefix to find out if replication is enabled
 	IsHealthMonitorEnabled     bool   // used to check if health monitor for volume is enabled
 	IsTopologyControlEnabled   bool   // used to filter topology keys based on user config
+	IsVsphereEnabled           bool   // used to check if vSphere is enabled
+	VSpherePortGroup           string // port group for vsphere
+	VSphereHostGroup           string // host group for vsphere
+	VCenterHostURL             string // vCenter host url
+	VCenterHostUserName        string // vCenter host username
+	VCenterHostPassword        string // vCenter password
 }
 
 // NodeConfig defines rules for given node
@@ -258,6 +265,9 @@ func (s *service) BeforeServe(
 			"replicationPrefix":        s.opts.ReplicationPrefix,
 			"isHealthMonitorEnabled":   s.opts.IsHealthMonitorEnabled,
 			"isTopologyControlEnabled": s.opts.IsTopologyControlEnabled,
+			"isVsphereEnabled":         s.opts.IsVsphereEnabled,
+			"VspherePortGroups":        s.opts.VSpherePortGroup,
+			"VsphereHostGroups":        s.opts.VSphereHostGroup,
 		}
 
 		if s.opts.Password != "" {
@@ -445,6 +455,29 @@ func (s *service) BeforeServe(
 	opts.ModifyHostName = pb(EnvModifyHostName)
 	opts.IsHealthMonitorEnabled = pb(EnvHealthMonitorEnabled)
 	opts.IsTopologyControlEnabled = pb(EnvTopologyFilterEnabled)
+	opts.IsVsphereEnabled = pb(EnvVSphereEnabled)
+	if opts.IsVsphereEnabled {
+		// read port group
+		if vPG, ok := csictx.LookupEnv(ctx, EnvVSpherePortGroup); ok {
+			opts.VSpherePortGroup = vPG
+		}
+		// read host group
+		if vHG, ok := csictx.LookupEnv(ctx, EnvVSphereHostGroup); ok {
+			opts.VSphereHostGroup = vHG
+		}
+		// read vCenter host url
+		if vURL, ok := csictx.LookupEnv(ctx, EnvVCHost); ok {
+			opts.VCenterHostURL = vURL
+		}
+		// read vCenter host username
+		if vUN, ok := csictx.LookupEnv(ctx, EnvVCUsername); ok {
+			opts.VCenterHostUserName = vUN
+		}
+		// read vCenter host password
+		if vPWD, ok := csictx.LookupEnv(ctx, EnvVCPassword); ok {
+			opts.VCenterHostPassword = vPWD
+		}
+	}
 	s.opts = opts
 
 	// setup the iscsi client
@@ -632,7 +665,7 @@ func (s *service) GetPmaxTimeoutSeconds() int64 {
 	return s.pmaxTimeoutSeconds
 }
 
-// set the maximum amount of time to retry pmax calls
+// SetPmaxTimeoutSeconds sets the maximum amount of time to retry pmax calls
 func (s *service) SetPmaxTimeoutSeconds(seconds int64) {
 	s.pmaxTimeoutSeconds = seconds
 }

@@ -408,3 +408,26 @@ authorization:
   #   "false" - TLS certificate will be verified 
   # Default value: "true" 
   skipCertificateValidation: true
+
+# VMware/vSphere virtualization support
+# set enable to true, if you to enable VMware virtualized environment support via RDM
+# Allowed Values:
+#   "true" - vSphere volumes are enabled
+#   "false" - vSphere volumes are disabled
+# Default value: "false"
+vSphere:
+  enabled: false
+  # fcPortGroup: an existing portGroup that driver will use for vSphere
+  # recommended format: csi-x-VC-PG, x can be anything of user choice
+  fcPortGroup: "csi-vsphere-VC-PG"
+  # fcHostGroup: an existing host group that driver will use for vSphere
+  # this hostGroup should contain initiators from all the ESXs/ESXi host
+  # where the cluster is deployed
+  # recommended format: csi-x-VC-HG, x can be anything of user choice
+  fcHostGroup: "csi-vsphere-VC-HG"
+  # vCenterHost: URL/endpoint of the vCenter where all the ESX are present
+  vCenterHost: "00.000.000.00"
+  # vCenterUserName: username from the vCenter credentials
+  vCenterUserName: "user"
+  # vCenterPassword: password from the vCenter credentials
+  vCenterPassword: "pwd"
