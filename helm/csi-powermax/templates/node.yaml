@@ -177,6 +177,20 @@ spec:
               value: "{{ .Values.node.topologyControl.enabled }}"
             {{- end }}
             {{- end }}
+            - name: X_CSI_VSPHERE_ENABLED
+              value: "{{ .Values.vSphere.enabled }}"
+            {{- if eq .Values.vSphere.enabled true }}
+            - name: X_CSI_VSPHERE_PORTGROUP
+              value: {{ required "Must provide portgroup for vsphere" .Values.vSphere.fcPortGroup }}
+            - name: X_CSI_VSPHERE_HOSTGROUP
+              value: {{ required "Must provide host group for vsphere" .Values.vSphere.fcHostGroup }}
+            - name: X_CSI_VCenter_HOST
+              value: {{ required "Must provide hosr url for vsphere" .Values.vSphere.vCenterHost }}
+            - name: X_CSI_VCenter_USERNAME
+              value: {{ required "Must provide username for vsphere" .Values.vSphere.vCenterUserName }}
+            - name: X_CSI_VCenter_PWD
+              value: {{ required "Must provide password for vsphere" .Values.vSphere.vCenterPassword }}
+            {{- end }}
           volumeMounts:
             - name: driver-path
               mountPath: {{ .Values.kubeletConfigDir }}/plugins/powermax.emc.dell.com

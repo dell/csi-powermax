@@ -97,6 +97,7 @@ const (
 	Invalid                         = "Invalid"
 	Split                           = "Split"
 	SyncInProgress                  = "SyncInProg"
+	Vsphere                         = "VSPHERE"
 )
 
 // Keys for parameters to CreateVolume
@@ -342,6 +343,9 @@ func (s *service) CreateVolume(
 	var bias string
 
 	if params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)] == "true" {
+		if s.opts.IsVsphereEnabled {
+			return nil, status.Errorf(codes.Unavailable, "Replication on a vSphere volume is not supported")
+		}
 		replicationEnabled = params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)]
 		// remote symmetrix ID and rdf group name are mandatory params when replication is enabled
 		remoteSymID = params[path.Join(s.opts.ReplicationPrefix, RemoteSymIDParam)]
@@ -1611,11 +1615,12 @@ func (s *service) ControllerPublishVolume(
 
 	// log all parameters used in ControllerPublishVolume call
 	fields := map[string]interface{}{
-		"SymmetrixID":  symID,
-		"VolumeId":     volID,
-		"NodeId":       nodeID,
-		"AccessMode":   am.Mode,
-		"CSIRequestID": reqID,
+		"SymmetrixID":     symID,
+		"VolumeId":        volID,
+		"NodeId":          nodeID,
+		"AccessMode":      am.Mode,
+		"CSIRequestID":    reqID,
+		"IsVsphereVolume": s.opts.IsVsphereEnabled,
 	}
 	log.WithFields(fields).Info("Executing ControllerPublishVolume with following fields")
 	isISCSI := false
@@ -1823,6 +1828,17 @@ func getMVLockKey(symID, tgtMaskingViewID string) string {
 // and the existence of the host on array, it returns a bool to indicate if the Host
 // on array is ISCSI or not
 func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxClient pmax.Pmax) (bool, error) {
+	if s.opts.IsVsphereEnabled {
+		// check if FC host exist
+		fcHost, fcHostErr := pmaxClient.GetHostByID(ctx, symID, s.opts.VSphereHostGroup)
+		if fcHostErr == nil {
+			if fcHost.HostType == "Fibre" {
+				return false, nil
+			}
+		}
+		return false, fmt.Errorf("Failed to fetch host id from array for node: %s", nodeID)
+	}
+
 	fcHostID, _, fcMaskingViewID := s.GetFCHostSGAndMVIDFromNodeID(nodeID)
 	iSCSIHostID, _, iSCSIMaskingViewID := s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
 	if s.opts.TransportProtocol == FcTransportProtocol || s.opts.TransportProtocol == "" {
@@ -1933,6 +1949,9 @@ func (s *service) GetMaskingViewAndSGDetails(ctx context.Context, symID string, 
 // GetHostSGAndMVIDFromNodeID - Gets the Host ID, SG ID, MV ID given a node ID and
 // a boolean which indicates if node is FC or ISCSI
 func (s *service) GetHostSGAndMVIDFromNodeID(nodeID string, isISCSI bool) (string, string, string) {
+	if s.opts.IsVsphereEnabled {
+		return s.GetVSphereFCHostSGAndMVIDFromNodeID()
+	}
 	if isISCSI {
 		return s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
 	}
@@ -1974,6 +1993,12 @@ func (s *service) buildHostIDFromTemplate(nodeID string) (
 	}
 
 	return hostID, nil
+}
+
+func (s *service) GetVSphereFCHostSGAndMVIDFromNodeID() (string, string, string) {
+	storageGroupID := CsiNoSrpSGPrefix + s.getClusterPrefix() + "-" + Vsphere
+	maskingViewID := CsiMVPrefix + s.getClusterPrefix() + "-" + Vsphere
+	return s.opts.VSphereHostGroup, storageGroupID, maskingViewID
 }
 
 // GetISCSIHostSGAndMVIDFromNodeID - Forms HostID, StorageGroupID, MaskingViewID
@@ -2622,6 +2647,9 @@ func (s *service) SelectOrCreatePortGroup(ctx context.Context, symID string, hos
 	if host == nil {
 		return "", fmt.Errorf("SelectOrCreatePortGroup: host can't be nil")
 	}
+	if s.opts.IsVsphereEnabled {
+		return s.opts.VSpherePortGroup, nil
+	}
 	if host.HostType == "Fibre" {
 		return s.SelectOrCreateFCPGForHost(ctx, symID, host, pmaxClient)
 	}
@@ -2746,6 +2774,10 @@ func (s *service) CreateSnapshot(
 			"Snapshot name cannot be empty")
 	}
 
+	// Check if the vSphere is enabled, return unsupported
+	if s.opts.IsVsphereEnabled {
+		return nil, status.Error(codes.Unavailable, "Snapshot on a vSphere volume is not supported")
+	}
 	// Get the snapshot prefix from environment
 	maxLength := MaxSnapIdentifierLength - len(s.getClusterPrefix()) - len(CsiVolumePrefix) - 5
 	//First get the short snap name
