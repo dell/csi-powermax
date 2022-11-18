@@ -2114,6 +2114,9 @@ func (s *service) unpublishVolume(ctx context.Context, reqID string, vol *types.
 	_, tgtFCStorageGroupID, tgtFCMaskingViewID := s.GetFCHostSGAndMVIDFromNodeID(nodeID)
 	_, tgtISCSIStorageGroupID, tgtISCSIMaskingViewID := s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
 	isISCSI := false
+	if s.opts.IsVsphereEnabled {
+		_, tgtFCStorageGroupID, tgtFCMaskingViewID = s.GetVSphereFCHostSGAndMVIDFromNodeID()
+	}
 	// Check if volume is part of the Storage group
 	currentSGIDs := vol.StorageGroupIDList
 	volumeInStorageGroup := false
