@@ -666,10 +666,9 @@ func (s *service) CreateVolume(
 		protectedSGID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
 		if protectedSGID == "" {
 			// Volume is not present in Protected Storage Group, Add
-			err = pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symmetrixID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, true, vol.VolumeID)
+			err = s.addVolumesToProtectedStorageGroup(ctx, reqID, symmetrixID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, false, vol.VolumeID, pmaxClient)
 			if err != nil {
-				log.Error(fmt.Sprintf("Could not add volume in protected SG: %s: %s", volumeName, err.Error()))
-				return nil, status.Errorf(codes.Internal, "Could not add volume in protected SG: %s: %s", volumeName, err.Error())
+				return nil, err
 			}
 		}
 		if isSGUnprotected {
@@ -678,10 +677,18 @@ func (s *service) CreateVolume(
 			// Remote storage group name is kept same as local storage group name
 			err := s.ProtectStorageGroup(ctx, symmetrixID, remoteSymID, localProtectionGroupID, remoteProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID, false, pmaxClient)
 			if err != nil {
+				log.Errorf("Proceeding to remove volume from protected storage group as rollback")
+				// Remove volume from protected storage group as a rollback
+				// The device could be just a TDEV and can make RDF unmanageable due to slow u4p response
+				_, er := pmaxClient.RemoveVolumesFromStorageGroup(ctx, symmetrixID, localProtectionGroupID, true, vol.VolumeID)
+				if er != nil {
+					log.Errorf("Error removing volume %s from protected SG %s with error: %s", vol.VolumeID, localProtectionGroupID, er.Error())
+				}
 				return nil, err
 			}
 		}
 	}
+
 	// If volume content source is specified, initiate no_copy to newly created volume
 	if contentSource != nil {
 		if srcVolID != "" {
@@ -992,10 +999,9 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	protectedSGID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
 	if protectedSGID == "" {
 		// Volume is not present in Protected Storage Group, Add
-		err = pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, true, vol.VolumeID)
+		err = s.addVolumesToProtectedStorageGroup(ctx, reqID, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, false, vol.VolumeID, pmaxClient)
 		if err != nil {
-			log.Error(fmt.Sprintf("Could not add volume in protected SG: %s: %s", volumeName, err.Error()))
-			return nil, status.Errorf(codes.Internal, "Could not add volume in protected SG: %s: %s", volumeName, err.Error())
+			return nil, err
 		}
 	}
 	if isSGUnprotected {
@@ -1003,6 +1009,13 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		// If valid RDF group is supplied this will create a remote SG, a RDF pair and add the vol in respective SG created
 		err := s.ProtectStorageGroup(ctx, symID, remoteSymID, localProtectionGroupID, remoteProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID, bias == "true", pmaxClient)
 		if err != nil {
+			log.Errorf("Proceeding to remove volume from protected storage group as rollback")
+			// Remove volume from protected storage group as a rollback
+			// The device could be just a TDEV and can make RDF unmanageable due to slow u4p response
+			_, er := pmaxClient.RemoveVolumesFromStorageGroup(ctx, symID, localProtectionGroupID, true, vol.VolumeID)
+			if er != nil {
+				log.Errorf("Error removing volume %s from protected SG %s with error: %s", vol.VolumeID, localProtectionGroupID, er.Error())
+			}
 			return nil, err
 		}
 	}
@@ -1077,12 +1090,7 @@ func addReplicationParamsToVolumeAttributes(attributes map[string]string, prefix
 
 func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID string, pmaxClient pmax.Pmax) (*types.RDFStorageGroup, error) {
 	var lockHandle string
-	if repMode == Sync {
-		//Mode is SYNC
-		lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
-	} else {
-		lockHandle = fmt.Sprintf("%s%s", localRDFGrpNo, symID)
-	}
+	lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
 	lockNum := RequestLock(lockHandle, reqID)
 	defer ReleaseLock(lockHandle, reqID, lockNum)
 	sg, err := pmaxClient.GetProtectedStorageGroup(ctx, symID, localProtectionGroupID)
@@ -2777,10 +2785,6 @@ func (s *service) CreateSnapshot(
 			"Snapshot name cannot be empty")
 	}
 
-	// Check if the vSphere is enabled, return unsupported
-	if s.opts.IsVsphereEnabled {
-		return nil, status.Error(codes.Unavailable, "Snapshot on a vSphere volume is not supported")
-	}
 	// Get the snapshot prefix from environment
 	maxLength := MaxSnapIdentifierLength - len(s.getClusterPrefix()) - len(CsiVolumePrefix) - 5
 	//First get the short snap name
