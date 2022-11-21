@@ -524,7 +524,7 @@ func suspend(ctx context.Context, symID, sgName, rdfGrpNo string, pmaxClient pma
 	return nil
 }
 
-//Suspend validates current state of replication & executes 'Suspend' on storage group replication link
+// Suspend validates current state of replication & executes 'Suspend' on storage group replication link
 func (s *service) Suspend(ctx context.Context, symID, sgName, rdfGrpNo string, pmaxClient pmax.Pmax) error {
 	return suspend(ctx, symID, sgName, rdfGrpNo, pmaxClient)
 }

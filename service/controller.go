@@ -132,7 +132,7 @@ const (
 	FsTypeParam                          = "csi.storage.k8s.io/fstype"
 )
 
-//Pair - structure which holds a pair
+// Pair - structure which holds a pair
 type Pair struct {
 	first, second interface{}
 }
@@ -1311,8 +1311,10 @@ func (s *service) createCSIVolumeID(volumePrefix, volumeName, symID, devID strin
 
 // parseCsiID returns the VolumeName, Array ID, and Device ID given the CSI ID.
 // The last 19 characters of the CSI volume ID are special:
-//      A dash '-', followed by 12 digits of array serial number, followed by a dash, followed by 5 digits of array device id.
-//	That's 19 characters total on the right end.
+//
+//	     A dash '-', followed by 12 digits of array serial number, followed by a dash, followed by 5 digits of array device id.
+//		That's 19 characters total on the right end.
+//
 // Also an error returned if mal-formatted.
 func (s *service) parseCsiID(csiID string) (
 	volName string, arrayID string, devID string, remoteSymID, remoteVolID string, err error) {
@@ -2898,7 +2900,7 @@ func mergeStringMaps(base map[string]string, additional map[string]string) map[s
 	return result
 }
 
-//ControllerExpandVolume expands a CSI volume on the Pmax array
+// ControllerExpandVolume expands a CSI volume on the Pmax array
 func (s *service) ControllerExpandVolume(
 	ctx context.Context, req *csi.ControllerExpandVolumeRequest) (
 	*csi.ControllerExpandVolumeResponse, error) {
@@ -2947,6 +2949,12 @@ func (s *service) ControllerExpandVolume(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	// Check if volume is replicated and has RDF info
+	var rdfGNo int
+	if len(vol.RDFGroupIDList) > 0 {
+		rdfGNo = vol.RDFGroupIDList[0].RDFGroupNumber
+	}
+
 	// log all parameters used in ExpandVolume call
 	fields := map[string]interface{}{
 		"RequestID":     reqID,
@@ -2973,7 +2981,7 @@ func (s *service) ControllerExpandVolume(
 	}
 
 	//Expand the volume
-	vol, err = pmaxClient.ExpandVolume(ctx, symID, devID, requestedSize)
+	vol, err = pmaxClient.ExpandVolume(ctx, symID, devID, rdfGNo, requestedSize)
 	if err != nil {
 		log.Errorf("Failed to execute ExpandVolume() with error (%s)", err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
@@ -2987,8 +2995,8 @@ func (s *service) ControllerExpandVolume(
 	return csiResp, nil
 }
 
-//MarkVolumeForDeletion renames the volume with deletion prefix and sends a
-//request to deletion_worker queue
+// MarkVolumeForDeletion renames the volume with deletion prefix and sends a
+// request to deletion_worker queue
 func (s *service) MarkVolumeForDeletion(ctx context.Context, symID string, vol *types.Volume, pmaxClient pmax.Pmax) error {
 	if vol == nil {
 		return fmt.Errorf("MarkVolumeForDeletion: Null volume object")
