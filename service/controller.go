@@ -992,10 +992,9 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	protectedSGID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
 	if protectedSGID == "" {
 		// Volume is not present in Protected Storage Group, Add
-		err = pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, true, vol.VolumeID)
+		err = s.addVolumesToProtectedStorageGroup(ctx, reqID, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, false, vol.VolumeID, pmaxClient)
 		if err != nil {
-			log.Error(fmt.Sprintf("Could not add volume in protected SG: %s: %s", volumeName, err.Error()))
-			return nil, status.Errorf(codes.Internal, "Could not add volume in protected SG: %s: %s", volumeName, err.Error())
+			return nil, err
 		}
 	}
 	if isSGUnprotected {
@@ -1003,6 +1002,13 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		// If valid RDF group is supplied this will create a remote SG, a RDF pair and add the vol in respective SG created
 		err := s.ProtectStorageGroup(ctx, symID, remoteSymID, localProtectionGroupID, remoteProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID, bias == "true", pmaxClient)
 		if err != nil {
+			log.Errorf("Proceeding to remove volume from protected storage group as rollback")
+			// Remove volume from protected storage group as a rollback
+			// The device could be just a TDEV and can make RDF unmanageable due to slow u4p response
+			_, er := pmaxClient.RemoveVolumesFromStorageGroup(ctx, symID, localProtectionGroupID, true, vol.VolumeID)
+			if er != nil {
+				log.Errorf("Error removing volume %s from protected SG %s with error: %s", vol.VolumeID, localProtectionGroupID, er.Error())
+			}
 			return nil, err
 		}
 	}
@@ -1077,12 +1083,7 @@ func addReplicationParamsToVolumeAttributes(attributes map[string]string, prefix
 
 func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID string, pmaxClient pmax.Pmax) (*types.RDFStorageGroup, error) {
 	var lockHandle string
-	if repMode == Sync {
-		//Mode is SYNC
-		lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
-	} else {
-		lockHandle = fmt.Sprintf("%s%s", localRDFGrpNo, symID)
-	}
+	lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
 	lockNum := RequestLock(lockHandle, reqID)
 	defer ReleaseLock(lockHandle, reqID, lockNum)
 	sg, err := pmaxClient.GetProtectedStorageGroup(ctx, symID, localProtectionGroupID)
