@@ -343,9 +343,6 @@ func (s *service) CreateVolume(
 	var bias string
 
 	if params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)] == "true" {
-		if s.opts.IsVsphereEnabled {
-			return nil, status.Errorf(codes.Unavailable, "Replication on a vSphere volume is not supported")
-		}
 		replicationEnabled = params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)]
 		// remote symmetrix ID and rdf group name are mandatory params when replication is enabled
 		remoteSymID = params[path.Join(s.opts.ReplicationPrefix, RemoteSymIDParam)]
@@ -2778,10 +2775,6 @@ func (s *service) CreateSnapshot(
 			"Snapshot name cannot be empty")
 	}
 
-	// Check if the vSphere is enabled, return unsupported
-	if s.opts.IsVsphereEnabled {
-		return nil, status.Error(codes.Unavailable, "Snapshot on a vSphere volume is not supported")
-	}
 	// Get the snapshot prefix from environment
 	maxLength := MaxSnapIdentifierLength - len(s.getClusterPrefix()) - len(CsiVolumePrefix) - 5
 	//First get the short snap name
