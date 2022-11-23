@@ -137,7 +137,6 @@ function install_driver() {
   else
     log step "Installing Driver"
   fi
-  warning "CSI Driver for Powermax v2.5.0 requires 10.0 Unisphere REST endpoint support"
 
   # run driver specific install script
   local SCRIPTNAME="install-${DRIVER}.sh"
@@ -260,7 +259,16 @@ function kubectl_safe() {
   fi
 }
 
-#
+# verify_unisphere
+# will verify if the unisphere to be used is at required REST version
+function verify_unisphere() {
+  if [ $VERIFY -eq 0 ]; then
+    decho "Skipping unisphere verification at user request"
+  else
+    warning "CSI Driver for Powermax v2.5 and above requires 10.0 Unisphere REST endpoint support"
+  fi
+}
+
 # verify_kubernetes
 # will run a driver specific function to verify environmental requirements
 function verify_kubernetes() {
@@ -404,9 +412,9 @@ validate_params "${MODE}"
 
 header
 check_for_driver "${MODE}"
+verify_unisphere
 verify_kubernetes
 
 # all good, keep processing
 install_driver "${MODE}"
-
 summary
