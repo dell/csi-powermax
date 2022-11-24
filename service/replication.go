@@ -231,11 +231,10 @@ func (s *service) ProtectStorageGroup(ctx context.Context, symID, remoteSymID, s
 		log.Errorf("Could not get rdf group (%s) information on symID (%s)", symID, rdfGrpNo)
 		return status.Errorf(codes.Internal, "Could not get rdf group (%s) information on symID (%s). Error (%s)", symID, rdfGrpNo, err.Error())
 	}
-	log.Debugf("RDF: for vol(%s) rdf group info: (%v+)", localVolID, rdfg)
 	if rdfg.Async && rdfg.NumDevices > 0 {
 		return status.Errorf(codes.Internal, "RDF group (%s) cannot be used for ASYNC, as it already has volume pairing", rdfGrpNo)
 	}
-	log.Debugf("RDF: rdfg has 0 device ! vol(%s)", localVolID)
+	log.Debugf("RDF: rdfg has %d devices ! for vol(%s)", rdfg.NumDevices, localVolID)
 	err = s.verifyAndDeleteRemoteStorageGroup(ctx, remoteSymID, remoteStorageGroupName, pmaxClient)
 	if err != nil {
 		log.Error(fmt.Sprintf("Could not verify remote storage group (%s)", storageGroupName))
@@ -767,6 +766,19 @@ func validateRDFState(ctx context.Context, symID, action, sgName, rdfGrpNo strin
 		}
 	}
 	return false, nil
+}
+
+func (s *service) addVolumesToProtectedStorageGroup(ctx context.Context, reqID, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID string, force bool, volID string, pmaxClient pmax.Pmax) error {
+	lockHandle := fmt.Sprintf("%s%s", localProtectionGroupID, symID)
+	lockNum := RequestLock(lockHandle, reqID)
+	defer ReleaseLock(lockHandle, reqID, lockNum)
+	err := pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, force, volID)
+	if err != nil {
+		log.Error(fmt.Sprintf("Could not add volume in protected SG: %s: %s", volID, err.Error()))
+		return status.Errorf(codes.Internal, "Could not add volume in protected SG: %s: %s", volID, err.Error())
+	}
+	log.Debugf("volume (%s) added to protected SG (%s)", volID, localProtectionGroupID)
+	return nil
 }
 
 func buildProtectionGroupID(namespace, localRdfGrpNo, repMode string) string {
