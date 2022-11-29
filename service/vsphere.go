@@ -12,6 +12,9 @@
  limitations under the License.
 */
 
+// This piece of code was developed for RDM support mainly thanks to the project govmax on github.com
+// This file in particular from https://github.com/codedellemc/govmax/blob/master/api/v1/vmomi.go
+
 package service
 
 import (
@@ -42,6 +45,7 @@ type VMHost struct {
 }
 
 // NewVMHost connects to a ESXi or vCenter instance and returns a *VMHost
+// This method is referenced from https://github.com/codedellemc/govmax/blob/master/api/v1/vmomi.go
 func NewVMHost(insecure bool, hostURLparam, user, pass string) (*VMHost, error) {
 	ctx, _ := context.WithCancel(context.Background())
 	hostURL, err := url.Parse("https://" + hostURLparam + "/sdk")
@@ -180,6 +184,7 @@ func (vmh *VMHost) getSCSIControllers() (object.VirtualDeviceList, error) {
 }
 
 // GetSCSILuns fetches all the SCSILuns discovered on the host
+// This method is referenced from https://github.com/codedellemc/govmax/blob/master/api/v1/vmomi.go
 func (vmh *VMHost) GetSCSILuns() ([]*types.ScsiLun, error) {
 	host, err := vmh.VM.HostSystem(vmh.Ctx)
 	if err != nil {
@@ -226,6 +231,7 @@ func (vmh *VMHost) createController(controller *types.BaseVirtualDevice) error {
 }
 
 // AttachRDM adds the device to the VM as an RDM
+// This method is referenced from https://github.com/codedellemc/govmax/blob/master/api/v1/vmomi.go
 func (vmh *VMHost) AttachRDM(vm *object.VirtualMachine, deviceNAA string) (err error) {
 
 	vmScsiDiskDeviceInfo, err := vmh.getVMScsiDiskDeviceInfo(vm)
@@ -312,6 +318,7 @@ func (vmh *VMHost) AttachRDM(vm *object.VirtualMachine, deviceNAA string) (err e
 }
 
 // DetachRDM removes the device from the VM
+// This method is referenced from https://github.com/codedellemc/govmax/blob/master/api/v1/vmomi.go
 func (vmh *VMHost) DetachRDM(vm *object.VirtualMachine, deviceNAA string) error {
 
 	scsiLuns, err := vmh.GetSCSILuns()
@@ -356,6 +363,7 @@ func (vmh *VMHost) DetachRDM(vm *object.VirtualMachine, deviceNAA string) error 
 }
 
 // RescanAllHba rediscovers new devices added to the ESX
+// This method is referenced from https://github.com/codedellemc/govmax/blob/master/api/v1/vmomi.go
 func (vmh *VMHost) RescanAllHba(hostSystem *object.HostSystem) error {
 	storageSystem, err := hostSystem.ConfigManager().StorageSystem(vmh.Ctx)
 	if err != nil {
