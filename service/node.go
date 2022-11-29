@@ -155,7 +155,7 @@ func (s *service) NodeStageVolume(
 	if s.opts.IsVsphereEnabled {
 		err := s.attachRDM(devID, volumeWWN)
 		if err != nil {
-			return nil, err
+			return nil, status.Error(codes.Internal, err.Error())
 		}
 		log.Debugf("attach RDM on VM complete...")
 	}
@@ -435,7 +435,7 @@ func (s *service) NodeUnstageVolume(
 			}
 			return nil, err
 		}
-		volumeWWN = vol.WWN
+		volumeWWN = vol.EffectiveWWN
 	}
 
 	// Parse the volume ID to get the symID and devID
@@ -459,7 +459,7 @@ func (s *service) NodeUnstageVolume(
 	if s.opts.IsVsphereEnabled {
 		err := s.detachRDM(devID, volumeWWN)
 		if err != nil {
-			return nil, err
+			return nil, status.Error(codes.Internal, err.Error())
 		}
 		log.Debugf("rescanning HBAs on host done...")
 	}
@@ -550,6 +550,8 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		nodeUnstageCtx, cancel := context.WithTimeout(context.Background(), time.Second*120)
 		nodeUnstageCtx = setLogFields(nodeUnstageCtx, f)
 		switch s.arrayTransportProtocolMap[symID] {
+		case Vsphere:
+			s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName) // #nosec G20
 		case FcTransportProtocol:
 			s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName) // #nosec G20
 		case IscsiTransportProtocol:
@@ -2021,7 +2023,7 @@ func (s *service) NodeExpandVolume(
 		// If the volume isn't found, we cannot stage it
 		return nil, err
 	}
-	volumeWWN := vol.WWN
+	volumeWWN := vol.EffectiveWWN
 
 	//Get the pmax volume name so that it can be searched in the system
 	//to find mount information
