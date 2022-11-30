@@ -3,7 +3,7 @@ module revproxy/v2
 go 1.19
 
 require (
-	github.com/dell/gopowermax/v2 v2.0.1-0.20221109120540-a5532f923a52
+	github.com/dell/gopowermax/v2 v2.1.0
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gorilla/mux v1.7.3
 	github.com/kubernetes-csi/csi-lib-utils v0.9.1
@@ -42,14 +42,12 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.2.0 // indirect
 	golang.org/x/crypto v0.3.0 // indirect
-	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/net v0.2.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
 	golang.org/x/sys v0.2.0 // indirect
 	golang.org/x/term v0.2.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
-	golang.org/x/tools v0.3.0 // indirect
 	google.golang.org/appengine v1.6.5 // indirect
 	google.golang.org/protobuf v1.24.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
