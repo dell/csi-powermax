@@ -13,11 +13,11 @@ require (
 	github.com/dell/dell-csi-extensions/common v1.1.0
 	github.com/dell/dell-csi-extensions/migration v1.0.1
 	github.com/dell/dell-csi-extensions/replication v1.2.1
-	github.com/dell/gobrick v1.5.2-0.20221115112327-b0c21caa6e9a
+	github.com/dell/gobrick v1.6.0
 	github.com/dell/gocsi v1.6.0
-	github.com/dell/gofsutil v1.10.0
-	github.com/dell/goiscsi v1.5.0
-	github.com/dell/gopowermax/v2 v2.0.1-0.20221115103823-d8d9fb31deb8
+	github.com/dell/gofsutil v1.11.0
+	github.com/dell/goiscsi v1.6.0
+	github.com/dell/gopowermax/v2 v2.1.0
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.2
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
@@ -36,7 +36,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/cucumber/gherkin-go/v11 v11.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dell/gonvme v1.2.1-0.20221111064610-e2ea406d3203 // indirect
+	github.com/dell/gonvme v1.2.1-0.20221125163719-e388aeb3ebfe // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -70,14 +70,12 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.17.0 // indirect
 	golang.org/x/crypto v0.3.0 // indirect
-	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
 	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/sys v0.2.0 // indirect
 	golang.org/x/term v0.2.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
-	golang.org/x/tools v0.3.0 // indirect
 	google.golang.org/appengine v1.6.1 // indirect
 	google.golang.org/genproto v0.0.0-20210602131652-f16073e35f0c // indirect
 	google.golang.org/protobuf v1.27.1 // indirect
