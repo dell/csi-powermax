@@ -153,7 +153,7 @@ func (scw *snapCleanupWorker) removeItem() *snapCleanupRequest {
 	return &req
 }
 
-//UnlinkTargets unlinks all the target devices from the snapshot
+// UnlinkTargets unlinks all the target devices from the snapshot
 func (s *service) UnlinkTargets(ctx context.Context, symID, srcDevID string, pmaxClient pmax.Pmax) error {
 	//Get all the snapshot relation on the volume
 	SrcSession, _, err := s.GetSnapSessions(ctx, symID, srcDevID, pmaxClient)
@@ -171,7 +171,7 @@ func (s *service) UnlinkTargets(ctx context.Context, symID, srcDevID string, pma
 	return nil
 }
 
-//IsSnapshotLicensed return true if the symmetrix array has
+// IsSnapshotLicensed return true if the symmetrix array has
 // SnapVX license
 func (s *service) IsSnapshotLicensed(ctx context.Context, symID string, pmaxClient pmax.Pmax) (err error) {
 	if _, err := pmaxClient.IsAllowedArray(symID); err != nil {
@@ -200,15 +200,17 @@ func (s *service) IsSnapshotLicensed(ctx context.Context, symID string, pmaxClie
 
 // UnlinkAndTerminate executes cleanup operation on the source/target volume
 
-//deviceID: This can be a source or target device or it can be both.
+// deviceID: This can be a source or target device or it can be both.
+//
 //	A. If it is only a target, this function will execute Unlink action and returns
 //	B. If it a source, it unlinks all targets of the source snapshot and then terminate
 //	   the snapshot as specified in snapID or terminates all snapshot if snapID is empty
 //	C. If it is self linked snapshot i.e. both a source and a target, it executes both A & B
 //	D. If this is a soft deleted device, it sends a delete volume request to deletion worker
 //	   after terminating the last snapshot
-//snapID: It can be empty to terminate all the snapshots on a source volume or terminates the
-//spefified snapshot
+//
+// snapID: It can be empty to terminate all the snapshots on a source volume or terminates the
+// spefified snapshot
 func (s *service) UnlinkAndTerminate(ctx context.Context, symID, deviceID, snapID string, pmaxClient pmax.Pmax) error {
 	var noOfSnapsOnSrc int
 	//Get all the snapshot relation on the volume
@@ -341,7 +343,7 @@ func (s *service) TerminateSnapshot(ctx context.Context, symID string, srcDev st
 	return nil
 }
 
-//RemoveSnapshot deletes a snapshot
+// RemoveSnapshot deletes a snapshot
 func (s *service) RemoveSnapshot(ctx context.Context, symID string, srcDev string, snapID string, Generation int64, pmaxClient pmax.Pmax) (err error) {
 	log.Info(fmt.Sprintf("Deleting snapshot (%s) with generation (%d)", snapID, Generation))
 
@@ -475,7 +477,7 @@ func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *typ
 	return nil
 }
 
-//CreateSnapshotFromVolume creates a snapshot on a source volume
+// CreateSnapshotFromVolume creates a snapshot on a source volume
 func (s *service) CreateSnapshotFromVolume(ctx context.Context, symID string, vol *types.Volume, snapID string, TTL int64, reqID string, pmaxClient pmax.Pmax) (snapshot *types.VolumeSnapshot, err error) {
 	lockHandle := fmt.Sprintf("%s%s", vol.VolumeID, symID)
 	lockNum := RequestLock(lockHandle, reqID)
@@ -689,8 +691,8 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 	}
 }
 
-//isSourceTaggedToDelete returns true if the volume has a delete snapshot source volume tag
-//appended with the volume name
+// isSourceTaggedToDelete returns true if the volume has a delete snapshot source volume tag
+// appended with the volume name
 func (s *service) isSourceTaggedToDelete(volName string) (ok bool) {
 	//A soft deleted volume name has Csi&ClusterPrefix-VolumeName-DS
 	volComponents := strings.Split(volName, "-")
@@ -706,7 +708,7 @@ func (s *service) isSourceTaggedToDelete(volName string) (ok bool) {
 	return
 }
 
-//findSnapIDFromSnapName returns the snapID from snapshot name in Device list
+// findSnapIDFromSnapName returns the snapID from snapshot name in Device list
 func (s *service) findSnapIDFromSnapName(snapName string) (ok bool, snapID string) {
 	snapComponents := strings.Split(snapName, "-")
 	if len(snapComponents) < 4 {

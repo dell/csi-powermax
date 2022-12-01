@@ -1092,7 +1092,7 @@ func (s *service) NodeGetVolumeStats(
 	}, nil
 }
 
-//getVolumeStats - Returns the stats for the volume mounted on given volume path
+// getVolumeStats - Returns the stats for the volume mounted on given volume path
 func getVolumeStats(ctx context.Context, volumePath string) (int64, int64, int64, int64, int64, int64, error) {
 	availableBytes, totalBytes, usedBytes, totalInodes, freeInodes, usedInodes, err := gofsutil.FsInfo(ctx, volumePath)
 
@@ -1820,7 +1820,7 @@ func (s *service) retryableGetSymmetrixIDList() (*types.SymmetrixIDList, error) 
 	}, nil
 }
 
-//NodeExpandVolume helps extending a volume size on a node
+// NodeExpandVolume helps extending a volume size on a node
 func (s *service) NodeExpandVolume(
 	ctx context.Context,
 	req *csi.NodeExpandVolumeRequest) (

@@ -167,7 +167,7 @@ func RootDir() string {
 	return filepath.Dir(d)
 }
 
-//RemoveTempFiles - Removes temporary files created during testing
+// RemoveTempFiles - Removes temporary files created during testing
 func RemoveTempFiles() error {
 	rootDir := RootDir()
 	certsDir := rootDir + "/../" + common.DefaultCertDirName
