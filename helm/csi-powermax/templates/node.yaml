@@ -105,11 +105,9 @@ spec:
               value: "{{ .Values.kubeletConfigDir }}/plugins/powermax.emc.dell.com/disks"
             - name: X_CSI_MANAGED_ARRAYS
               value: {{ $arraysStr | replace " " "," | quote }}
-            {{- if ne .Values.csireverseproxy.enabled true }}
             {{- $managementServer := first .Values.global.managementServers }}
             - name: X_CSI_POWERMAX_ENDPOINT
               value: {{ required "Must provide a Unisphere HTTPS endpoint." $managementServer.endpoint }}
-            {{- end }}
             - name: X_CSI_POWERMAX_DEBUG
               value: {{ .Values.powerMaxDebug | default "false" | lower | quote }}
             - name: X_CSI_POWERMAX_SKIP_CERTIFICATE_VALIDATION
