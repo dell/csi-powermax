@@ -137,7 +137,7 @@ func (s *service) NodeStageVolume(
 		// If the volume isn't found, we cannot stage it
 		return nil, err
 	}
-	volumeWWN := vol.WWN
+	volumeWWN := vol.EffectiveWWN
 
 	// Save volume WWN to node disk
 	err = s.writeWWNFile(id, volumeWWN)
