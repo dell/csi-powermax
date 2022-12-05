@@ -1876,6 +1876,9 @@ func (s *service) NodeExpandVolume(
 	replace := CSIPrefix + "-" + s.getClusterPrefix() + "-"
 	volName := strings.Replace(vol.VolumeIdentifier, replace, "", 1)
 
+	//remove the namespace from the volName as the mount paths will not have it
+	volName = strings.Join(strings.Split(volName, "-")[:2], "-")
+
 	//Locate and fetch all (multipath/regular) mounted paths using this volume
 	devMnt, err := gofsutil.GetMountInfoFromDevice(ctx, volName)
 	if err != nil {
