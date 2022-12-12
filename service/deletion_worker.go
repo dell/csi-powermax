@@ -487,9 +487,9 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 				log.Errorf("GetRDFGroup failed for (%s) on symID (%s)", sgID, queue.SymID)
 				return false
 			}
-			// PMAX fails the delete of the last volume in a Metro RDFg if
-			// the RDFg is not suspended. So allow Suspend only if its the last volume in the RDFg
-			if (mode == Metro) && (rdfInfo.NumDevices == 1) {
+			// PMAX fails to delete the last volume in a Metro RDFg if
+			// the RDFg is not suspended. So allow the "Suspend" only if it's the last volume in the RDFg
+			if (mode == Metro) && (rdfInfo.NumDevices == 1 || rdfInfo.NumDevices == len(volumeIDs)) {
 				state := psg.States[0]
 				if state != Suspended {
 					//SUSPEND the protected storage group
