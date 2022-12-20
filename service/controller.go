@@ -1838,7 +1838,7 @@ func getMVLockKey(symID, tgtMaskingViewID string) string {
 func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxClient pmax.Pmax) (bool, error) {
 	if s.opts.IsVsphereEnabled {
 		// check if FC host exist
-		fcHost, fcHostErr := pmaxClient.GetHostByID(ctx, symID, s.opts.VSphereHostGroup)
+		fcHost, fcHostErr := pmaxClient.GetHostByID(ctx, symID, s.opts.VSphereHostName)
 		if fcHostErr == nil {
 			if fcHost.HostType == "Fibre" {
 				return false, nil
@@ -2006,7 +2006,7 @@ func (s *service) buildHostIDFromTemplate(nodeID string) (
 func (s *service) GetVSphereFCHostSGAndMVIDFromNodeID() (string, string, string) {
 	storageGroupID := CsiNoSrpSGPrefix + s.getClusterPrefix() + "-" + Vsphere
 	maskingViewID := CsiMVPrefix + s.getClusterPrefix() + "-" + Vsphere
-	return s.opts.VSphereHostGroup, storageGroupID, maskingViewID
+	return s.opts.VSphereHostName, storageGroupID, maskingViewID
 }
 
 // GetISCSIHostSGAndMVIDFromNodeID - Forms HostID, StorageGroupID, MaskingViewID

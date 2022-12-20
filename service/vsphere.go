@@ -25,6 +25,8 @@ import (
 	"reflect"
 	"strings"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -120,18 +122,17 @@ func (vmh *VMHost) findVM(targetMACAddress string) (vm *object.VirtualMachine, e
 	for _, datacenter := range allDatacenters {
 		f.SetDatacenter(datacenter)
 		allVMs, err := f.VirtualMachineList(vmh.Ctx, "*")
-		fmt.Printf("all VMS: (%v)", allVMs)
 		if err != nil {
 			return nil, errors.New("Could not get List of VMs")
 		}
 		for _, vm := range allVMs {
 			VMMac, err := vmh.getMACAddressOfVM(vm)
-			fmt.Printf("VM: %v , mac(%s)", vm, VMMac)
 			VMMac = strings.ToUpper(VMMac)
 			if err != nil {
-				return nil, errors.New("Could not get MAC Address of VM")
+				log.Debugf("Could not get MAC Address of VM (%v), datacenter (%v)", vm, datacenter)
 			}
-			if VMMac == targetMACAddress {
+			if VMMac == targetMACAddress && err == nil {
+				log.Debugf("Found VM: %v , mac(%s)", vm, VMMac)
 				return vm, nil
 			}
 		}
