@@ -70,7 +70,7 @@ global:
 
 # Current version of the driver
 # Don't modify this value as this value will be used by the install script
-version: "v2.3.0"
+version: "v2.3.1"
 
 images:
   # "driver" defines the container image, used for the driver container.
