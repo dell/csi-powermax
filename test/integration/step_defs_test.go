@@ -148,10 +148,12 @@ func (f *feature) aPowermaxService() error {
 	f.replicationContextPrefix = os.Getenv("X_CSI_REPLICATION_CONTEXT_PREFIX")
 	symIDList := []string{f.remotesymID}
 	// Add remote array to managed sym by csi driver
-	err := symmetrix.Initialize(symIDList, f.pmaxClient)
-	if err != nil {
-		fmt.Printf("initialize remote array error: %s", err.Error())
-		return err
+	if _, err := symmetrix.GetPowerMax(f.remotesymID); err != nil {
+		err := symmetrix.Initialize(symIDList, f.pmaxClient)
+		if err != nil {
+			fmt.Printf("initialize remote array error: %s", err.Error())
+			return err
+		}
 	}
 	return nil
 }
@@ -489,6 +491,7 @@ func (f *feature) getMountVolumeRequest(name string) *csi.CreateVolumeRequest {
 	params[service.SymmetrixIDParam] = f.symID
 	params[service.ServiceLevelParam] = f.serviceLevel
 	params[service.StoragePoolParam] = f.srpID
+	params[service.CSIPVCNamespace] = "INT"
 	req.Parameters = params
 	now := time.Now()
 	req.Name = fmt.Sprintf("Int%d", now.Nanosecond())

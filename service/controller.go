@@ -646,10 +646,9 @@ func (s *service) CreateVolume(
 		protectedSGID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
 		if protectedSGID == "" {
 			// Volume is not present in Protected Storage Group, Add
-			err = pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symmetrixID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, true, vol.VolumeID)
+			err = s.addVolumesToProtectedStorageGroup(ctx, reqID, symmetrixID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, true, vol.VolumeID, pmaxClient)
 			if err != nil {
-				log.Error(fmt.Sprintf("Could not add volume in protected SG: %s: %s", volumeName, err.Error()))
-				return nil, status.Errorf(codes.Internal, "Could not add volume in protected SG: %s: %s", volumeName, err.Error())
+				return nil, err
 			}
 		}
 		if isSGUnprotected {
@@ -658,6 +657,13 @@ func (s *service) CreateVolume(
 			// Remote storage group name is kept same as local storage group name
 			err := s.ProtectStorageGroup(ctx, symmetrixID, remoteSymID, localProtectionGroupID, remoteProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID, false, pmaxClient)
 			if err != nil {
+				log.Errorf("Proceeding to remove volume from protected storage group as rollback")
+				// Remove volume from protected storage group as a rollback
+				// The device could be just a TDEV and can make RDF unmanageable due to slow u4p response
+				_, er := pmaxClient.RemoveVolumesFromStorageGroup(ctx, symmetrixID, localProtectionGroupID, true, vol.VolumeID)
+				if er != nil {
+					log.Errorf("Error removing volume %s from protected SG %s with error: %s", vol.VolumeID, localProtectionGroupID, er.Error())
+				}
 				return nil, err
 			}
 		}
@@ -2842,7 +2848,7 @@ func (s *service) DeleteSnapshot(
 	if err != nil {
 		//Unisphere returns "does not exist"
 		//when the snapshot is not found for Elm-SR ucode(9.0)
-		if strings.Contains(err.Error(), "does not exist") {
+		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "not found") {
 			return &csi.DeleteSnapshotResponse{}, nil
 		}
 		// Snapshot to be deleted couldn't be found in the system.
