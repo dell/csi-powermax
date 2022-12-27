@@ -121,7 +121,7 @@ type Opts struct {
 	IsTopologyControlEnabled   bool   // used to filter topology keys based on user config
 	IsVsphereEnabled           bool   // used to check if vSphere is enabled
 	VSpherePortGroup           string // port group for vsphere
-	VSphereHostGroup           string // host group for vsphere
+	VSphereHostName            string // host (initiator group) for vsphere
 	VCenterHostURL             string // vCenter host url
 	VCenterHostUserName        string // vCenter host username
 	VCenterHostPassword        string // vCenter password
@@ -267,7 +267,9 @@ func (s *service) BeforeServe(
 			"isTopologyControlEnabled": s.opts.IsTopologyControlEnabled,
 			"isVsphereEnabled":         s.opts.IsVsphereEnabled,
 			"VspherePortGroups":        s.opts.VSpherePortGroup,
-			"VsphereHostGroups":        s.opts.VSphereHostGroup,
+			"VsphereHostNames":         s.opts.VSphereHostName,
+			"VsphereHostURL":           s.opts.VCenterHostURL,
+			"VsphereHostUsername":      s.opts.VCenterHostUserName,
 		}
 
 		if s.opts.Password != "" {
@@ -461,9 +463,9 @@ func (s *service) BeforeServe(
 		if vPG, ok := csictx.LookupEnv(ctx, EnvVSpherePortGroup); ok {
 			opts.VSpherePortGroup = vPG
 		}
-		// read host group
-		if vHG, ok := csictx.LookupEnv(ctx, EnvVSphereHostGroup); ok {
-			opts.VSphereHostGroup = vHG
+		// read host (initiator group)
+		if vHN, ok := csictx.LookupEnv(ctx, EnvVSphereHostName); ok {
+			opts.VSphereHostName = vHN
 		}
 		// read vCenter host url
 		if vURL, ok := csictx.LookupEnv(ctx, EnvVCHost); ok {

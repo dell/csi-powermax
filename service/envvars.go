@@ -136,15 +136,15 @@ const (
 	// EnvVSpherePortGroup is an env variable which has FC portGroup for vSphere
 	EnvVSpherePortGroup = "X_CSI_VSPHERE_PORTGROUP"
 
-	// EnvVSphereHostGroup is an env variable which has FC hostGroup for vSphere
-	EnvVSphereHostGroup = "X_CSI_VSPHERE_HOSTGROUP"
+	// EnvVSphereHostName is an env variable which has FC host for vSphere
+	EnvVSphereHostName = "X_CSI_VSPHERE_HOSTNAME"
 
 	// EnvVCHost is an env variable that has vCenter Host endpoint
-	EnvVCHost = "X_CSI_VCenter_HOST"
+	EnvVCHost = "X_CSI_VCENTER_HOST"
 
 	// EnvVCUsername is an env variable that has vCenter username
-	EnvVCUsername = "X_CSI_VCenter_USERNAME"
+	EnvVCUsername = "X_CSI_VCENTER_USERNAME"
 
 	// EnvVCPassword is an env variable that has vCenter password
-	EnvVCPassword = "X_CSI_VCenter_PWD" // #nosec G101
+	EnvVCPassword = "X_CSI_VCENTER_PWD" // #nosec G101
 )
