@@ -420,11 +420,11 @@ vSphere:
   # fcPortGroup: an existing portGroup that driver will use for vSphere
   # recommended format: csi-x-VC-PG, x can be anything of user choice
   fcPortGroup: "csi-vsphere-VC-PG"
-  # fcHostGroup: an existing host group that driver will use for vSphere
-  # this hostGroup should contain initiators from all the ESXs/ESXi host
+  # fcHostName: an existing host(initiator group) that driver will use for vSphere
+  # this host should contain initiators from all the ESXs/ESXi host
   # where the cluster is deployed
-  # recommended format: csi-x-VC-HG, x can be anything of user choice
-  fcHostGroup: "csi-vsphere-VC-HG"
+  # recommended format: csi-x-VC-HN, x can be anything of user choice
+  fcHostName: "csi-vsphere-VC-HN"
   # vCenterHost: URL/endpoint of the vCenter where all the ESX are present
   vCenterHost: "00.000.000.00"
   # vCenterUserName: username from the vCenter credentials
