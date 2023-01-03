@@ -2935,9 +2935,9 @@ func (s *service) DeleteSnapshot(
 	// Idempotency check
 	snapInfo, err := pmaxClient.GetSnapshotInfo(ctx, symID, devID, snapID)
 	if err != nil {
-		//Unisphere returns "does not exist"
-		//when the snapshot is not found for Elm-SR ucode(9.0)
-		if strings.Contains(err.Error(), "does not exist") {
+		//Unisphere returns "not found"
+		//when the snapshot is not found for Juniper ucode(10.0)
+		if strings.Contains(err.Error(), "not found") {
 			return &csi.DeleteSnapshotResponse{}, nil
 		}
 		// Snapshot to be deleted couldn't be found in the system.
