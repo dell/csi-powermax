@@ -90,6 +90,7 @@ const (
 	Async                           = "ASYNC"
 	Sync                            = "SYNC"
 	Metro                           = "METRO"
+	ActiveBias                      = "ActiveBias"
 	Consistent                      = "Consistent"
 	Synchronized                    = "Synchronized"
 	FailedOver                      = "Failed Over"
@@ -566,6 +567,7 @@ func (s *service) CreateVolume(
 	// 1. Existence of a volume with matching volume name
 	// 2. Matching cylinderSize
 	// 3. Is a member of the storage group
+	// 4. Check if snapshot/volume target
 	log.Debug("Calling GetVolumeIDList for idempotency test")
 	// For now an exact match
 	volumeIDList, err := pmaxClient.GetVolumeIDList(ctx, symmetrixID, volumeIdentifier, false)
@@ -617,6 +619,15 @@ func (s *service) CreateVolume(
 					continue
 				}
 			}
+			if volContent != "" {
+				if srcSnapID != "" && replicationEnabled == "true" {
+					err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, pmaxClient)
+					if err != nil {
+						return nil, err
+					}
+				}
+			}
+
 			log.WithFields(fields).Info("Idempotent volume detected, returning success")
 			vol.VolumeID = fmt.Sprintf("%s-%s-%s", volumeIdentifier, symmetrixID, vol.VolumeID)
 			volResp := s.getCSIVolume(vol)
@@ -694,22 +705,31 @@ func (s *service) CreateVolume(
 
 	// If volume content source is specified, initiate no_copy to newly created volume
 	if contentSource != nil {
-		if srcVolID != "" {
-			//Build the temporary snapshot identifier
-			snapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
-			err = s.LinkVolumeToVolume(ctx, symID, srcVol, vol.VolumeID, snapID, reqID, pmaxClient)
-			if err != nil {
-				return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
+		if replicationEnabled == "true" {
+			if srcSnapID != "" {
+				err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, pmaxClient)
+				if err != nil {
+					return nil, err
+				}
 			}
-		} else if srcSnapID != "" {
-			//Unlink all previous targets from this snapshot if the link is in defined state
-			err = s.UnlinkTargets(ctx, symID, SrcDevID, pmaxClient)
-			if err != nil {
-				return nil, status.Errorf(codes.Internal, "Failed unlink existing target from snapshot (%s)", err.Error())
-			}
-			err = s.LinkVolumeToSnapshot(ctx, symID, srcVol.VolumeID, vol.VolumeID, snapID, reqID, pmaxClient)
-			if err != nil {
-				return nil, status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
+		} else {
+			if srcVolID != "" {
+				//Build the temporary snapshot identifier
+				snapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
+				err = s.LinkVolumeToVolume(ctx, symID, srcVol, vol.VolumeID, snapID, reqID, pmaxClient)
+				if err != nil {
+					return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
+				}
+			} else if srcSnapID != "" {
+				//Unlink all previous targets from this snapshot if the link is in defined state
+				err = s.UnlinkTargets(ctx, symID, SrcDevID, pmaxClient)
+				if err != nil {
+					return nil, status.Errorf(codes.Internal, "Failed unlink existing target from snapshot (%s)", err.Error())
+				}
+				err = s.LinkVolumeToSnapshot(ctx, symID, srcVol.VolumeID, vol.VolumeID, snapID, reqID, pmaxClient)
+				if err != nil {
+					return nil, status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
+				}
 			}
 		}
 	}
@@ -772,10 +792,58 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		return nil, err
 	}
 
-	// Volume or Snapshot Clone is not supported
-	if req.GetVolumeContentSource() != nil {
-		log.Error("VolumeContentSource:Clone Volume is not supported with replication")
-		return nil, status.Errorf(codes.InvalidArgument, "VolumeContentSource:Clone Volume is not supported with replication")
+	// params from snapshot request
+	var srcSnapID string
+	var symmID, SrcDevID, snapID string
+	var srcVol *types.Volume
+	var volContent string
+	// When content source is specified, the size of the new volume
+	// is determined based on the size of the source volume in the
+	// snapshot. The size of the new volume to be created should be
+	// greater than or equal to the size of snapshot source
+	contentSource := req.GetVolumeContentSource()
+	if contentSource != nil {
+		switch req.GetVolumeContentSource().GetType().(type) {
+		case *csi.VolumeContentSource_Volume:
+			log.Error("VolumeContentSource:Clone Volume is not supported with replication")
+			return nil, status.Errorf(codes.InvalidArgument, "VolumeContentSource:Clone Volume is not supported with replication")
+		case *csi.VolumeContentSource_Snapshot:
+			srcSnapID = req.GetVolumeContentSource().GetSnapshot().GetSnapshotId()
+			if srcSnapID != "" {
+				snapID, symmID, SrcDevID, _, _, err = s.parseCsiID(srcSnapID)
+				if err != nil {
+					// We couldn't comprehend the identifier.
+					log.Error("Snapshot identifier not in supported format: " + srcSnapID)
+					return nil, status.Error(codes.InvalidArgument, "Snapshot identifier not in supported format")
+				}
+				volContent = snapID
+			}
+			break
+		default:
+			return nil, status.Error(codes.InvalidArgument, "VolumeContentSource is missing volume and snapshot source")
+		}
+		// check snapshot is licensed
+		if err := s.IsSnapshotLicensed(ctx, symmID, pmaxClient); err != nil {
+			log.Error("Error - " + err.Error())
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+
+	if SrcDevID != "" && symmID != "" {
+		if symmID != symID {
+			log.Error("The volume content source is in different PowerMax array")
+			return nil, status.Errorf(codes.InvalidArgument, "The volume content source is in different PowerMax array")
+		}
+		srcVol, err = pmaxClient.GetVolumeByID(ctx, symID, SrcDevID)
+		if err != nil {
+			log.Error("Volume content source volume couldn't be found in the array: " + err.Error())
+			return nil, status.Errorf(codes.InvalidArgument, "Volume content source volume couldn't be found in the array: %s", err.Error())
+		}
+		// reset the volume size to match with source
+		if requiredCylinders < srcVol.CapacityCYL {
+			log.Error("Capacity specified is smaller than the source")
+			return nil, status.Error(codes.InvalidArgument, "Requested capacity is smaller than the source")
+		}
 	}
 
 	// Validate volume capabilities
@@ -837,6 +905,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		"requiredCylinders":                  requiredCylinders,
 		"storageGroupName":                   storageGroupName,
 		"CSIRequestID":                       reqID,
+		"SourceSnapshot":                     srcSnapID,
 		"ReplicationEnabled":                 "true",
 		"RemoteSymmID":                       remoteSymID,
 		"LocalRDFGroup":                      localRDFGrpNo,
@@ -893,6 +962,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	// 1. Existence of a volume with matching volume name
 	// 2. Matching cylinderSize
 	// 3. Is a member of the storage group
+	// 4. Is a snapshot/volume target
 	log.Debug("Calling GetVolumeIDList for idempotency test")
 	// For now an exact match
 	volumeIDList, err := pmaxClient.GetVolumeIDList(ctx, symID, volumeIdentifier, false)
@@ -954,16 +1024,27 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 				continue
 			}
 
+			// Check for snapshot target
+			if volContent != "" {
+				if srcSnapID != "" {
+					err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, pmaxClient)
+					if err != nil {
+						return nil, err
+					}
+				}
+			}
 			log.WithFields(fields).Info("Idempotent volume detected, returning success")
 			vol.VolumeID = fmt.Sprintf("%s-%s:%s-%s:%s", volumeIdentifier, symID, remoteSymID, vol.VolumeID, remoteVolumeID)
 			volResp := s.getCSIVolume(vol)
+			volResp.ContentSource = contentSource
 			//Set the volume context
 			attributes := map[string]string{
 				ServiceLevelParam: serviceLevel,
 				StoragePoolParam:  storagePoolID,
 				path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam): symID,
-				CapacityGB:   fmt.Sprintf("%.2f", vol.CapacityGB),
-				StorageGroup: storageGroupName,
+				CapacityGB:    fmt.Sprintf("%.2f", vol.CapacityGB),
+				ContentSource: volContent,
+				StorageGroup:  storageGroupName,
 				//Format the time output
 				"CreationTime": time.Now().Format("20060102150405"),
 			}
@@ -984,7 +1065,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		return nil, status.Errorf(codes.AlreadyExists, "A volume with the same name %s exists but has a different size than requested. Use a different name.", volumeName)
 	}
 
-	//CSI specific metada for authorization
+	//CSI specific metadata for authorization
 	var headerMetadata = addMetaData(req.GetParameters())
 
 	// Let's create the volume
@@ -1056,16 +1137,28 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		return nil, status.Errorf(codes.Internal, "Could not add volume in SG on R2: %s: %s", remoteVolumeID, err.Error())
 	}
 
+	// If volume content source is specified, initiate no_copy to newly created volume
+	if contentSource != nil {
+		if srcSnapID != "" {
+			err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, pmaxClient)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	// Formulate the return response
 	vol.VolumeID = fmt.Sprintf("%s-%s:%s-%s:%s", volumeIdentifier, symID, remoteSymID, vol.VolumeID, remoteVolumeID)
 	volResp := s.getCSIVolume(vol)
+	volResp.ContentSource = contentSource
 	//Set the volume context
 	attributes := map[string]string{
 		ServiceLevelParam: serviceLevel,
 		StoragePoolParam:  storagePoolID,
 		path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam): symID,
-		CapacityGB:   fmt.Sprintf("%.2f", vol.CapacityGB),
-		StorageGroup: storageGroupName,
+		CapacityGB:    fmt.Sprintf("%.2f", vol.CapacityGB),
+		ContentSource: volContent,
+		StorageGroup:  storageGroupName,
 		//Format the time output
 		"CreationTime": time.Now().Format("20060102150405"),
 	}
@@ -1081,6 +1174,38 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	}
 	log.WithFields(fields).Infof("Created volume with ID: %s", volResp.VolumeId)
 	return csiResp, nil
+}
+
+func (s *service) LinkSRDFVolToSnapshot(ctx context.Context, reqID, symID, srcVolID, snapID, localProtectionGroupID, localRDFGrpNo string, tgtVol *types.Volume, bias string, pmaxClient pmax.Pmax) error {
+	// Take lock on SG
+	var lockHandle string
+	lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
+	lockNum := RequestLock(lockHandle, reqID)
+	defer ReleaseLock(lockHandle, reqID, lockNum)
+	bbias, _ := strconv.ParseBool(bias)
+	if !tgtVol.SnapTarget {
+		//Unlink all previous targets from this snapshot if the link is in defined state
+		err := s.UnlinkTargets(ctx, symID, srcVolID, pmaxClient)
+		if err != nil {
+			return status.Errorf(codes.Internal, "Failed unlink existing target from snapshot (%s)", err.Error())
+		}
+		//before linking snapshot, we need to suspend the protected storage group
+		err = suspend(ctx, symID, localProtectionGroupID, localRDFGrpNo, pmaxClient)
+		if err != nil {
+			log.Errorf("suspend failed for (%s) err: %s", localProtectionGroupID, err.Error())
+			return status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
+		}
+		err = s.LinkVolumeToSnapshot(ctx, symID, srcVolID, tgtVol.VolumeID, snapID, reqID, pmaxClient)
+		if err != nil {
+			return status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
+		}
+	}
+	err := establish(ctx, symID, localProtectionGroupID, localRDFGrpNo, bbias, pmaxClient)
+	if err != nil {
+		log.Errorf("establish failed for (%s) err: %s", localProtectionGroupID, err.Error())
+		return status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
+	}
+	return nil
 }
 
 func addReplicationParamsToVolumeAttributes(attributes map[string]string, prefix, remoteSymID, repMode, remoteVolID, localRDFGrpNo, remoteRDFGrpNo string) {
