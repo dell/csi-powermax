@@ -369,6 +369,9 @@ func (s *service) CreateVolume(
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "Received error get/create RDFG, err: %s", err.Error())
 			}
+			if localRDFGrpNo == "" || remoteRDFGrpNo == "" {
+				return nil, status.Errorf(codes.Unavailable, "Can not fetch RDF Group for volume creation get/create RDFG")
+			}
 			log.Debugf("RDF group for given array pair and RDF mode: local(%s), remote(%s)", localRDFGrpNo, remoteRDFGrpNo)
 		}
 		if repMode == Metro {

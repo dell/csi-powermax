@@ -98,7 +98,6 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 	createRDFgPayload := new(types.RDFGroupCreate)
 	proceedWithCreate := false
 	rdfLabel := ""
-	createStatus := false
 
 	// check if there is already a RDFG exist for symmetrix pair and the mode
 	rdfLabel = buildRdfLabel(repMode, namespace, s.opts.ClusterPrefix)
@@ -108,12 +107,16 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 	rDFGList, err := pmaxClient.GetRDFGroupList(ctx, localSymID, types.QueryParams{
 		QueryRemSymID: remoteSymID,
 	})
+	if err != nil {
+		log.Errorf("Failed to fetch RDF pre existing group, Error (%s)", err.Error())
+		return "", "", err
+	}
 	for _, rDFGID := range rDFGList.RDFGroupIDs {
 		if strings.Compare(rdfLabel, rDFGID.Label) == 0 {
 			log.Debugf("found pre existing label for given array pair and RDF mode: %+v", rDFGID)
 			rDFG, err := pmaxClient.GetRDFGroupByID(ctx, localSymID, strconv.Itoa(rDFGID.RDFGNumber))
 			if err != nil {
-				log.Error(fmt.Sprintf("Failed to fetch RDF pre existing group, Error (%s)", err.Error()))
+				log.Errorf("Failed to fetch RDF pre existing group, Error (%s)", err.Error())
 				return "", "", err
 			}
 			log.Debugf("found pre-existing RDF group with label: %s", rDFGID.Label)
@@ -137,20 +140,23 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 		log.Error(fmt.Sprintf("Failed to fetch local ONLINE RDF Directors, Error (%s)", err.Error()))
 		return "", "", err
 	}
+
 	//For each of the onlineDirs Obtained, get the ONLINE ports
 	for _, dirs := range onlineDirList.RdfDirs {
 		onlinePortList, err := pmaxClient.GetLocalOnlineRDFPorts(ctx, dirs, localSymID)
 		if err != nil {
-			log.Error(fmt.Sprintf("Unable to get Port list for Online RDF Director:%s", dirs))
-			goto EXIT // If the Dir is online we have to get the port list otherwise something gone wrong
+			log.Errorf("Unable to get Port list for Online RDF Director:%s err: %s", dirs, err.Error())
+			// If the Dir is online we have to get the port list otherwise something gone wrong
+			return "", "", err
 		}
 		for _, ports := range onlinePortList.RdfPorts {
 			// SAN Scan per ONLINE DIR:PORT is quite time-consuming. Check for timeouts.
 			// Scan time also increases if multiple sites are zoned over the same RDF Port
 			onlinePortInfo, err := pmaxClient.GetRemoteRDFPortOnSAN(ctx, localSymID, dirs, ports)
 			if err != nil {
-				log.Error(fmt.Sprintf("Unable to get Remote Port on SAN for Local RDF port:(%s:%s)", dirs, ports))
-				goto EXIT // RDF Dir:Ports were online, yet we didn't get any Remote ports connected on SAN. something is wrong! Exit
+				log.Errorf("Unable to get Remote Port on SAN for Local RDF port:(%s:%s), err: %s", dirs, ports, err.Error())
+				// RDF Dir:Ports were online, yet we didn't get any Remote ports connected on SAN. something is wrong! Exit
+				return "", "", err
 			}
 			//Start Building the Req structure if the SAN SCAN reports a hit on the SID of the remoteSymm
 			for _, remArray := range onlinePortInfo.RemotePorts {
@@ -164,13 +170,12 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 					ports, _ := strconv.Atoi(ports)
 					LocalRDFDirPortInfo, err := pmaxClient.GetLocalRDFPortDetails(ctx, localSymID, dirs, ports)
 					if err != nil {
-						log.Error(fmt.Sprintf("Unable to get Remote Port on SAN for Local RDF port:(%s:%d)", dirs, ports))
-						createStatus = false
-						goto EXIT
+						log.Errorf("Unable to get Remote Port on SAN for Local RDF port:(%s:%d), err: %s", dirs, ports, err)
+						return "", "", err
 					}
 					log.Infof("checking if dir:%s,port:%d is already added to rdfpayload", dirs, ports)
 					if LocalRDFPortsNotAdded(createRDFgPayload, localSymID, dirs, ports) {
-						log.Error(fmt.Sprintf("appending dir:%s,port:%d ", dirs, ports))
+						log.Debugf("appending dir:%s,port:%d ", dirs, ports)
 						createRDFgPayload.LocalPorts = append(createRDFgPayload.LocalPorts, *LocalRDFDirPortInfo)
 					}
 					//Add Remote Ports
@@ -187,12 +192,12 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 		createRDFgPayload.RemoteRDFNum = remoteRDFG
 
 		// Fire the call
-		createStatus = pmaxClient.ExecuteCreateRDFGroup(ctx, localSymID, createRDFgPayload)
-		goto EXIT
-	}
-
-EXIT:
-	if createStatus == true {
+		err = pmaxClient.ExecuteCreateRDFGroup(ctx, localSymID, createRDFgPayload)
+		if err != nil {
+			log.Errorf("Unable to Create RDF Group %s", err.Error())
+			return "", "", err
+		}
+		// successfully created SRDF groups
 		return strconv.Itoa(localRDFG), strconv.Itoa(remoteRDFG), nil
 	}
 	return "", "", err
@@ -228,8 +233,8 @@ func (s *service) ProtectStorageGroup(ctx context.Context, symID, remoteSymID, s
 	// Proceed to Protect the SG
 	rdfg, err := pmaxClient.GetRDFGroupByID(ctx, symID, rdfGrpNo)
 	if err != nil {
-		log.Errorf("Could not get rdf group (%s) information on symID (%s)", symID, rdfGrpNo)
-		return status.Errorf(codes.Internal, "Could not get rdf group (%s) information on symID (%s). Error (%s)", symID, rdfGrpNo, err.Error())
+		log.Errorf("Could not get rdf group (%s) information on symID (%s)", rdfGrpNo, symID)
+		return status.Errorf(codes.Internal, "Could not get rdf group (%s) information on symID (%s). Error (%s)", rdfGrpNo, symID, err.Error())
 	}
 	if rdfg.Async && rdfg.NumDevices > 0 {
 		return status.Errorf(codes.Internal, "RDF group (%s) cannot be used for ASYNC, as it already has volume pairing", rdfGrpNo)
