@@ -732,7 +732,12 @@ func (f *feature) iCallRDFEnabledCreateVolume(volName, namespace, mode string, r
 	req.Name = volName
 	req.Parameters[CSIPVCNamespace] = namespace
 	req.Parameters[ReplicationModeParam] = mode
-	req.Parameters[LocalRDFGroupParam] = fmt.Sprintf("%d", rdfgNo)
+	if rdfgNo > 0 {
+		req.Parameters[LocalRDFGroupParam] = fmt.Sprintf("%d", rdfgNo)
+	} else {
+		req.Parameters[LocalRDFGroupParam] = ""
+		req.Parameters[RemoteRDFGroupParam] = ""
+	}
 	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
 	if f.err != nil {
 		log.Printf("CreateVolume called failed: %s", f.err.Error())
@@ -1032,6 +1037,18 @@ func (f *feature) iInduceError(errtype string) error {
 		mock.InducedErrors.FetchResponseError = true
 	case "RemoveVolumesFromSG":
 		mock.InducedErrors.RemoveVolumesFromSG = true
+	case "GetFreeRDFGError":
+		mock.InducedErrors.GetFreeRDFGError = true
+	case "GetLocalOnlineRDFDirsError":
+		mock.InducedErrors.GetLocalOnlineRDFDirsError = true
+	case "GetRemoteRDFPortOnSANError":
+		mock.InducedErrors.GetRemoteRDFPortOnSANError = true
+	case "GetLocalOnlineRDFPortsError":
+		mock.InducedErrors.GetLocalOnlineRDFPortsError = true
+	case "GetLocalRDFPortDetailsError":
+		mock.InducedErrors.GetLocalRDFPortDetailsError = true
+	case "CreateRDFGroupError":
+		mock.InducedErrors.CreateRDFGroupError = true
 	case "NoSymlinkForNodePublish":
 		cmd := exec.Command("rm", "-rf", nodePublishSymlinkDir)
 		_, err := cmd.CombinedOutput()
