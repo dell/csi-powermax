@@ -220,3 +220,27 @@ Feature: PowerMax CSI Interface
       | "RDFGroupHasPairError"            | "it is not empty"                 |
       | "DeleteStorageGroupError"         | "Error deleting storage group"    |
       | "FetchResponseError"              | "GetProtectedStorageGroup failed" |
+
+  @srdf
+  @v2.6.0
+  Scenario: Create SRDF volume with Auto-SRDF group
+    Given a PowerMax service
+    And I call RDF enabled CreateVolume "volume1" in namespace "test", mode "ASYNC" and RDFGNo 0
+    And a valid CreateVolumeResponse is returned
+
+  @srdf
+  @v2.6.0
+  Scenario Outline: Create SRDF volume with Auto-SRDF group with different errors
+    Given a PowerMax service
+    And I induce error <induced>
+    And I call RDF enabled CreateVolume "volume1" in namespace "test", mode "ASYNC" and RDFGNo 0
+    Then the error contains <errormsg>
+    Examples:
+      | induced                       | errormsg                                   |
+      | "GetFreeRDFGError"            | "Could not retrieve free RDF group"        |
+      | "GetLocalOnlineRDFDirsError"  | "Could not retrieve RDF director"          |
+      | "GetLocalOnlineRDFPortsError" | "Could not retrieve local online RDF port" |
+      | "GetRemoteRDFPortOnSANError"  | "Could not retrieve remote RDF port"       |
+      | "GetLocalRDFPortDetailsError" | "Could not retrieve local RDF port"        |
+      | "CreateRDFGroupError"         | "error creating RDF group"                 |
+      | "GetRDFGroupError"            | "the specified RA group does not exist"    |
