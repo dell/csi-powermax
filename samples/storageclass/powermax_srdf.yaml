@@ -76,11 +76,13 @@ parameters:
   # Optional: true, Default value: "false"
   replication.storage.dell.com/Bias: "false"
   # Local SRDF group which protects using Mode mentioned above
-  # Optional: false
+  # Optional: true
+  # For Auto SRDF group creation, it is optional
   # Examples: "100", "200"
   replication.storage.dell.com/RdfGroup: <RdfGroup>
   # Remote SRDF Group which is bound with Local SRDF group
-  # Optional: false
+  # Optional: true
+  # For Auto SRDF group creation, it is optional
   # Examples: "100", "200"
   replication.storage.dell.com/RemoteRDFGroup: <RemoteRDFGroup>
   # Storage class name on remote cluster to create remote PV
