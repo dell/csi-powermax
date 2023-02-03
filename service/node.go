@@ -32,7 +32,7 @@ import (
 	pmax "github.com/dell/gopowermax/v2"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/coreos/go-systemd/dbus"
+	"github.com/coreos/go-systemd/v22/dbus"
 	"github.com/dell/gobrick"
 	csictx "github.com/dell/gocsi/context"
 	"github.com/dell/gofsutil"
