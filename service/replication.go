@@ -745,12 +745,12 @@ func validateRDFState(ctx context.Context, symID, action, sgName, rdfGrpNo strin
 	state := psg.States[0]
 	switch action {
 	case Resume:
-		if state == Consistent {
+		if state == Consistent || state == Synchronized || state == ActiveBias {
 			log.Infof("SG (%s) is already in desired state: (%s)", sgName, state)
 			return true, nil
 		}
 	case Establish:
-		if state == Consistent {
+		if state == Consistent || state == Synchronized || state == ActiveBias {
 			log.Infof("SG (%s) is already in desired state: (%s)", sgName, state)
 			return true, nil
 		}
