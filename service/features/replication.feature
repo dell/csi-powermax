@@ -244,3 +244,33 @@ Feature: PowerMax CSI Interface
       | "GetLocalRDFPortDetailsError" | "Could not retrieve local RDF port"        |
       | "CreateRDFGroupError"         | "error creating RDF group"                 |
       | "GetRDFGroupError"            | "the specified RA group does not exist"    |
+
+  @srdf
+  @v2.6.0
+  Scenario Outline: Create a SRDF volume from a snapshot
+    Given a PowerMax service
+    And I call CreateVolume "volume1"
+    And a valid CreateVolumeResponse is returned
+    And I call CreateSnapshot "snapshot1" on "volume1"
+    And a valid CreateSnapshotResponse is returned
+    When I call RDF enabled CreateVolume "volume2" in namespace "test", mode <mode> and RDFGNo 13 from snapshot
+    Then a valid CreateVolumeResponse is returned
+    Examples:
+      | mode    |
+      | "ASYNC" |
+      | "SYNC"  |
+
+  @srdf
+  @v2.6.0
+  Scenario Outline: Create a SRDF volume from another volume
+    Given a PowerMax service
+    And I call CreateVolume "volume1"
+    And a valid CreateVolumeResponse is returned
+    And I induce error <induced>
+    When I call RDF enabled CreateVolume "volume2" in namespace "test", mode "ASYNC" and RDFGNo 13 from volume
+    Then the error contains <errormsg>
+    Examples:
+      | induced               | errormsg                                   |
+      | "none"                | "none"                                     |
+      | "LinkSnapshotError"   | "Failed to create SRDF volume from volume" |
+      | "MaxSnapSessionError" | "Failed to create SRDF volume from volume" |
