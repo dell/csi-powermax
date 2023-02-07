@@ -2,12 +2,10 @@ module github.com/dell/csi-powermax/v2
 
 go 1.19
 
-replace github.com/coreos/go-systemd => github.com/coreos/go-systemd/v22 v22.0.0
-
 require (
 	github.com/akutz/goof v0.1.2
 	github.com/container-storage-interface/spec v1.5.0
-	github.com/coreos/go-systemd v0.0.0-20190612170431-362f06ec6bc1
+	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/cucumber/godog v0.10.0
 	github.com/cucumber/messages-go/v10 v10.0.3
 	github.com/dell/dell-csi-extensions/common v1.1.0
@@ -15,7 +13,7 @@ require (
 	github.com/dell/dell-csi-extensions/replication v1.2.1
 	github.com/dell/gobrick v1.6.0
 	github.com/dell/gocsi v1.6.0
-	github.com/dell/gofsutil v1.11.0
+	github.com/dell/gofsutil v1.11.1-0.20230203082314-2f3fce6920eb
 	github.com/dell/goiscsi v1.6.0
 	github.com/dell/gopowermax/v2 v2.1.1-0.20230112084153-7be6a1877c44
 	github.com/fsnotify/fsnotify v1.4.9
@@ -33,7 +31,6 @@ require (
 require (
 	github.com/akutz/gosync v0.1.0 // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
-	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/cucumber/gherkin-go/v11 v11.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dell/gonvme v1.2.1-0.20221125163719-e388aeb3ebfe // indirect
