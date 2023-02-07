@@ -17,7 +17,8 @@ package service
 import (
 	"context"
 
-	"github.com/coreos/go-systemd/dbus"
+	"github.com/coreos/go-systemd/v22/dbus"
+
 	"github.com/dell/gobrick"
 	log "github.com/sirupsen/logrus"
 )
