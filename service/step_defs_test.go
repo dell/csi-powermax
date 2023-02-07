@@ -4214,6 +4214,84 @@ func (f *feature) IsSnapshotSource(ctx context.Context, symID string, devID stri
 	return false, nil
 }
 
+func (f *feature) iCallRDFEnabledCreateVolumeFromSnapshot(volName, namespace, mode string, rdfgNo int) error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := f.getSRDFCreateVolumeRequest()
+	req.Name = volName
+	req.Parameters[CSIPVCNamespace] = namespace
+	req.Parameters[ReplicationModeParam] = mode
+	if rdfgNo > 0 {
+		req.Parameters[LocalRDFGroupParam] = fmt.Sprintf("%d", rdfgNo)
+	} else {
+		req.Parameters[LocalRDFGroupParam] = ""
+		req.Parameters[RemoteRDFGroupParam] = ""
+	}
+	req.Name = "volumeFromSnap"
+	if f.wrongCapacity {
+		req.CapacityRange.RequiredBytes = 64 * 1024 * 1024 * 1024
+	}
+	if f.wrongStoragePool {
+		req.Parameters["storagepool"] = "bad storage pool"
+	}
+	var snapshotID string
+	if inducedErrors.invalidSnapID {
+		snapshotID = "invalid_snapshot"
+	} else {
+		snapshotID = f.createSnapshotResponse.GetSnapshot().GetSnapshotId()
+	}
+	source := &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID}
+	req.VolumeContentSource = new(csi.VolumeContentSource)
+	req.VolumeContentSource.Type = &csi.VolumeContentSource_Snapshot{Snapshot: source}
+	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
+	if f.err != nil {
+		fmt.Printf("Error on CreateVolume from snap: %s\n", f.err.Error())
+	}
+	return nil
+}
+
+func (f *feature) iCallRDFEnabledCreateVolumeFromVolume(volName, namespace, mode string, rdfgNo int) error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := f.getSRDFCreateVolumeRequest()
+	req.Name = volName
+	req.Parameters[CSIPVCNamespace] = namespace
+	req.Parameters[ReplicationModeParam] = mode
+	if rdfgNo > 0 {
+		req.Parameters[LocalRDFGroupParam] = fmt.Sprintf("%d", rdfgNo)
+	} else {
+		req.Parameters[LocalRDFGroupParam] = ""
+		req.Parameters[RemoteRDFGroupParam] = ""
+	}
+	req.Name = "volumeFromVolume"
+	if f.wrongCapacity {
+		req.CapacityRange.RequiredBytes = 64 * 1024 * 1024 * 1024
+	}
+	if f.wrongStoragePool {
+		req.Parameters["storagepool"] = "bad storage pool"
+	}
+	var volumeID string
+	if inducedErrors.noVolumeSource {
+		volumeID = ""
+	} else if inducedErrors.nonExistentVolume {
+		volumeID = fmt.Sprintf("CSI-TST-00000000-%s-000000000", f.symmetrixID)
+	} else if inducedErrors.invalidVolumeID {
+		volumeID = "000000000"
+	} else {
+		volumeID = f.volumeID
+	}
+	source := &csi.VolumeContentSource_VolumeSource{VolumeId: volumeID}
+	req.VolumeContentSource = new(csi.VolumeContentSource)
+	if volumeID != "" {
+		req.VolumeContentSource.Type = &csi.VolumeContentSource_Volume{Volume: source}
+	}
+	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
+	if f.err != nil {
+		fmt.Printf("Error on CreateVolume from snap: %s\n", f.err.Error())
+	}
+	return nil
+}
+
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -4423,4 +4501,6 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^ICallWithVolIDVolumeMigrate "([^"]*)"$`, f.iCallVolumeMigrateWithVolID)
 	s.Step(`^ICallWithParamsVolumeMigrate "([^"]*)" "([^"]*)" "([^"]*)"$`, f.iCallVolumeMigrateWithParams)
 	s.Step(`^I call VolumeMigrateWithDifferentTypes "([^"]*)"$`, f.iCallVolumeMigrateWithDifferentTypes)
+	s.Step(`^I call RDF enabled CreateVolume "([^"]*)" in namespace "([^"]*)", mode "([^"]*)" and RDFGNo (\d+) from snapshot$`, f.iCallRDFEnabledCreateVolumeFromSnapshot)
+	s.Step(`^I call RDF enabled CreateVolume "([^"]*)" in namespace "([^"]*)", mode "([^"]*)" and RDFGNo (\d+) from volume$`, f.iCallRDFEnabledCreateVolumeFromVolume)
 }

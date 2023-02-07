@@ -627,7 +627,7 @@ func (s *service) CreateVolume(
 						snapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
 						err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, snapID, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
 						if err != nil {
-							return nil, err
+							return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
 						}
 					}
 				}
@@ -716,7 +716,7 @@ func (s *service) CreateVolume(
 			if replicationEnabled == "true" {
 				err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, snapID, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
 				if err != nil {
-					return nil, err
+					return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
 				}
 			} else {
 				err = s.LinkVolumeToVolume(ctx, symID, srcVol, vol.VolumeID, snapID, reqID, pmaxClient)
