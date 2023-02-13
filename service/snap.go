@@ -608,11 +608,11 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 						log.Debugf("snap info: (%+v)", snap)
 						success, snapID := s.findSnapIDFromSnapName(snap.Name)
 						if success {
-							if (strings.HasPrefix(snapID, tempSnapTag)) ||
-								strings.HasPrefix(snapID, delSnapTag) {
+							if (strings.HasPrefix(snap.Name, tempSnapTag)) ||
+								strings.HasPrefix(snap.Name, delSnapTag) {
 								// Push the snapshot to cleanup worker
 								var cleanReq snapCleanupRequest
-								cleanReq.snapshotID = snapID
+								cleanReq.snapshotID = snap.Name
 								cleanReq.symmetrixID = symID
 								cleanReq.volumeID = id.Name
 								log.Debugf("Pushing (%s) on vol (%s) to the queue", snapID, id.Name)
