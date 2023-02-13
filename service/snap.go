@@ -198,7 +198,6 @@ func (s *service) IsSnapshotLicensed(ctx context.Context, symID string, pmaxClie
 }
 
 // UnlinkAndTerminate executes cleanup operation on the source/target volume
-
 // deviceID: This can be a source or target device or it can be both.
 //
 //	A. If it is only a target, this function will execute Unlink action and returns
@@ -606,6 +605,7 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 			for _, id := range volList.SymDevice {
 				for _, snap := range id.Snapshot {
 					if snap.Generation == 0 {
+						log.Debugf("snap info: (%+v)", snap)
 						success, snapID := s.findSnapIDFromSnapName(snap.Name)
 						if success {
 							if (strings.HasPrefix(snapID, tempSnapTag)) ||

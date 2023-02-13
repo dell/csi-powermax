@@ -696,13 +696,14 @@ func (s *service) Suspend(ctx context.Context, symID, sgName, rdfGrpNo string, p
 	return suspend(ctx, symID, sgName, rdfGrpNo, pmaxClient)
 }
 
-func establish(ctx context.Context, symID, sgName, rdfGrpNo string, bias bool, pmaxClient pmax.Pmax) error {
+func establish(ctx context.Context, symID, sgName, rdfGrpNo string, bias string, pmaxClient pmax.Pmax) error {
+	bbias, _ := strconv.ParseBool(bias)
 	inDesiredState, err := validateRDFState(ctx, symID, Establish, sgName, rdfGrpNo, pmaxClient)
 	if err != nil {
 		return err
 	}
 	if !inDesiredState {
-		err = pmaxClient.ExecuteReplicationActionOnSG(ctx, symID, Establish, sgName, rdfGrpNo, false, false, bias)
+		err = pmaxClient.ExecuteReplicationActionOnSG(ctx, symID, Establish, sgName, rdfGrpNo, false, false, bbias)
 		if err != nil {
 			log.Error(fmt.Sprintf("Establish: Failed to modify SG (%s) - Error (%s)", sgName, err.Error()))
 			return status.Errorf(codes.Internal, "Establish: Failed to modify SG (%s) - Error (%s)", sgName, err.Error())
@@ -713,7 +714,7 @@ func establish(ctx context.Context, symID, sgName, rdfGrpNo string, bias bool, p
 }
 
 // Establish validates current state of replication & executes 'Establish' on storage group replication link
-func (s *service) Establish(ctx context.Context, symID, sgName, rdfGrpNo string, bias bool, pmaxClient pmax.Pmax) error {
+func (s *service) Establish(ctx context.Context, symID, sgName, rdfGrpNo string, bias string, pmaxClient pmax.Pmax) error {
 	return establish(ctx, symID, sgName, rdfGrpNo, bias, pmaxClient)
 }
 

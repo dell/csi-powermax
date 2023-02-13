@@ -1211,29 +1211,37 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 }
 
 func (s *service) LinkSRDFVolToVolume(ctx context.Context, reqID, symID string, vol, tgtVol *types.Volume, snapID, localProtectionGroupID, localRDFGrpNo string, bias string, pmaxClient pmax.Pmax) error {
-	// Create a snapshot from the Source
-	// Set max 1 hr lifetime for the temporary snapshot
-	log.Debugf("Creating snapshot %s on %s and linking it to %s", snapID, vol.VolumeID, tgtVol.VolumeID)
-	var TTL int64 = 1
-	snapInfo, err := s.CreateSnapshotFromVolume(ctx, symID, vol, snapID, TTL, reqID, pmaxClient)
-	if err != nil {
-		if strings.Contains(err.Error(), "The maximum number of sessions has been exceeded for the specified Source device") {
-			return status.Errorf(codes.FailedPrecondition, "Failed to create snapshot: %s", err.Error())
+	// Check if target volume is already linked
+	if !tgtVol.SnapTarget {
+		// Create a snapshot from the Source
+		// Set max 1 hr lifetime for the temporary snapshot
+		log.Debugf("Creating snapshot %s on %s and linking it to %s", snapID, vol.VolumeID, tgtVol.VolumeID)
+		var TTL int64 = 1
+		snapInfo, err := s.CreateSnapshotFromVolume(ctx, symID, vol, snapID, TTL, reqID, pmaxClient)
+		if err != nil {
+			if strings.Contains(err.Error(), "The maximum number of sessions has been exceeded for the specified Source device") {
+				return status.Errorf(codes.FailedPrecondition, "Failed to create snapshot: %s", err.Error())
+			}
+			return err
 		}
-		return err
+		// Link the Target to the created snapshot
+		err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, vol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, tgtVol, bias, pmaxClient)
+		if err != nil {
+			return err
+		}
+		// Push the temporary snapshot created for cleanup
+		var cleanReq snapCleanupRequest
+		cleanReq.snapshotID = snapInfo.SnapshotName
+		cleanReq.symmetrixID = symID
+		cleanReq.volumeID = vol.VolumeID
+		cleanReq.requestID = reqID
+		snapCleaner.requestCleanup(&cleanReq)
 	}
-	// Link the Target to the created snapshot
-	err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, vol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, tgtVol, bias, pmaxClient)
+	err := establish(ctx, symID, localProtectionGroupID, localRDFGrpNo, bias, pmaxClient)
 	if err != nil {
-		return err
+		log.Errorf("establish failed for (%s) err: %s", localProtectionGroupID, err.Error())
+		return status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
 	}
-	// Push the temporary snapshot created for cleanup
-	var cleanReq snapCleanupRequest
-	cleanReq.snapshotID = snapInfo.SnapshotName
-	cleanReq.symmetrixID = symID
-	cleanReq.volumeID = vol.VolumeID
-	cleanReq.requestID = reqID
-	snapCleaner.requestCleanup(&cleanReq)
 	return nil
 }
 
@@ -1243,7 +1251,6 @@ func (s *service) LinkSRDFVolToSnapshot(ctx context.Context, reqID, symID, srcVo
 	lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
 	lockNum := RequestLock(lockHandle, reqID)
 	defer ReleaseLock(lockHandle, reqID, lockNum)
-	bbias, _ := strconv.ParseBool(bias)
 	if !tgtVol.SnapTarget {
 		//Unlink all previous targets from this snapshot if the link is in defined state
 		err := s.UnlinkTargets(ctx, symID, srcVolID, pmaxClient)
@@ -1261,7 +1268,7 @@ func (s *service) LinkSRDFVolToSnapshot(ctx context.Context, reqID, symID, srcVo
 			return status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
 		}
 	}
-	err := establish(ctx, symID, localProtectionGroupID, localRDFGrpNo, bbias, pmaxClient)
+	err := establish(ctx, symID, localProtectionGroupID, localRDFGrpNo, bias, pmaxClient)
 	if err != nil {
 		log.Errorf("establish failed for (%s) err: %s", localProtectionGroupID, err.Error())
 		return status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
@@ -3885,7 +3892,7 @@ func (s *service) ExecuteAction(ctx context.Context, req *csiext.ExecuteActionRe
 				return nil, err
 			}
 		case csiext.ActionTypes_ESTABLISH.String():
-			err := s.Establish(ctx, symID, protectionGroupID, rDFGroup, false, pmaxClient)
+			err := s.Establish(ctx, symID, protectionGroupID, rDFGroup, "false", pmaxClient)
 			if err != nil {
 				return nil, err
 			}
