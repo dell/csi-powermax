@@ -32,7 +32,7 @@ import (
 
 // The follow constants are for internal use within the pmax library.
 const (
-	TempSnap       = "CSI_TEMP_SNAP"
+	TempSnap       = "CSI-TEMP-SNAP"
 	Defined        = "Defined"
 	Link           = "Link"
 	Unlink         = "Unlink"
