@@ -307,6 +307,10 @@ func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams
 	return nil
 }
 
+func (s *service) ArrayMigrate(ctx context.Context, req *csiext.ArrayMigrateRequest) (*csiext.ArrayMigrateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "Unimplemented")
+}
+
 func versionUpgrade(ctx context.Context, params map[string]string, sourceScParams map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
 	return status.Error(codes.Unimplemented, "Unimplemented")
 }
