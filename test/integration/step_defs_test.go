@@ -496,6 +496,7 @@ func (f *feature) getMountVolumeRequest(name string) *csi.CreateVolumeRequest {
 	params := make(map[string]string)
 	params[service.SymmetrixIDParam] = f.symID
 	params[service.ServiceLevelParam] = f.serviceLevel
+	params[service.CSIPVCNamespace] = "INT"
 	params[service.StoragePoolParam] = f.srpID
 	req.Parameters = params
 	now := time.Now()
