@@ -81,10 +81,10 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dell/dell-csi-extensions/common v1.1.0 h1:BFWoXdAennOs+fFiYqsGo02AU27YEYT4jT7YKjWghnw=
 github.com/dell/dell-csi-extensions/common v1.1.0/go.mod h1:x68COjv2yqphSmGWZDPV9WcBENA9+e8v21aGFO5i3PQ=
-github.com/dell/dell-csi-extensions/migration v1.0.1 h1:OoKmA/Lj8MaPWfxSdRKL249jaSjKPFfjVr9k9eiwQbI=
-github.com/dell/dell-csi-extensions/migration v1.0.1/go.mod h1:fJ96sw0lLILdszZJungcxKAHedAjsdbluyLTXOsnGV8=
-github.com/dell/dell-csi-extensions/replication v1.2.1 h1:dx67k7BBN/aZKgPdOgO04PNFTciChnNwIx+Cnwlgq0s=
-github.com/dell/dell-csi-extensions/replication v1.2.1/go.mod h1:FU2kzS8/29GlK9iCdS+E70cyeWun63eNP44aHwg7jW8=
+github.com/dell/dell-csi-extensions/migration v1.0.2-0.20230112204455-8f3445ef5483 h1:XfIcmHAQA47HCGS1cy/Ybh7ktmwMESjoFH0axdXQEQk=
+github.com/dell/dell-csi-extensions/migration v1.0.2-0.20230112204455-8f3445ef5483/go.mod h1:fJ96sw0lLILdszZJungcxKAHedAjsdbluyLTXOsnGV8=
+github.com/dell/dell-csi-extensions/replication v1.2.2-0.20230112204455-8f3445ef5483 h1:sVMPxFaRBk80s+gwPAtzw1mtcjefDdvv1drkoyK1/kg=
+github.com/dell/dell-csi-extensions/replication v1.2.2-0.20230112204455-8f3445ef5483/go.mod h1:FU2kzS8/29GlK9iCdS+E70cyeWun63eNP44aHwg7jW8=
 github.com/dell/gobrick v1.6.0 h1:U0bfvCVaSCAm3LCoMULY4LOoG9ovrLj8dorwejU/wig=
 github.com/dell/gobrick v1.6.0/go.mod h1:xufugWfQbeLmHP16HKV1mkluR2DTYgeQD9V8KLG28oo=
 github.com/dell/gocsi v1.6.0 h1:ZmoMi17v1jK0RE0OGEivu52/RqHbOhP5cqs9SHExqa0=
