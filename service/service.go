@@ -387,11 +387,6 @@ func (s *service) BeforeServe(
 
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
 	opts.ProxyServiceHost, opts.ProxyServicePort, opts.UseProxy = s.getProxySettingsFromEnv()
-	if !opts.UseProxy && !inducedMockReverseProxy {
-		err := fmt.Errorf("CSI reverseproxy service host or port not found, CSI reverseproxy not installed properly")
-		log.Error(err.Error())
-		return err
-	}
 	opts.GrpcMaxThreads = 4
 	if maxThreads, ok := csictx.LookupEnv(ctx, EnvGrpcMaxThreads); ok {
 		maxIntThreads, err := strconv.Atoi(maxThreads)

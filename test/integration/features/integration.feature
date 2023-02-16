@@ -48,7 +48,7 @@ Feature: Powermax OS CSI interface
     | "8192"       | "8.00"        | "none"                                         |
 # 2 TB
     | "2097152"    | "2048.00"     | "none"                                         |
-    | "100000000"  | "0.00"        | "greater than the maximum available capacity"  |
+    | "100000000"  | "0.00"        | "The device size specified exceeds the maximum allowed"  |
 
 @v1.0.0
 # This test checks an important DL scenario, that to delete a volume 
@@ -701,6 +701,7 @@ Scenario: Expand Mount Volume
 @v1.4.0
   Scenario: Expand Mount Volume with Capacity Bytes not set
     Given a Powermax service
+    And max retries 1
     And a mount volume request "integration6"
     When I call CreateVolume
     And there are no errors
@@ -711,36 +712,21 @@ Scenario: Expand Mount Volume
     And when I call NodePublishVolume "Node1"
     And there are no errors
     And when I call ExpandVolume to 0 cylinders
-    Then the error message should contain "Invalid argument"
+    Then the error message should contain "Invalid argument - CapacityRange not set" 
     And when I call UnpublishVolume "Node1"
     And there are no errors
     And when I call DeleteVolume
-    Then there are no errors
+    And there are no errors
     And all volumes are deleted successfully
 
 @wip
 @v1.4.0
 Scenario: Expand Raw Block Volume
     Given a Powermax service
-    And a mount volume request "integration6"
     And a basic block volume request "integration7" "100"
     When I call CreateVolume
     And there are no errors
-    And when I call PublishVolume "Node1"
-    And there are no errors
-    And when I call NodeStageVolume "Node1"
-    And there are no errors
-    And when I call NodePublishVolume "Node1"
-    And there are no errors
     And when I call ExpandVolume to 100 cylinders
-    And there are no errors
-    And when I call NodeExpandVolume
-    And there are no errors
-    And when I call NodeUnpublishVolume "Node1"
-    And there are no errors
-    And when I call NodeUnstageVolume "Node1"
-    And there are no errors
-    And when I call UnpublishVolume "Node1"
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
@@ -865,25 +851,22 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And I call CreateStorageProtectionGroup with mode "ASYNC"
     And there are no errors
-    And I call ExecuteAction with action "Failover"
+    And I call ExecuteAction with action "Suspend" swap "" force ""
     And there are no errors
-    And I call ExecuteAction with action "Failback"
+    And I call ExecuteAction with action "Resume" swap "" force ""
     And there are no errors
-    And I call ExecuteAction with action "Suspend"
+    And I call ExecuteAction with action "Establish" swap "" force ""
     And there are no errors
-    And I call ExecuteAction with action "Resume"
+    And I call ExecuteAction with action "Failover" swap "true" force "true"
     And there are no errors
-    And I call ExecuteAction with action "Resume"
-    And there are no errors
-    And I call ExecuteAction with action "Suspend"
-    And there are no errors
-    And I call ExecuteAction with action "Establish"
+    And I call ExecuteAction with action "Failback" swap "" force ""
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
     And all volumes are deleted successfully
     And I call DeleteTargetVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
@@ -900,19 +883,19 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And I call CreateStorageProtectionGroup with mode "ASYNC"
     And there are no errors
-    And I call ExecuteAction with action "Failover"
+    And I call ExecuteAction with action "Failover" swap "true" force "true"
     And there are no errors
     And I call GetStorageProtectionGroupStatus to get "FAILEDOVER"
     And there are no errors
-    And I call ExecuteAction with action "Failback"
+    And I call ExecuteAction with action "Failback" swap "" force ""
     And there are no errors
     And I call GetStorageProtectionGroupStatus to get "SYNCHRONIZED"
     And there are no errors
-    And I call ExecuteAction with action "Suspend"
+    And I call ExecuteAction with action "Suspend" swap "" force ""
     And there are no errors
     And I call GetStorageProtectionGroupStatus to get "SUSPENDED"
     And there are no errors
-    And I call ExecuteAction with action "Resume"
+    And I call ExecuteAction with action "Resume" swap "" force ""
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors

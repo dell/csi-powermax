@@ -218,6 +218,8 @@ func (f *feature) addsAutoSRDFReplicationCapability(replicationMode string, name
 }
 
 func (f *feature) iCallCreateStorageProtectionGroup(replicationMode string) error {
+	time.Sleep(ShortSleepTime)
+        time.Sleep(30 * time.Second)
 	req := new(csiext.CreateStorageProtectionGroupRequest)
 	params := make(map[string]string)
 	params[path.Join(f.replicationPrefix, service.LocalRDFGroupParam)] = f.localRdfGrpNo
@@ -278,6 +280,8 @@ func (f *feature) iCallCreateRemoteVolume(replicationMode string) error {
 }
 
 func (f *feature) iCallDeleteLocalStorageProtectionGroup() error {
+	time.Sleep(ShortSleepTime)
+        time.Sleep(30 * time.Second)
 	req := new(csiext.DeleteStorageProtectionGroupRequest)
 	params := make(map[string]string)
 	params[path.Join(f.replicationContextPrefix, service.SymmetrixIDParam)] = f.symID
@@ -295,6 +299,8 @@ func (f *feature) iCallDeleteLocalStorageProtectionGroup() error {
 }
 
 func (f *feature) iCallDeleteRemoteStorageProtectionGroup() error {
+	time.Sleep(ShortSleepTime)
+	time.Sleep(30 * time.Second)
 	req := new(csiext.DeleteStorageProtectionGroupRequest)
 	params := make(map[string]string)
 	params[path.Join(f.replicationContextPrefix, service.SymmetrixIDParam)] = f.remotesymID
@@ -311,7 +317,7 @@ func (f *feature) iCallDeleteRemoteStorageProtectionGroup() error {
 	return nil
 }
 
-func (f *feature) iCallExecuteAction(action string) error {
+func (f *feature) iCallExecuteAction(action string, swap string, force string) error {
 	req := new(csiext.ExecuteActionRequest)
 	params := make(map[string]string)
 	repMode := f.createVolumeRequest.Parameters[path.Join(f.replicationPrefix, service.ReplicationModeParam)]
@@ -325,7 +331,16 @@ func (f *feature) iCallExecuteAction(action string) error {
 	}
 	switch action {
 	case "Failover":
-		actionType.Action.ActionTypes = csiext.ActionTypes_FAILOVER_REMOTE
+		if swap == "true" {
+                	actionType.Action.ActionTypes = csiext.ActionTypes_FAILOVER_REMOTE
+                        params[path.Join(f.replicationContextPrefix, service.SymmetrixIDParam)] = f.remotesymID
+                        params[path.Join(f.replicationContextPrefix, service.LocalRDFGroupParam)] = f.remoteRdfGrpNo
+                        req.ProtectionGroupId = f.remoteProtectedStorageGroup
+                        req.ProtectionGroupAttributes = params
+                        actionType.Action.ActionTypes = csiext.ActionTypes_FAILOVER_REMOTE
+                } else {
+                	actionType.Action.ActionTypes = csiext.ActionTypes_FAILOVER_WITHOUT_SWAP_REMOTE
+                }
 	case "Failback":
 		actionType.Action.ActionTypes = csiext.ActionTypes_FAILBACK_LOCAL
 	case "Establish":
@@ -378,6 +393,8 @@ func (f *feature) accessTypeIs(arg1 string) error {
 }
 
 func (f *feature) iCallCreateVolume() error {
+	time.Sleep(ShortSleepTime)
+        time.Sleep(30 * time.Second)
 	var err error
 	ctx := context.Background()
 	client := csi.NewControllerClient(grpcClient)
@@ -413,6 +430,8 @@ func (f *feature) createVolume(req *csi.CreateVolumeRequest) (*csi.CreateVolumeR
 }
 
 func (f *feature) whenICallDeleteVolume() error {
+	time.Sleep(ShortSleepTime)
+        time.Sleep(30 * time.Second)
 	err := f.deleteVolume(f.volID)
 	if err != nil {
 		fmt.Printf("DeleteVolume %s:\n", err.Error())
@@ -482,6 +501,7 @@ func (f *feature) theErrorMessageShouldContain(expected string) error {
 	if !strings.Contains(err0.Error(), expected) {
 		return errors.New(fmt.Sprintf("Error %s does not contain the expected message: %s", err0.Error(), expected))
 	}
+	f.errs[0] = nil
 	return nil
 }
 
@@ -497,6 +517,7 @@ func (f *feature) getMountVolumeRequest(name string) *csi.CreateVolumeRequest {
 	params[service.SymmetrixIDParam] = f.symID
 	params[service.ServiceLevelParam] = f.serviceLevel
 	params[service.StoragePoolParam] = f.srpID
+	params[service.CSIPVCNamespace] = "INT"
 	req.Parameters = params
 	now := time.Now()
 	req.Name = fmt.Sprintf("Int%d", now.Nanosecond())
@@ -631,6 +652,8 @@ func (f *feature) controllerPublishVolume(id string, nodeIDEnvVar string) error 
 
 func (f *feature) whenICallUnpublishVolume(nodeIDEnvVar string) error {
 	err := f.controllerUnpublishVolume(f.publishVolumeRequest.VolumeId, nodeIDEnvVar)
+	fmt.Printf("\n\n error=== %s",err)
+	
 	if err != nil {
 		fmt.Printf("ControllerUnpublishVolume failed: %s\n", err.Error())
 		f.addError(err)
@@ -1903,6 +1926,8 @@ func (f *feature) iCallDeleteSnapshotAndCreateSnapshotInParallel() error {
 }
 
 func (f *feature) iCallDeleteTargetVolume() error {
+	time.Sleep(SleepTime)
+	time.Sleep(30 * time.Second)
 	tgtID := len(f.volIDList) - 1
 	targetVolID := f.volIDList[tgtID]
 	volName, _, devID, err := f.parseCsiID(f.volID)
@@ -1926,6 +1951,8 @@ func (f *feature) iCallDeleteTargetVolume() error {
 		}
 	}
 	// Delete target volume from remote array
+	time.Sleep(SleepTime)
+        time.Sleep(30 * time.Second)
 	err = f.pmaxClient.DeleteVolume(context.Background(), f.remotesymID, devID)
 	if err != nil {
 		fmt.Printf("Target DeleteVolume %s:\n", err.Error())
@@ -2023,8 +2050,10 @@ func (f *feature) parseCsiID(csiID string) (
 }
 
 func (f *feature) whenICallExpandVolumeToCylinders(nCYL int64) error {
+	fmt.Printf("-------ExpandVolumeToCylinders   --------------\n\n")
 	err := f.controllerExpandVolume(f.volID, nCYL)
 	if err != nil {
+		fmt.Printf("-------============== --------------\n\n")
 		fmt.Printf("ControllerExpandVolume %s:\n", err.Error())
 		f.addError(err)
 	} else {
@@ -2065,12 +2094,15 @@ func (f *feature) controllerExpandVolume(volID string, nCYL int64) error {
 }
 
 func (f *feature) whenICallNodeExpandVolume() error {
+	fmt.Printf("NodeExpandVolume \n\n\n\n")
 	nodePublishReq := f.nodePublishVolumeRequest
 	if nodePublishReq == nil {
 		err := fmt.Errorf("Volume is not stage, nodePublishVolumeRequest not found")
 		return err
 	}
+	fmt.Printf("I want to check %s,%s:\n", f.volID, nodePublishReq.TargetPath)
 	err := f.nodeExpandVolume(f.volID, nodePublishReq.TargetPath)
+	fmt.Printf("error ==%s ",err)
 	if err != nil {
 		fmt.Printf("NodeExpandVolume %s:\n", err.Error())
 		f.addError(err)
@@ -2090,6 +2122,7 @@ func (f *feature) nodeExpandVolume(volID, volPath string) error {
 	ctx := context.Background()
 	client := csi.NewNodeClient(grpcClient)
 	// Retry loop to deal with API being overwhelmed
+	fmt.Printf("\n ctx=%s,req=%s\n",ctx, req)
 	for i := 0; i < f.maxRetryCount; i++ {
 		resp, err = client.NodeExpandVolume(ctx, req)
 		if err == nil {
@@ -2228,7 +2261,7 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call CreateRemoteVolume with mode "([^"]*)"$`, f.iCallCreateRemoteVolume)
 	s.Step(`^I call Delete LocalStorageProtectionGroup$`, f.iCallDeleteLocalStorageProtectionGroup)
 	s.Step(`^I call Delete RemoteStorageProtectionGroup$`, f.iCallDeleteRemoteStorageProtectionGroup)
-	s.Step(`^I call ExecuteAction with action "([^"]*)"$`, f.iCallExecuteAction)
+	s.Step(`^I call ExecuteAction with action "([^"]*)" swap "([^"]*)" force "([^"]*)"$`, f.iCallExecuteAction)
 	s.Step(`^I call GetStorageProtectionGroupStatus to get "([^"]*)"$`, f.iCallGetStorageProtectionGroupStatus)
 	s.Step(`^I check if volume exist$`, f.iCheckIfVolumeExist)
 	s.Step(`^I check if volume is deleted$`, f.iCheckIfVolumeIsDeleted)
