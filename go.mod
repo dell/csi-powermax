@@ -1,6 +1,6 @@
 module github.com/dell/csi-powermax/v2
 
-go 1.19
+go 1.20
 
 require (
 	github.com/akutz/goof v0.1.2
@@ -15,7 +15,7 @@ require (
 	github.com/dell/gocsi v1.6.0
 	github.com/dell/gofsutil v1.11.1-0.20230213102436-478d15c59d1d
 	github.com/dell/goiscsi v1.6.1-0.20230120052643-7d7bb9515e01
-	github.com/dell/gopowermax/v2 v2.1.1-0.20230118020618-73d5cfc00853
+	github.com/dell/gopowermax/v2 v2.1.1-0.20230215110943-5db6b59b1602
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.2
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
