@@ -261,14 +261,14 @@ spec:
               mountPath: /csi
         {{- if hasKey .Values "migration" }}
         {{- if eq .Values.migration.enabled true }}
-        - name: csi-node-rescaner
+        - name: csi-node-rescanner
           securityContext:
             privileged: true
             capabilities:
               add: [ "SYS_ADMIN" ]
             allowPrivilegeEscalation: true
           imagePullPolicy: {{ .Values.imagePullPolicy }}
-          image: {{  required "Must provide the node rescaner sidecar container image." .Values.migration.nodeRescanSidecarImage }}
+          image: {{  required "Must provide the node rescanner sidecar container image." .Values.migration.nodeRescanSidecarImage }}
           args:
             - "--csi-address=$(ADDRESS)"
             - "--retry-interval-start=1s"
