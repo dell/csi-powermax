@@ -83,6 +83,12 @@ rules:
   {{- end}}
   # below for dell-csi-migrator
   {{- if eq .Values.migration.enabled true}}
+  - apiGroups: [ "replication.storage.dell.com" ]
+    resources: [ "dellcsimigrationgroups" ]
+    verbs: [ "create", "delete", "get", "list", "patch", "update", "watch" ]
+  - apiGroups: [ "replication.storage.dell.com" ]
+    resources: [ "dellcsimigrationgroups/status" ]
+    verbs: [ "get", "patch", "update" ]
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["create", "delete", "get", "list", "watch", "update", "patch"]  
@@ -242,7 +248,6 @@ spec:
             - "--retry-interval-start=1s"
             - "--retry-interval-max=300s"
             - "--timeout=300s"
-            - "--repl-prefix={{ .Values.replication.replicationPrefix}}"
             - "--prefix={{ .Values.migration.migrationPrefix}}"
           env:
             - name: ADDRESS

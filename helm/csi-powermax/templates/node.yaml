@@ -1,4 +1,4 @@
-{{- if eq .Values.openshift true }}
+{{- if or (eq .Values.migration.enabled true) (eq .Values.openshift true) }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -14,10 +14,30 @@ metadata:
   name: {{ .Release.Name }}-node
   {{- end }}
 rules:
+  {{- if eq .Values.openshift true }}
   - apiGroups: ["security.openshift.io"]
     resources: ["securitycontextconstraints"]
     resourceNames: ["privileged"]
     verbs: ["use"]
+  {{- end }}
+    #below for node rescan sidecar
+  {{- if eq .Values.migration.enabled true}}
+  - apiGroups: ["replication.storage.dell.com"]
+    resources: ["dellcsimigrationgroups"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["replication.storage.dell.com"]
+    resources: ["dellcsimigrationgroups/status"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete", "get", "list", "watch", "update", "patch"]
+  - apiGroups: [ "" ]
+    resources: [ "events" ]
+    verbs: [ "list", "watch", "create", "update", "patch" ]
+  - apiGroups: [ "" ]
+    resources: [ "pods" ]
+    verbs: [ "get", "list", "watch", "update", "patch" ]
+  {{- end}}
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -40,7 +60,7 @@ roleRef:
   {{- end }}
   apiGroup: rbac.authorization.k8s.io
 ---
-{{ end}}
+{{ end }}
 kind: DaemonSet
 apiVersion: apps/v1
 metadata:
@@ -61,7 +81,7 @@ spec:
       labels:
         app: {{ .Release.Name }}-node
     spec:
-      {{- if eq .Values.openshift true }}
+      {{- if or (eq .Values.migration.enabled true) (eq .Values.openshift true) }}
       serviceAccountName: {{ .Release.Name }}-node
       {{ end }}
       {{ if .Values.node.nodeSelector }}
@@ -239,6 +259,49 @@ spec:
               mountPath: /registration
             - name: driver-path
               mountPath: /csi
+        {{- if hasKey .Values "migration" }}
+        {{- if eq .Values.migration.enabled true }}
+        - name: csi-node-rescanner
+          securityContext:
+            privileged: true
+            capabilities:
+              add: [ "SYS_ADMIN" ]
+            allowPrivilegeEscalation: true
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          image: {{  required "Must provide the node rescanner sidecar container image." .Values.migration.nodeRescanSidecarImage }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--retry-interval-start=1s"
+            - "--retry-interval-max=300s"
+            - "--timeout=300s"
+            - "--prefix={{ .Values.migration.migrationPrefix}}"
+          env:
+            - name: ADDRESS
+              value: /csi/csi_sock
+            - name: X_CSI_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: registration-dir
+              mountPath: /registration
+            - name: driver-path
+              mountPath: /csi
+            - name: dev
+              mountPath: /dev
+            - name: sys
+              mountPath: /sys
+            - name: noderoot
+              mountPath: {{ .Values.ISCSIChroot | default "/noderoot" }}
+            - name: volumedevices-path
+              mountPath: {{ .Values.kubeletConfigDir }}/plugins/kubernetes.io/csi/volumeDevices
+              mountPropagation: "Bidirectional"
+            - name: pods-path
+              mountPath: {{ .Values.kubeletConfigDir }}/pods
+              mountPropagation: "Bidirectional"
+        {{ end }}
+        {{ end }}
         {{- if hasKey .Values "authorization" }}
         {{- if eq .Values.authorization.enabled true }}
         - name: karavi-authorization-proxy

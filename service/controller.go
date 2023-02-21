@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
-
 	pmax "github.com/dell/gopowermax/v2"
 
 	csiext "github.com/dell/dell-csi-extensions/replication"
@@ -99,6 +98,7 @@ const (
 	Split                           = "Split"
 	SyncInProgress                  = "SyncInProg"
 	Vsphere                         = "VSPHERE"
+	MigrationActionCommit           = "Commit"
 )
 
 // Keys for parameters to CreateVolume
@@ -1307,7 +1307,7 @@ func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, l
 // For async mode, one srdf group can only have rdf pairing from one namespace
 // In async rdf mode there should be One to One correspondence between namespace and srdf group
 func (s *service) verifyProtectionGroupID(ctx context.Context, symID, localRdfGrpNo, repMode string, pmaxClient pmax.Pmax) error {
-	sgList, err := pmaxClient.GetStorageGroupIDList(ctx, symID)
+	sgList, err := pmaxClient.GetStorageGroupIDList(ctx, symID, "", false)
 	if err != nil {
 		return err
 	}
