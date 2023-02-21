@@ -29,16 +29,20 @@ const (
 	Synchronized = "Synchronized"
 )
 
-func getorCreateSGMigration(ctx context.Context, symID, remoteSymID, storageGroupID string, pmaxClient pmax.Pmax) (*types.MigrationSession, error) {
+func getOrCreateSGMigration(ctx context.Context, symID, remoteSymID, storageGroupID string, pmaxClient pmax.Pmax) (*types.MigrationSession, error) {
 	migrationSG, err := pmaxClient.GetStorageGroupMigrationByID(ctx, symID, storageGroupID)
-	log.Debugf("Migration session for sg %s: session: %v", storageGroupID, migrationSG)
-	if strings.Contains(err.Error(), "is not in a migration") || migrationSG == nil {
-		// not found
-		migrationSG, err = pmaxClient.CreateSGMigration(ctx, symID, remoteSymID, storageGroupID)
-		if err != nil {
+	if err != nil {
+		if strings.Contains(err.Error(), "is not in a migration") || migrationSG == nil {
+			// not found
+			migrationSG, err = pmaxClient.CreateSGMigration(ctx, symID, remoteSymID, storageGroupID)
+			if err != nil {
+				return nil, err
+			}
+		} else {
 			return nil, err
 		}
 	}
+	log.Debugf("Migration session for sg %s: session: %v", storageGroupID, migrationSG)
 	return migrationSG, nil
 }
 
@@ -91,18 +95,25 @@ func StorageGroupMigration(ctx context.Context, symID, remoteSymID, clusterPrefi
 		return false, err
 	}
 	for _, storageGroupID := range localSgNoSrpList.StorageGroupIDs {
-		// send migrate call to remote side
-		migrationSG, err := getorCreateSGMigration(ctx, symID, remoteSymID, storageGroupID, pmaxClient)
+		sg, err := pmaxClient.GetStorageGroup(ctx, symID, storageGroupID)
 		if err != nil {
-			log.Errorf("Failed to create array migration session for target array (%s) - Error (%s)", remoteSymID, err.Error())
-			return false, status.Errorf(codes.Internal, "to create array migration session for target array(%s) - Error (%s)", remoteSymID, err.Error())
+			log.Errorf("Failed to fetch details of SG(%s) - Error (%s)", storageGroupID, err.Error())
+			return false, status.Errorf(codes.Internal, "Failed to fetch details of SG(%s) - Error (%s)", storageGroupID, err.Error())
 		}
-		// fill in NodePairs
-		if NodePairs == nil {
-			NodePairs = make(map[string]string)
-		}
-		for _, pair := range migrationSG.DevicePairs {
-			NodePairs[pair.SrcVolumeName] = pair.TgtVolumeName
+		if sg.NumOfVolumes > 0 {
+			// send migrate call to remote side for SG having volumes
+			migrationSG, err := getOrCreateSGMigration(ctx, symID, remoteSymID, storageGroupID, pmaxClient)
+			if err != nil {
+				log.Errorf("Failed to create array migration session for target array (%s) - Error (%s)", remoteSymID, err.Error())
+				return false, status.Errorf(codes.Internal, "Failed to create array migration session for target array(%s) - Error (%s)", remoteSymID, err.Error())
+			}
+			// fill in NodePairs
+			if NodePairs == nil {
+				NodePairs = make(map[string]string)
+			}
+			for _, pair := range migrationSG.DevicePairs {
+				NodePairs[pair.SrcVolumeName] = pair.TgtVolumeName
+			}
 		}
 	}
 
