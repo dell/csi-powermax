@@ -226,20 +226,7 @@ func unlinkTarget(tgtVol *types.Volume, snapID, srcDevID, symID string, snapGene
 					// Overwrite whatever source device id information was sent
 					srcDevID = snapInfo.VolumeSnapshotLink[0].LinkSource
 					// get source details
-					srcSnapInfo, err := pmaxClient.GetVolumeSnapInfo(context.Background(), symID, srcDevID)
-					if err != nil {
-						return fmt.Errorf("failed to obtain snapshot info for source device")
-					}
-					for _, snapSrc := range srcSnapInfo.VolumeSnapshotSource {
-						snapID = snapSrc.SnapshotName
-						for _, linkedDevice := range snapSrc.LinkedVolumes {
-							if linkedDevice.TargetDevice == tgtVol.VolumeID {
-								// Found our match
-								snapGeneration = snapSrc.Generation
-								break
-							}
-						}
-					}
+					snapID = snapInfo.VolumeSnapshotLink[0].SnapshotName
 				}
 			}
 		}
