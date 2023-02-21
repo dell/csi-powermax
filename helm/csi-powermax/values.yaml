@@ -49,7 +49,7 @@ global:
 
 # Current version of the driver
 # Don't modify this value as this value will be used by the install script
-version: "v2.5.0"
+version: "v2.6.0"
 
 images:
   # "driver" defines the container image, used for the driver container.
@@ -255,8 +255,8 @@ enableCHAP: false
 csireverseproxy:
   # image: Define the container images used for the reverse proxy
   # Default value: None
-  # Example: "csipowermax-reverseproxy:v2.4.0"
-  image: dellemc/csipowermax-reverseproxy:v2.4.0
+  # Example: "csipowermax-reverseproxy:v2.5.0"
+  image: dellemc/csipowermax-reverseproxy:v2.5.0
   # "tlsSecret" defines the TLS secret that is created with certificate
   # and its associated key
   # Default value: None
