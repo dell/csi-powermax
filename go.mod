@@ -8,9 +8,9 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/cucumber/godog v0.10.0
 	github.com/cucumber/messages-go/v10 v10.0.3
-	github.com/dell/dell-csi-extensions/common v1.1.1-0.20230208231315-3fa5be96edff
-	github.com/dell/dell-csi-extensions/migration v1.0.2-0.20230208231315-3fa5be96edff
-	github.com/dell/dell-csi-extensions/replication v1.2.2-0.20230208231315-3fa5be96edff
+	github.com/dell/dell-csi-extensions/common v1.1.1-0.20230223220121-65f0c737bc34
+	github.com/dell/dell-csi-extensions/migration v1.0.2-0.20230223220121-65f0c737bc34
+	github.com/dell/dell-csi-extensions/replication v1.2.2-0.20230223220121-65f0c737bc34
 	github.com/dell/gobrick v1.6.1-0.20230214105503-1d11125e5822
 	github.com/dell/gocsi v1.6.0
 	github.com/dell/gofsutil v1.11.1-0.20230213102436-478d15c59d1d
