@@ -428,7 +428,5 @@ vSphere:
   fcHostName: "csi-vsphere-VC-HN"
   # vCenterHost: URL/endpoint of the vCenter where all the ESX are present
   vCenterHost: "00.000.000.00"
-  # vCenterUserName: username from the vCenter credentials
-  vCenterUserName: "user"
-  # vCenterPassword: password from the vCenter credentials
-  vCenterPassword: "pwd"
+  # vCenterCredSecret: secret name for the vCenter credentials
+  vCenterCredSecret: vcenter-creds
