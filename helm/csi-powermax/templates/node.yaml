@@ -205,9 +205,15 @@ spec:
             - name: X_CSI_VCENTER_HOST
               value: {{ required "Must provide hosr url for vsphere" .Values.vSphere.vCenterHost }}
             - name: X_CSI_VCENTER_USERNAME
-              value: {{ required "Must provide username for vsphere" .Values.vSphere.vCenterUserName }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.vSphere.vCenterCredSecret }}
+                  key: username
             - name: X_CSI_VCENTER_PWD
-              value: {{ required "Must provide password for vsphere" .Values.vSphere.vCenterPassword }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.vSphere.vCenterCredSecret }}
+                  key: password
             {{- end }}
           volumeMounts:
             - name: driver-path
