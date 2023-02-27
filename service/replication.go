@@ -125,13 +125,19 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 	}
 
 	// Create new RDFG pair, no pre-existing pair for symIDs and rep mode
-	nextFreeRDFG, err := pmaxClient.GetFreeLocalAndRemoteRDFg(ctx, localSymID, remoteSymID)
+	nextFreeRDFG, err := pmaxClient.GetFreeLocalAndRemoteRDFg(ctx, localSymID, "")
 	if err != nil {
 		log.Error(fmt.Sprintf("Failed to fetch free RDF groups, Error (%s)", err.Error()))
 		return "", "", err
 	}
 	localRDFG := nextFreeRDFG.LocalRdfGroup[0]
-	remoteRDFG := nextFreeRDFG.RemoteRdfGroup[0]
+	// Create new RDFG pair, no pre-existing pair for symIDs and rep mode
+	nextFreeRDFG, err = pmaxClient.GetFreeLocalAndRemoteRDFg(ctx, remoteSymID, "")
+	if err != nil {
+		log.Error(fmt.Sprintf("Failed to fetch free RDF groups, Error (%s)", err.Error()))
+		return "", "", err
+	}
+	remoteRDFG := nextFreeRDFG.LocalRdfGroup[0]
 	log.Infof("Fetched Local RDFg:(%d), remote RDFg:(%d)", localRDFG, remoteRDFG)
 
 	// We are only bothered about ONLINE RDF dirs, so get only those

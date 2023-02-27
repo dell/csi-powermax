@@ -382,7 +382,9 @@ migration:
   # Change this to use any specific version of the dell-csi-migrator sidecar
   # Default value: None
   image: dellemc/dell-csi-migrator:v1.1.0
-  nodeRescanSidecarImage: dellemc/dell-csi-node-sidecar:v1.0.0
+  # Node rescan sidecar does a rescan on nodes for identifying new paths
+  # Default value: dellemc/dell-csi-node-rescanner:v1.0.0
+  nodeRescanSidecarImage: dellemc/dell-csi-node-rescanner:v1.0.0
   # migrationPrefix: Determine if migration is enabled
   # Default value: "migration.storage.dell.com"
   # Examples: "migration.storage.dell.com"

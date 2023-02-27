@@ -159,7 +159,7 @@ func StorageGroupCommit(ctx context.Context, symID, action string, pmaxClient pm
 			return false, status.Errorf(codes.Internal, "error getting Migration session for SG %s on sym %s: %s", id, symID, err.Error())
 		}
 		if mgSG.State == Synchronized {
-			_, err := pmaxClient.ModifyMigrationSession(ctx, symID, action, mgSG.StorageGroup)
+			err := pmaxClient.ModifyMigrationSession(ctx, symID, action, mgSG.StorageGroup)
 			if err != nil {
 				return false, status.Errorf(codes.Internal, "error modifying Migration session for SG %s on sym %s: %s", id, symID, err.Error())
 			}
