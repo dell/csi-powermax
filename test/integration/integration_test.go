@@ -97,7 +97,7 @@ func TestMain(m *testing.M) {
 		Output: write,
 		Format: "junit",
 		Paths:  []string{"features"},
-		Tags:   "@v1.0.0",
+		Tags:   "@v10.10.10",
 	})
 	if godogExit > exitVal {
 		exitVal = godogExit
