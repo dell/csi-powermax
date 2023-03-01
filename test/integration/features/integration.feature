@@ -3,7 +3,7 @@ Feature: Powermax OS CSI interface
   I want to run a system test
   So that I know the service functions correctly.
 
-@v1.0.0
+@v10.10.10
   Scenario: Create and delete basic thick large volume
     Given a Powermax service
     And a basic block volume request "integration1" "65536"
