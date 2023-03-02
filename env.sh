@@ -18,6 +18,7 @@ export X_CSI_POWERMAX_CONFIG_PATH="deploy/config.yaml"
 export X_CSI_MANAGED_ARRAYS="000000000001"
 
 # HTTP endpoint of Unisphere
+# set this to "" if using revproxy
 export X_CSI_POWERMAX_ENDPOINT="https://0.0.0.1:8443"
 
 # EnvUser is the name of the environment variable used to set the
@@ -80,3 +81,11 @@ export X_CSI_GRPC_MAX_THREADS="50"
 # Set this value to the timeout as: "300ms", "1.5h" or "2h45m".
 # Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h"
 export X_CSI_UNISPHERE_TIMEOUT="5m"
+
+# variables for reverseproxy
+# service name of the revproxy
+export X_CSI_POWERMAX_PROXY_SERVICE_NAME="powermax-revproxy"
+# Cluster IP of the revproxy service
+export POWERMAX_REVPROXY_SERVICE_HOST="0.0.0.0"
+# Port of the revproxy service
+export POWERMAX_REVPROXY_SERVICE_PORT="2222"
