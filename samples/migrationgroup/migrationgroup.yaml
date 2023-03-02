@@ -1,0 +1,15 @@
+apiVersion: "replication.storage.dell.com/v1"
+kind: DellCSIMigrationGroup
+metadata:
+  # custom name of the migration group
+  # Default value: pmax-migration
+  name: pmax-migration
+spec:
+  # driverName: exact name of CSI Powermax driver
+  driverName: "csi-powermax.dellemc.com"
+  # sourceID: source ArrayID
+  sourceID: "000000001234"
+  # targetID: target ArrayID
+  targetID: "000000005678"
+  migrationGroupAttributes:
+    action: "migrate"

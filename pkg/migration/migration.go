@@ -180,10 +180,12 @@ func AddVolumesToRemoteSG(ctx context.Context, remoteSymID string, pmaxClient pm
 		return false, nil
 	}
 	for storageGroup, remoteVols := range SGToRemoteVols {
-		err := pmaxClient.AddVolumesToStorageGroupS(ctx, remoteSymID, storageGroup, true, remoteVols...)
-		if err != nil {
-			log.Error(fmt.Sprintf("Could not add volume in SG on R2: %s: %s", remoteSymID, err.Error()))
-			return false, status.Errorf(codes.Internal, "Could not add volume in SG on R2: %s: %s", remoteSymID, err.Error())
+		if len(remoteVols) > 0 {
+			err := pmaxClient.AddVolumesToStorageGroupS(ctx, remoteSymID, storageGroup, true, remoteVols...)
+			if err != nil {
+				log.Error(fmt.Sprintf("Could not add volume in SG on R2: %s: %s", remoteSymID, err.Error()))
+				return false, status.Errorf(codes.Internal, "Could not add volume in SG on R2: %s: %s", remoteSymID, err.Error())
+			}
 		}
 	}
 	return true, nil
