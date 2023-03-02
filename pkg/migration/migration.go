@@ -159,7 +159,7 @@ func StorageGroupCommit(ctx context.Context, symID, action string, pmaxClient pm
 			return false, status.Errorf(codes.Internal, "error getting Migration session for SG %s on sym %s: %s", id, symID, err.Error())
 		}
 		if mgSG.State == Synchronized {
-			_, err := pmaxClient.ModifyMigrationSession(ctx, symID, action, mgSG.StorageGroup)
+			err := pmaxClient.ModifyMigrationSession(ctx, symID, action, mgSG.StorageGroup)
 			if err != nil {
 				return false, status.Errorf(codes.Internal, "error modifying Migration session for SG %s on sym %s: %s", id, symID, err.Error())
 			}
@@ -180,10 +180,12 @@ func AddVolumesToRemoteSG(ctx context.Context, remoteSymID string, pmaxClient pm
 		return false, nil
 	}
 	for storageGroup, remoteVols := range SGToRemoteVols {
-		err := pmaxClient.AddVolumesToStorageGroupS(ctx, remoteSymID, storageGroup, true, remoteVols...)
-		if err != nil {
-			log.Error(fmt.Sprintf("Could not add volume in SG on R2: %s: %s", remoteSymID, err.Error()))
-			return false, status.Errorf(codes.Internal, "Could not add volume in SG on R2: %s: %s", remoteSymID, err.Error())
+		if len(remoteVols) > 0 {
+			err := pmaxClient.AddVolumesToStorageGroupS(ctx, remoteSymID, storageGroup, true, remoteVols...)
+			if err != nil {
+				log.Error(fmt.Sprintf("Could not add volume in SG on R2: %s: %s", remoteSymID, err.Error()))
+				return false, status.Errorf(codes.Internal, "Could not add volume in SG on R2: %s: %s", remoteSymID, err.Error())
+			}
 		}
 	}
 	return true, nil

@@ -165,6 +165,7 @@ func (f *feature) aBasicBlockVolumeRequest(name string, size int64) error {
 	params[service.StoragePoolParam] = f.srpID
 	params["thickprovisioning"] = "false"
 	params[service.ApplicationPrefixParam] = "INT"
+	params[service.CSIPVCNamespace] = "INT"
 	req.Parameters = params
 	now := time.Now()
 	req.Name = fmt.Sprintf("Int%d", now.Nanosecond())

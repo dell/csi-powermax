@@ -15,7 +15,7 @@ require (
 	github.com/dell/gocsi v1.6.0
 	github.com/dell/gofsutil v1.11.1-0.20230213102436-478d15c59d1d
 	github.com/dell/goiscsi v1.6.1-0.20230120052643-7d7bb9515e01
-	github.com/dell/gopowermax/v2 v2.1.1-0.20230216101749-27d0fda43f17
+	github.com/dell/gopowermax/v2 v2.1.1-0.20230302052345-c2fc0f43c3c2
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.2
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
