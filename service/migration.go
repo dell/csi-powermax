@@ -352,6 +352,8 @@ func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequ
 
 	switch action.GetActionTypes() {
 	case csimgr.ActionTypes_MG_MIGRATE:
+		// reset migration cache
+		migration.ResetCache()
 		//env setup call
 		_, err := migration.GetOrCreateMigrationEnvironment(ctx, localSymID, remoteSymID, pmaxClient)
 		if err != nil {
@@ -412,7 +414,7 @@ func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequ
 			log.Error(fmt.Sprintf("Failed to remove array migration environment for target array (%s) - Error (%s)", remoteSymID, err.Error()))
 			return csiMgrResp, status.Errorf(codes.Internal, "to remove array migration environment for target array(%s) - Error (%s)", remoteSymID, err.Error())
 		}
-
+		migration.CacheReset = false
 		csiMgrResp := &csimgr.ArrayMigrateResponse{
 			Success: true,
 			ActionTypes: &csimgr.ArrayMigrateResponse_Action{
