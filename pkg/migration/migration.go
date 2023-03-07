@@ -18,7 +18,11 @@ var NodePairs map[string]string
 // SGToRemoteVols contains -  csi-ABC-local-sg : [00031, ...]
 var SGToRemoteVols map[string][]string
 
+// localSGVolumeList contains - csi-ABC-local-sg: [0002D, ...]
 var localSGVolumeList map[string]*types.VolumeIterator
+
+// CacheReset is flag for cache
+var CacheReset bool
 
 const (
 	// CsiNoSrpSGPrefix to be used as filter
@@ -29,17 +33,15 @@ const (
 	Synchronized = "Synchronized"
 )
 
-func getorCreateSGMigration(ctx context.Context, symID, remoteSymID, storageGroupID string, pmaxClient pmax.Pmax) (*types.MigrationSession, error) {
-	migrationSG, err := pmaxClient.GetStorageGroupMigrationByID(ctx, symID, storageGroupID)
-	log.Debugf("Migration session for sg %s: session: %v", storageGroupID, migrationSG)
-	if strings.Contains(err.Error(), "is not in a migration") || migrationSG == nil {
-		// not found
-		migrationSG, err = pmaxClient.CreateSGMigration(ctx, symID, remoteSymID, storageGroupID)
-		if err != nil {
-			return nil, err
-		}
+// ResetCache resets all the maps being used with migration
+func ResetCache() {
+	if !CacheReset {
+		NodePairs = make(map[string]string)
+		SGToRemoteVols = make(map[string][]string)
+		localSGVolumeList = make(map[string]*types.VolumeIterator)
+		CacheReset = true
+		log.Debugf("Migration cache reset done.")
 	}
-	return migrationSG, nil
 }
 
 // ListContains return true if x is found in a[]
@@ -50,6 +52,24 @@ func ListContains(a []string, x string) bool {
 		}
 	}
 	return false
+}
+
+func getOrCreateSGMigration(ctx context.Context, symID, remoteSymID, storageGroupID string, pmaxClient pmax.Pmax) (*types.MigrationSession, error) {
+	migrationSG, err := pmaxClient.GetStorageGroupMigrationByID(ctx, symID, storageGroupID)
+	if err != nil {
+		if strings.Contains(err.Error(), "is not in a migration") || migrationSG == nil {
+			// not found
+			migrationSG, err = pmaxClient.CreateSGMigration(ctx, symID, remoteSymID, storageGroupID)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// generic error, return
+			return nil, err
+		}
+	}
+	log.Debugf("Migration session for sg %s: session: %v", storageGroupID, migrationSG)
+	return migrationSG, nil
 }
 
 // StorageGroupMigration creates migration session for "no-srp" masking view storage groups
@@ -65,22 +85,22 @@ func StorageGroupMigration(ctx context.Context, symID, remoteSymID, clusterPrefi
 		return false, err
 	}
 
-	if localSGVolumeList == nil {
-		localSGVolumeList = make(map[string]*types.VolumeIterator)
-	}
-
 	for _, localSGID := range localSgList.StorageGroupIDs {
 		volumeIDList, err := pmaxClient.GetVolumesInStorageGroupIterator(ctx, symID, localSGID)
 		if err != nil {
 			log.Error("Error getting  storage group volume list: " + err.Error())
 			return false, status.Errorf(codes.Internal, "Error getting storage group volume list: %s", err.Error())
 		}
-		localSGVolumeList[localSGID] = volumeIDList
-		//Remove the volumes from the srp SG
-		for _, vol := range volumeIDList.ResultList.VolumeList {
-			_, err := pmaxClient.RemoveVolumesFromStorageGroup(ctx, symID, localSGID, true, vol.VolumeIDs)
-			if err != nil {
-				log.Errorf("Error removing volumes %s from protected SG %s with error: %s", vol.VolumeIDs, localSGID, err.Error())
+		// check the no of volumes in SG localSGID, if exist continue, else ignore
+		if volumeIDList.Count > 0 {
+			// add entry to cache
+			localSGVolumeList[localSGID] = volumeIDList
+			//Remove the volumes from the srp SG
+			for _, vol := range volumeIDList.ResultList.VolumeList {
+				_, err := pmaxClient.RemoveVolumesFromStorageGroup(ctx, symID, localSGID, true, vol.VolumeIDs)
+				if err != nil {
+					log.Errorf("Error removing volumes %s from protected SG %s with error: %s", vol.VolumeIDs, localSGID, err.Error())
+				}
 			}
 		}
 	}
@@ -91,18 +111,21 @@ func StorageGroupMigration(ctx context.Context, symID, remoteSymID, clusterPrefi
 		return false, err
 	}
 	for _, storageGroupID := range localSgNoSrpList.StorageGroupIDs {
-		// send migrate call to remote side
-		migrationSG, err := getorCreateSGMigration(ctx, symID, remoteSymID, storageGroupID, pmaxClient)
+		sg, err := pmaxClient.GetStorageGroup(ctx, symID, storageGroupID)
 		if err != nil {
-			log.Errorf("Failed to create array migration session for target array (%s) - Error (%s)", remoteSymID, err.Error())
-			return false, status.Errorf(codes.Internal, "to create array migration session for target array(%s) - Error (%s)", remoteSymID, err.Error())
+			log.Errorf("Failed to fetch details of SG(%s) - Error (%s)", storageGroupID, err.Error())
+			return false, status.Errorf(codes.Internal, "Failed to fetch details of SG(%s) - Error (%s)", storageGroupID, err.Error())
 		}
-		// fill in NodePairs
-		if NodePairs == nil {
-			NodePairs = make(map[string]string)
-		}
-		for _, pair := range migrationSG.DevicePairs {
-			NodePairs[pair.SrcVolumeName] = pair.TgtVolumeName
+		if sg.NumOfVolumes > 0 {
+			// send migrate call to remote side for SG having volumes
+			migrationSG, err := getOrCreateSGMigration(ctx, symID, remoteSymID, storageGroupID, pmaxClient)
+			if err != nil {
+				log.Errorf("Failed to create array migration session for target array (%s) - Error (%s)", remoteSymID, err.Error())
+				return false, status.Errorf(codes.Internal, "Failed to create array migration session for target array(%s) - Error (%s)", remoteSymID, err.Error())
+			}
+			for _, pair := range migrationSG.DevicePairs {
+				NodePairs[pair.SrcVolumeName] = pair.TgtVolumeName
+			}
 		}
 	}
 
@@ -126,14 +149,15 @@ func StorageGroupMigration(ctx context.Context, symID, remoteSymID, clusterPrefi
 				log.Error("Error creating storage group on remote array: " + err.Error())
 				return false, status.Errorf(codes.Internal, "Error creating storage group on remote array: %s", err.Error())
 			}
+		}
 
-			var remoteVolIDs []string
+		var remoteVolIDs []string
+		//check if localSGID had any volumes to be migrated
+		if _, ok := localSGVolumeList[localSGID]; ok {
 			for _, vol := range localSGVolumeList[localSGID].ResultList.VolumeList {
-				remoteVolIDs = append(remoteVolIDs, NodePairs[vol.VolumeIDs])
-			}
-			// initialize
-			if SGToRemoteVols == nil {
-				SGToRemoteVols = make(map[string][]string)
+				if _, ok := NodePairs[vol.VolumeIDs]; ok {
+					remoteVolIDs = append(remoteVolIDs, NodePairs[vol.VolumeIDs])
+				}
 			}
 			SGToRemoteVols[localSGID] = remoteVolIDs
 		}
@@ -164,7 +188,7 @@ func StorageGroupCommit(ctx context.Context, symID, action string, pmaxClient pm
 				return false, status.Errorf(codes.Internal, "error modifying Migration session for SG %s on sym %s: %s", id, symID, err.Error())
 			}
 		} else {
-			return false, status.Errorf(codes.Internal, "Waiting for SG to be in SYNC state, current state %s of SG %s", mgSG.State, id)
+			return false, status.Errorf(codes.Internal, "Waiting for SG to be in SYNC state, current state of SG %s is %s", id, mgSG.State)
 		}
 	}
 	return true, nil
