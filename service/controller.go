@@ -3688,6 +3688,14 @@ func (s *service) DeleteStorageProtectionGroup(ctx context.Context, req *csiext.
 	return &csiext.DeleteStorageProtectionGroupResponse{}, nil
 }
 
+func (s *service) DeleteRemoteVolume(ctx context.Context,
+	req *csiext.DeleteRemoteVolumeRequest) (*csiext.DeleteRemoteVolumeResponse, error) {
+
+	log.Info("!!! Deleting Remote Volume !!!")
+
+	return &csiext.DeleteRemoteVolumeResponse{}, nil
+}
+
 func addMetaData(params map[string]string) map[string][]string {
 	// CSI specific metadata header for authorization
 	log.Debug("Creating meta data for HTTP header")
