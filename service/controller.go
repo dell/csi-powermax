@@ -3688,12 +3688,12 @@ func (s *service) DeleteStorageProtectionGroup(ctx context.Context, req *csiext.
 	return &csiext.DeleteStorageProtectionGroupResponse{}, nil
 }
 
-func (s *service) DeleteRemoteVolume(ctx context.Context,
-	req *csiext.DeleteRemoteVolumeRequest) (*csiext.DeleteRemoteVolumeResponse, error) {
+func (s *service) DeleteLocalVolume(ctx context.Context,
+	req *csiext.DeleteLocalVolumeRequest) (*csiext.DeleteLocalVolumeResponse, error) {
 
 	log.Info("!!! Deleting Remote Volume !!!")
 
-	return &csiext.DeleteRemoteVolumeResponse{}, nil
+	return &csiext.DeleteLocalVolumeResponse{}, nil
 }
 
 func addMetaData(params map[string]string) map[string][]string {
