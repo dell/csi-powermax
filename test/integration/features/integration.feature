@@ -883,7 +883,7 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And I call CreateStorageProtectionGroup with mode "ASYNC"
     And there are no errors
-    And I call ExecuteAction with action "Failover" swap "true" force "true"
+    And I call ExecuteAction with action "Failover" swap "" force ""
     And there are no errors
     And I call GetStorageProtectionGroupStatus to get "FAILEDOVER"
     And there are no errors
