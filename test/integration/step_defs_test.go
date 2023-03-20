@@ -1748,6 +1748,8 @@ func (f *feature) iCreateVolumesFromVolumeInParallel(nVols int) error {
 	return nil
 }
 func (f *feature) iCallDeleteSnapshotInParallel() error {
+	time.Sleep(SleepTime)
+        time.Sleep(30 * time.Second)
 	nSnaps := len(f.snapIDList)
 	fmt.Printf("The number of snapshots to delete%d ", nSnaps)
 	done := make(chan bool, nSnaps)
@@ -1927,7 +1929,7 @@ func (f *feature) iCallDeleteSnapshotAndCreateSnapshotInParallel() error {
 
 func (f *feature) iCallDeleteTargetVolume() error {
 	time.Sleep(SleepTime)
-	time.Sleep(30 * time.Second)
+	time.Sleep(60 * time.Second)
 	tgtID := len(f.volIDList) - 1
 	targetVolID := f.volIDList[tgtID]
 	volName, _, devID, err := f.parseCsiID(f.volID)
