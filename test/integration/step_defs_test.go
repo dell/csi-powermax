@@ -818,6 +818,7 @@ func (f *feature) nodeStageVolume(id string, path string) error {
 }
 
 func (f *feature) whenICallNodePublishVolume(arg1 string) error {
+	time.Sleep(30 * time.Second)
 	err := f.nodePublishVolume(f.volID, "")
 	if err != nil {
 		fmt.Printf("NodePublishVolume failed: %s\n", err.Error())
@@ -1649,6 +1650,7 @@ func (f *feature) iCreateSnapshotsInParallel(nSnaps int) error {
 }
 
 func (f *feature) iCreateVolumesFromSnapshotInParallel(nVols int) error {
+	time.Sleep(30 * time.Second)
 	idchan := make(chan string, nVols)
 	errchan := make(chan error, nVols)
 	t0 := time.Now()
@@ -1929,7 +1931,7 @@ func (f *feature) iCallDeleteSnapshotAndCreateSnapshotInParallel() error {
 
 func (f *feature) iCallDeleteTargetVolume() error {
 	time.Sleep(SleepTime)
-	time.Sleep(60 * time.Second)
+	time.Sleep(90 * time.Second)
 	tgtID := len(f.volIDList) - 1
 	targetVolID := f.volIDList[tgtID]
 	volName, _, devID, err := f.parseCsiID(f.volID)
@@ -1954,7 +1956,7 @@ func (f *feature) iCallDeleteTargetVolume() error {
 	}
 	// Delete target volume from remote array
 	time.Sleep(SleepTime)
-        time.Sleep(30 * time.Second)
+        time.Sleep(60 * time.Second)
 	err = f.pmaxClient.DeleteVolume(context.Background(), f.remotesymID, devID)
 	if err != nil {
 		fmt.Printf("Target DeleteVolume %s:\n", err.Error())
