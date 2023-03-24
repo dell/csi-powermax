@@ -12,7 +12,7 @@ require (
 	github.com/dell/dell-csi-extensions/migration v1.1.0
 	github.com/dell/dell-csi-extensions/replication v1.3.0
 	github.com/dell/gobrick v1.7.0
-	github.com/dell/gocsi v1.6.0
+	github.com/dell/gocsi v1.7.0
 	github.com/dell/gofsutil v1.12.0
 	github.com/dell/goiscsi v1.7.0
 	github.com/dell/gopowermax/v2 v2.2.0
