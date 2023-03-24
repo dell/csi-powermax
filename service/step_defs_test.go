@@ -171,6 +171,7 @@ type feature struct {
 	fcArray                              string
 	uDevID                               string
 	nodeGetVolumeStatsResponse           *csi.NodeGetVolumeStatsResponse
+	setIOLimits                          bool
 }
 
 var inducedErrors struct {
@@ -299,6 +300,7 @@ func (f *feature) aPowerMaxService() error {
 	f.remoteSymID = mock.DefaultRemoteSymID
 	f.uDevID = ""
 	f.nodeGetVolumeStatsResponse = nil
+	f.setIOLimits = false
 	inducedErrors.invalidSymID = false
 	inducedErrors.invalidStoragePool = false
 	inducedErrors.invalidServiceLevel = false
@@ -696,7 +698,12 @@ func (f *feature) iCallCreateVolumeWithNamespace(name string, namespace string) 
 	req := f.createVolumeRequest
 	req.Name = name
 	req.Parameters[CSIPVCNamespace] = namespace
-
+	if f.setIOLimits {
+		req.Parameters[HostLimitName] = "HL1"
+		req.Parameters[HostIOLimitMBSec] = "1000"
+		req.Parameters[HostIOLimitIOSec] = "500"
+		req.Parameters[DynamicDistribution] = "Always"
+	}
 	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
 	if f.err != nil {
 		log.Printf("CreateVolume called failed: %s\n", f.err.Error())
@@ -4292,6 +4299,11 @@ func (f *feature) iCallRDFEnabledCreateVolumeFromVolume(volName, namespace, mode
 	return nil
 }
 
+func (f *feature) iHaveSetHostIOLimitsOnTheStorageGroup() error {
+	f.setIOLimits = true
+	return nil
+}
+
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -4503,4 +4515,5 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call VolumeMigrateWithDifferentTypes "([^"]*)"$`, f.iCallVolumeMigrateWithDifferentTypes)
 	s.Step(`^I call RDF enabled CreateVolume "([^"]*)" in namespace "([^"]*)", mode "([^"]*)" and RDFGNo (\d+) from snapshot$`, f.iCallRDFEnabledCreateVolumeFromSnapshot)
 	s.Step(`^I call RDF enabled CreateVolume "([^"]*)" in namespace "([^"]*)", mode "([^"]*)" and RDFGNo (\d+) from volume$`, f.iCallRDFEnabledCreateVolumeFromVolume)
+	s.Step(`^I have SetHostIOLimits on the storage group$`, f.iHaveSetHostIOLimitsOnTheStorageGroup)
 }

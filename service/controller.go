@@ -99,6 +99,11 @@ const (
 	SyncInProgress                  = "SyncInProg"
 	Vsphere                         = "VSPHERE"
 	MigrationActionCommit           = "Commit"
+	HostLimitName                   = "HostLimitName"
+	HostLimits                      = "hostLimits"
+	HostIOLimitMBSec                = "HostIOLimitMBSec"
+	HostIOLimitIOSec                = "HostIOLimitIOSec"
+	DynamicDistribution             = "DynamicDistribution"
 )
 
 // Keys for parameters to CreateVolume
@@ -327,13 +332,31 @@ func (s *service) CreateVolume(
 		storageGroupName = params[StorageGroupParam]
 	}
 
+	// get HostIOLimits for the storage group
+	hostLimitName := ""
+	hostMBsec := ""
+	hostIOsec := ""
+	hostDynDistribution := ""
+	if params[HostLimitName] != "" {
+		hostLimitName = params[HostLimitName]
+	}
+	if params[HostIOLimitMBSec] != "" {
+		hostMBsec = params[HostIOLimitMBSec]
+	}
+	if params[HostIOLimitIOSec] != "" {
+		hostIOsec = params[HostIOLimitIOSec]
+	}
+	if params[DynamicDistribution] != "" {
+		hostDynDistribution = params[DynamicDistribution]
+	}
+
 	// Get the namespace
 	namespace := ""
 	if params[CSIPVCNamespace] != "" {
 		namespace = params[CSIPVCNamespace]
 	}
 
-	// Remote Replication based params
+	// Remote Replication based paramsMes
 	var replicationEnabled string
 	var remoteSymID string
 	var localRDFGrpNo string
@@ -376,7 +399,7 @@ func (s *service) CreateVolume(
 			log.Debugf("RDF group for given array pair and RDF mode: local(%s), remote(%s)", localRDFGrpNo, remoteRDFGrpNo)
 		}
 		if repMode == Metro {
-			return s.createMetroVolume(ctx, req, reqID, storagePoolID, symmetrixID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias)
+			return s.createMetroVolume(ctx, req, reqID, storagePoolID, symmetrixID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias, hostLimitName, hostMBsec, hostIOsec, hostDynDistribution)
 		}
 		if repMode != Async && repMode != Sync {
 			log.Errorf("Unsupported Replication Mode: (%s)", repMode)
@@ -493,6 +516,9 @@ func (s *service) CreateVolume(
 			storageGroupName = fmt.Sprintf("%s-%s-%s-%s-%s-SG", CSIPrefix, s.getClusterPrefix(),
 				applicationPrefix, serviceLevel, storagePoolID)
 		}
+		if hostLimitName != "" {
+			storageGroupName = fmt.Sprintf("%s-%s", storageGroupName, hostLimitName)
+		}
 	}
 	// localProtectionGroupID refers to name of Storage Group which has protected local volumes
 	// remoteProtectionGroupID refers to name of Storage Group which has protected remote volumes
@@ -526,6 +552,9 @@ func (s *service) CreateVolume(
 		HeaderPersistentVolumeName:           params[CSIPersistentVolumeName],
 		HeaderPersistentVolumeClaimName:      params[CSIPersistentVolumeClaimName],
 		HeaderPersistentVolumeClaimNamespace: params[CSIPVCNamespace],
+		HostIOLimitMBSec:                     hostMBsec,
+		HostIOLimitIOSec:                     hostIOsec,
+		DynamicDistribution:                  hostDynDistribution,
 	}
 	log.WithFields(fields).Info("Executing CreateVolume with following fields")
 
@@ -549,10 +578,17 @@ func (s *service) CreateVolume(
 	}
 	// Check existence of the Storage Group and create if necessary.
 	sg, err := pmaxClient.GetStorageGroup(ctx, symmetrixID, storageGroupName)
+	log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
 	if err != nil || sg == nil {
-		log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
+		hostLimitsParam := &types.SetHostIOLimitsParam{
+			HostIOLimitMBSec:    hostIOsec,
+			HostIOLimitIOSec:    hostMBsec,
+			DynamicDistribution: hostDynDistribution,
+		}
+		optionalPayload := make(map[string]interface{})
+		optionalPayload[HostLimits] = hostLimitsParam
 		_, err := pmaxClient.CreateStorageGroup(ctx, symmetrixID, storageGroupName, storagePoolID,
-			serviceLevel, thick == "true", nil)
+			serviceLevel, thick == "true", optionalPayload)
 		if err != nil {
 			log.Error("Error creating storage group: " + err.Error())
 			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
@@ -778,7 +814,7 @@ func (s *service) CreateVolume(
 	return csiResp, nil
 }
 
-func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRequest, reqID, storagePoolID, symID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias string) (*csi.CreateVolumeResponse, error) {
+func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRequest, reqID, storagePoolID, symID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias, hostLimitName, hostMBsec, hostIOsec, hostDynDist string) (*csi.CreateVolumeResponse, error) {
 	repMode := Metro
 	accessibility := req.GetAccessibilityRequirements()
 	pmaxClient, err := s.GetPowerMaxClient(symID, remoteSymID)
@@ -908,6 +944,11 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 			remoteStorageGroupName = fmt.Sprintf("%s-%s-%s-%s-%s-SG", CSIPrefix, s.getClusterPrefix(),
 				applicationPrefix, remoteServiceLevel, remoteSRPID)
 		}
+		if hostLimitName != "" {
+			storageGroupName = fmt.Sprintf("%s-%s", storageGroupName, hostLimitName)
+			remoteStorageGroupName = fmt.Sprintf("%s-%s", remoteStorageGroupName, hostLimitName)
+
+		}
 	}
 	// localProtectionGroupID refers to name of Storage Group which has protected local volumes
 	// remoteProtectionGroupID refers to name of Storage Group which has protected remote volumes
@@ -957,8 +998,16 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	sgOnR1, err := pmaxClient.GetStorageGroup(ctx, symID, storageGroupName)
 	if err != nil || sgOnR1 == nil {
 		log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
+		hostLimitsParam := &types.SetHostIOLimitsParam{
+			HostIOLimitMBSec:    hostMBsec,
+			HostIOLimitIOSec:    hostIOsec,
+			DynamicDistribution: hostDynDist,
+		}
+		optionalPayload := make(map[string]interface{})
+		optionalPayload[HostLimits] = hostLimitsParam
+
 		_, err := pmaxClient.CreateStorageGroup(ctx, symID, storageGroupName, storagePoolID,
-			serviceLevel, thick == "true", nil)
+			serviceLevel, thick == "true", optionalPayload)
 		if err != nil {
 			log.Error("Error creating storage group on R1: " + err.Error())
 			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
@@ -968,8 +1017,15 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	sgOnR2, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteStorageGroupName)
 	if err != nil || sgOnR2 == nil {
 		log.Debug(fmt.Sprintf("Unable to find storage group: %s", remoteStorageGroupName))
+		hostLimitsParam := &types.SetHostIOLimitsParam{
+			HostIOLimitMBSec:    hostMBsec,
+			HostIOLimitIOSec:    hostIOsec,
+			DynamicDistribution: hostDynDist,
+		}
+		optionalPayload := make(map[string]interface{})
+		optionalPayload[HostLimits] = hostLimitsParam
 		_, err := pmaxClient.CreateStorageGroup(ctx, remoteSymID, remoteStorageGroupName, remoteSRPID,
-			remoteServiceLevel, thick == "true", nil)
+			remoteServiceLevel, thick == "true", optionalPayload)
 		if err != nil {
 			log.Error("Error creating storage group on R2: " + err.Error())
 			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
@@ -3528,8 +3584,16 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 	sg, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteStorageGroupName)
 	if err != nil || sg == nil {
 		log.Debug(fmt.Sprintf("Unable to find storage group: %s", remoteStorageGroupName))
+		hostLimitsParam := types.SetHostIOLimitsParam{
+			HostIOLimitMBSec:    sg.HostIOLimit.HostIOLimitMBSec,
+			HostIOLimitIOSec:    sg.HostIOLimit.HostIOLimitIOSec,
+			DynamicDistribution: sg.HostIOLimit.DynamicDistribution,
+		}
+		optionalPayload := make(map[string]interface{})
+		optionalPayload[HostLimits] = hostLimitsParam
+
 		_, err := pmaxClient.CreateStorageGroup(ctx, remoteSymID, remoteStorageGroupName, remoteSRPID,
-			remoteServiceLevel, thick == "true", nil)
+			remoteServiceLevel, thick == "true", optionalPayload)
 		if err != nil {
 			log.Errorf("Error: (%s) creating storage group on R2 (%s): ", err.Error(), remoteSymID)
 			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
