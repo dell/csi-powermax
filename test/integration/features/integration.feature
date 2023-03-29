@@ -521,7 +521,7 @@ Scenario: Create 'n' snapshots from a volume in parallel
     And when I call DeleteAllVolumes
     And there are no errors
 
-@v2.2.2
+@v1.2.0
 Scenario: Create 'n' volumes from snapshot in parallel
     Given a Powermax service
     And a basic block volume request "integration1" "50"
@@ -732,7 +732,7 @@ Scenario: Expand Raw Block Volume
     Then there are no errors
     And all volumes are deleted successfully
 
-@v2.2.2
+@v1.4.0
 Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel and retry for failing snapshot request
   Given a Powermax service
   And a basic block volume request "integration1" "50"
@@ -840,7 +840,7 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And I call Delete RemoteStorageProtectionGroup
     And there are no errors
 
-@v2.2.2
+@v1.6.0
   Scenario: SRDF Actions on a protected SG
     Given a Powermax service
     And a basic block volume request "integration1" "100"
