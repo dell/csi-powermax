@@ -10,21 +10,21 @@ require (
 	github.com/cucumber/messages-go/v10 v10.0.3
 	github.com/dell/dell-csi-extensions/common v1.1.1
 	github.com/dell/dell-csi-extensions/migration v1.1.0
-	github.com/dell/dell-csi-extensions/replication v1.3.1-0.20230316192210-d1b46db0cbe0
+	github.com/dell/dell-csi-extensions/replication v1.3.1-0.20230330153121-7ee6c5ed22ea
 	github.com/dell/gobrick v1.7.0
 	github.com/dell/gocsi v1.6.0
 	github.com/dell/gofsutil v1.12.0
 	github.com/dell/goiscsi v1.7.0
 	github.com/dell/gopowermax/v2 v2.2.0
 	github.com/fsnotify/fsnotify v1.4.9
-	github.com/golang/protobuf v1.5.2
+	github.com/golang/protobuf v1.5.3
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
 	github.com/vmware/govmomi v0.29.0
-	golang.org/x/net v0.2.0
-	google.golang.org/grpc v1.43.0
+	golang.org/x/net v0.8.0
+	google.golang.org/grpc v1.54.0
 	k8s.io/client-go v0.18.6
 )
 
@@ -67,15 +67,15 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.17.0 // indirect
 	golang.org/x/crypto v0.3.0 // indirect
-	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d // indirect
+	golang.org/x/oauth2 v0.4.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
-	golang.org/x/term v0.2.0 // indirect
-	golang.org/x/text v0.4.0 // indirect
+	golang.org/x/term v0.6.0 // indirect
+	golang.org/x/text v0.8.0 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
-	google.golang.org/appengine v1.6.1 // indirect
-	google.golang.org/genproto v0.0.0-20210602131652-f16073e35f0c // indirect
-	google.golang.org/protobuf v1.27.1 // indirect
+	google.golang.org/appengine v1.6.7 // indirect
+	google.golang.org/genproto v0.0.0-20230320184635-7606e756e683 // indirect
+	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.51.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

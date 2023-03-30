@@ -3688,12 +3688,13 @@ func (s *service) DeleteStorageProtectionGroup(ctx context.Context, req *csiext.
 	return &csiext.DeleteStorageProtectionGroupResponse{}, nil
 }
 
+// DeleteLocalVolume deletes the backend volume on the storage array.
 func (s *service) DeleteLocalVolume(ctx context.Context,
 	req *csiext.DeleteLocalVolumeRequest) (*csiext.DeleteLocalVolumeResponse, error) {
 
 	log.Info("!!! Deleting Remote Volume !!!")
 
-	return &csiext.DeleteLocalVolumeResponse{}, nil
+	return nil, fmt.Errorf("DeleteLocalVolume is not yet implemented")
 }
 
 func addMetaData(params map[string]string) map[string][]string {
