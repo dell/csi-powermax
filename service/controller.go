@@ -3693,8 +3693,9 @@ func (s *service) DeleteLocalVolume(ctx context.Context,
 	req *csiext.DeleteLocalVolumeRequest) (*csiext.DeleteLocalVolumeResponse, error) {
 
 	log.Info("!!! Deleting Remote Volume !!!")
+	log.Error("DeleteLocalVolume is not yet implemented")
 
-	return nil, fmt.Errorf("DeleteLocalVolume is not yet implemented")
+	return &csiext.DeleteLocalVolumeResponse{}, nil
 }
 
 func addMetaData(params map[string]string) map[string][]string {
