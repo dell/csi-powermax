@@ -2742,7 +2742,7 @@ func (s *service) CreateSnapshot(
 	if err == nil && snapInfo.VolumeSnapshotSource != nil {
 		snapID = fmt.Sprintf("%s-%s-%s", snapID, symID, devID)
 		snapshot := &csi.Snapshot{
-			SizeBytes:      int64(vol.CapacityGB),
+			SizeBytes:      int64(vol.CapacityCYL * cylinderSizeInBytes),
 			SnapshotId:     snapID,
 			SourceVolumeId: volID, ReadyToUse: true,
 			CreationTime: ptypes.TimestampNow()}
@@ -2777,7 +2777,7 @@ func (s *service) CreateSnapshot(
 	snapID = fmt.Sprintf("%s-%s-%s", snap.SnapshotName, symID, devID)
 	// populate response structure
 	snapshot := &csi.Snapshot{
-		SizeBytes:      int64(vol.CapacityGB),
+		SizeBytes:      int64(vol.CapacityCYL * cylinderSizeInBytes),
 		SnapshotId:     snapID,
 		SourceVolumeId: volID,
 		ReadyToUse:     true,
