@@ -35,7 +35,7 @@ function print_usage {
    echo "    -y      - Don't prompt the user"
    echo "    -o      - Overwrite existing local/remote image"
    echo "    -e      - Create additionals tags for latest, minor and major versions"
-   echo "    -i      - Set the image type. Accepted values are ubim, ubimicro, ubi, centos and rhel"
+   echo "    -i      - Set the image type. Accepted values are ubim, ubi, centos and rhel"
    echo "    -r      - Build the CSI PowerMax ReverseProxy image along with driver image"
    echo "    -c      - Delete the local image after a successful build"
    echo
@@ -83,9 +83,6 @@ function build_source_image_repo_name {
    elif [ "$SOURCE_IMAGE_TYPE" = "ubim" ]; then
       SOURCE_IMAGE_REPO=$UBIM_REPO
       SOURCE_IMAGE_REPO_NAMESPACE=$UBIM_NAMESPACE
-   elif [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
-      SOURCE_IMAGE_REPO=$UBIMICRO_REPO
-      SOURCE_IMAGE_REPO_NAMESPACE=$UBIMICRO_NAMESPACE
    fi
    echo "SOURCE_IMAGE_REPO is set to: $SOURCE_IMAGE_REPO"
    echo "SOURCE_IMAGE_REPO_NAMESPACE is set to: $SOURCE_IMAGE_REPO_NAMESPACE"
@@ -239,9 +236,6 @@ function set_image_type {
    elif [[ ( $input_image_type == "UBIM" ) || ( $input_image_type == "ubim" ) ]]; then
       SOURCE_IMAGE_TYPE="ubim"
       valid_image_type='true'
-   elif [[ ( $input_image_type == "UBIMICRO" ) || ( $input_image_type == "ubimicro" ) ]]; then
-      SOURCE_IMAGE_TYPE="ubimicro"
-      valid_image_type='true'
    fi
    if [ "$valid_image_type" = false ] ; then
       echo "Invalid image type specified"
@@ -274,7 +268,7 @@ fi
 BUILDCMD="docker"
 DOCKEROPT="--format=docker"
 
-if [[ ( $SOURCE_IMAGE_TYPE == "ubi" ) || ( $SOURCE_IMAGE_TYPE == "ubim" ) || ( $SOURCE_IMAGE_TYPE == "ubimicro" ) ||( $SOURCE_IMAGE_TYPE == "rhel" ) ]]; then
+if [[ ( $SOURCE_IMAGE_TYPE == "ubi" ) || ( $SOURCE_IMAGE_TYPE == "ubim" ) || ( $SOURCE_IMAGE_TYPE == "rhel" ) ]]; then
    command -v podman
    if [ $? -eq 0 ]; then
       echo "Using podman for building image"
@@ -331,8 +325,6 @@ elif [ "$SOURCE_IMAGE_TYPE" = "ubim" ]; then
      SOURCE_IMAGE_TAG=$UBIM_VERSION
    fi
    IMAGE_TYPE="ubim"
-elif [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
-   SOURCE_IMAGE_TAG=$UBIMICRO_VERSION
 fi
 
 build_source_image_repo_name
