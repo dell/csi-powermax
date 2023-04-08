@@ -239,10 +239,10 @@ function set_image_type {
    elif [[ ( $input_image_type == "UBIM" ) || ( $input_image_type == "ubim" ) ]]; then
       SOURCE_IMAGE_TYPE="ubim"
       valid_image_type='true'
-   fi
    elif [[ ( $input_image_type == "UBIMICRO" ) || ( $input_image_type == "ubimicro" ) ]]; then
       SOURCE_IMAGE_TYPE="ubimicro"
       valid_image_type='true'
+   fi   
    if [ "$valid_image_type" = false ] ; then
       echo "Invalid image type specified"
       exit 1
