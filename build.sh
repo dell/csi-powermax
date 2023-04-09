@@ -333,6 +333,7 @@ elif [ "$SOURCE_IMAGE_TYPE" = "ubim" ]; then
    IMAGE_TYPE="ubim"
 elif [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
    SOURCE_IMAGE_TAG=$UBIMICRO_VERSION
+   IMAGE_TYPE="ubim"
 fi
 
 build_source_image_repo_name
