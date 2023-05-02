@@ -718,3 +718,10 @@ Feature: PowerMax CSI interface
     | allowedList                 | deniedList                  |
     | "*-000197900046."           | "Node1-000197900047.iscsi"  |
     | "Node1-000197900046.fc"     | "*-000197900047."           |
+
+@v2.7.0
+  Scenario: Create a volume in storage group with HostIOLimits
+  Given a PowerMax service
+  And I have SetHostIOLimits on the storage group
+  And I call CreateVolume "volume1" with namespace "ns"
+  Then a valid CreateVolumeResponse is returned
