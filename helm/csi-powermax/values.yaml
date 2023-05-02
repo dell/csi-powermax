@@ -16,7 +16,6 @@ global:
   # The CSI PowerMax ReverseProxy section to fill out the required configuration
   # Please refer to the doc website about a
   # detailed explanation of each configuration parameter
-  # and the various ReverseProxy modes
 
   defaultCredentialsSecret: powermax-creds
   storageArrays:
@@ -272,11 +271,6 @@ csireverseproxy:
   # Default value: None
   # Examples: "1111", "8080"
   port: 2222
-  # Mode of CSI reverse proxy - this is a standalone API
-  # it doesn't belong to kubernetes cluster API
-  # Default value: None
-  # Example: "StandAlone"
-  mode: StandAlone
 # clusterPrefix: Define a prefix that is appended onto
 # all resources created in the Array
 # This should be unique per K8s/CSI deployment
