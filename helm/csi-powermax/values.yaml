@@ -426,6 +426,20 @@ authorization:
   #   "false" - TLS certificate will be verified 
   # Default value: "true" 
   skipCertificateValidation: true
+  
+#Storage Capacity Tracking
+# Note: Capacity tracking is supported in kubernetes v1.25 and above, this feature will be automatically disabled in older versions.
+storageCapacity:
+  # enabled : Enable/Disable storage capacity tracking
+  # Allowed values:
+  #   true: enable storage capacity tracking
+  #   false: disable storage capacity tracking
+  # Default value: true
+  enabled: true
+  # pollInterval : Configure how often external-provisioner polls the driver to detect changed capacity
+  # Allowed values: 1m,2m,3m,...,10m,...,60m etc
+  # Default value: 5m
+  pollInterval: 5m
 
 # VMware/vSphere virtualization support
 # set enable to true, if you to enable VMware virtualized environment support via RDM
