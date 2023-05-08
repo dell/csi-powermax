@@ -1297,6 +1297,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 	return err
 }
 
+// setVMHost create client for the vCenter
 func (s *service) setVMHost() error {
 	// Create a VM host
 	host, err := NewVMHost(true, s.opts.VCenterHostURL, s.opts.VCenterHostUserName, s.opts.VCenterHostPassword)
@@ -1438,7 +1439,12 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			s.arrayTransportProtocolMap = make(map[string]string)
 		}
 		if s.opts.IsVsphereEnabled {
-			s.arrayTransportProtocolMap[symID] = Vsphere
+			err := s.getHostForVsphere(ctx, symID, pmaxClient)
+			if err != nil {
+				log.Warningf("Host/HostGroup %s was not initialized on sym %s, err: %s", s.opts.VSphereHostName, symID, err.Error())
+			} else {
+				s.arrayTransportProtocolMap[symID] = Vsphere
+			}
 			continue
 		}
 		validFCs, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, portWWNs, hostIDFC, pmaxClient)
@@ -1498,6 +1504,19 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 
 	s.nodeIsInitialized = true
 	return nil
+}
+
+// getHostForVsphere fetches pre defined host or host group from array for vSphere
+func (s *service) getHostForVsphere(ctx context.Context, array string, pmaxClient pmax.Pmax) (err error) {
+	//Check if the Host exist
+	_, err = pmaxClient.GetHostByID(ctx, array, s.opts.VSphereHostName)
+	if err != nil {
+		if strings.Contains(err.Error(), "cannot be found") {
+			//Check if the HostGroup exist
+			_, err = pmaxClient.GetHostGroupByID(ctx, array, s.opts.VSphereHostName)
+		}
+	}
+	return err
 }
 
 func (s *service) setupArrayForFC(ctx context.Context, array string, portWWNs []string, pmaxClient pmax.Pmax) error {
