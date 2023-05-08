@@ -2018,7 +2018,7 @@ func (s *service) updatePublishContext(ctx context.Context, publishContext map[s
 			lunid = conn.HostLUNAddress
 			dirPorts = appendIfMissing(dirPorts, conn.DirectorPort)
 
-		} else if lunid != conn.HostLUNAddress {
+		} else if lunid != conn.HostLUNAddress && !s.opts.IsVsphereEnabled {
 			log.Infof("MV Connection: Multiple HostLUNAddress values")
 			return nil, status.Error(codes.Internal, "PublishContext: MV Connection has multiple HostLUNAddress values")
 		} else {
@@ -2082,14 +2082,11 @@ func getMVLockKey(symID, tgtMaskingViewID string) string {
 // on array is ISCSI or not
 func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxClient pmax.Pmax) (bool, error) {
 	if s.opts.IsVsphereEnabled {
-		// check if FC host exist
-		fcHost, fcHostErr := pmaxClient.GetHostByID(ctx, symID, s.opts.VSphereHostName)
-		if fcHostErr == nil {
-			if fcHost.HostType == "Fibre" {
-				return false, nil
-			}
+		err := s.getHostForVsphere(ctx, symID, pmaxClient)
+		if err == nil {
+			return false, nil
 		}
-		return false, fmt.Errorf("Failed to fetch host id from array for node: %s", nodeID)
+		return false, fmt.Errorf("Failed to fetch host/host group from array for node %s err: %s", nodeID, err.Error())
 	}
 
 	fcHostID, _, fcMaskingViewID := s.GetFCHostSGAndMVIDFromNodeID(nodeID)
