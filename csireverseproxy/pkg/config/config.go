@@ -32,14 +32,23 @@ import (
 // ProxyMode represents the mode the proxy is operating in
 type ProxyMode string
 
+// Constants for the proxy configuration
+// Linked :- In linked mode, proxy simply forwards
+//
+//	all the request to one of the configured
+//	primary or backup unispheres based on a fail-over
+//	mechanism which is triggered automatically, in case one
+//	of the unispheres go down.
+//
 // StandAlone :- In stand-alone mode, proxy provides multi-array
 //
 //					 support with ACL to authenticate and authorize
 //	              users based on credentials set via k8s secrets.
 //	              Each array can have a primary and a backup unisphere
-//	              which follows the same fail-over mechanism which is triggered automatically,
-//	              in case one of the unispheres go down.
+//	              which follows the same fail-over mechanism as Linked
+//	              proxy
 const (
+	Linked     = ProxyMode("Linked")
 	StandAlone = ProxyMode("StandAlone")
 )
 
@@ -116,6 +125,12 @@ func (ms *ManagementServer) DeepCopy() *ManagementServer {
 	return &clone
 }
 
+// LinkConfig - represents linked proxy configuration in the config file
+type LinkConfig struct {
+	Primary ManagementServerConfig `yaml:"primary" mapstructure:"primary"`
+	Backup  ManagementServerConfig `yaml:"backup,omitempty" mapstructure:"backup"`
+}
+
 // StandAloneConfig - represents stand alone proxy configuration in the config file
 type StandAloneConfig struct {
 	StorageArrayConfig     []StorageArrayConfig     `yaml:"storageArrays" mapstructure:"storageArrays"`
@@ -128,7 +143,65 @@ type ProxyConfigMap struct {
 	Port             string            `yaml:"port,omitempty"`
 	LogLevel         string            `yaml:"logLevel,omitempty"`
 	LogFormat        string            `yaml:"logFormat,omitempty"`
+	LinkConfig       *LinkConfig       `yaml:"linkConfig,omitempty" mapstructure:"linkConfig"`
 	StandAloneConfig *StandAloneConfig `yaml:"standAloneConfig,omitempty" mapstructure:"standAloneConfig"`
+}
+
+// LinkedProxyConfig - represents a configuration of the Linked Proxy (formed using LinkConfig)
+type LinkedProxyConfig struct {
+	Primary *ManagementServer
+	Backup  *ManagementServer
+}
+
+// DeepCopy is used to create a deep copy of LinkedProxyConfig
+func (proxy *LinkedProxyConfig) DeepCopy() *LinkedProxyConfig {
+	if proxy == nil {
+		return nil
+	}
+	cloned := new(LinkedProxyConfig)
+	cloned.Primary = proxy.Primary.DeepCopy()
+	if proxy.Backup != nil {
+		cloned.Backup = proxy.Backup.DeepCopy()
+	}
+	return cloned
+}
+
+// Log - Logs the primary and backup configuration
+func (proxy *LinkedProxyConfig) Log() {
+	log.Debug("-----------------------")
+	log.Debug("-----------------------")
+	log.Debug("primary config")
+	log.Debugf("%+v", proxy.Primary)
+	log.Debug("-----------------------")
+	log.Debug("backup config")
+	log.Debugf("%+v", proxy.Backup)
+	log.Debug("-----------------------")
+}
+
+// IsCertSecretRelated returns true if a given secret name is present in the LinkedProxyConfig
+func (proxy *LinkedProxyConfig) IsCertSecretRelated(secretName string) bool {
+	if proxy.Primary.CertSecret == secretName {
+		return true
+	}
+	if proxy.Backup != nil && proxy.Backup.CertSecret == secretName {
+		return true
+	}
+	return false
+}
+
+// UpdateCertFileName - Given a secret name, updates the cert file name corresponding
+// to the secret in the LinkedProxyConfig
+func (proxy *LinkedProxyConfig) UpdateCertFileName(secretName, certFileName string) bool {
+	isUpdated := false
+	if proxy.Primary.CertSecret == secretName {
+		proxy.Primary.CertFile = certFileName
+		isUpdated = true
+	}
+	if proxy.Backup != nil && proxy.Backup.CertSecret == secretName {
+		proxy.Backup.CertFile = certFileName
+		isUpdated = true
+	}
+	return isUpdated
 }
 
 // StandAloneProxyConfig - represents Stand Alone Proxy Config (formed using StandAloneConfig)
@@ -453,6 +526,7 @@ func (proxy *StandAloneProxyConfig) GetManagementServer(url url.URL) (Management
 type ProxyConfig struct {
 	Mode                  ProxyMode
 	Port                  string
+	LinkProxyConfig       *LinkedProxyConfig
 	StandAloneProxyConfig *StandAloneProxyConfig
 }
 
@@ -463,6 +537,7 @@ func (proxyConfig *ProxyConfig) DeepCopy() *ProxyConfig {
 	}
 	cloned := ProxyConfig{}
 	cloned = *proxyConfig
+	cloned.LinkProxyConfig = proxyConfig.LinkProxyConfig.DeepCopy()
 	cloned.StandAloneProxyConfig = proxyConfig.StandAloneProxyConfig.DeepCopy()
 	return &cloned
 }
@@ -491,7 +566,56 @@ func (proxyConfig *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUt
 	proxyConfig.Mode = proxyMode
 	proxyConfig.Port = proxyConfigMap.Port
 	fmt.Printf("ConfigMap: %v\n", proxyConfigMap)
-	if proxyMode == StandAlone {
+	if proxyMode == Linked {
+		config := proxyConfigMap.LinkConfig
+		if config == nil {
+			return fmt.Errorf("proxy mode is specified as Linked but unable to parse config")
+		}
+		if config.Primary.URL == "" {
+			return fmt.Errorf("must provide Primary url")
+		}
+		primaryURL, err := url.Parse(config.Primary.URL)
+		if err != nil {
+			return err
+		}
+		primaryManagementServer := ManagementServer{
+			URL:                       *primaryURL,
+			SkipCertificateValidation: config.Primary.SkipCertificateValidation,
+			Limits:                    config.Primary.Limits,
+		}
+		if config.Primary.CertSecret != "" {
+			primaryCertFile, err := k8sUtils.GetCertFileFromSecretName(config.Primary.CertSecret)
+			if err != nil {
+				return err
+			}
+			primaryManagementServer.CertFile = primaryCertFile
+			primaryManagementServer.CertSecret = config.Primary.CertSecret
+		}
+		linkedProxyConfig := LinkedProxyConfig{
+			Primary: &primaryManagementServer,
+		}
+		if config.Backup.URL != "" {
+			backupURL, err := url.Parse(config.Backup.URL)
+			if err != nil {
+				return err
+			}
+			backupManagementServer := ManagementServer{
+				URL:                       *backupURL,
+				SkipCertificateValidation: config.Backup.SkipCertificateValidation,
+				Limits:                    config.Backup.Limits,
+			}
+			if config.Backup.CertSecret != "" {
+				backupCertFile, err := k8sUtils.GetCertFileFromSecretName(config.Backup.CertSecret)
+				if err != nil {
+					return err
+				}
+				backupManagementServer.CertFile = backupCertFile
+				backupManagementServer.CertSecret = config.Backup.CertSecret
+			}
+			linkedProxyConfig.Backup = &backupManagementServer
+		}
+		proxyConfig.LinkProxyConfig = &linkedProxyConfig
+	} else if proxyMode == StandAlone {
 		config := proxyConfigMap.StandAloneConfig
 		if config == nil {
 			return fmt.Errorf("proxy mode is specified as StandAlone but unable to parse config")
@@ -599,7 +723,7 @@ func (proxyConfig *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUt
 	} else {
 		return fmt.Errorf("unknown proxy mode: %s specified", string(proxyMode))
 	}
-	if proxyConfig.StandAloneProxyConfig == nil {
+	if proxyConfig.LinkProxyConfig == nil && proxyConfig.StandAloneProxyConfig == nil {
 		return fmt.Errorf("no configuration provided for the proxy")
 	}
 	return nil

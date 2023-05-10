@@ -13,7 +13,8 @@
 REGISTRY?="localhost:5000/csipowermax-reverseproxy"
 VERSION="latest"
 
-coverpackages= revproxy/v2,revproxy/v2/pkg/config,revproxy/v2/pkg/standaloneproxy
+coverpackages= revproxy/v2,revproxy/v2/pkg/config,revproxy/v2/pkg/linkedproxy,revproxy/v2/pkg/standaloneproxy
+
 run:
 	@./run.sh
 
