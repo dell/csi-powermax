@@ -587,6 +587,9 @@ func (s *service) CreateVolume(
 		}
 		optionalPayload := make(map[string]interface{})
 		optionalPayload[HostLimits] = hostLimitsParam
+		if *hostLimitsParam == (types.SetHostIOLimitsParam{}) {
+			optionalPayload = nil
+		}
 		_, err := pmaxClient.CreateStorageGroup(ctx, symmetrixID, storageGroupName, storagePoolID,
 			serviceLevel, thick == "true", optionalPayload)
 		if err != nil {
@@ -1005,7 +1008,9 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		}
 		optionalPayload := make(map[string]interface{})
 		optionalPayload[HostLimits] = hostLimitsParam
-
+		if *hostLimitsParam == (types.SetHostIOLimitsParam{}) {
+			optionalPayload = nil
+		}
 		_, err := pmaxClient.CreateStorageGroup(ctx, symID, storageGroupName, storagePoolID,
 			serviceLevel, thick == "true", optionalPayload)
 		if err != nil {
@@ -1024,6 +1029,9 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		}
 		optionalPayload := make(map[string]interface{})
 		optionalPayload[HostLimits] = hostLimitsParam
+		if *hostLimitsParam == (types.SetHostIOLimitsParam{}) {
+			optionalPayload = nil
+		}
 		_, err := pmaxClient.CreateStorageGroup(ctx, remoteSymID, remoteStorageGroupName, remoteSRPID,
 			remoteServiceLevel, thick == "true", optionalPayload)
 		if err != nil {
@@ -3581,14 +3589,16 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 	sg, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteStorageGroupName)
 	if err != nil || sg == nil {
 		log.Debug(fmt.Sprintf("Unable to find storage group: %s", remoteStorageGroupName))
-		hostLimitsParam := types.SetHostIOLimitsParam{
+		hostLimitsParam := &types.SetHostIOLimitsParam{
 			HostIOLimitMBSec:    sg.HostIOLimit.HostIOLimitMBSec,
 			HostIOLimitIOSec:    sg.HostIOLimit.HostIOLimitIOSec,
 			DynamicDistribution: sg.HostIOLimit.DynamicDistribution,
 		}
 		optionalPayload := make(map[string]interface{})
 		optionalPayload[HostLimits] = hostLimitsParam
-
+		if *hostLimitsParam == (types.SetHostIOLimitsParam{}) {
+			optionalPayload = nil
+		}
 		_, err := pmaxClient.CreateStorageGroup(ctx, remoteSymID, remoteStorageGroupName, remoteSRPID,
 			remoteServiceLevel, thick == "true", optionalPayload)
 		if err != nil {

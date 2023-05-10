@@ -145,13 +145,16 @@ func StorageGroupMigration(ctx context.Context, symID, remoteSymID, clusterPrefi
 			// get local SG Params
 			sg, err := pmaxClient.GetStorageGroup(ctx, symID, localSGID)
 			// create SG on remote SG
-			hostLimitsParam := types.SetHostIOLimitsParam{
+			hostLimitsParam := &types.SetHostIOLimitsParam{
 				HostIOLimitMBSec:    sg.HostIOLimit.HostIOLimitMBSec,
 				HostIOLimitIOSec:    sg.HostIOLimit.HostIOLimitIOSec,
 				DynamicDistribution: sg.HostIOLimit.DynamicDistribution,
 			}
 			optionalPayload := make(map[string]interface{})
 			optionalPayload[HostLimits] = hostLimitsParam
+			if *hostLimitsParam == (types.SetHostIOLimitsParam{}) {
+				optionalPayload = nil
+			}
 			_, err = pmaxClient.CreateStorageGroup(ctx, remoteSymID, localSGID, sg.SRP,
 				sg.SLO, true, optionalPayload)
 			if err != nil {
