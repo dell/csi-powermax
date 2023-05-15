@@ -1365,7 +1365,7 @@ func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, l
 	return sg, nil
 }
 
-// verifyProtectionGroupID verify's the ProtectionGroupID's uniqueness w.r.t the srdf mode
+// verifyProtectionGroupID verifies the ProtectionGroupID's uniqueness w.r.t the srdf mode
 // For metro mode, one srdf group can have rdf pairing from many namespace
 // For sync mode, one srdf group can have rdf pairing from many namespaces
 // For async mode, one srdf group can only have rdf pairing from one namespace
@@ -1667,7 +1667,7 @@ func (s *service) DeleteVolume(
 	if err != nil {
 		// We couldn't comprehend the identifier.
 		log.Info("Could not parse CSI VolumeId: " + id)
-		return &csi.DeleteVolumeResponse{}, nil
+		return &csi.DeleteVolumeResponse{}, status.Error(codes.InvalidArgument, "Could not parse CSI VolumeId")
 	}
 	pmaxClient, err := s.GetPowerMaxClient(symID, remoteSymID)
 	if err != nil {
@@ -3540,6 +3540,24 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 	remoteSRPID := params[path.Join(s.opts.ReplicationPrefix, RemoteSRPParam)]
 	remoteRDFGroup := params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
 
+	// get HostIOLimits for the storage group
+	hostLimitName := ""
+	hostMBsec := ""
+	hostIOsec := ""
+	hostDynDistribution := ""
+	if params[HostLimitName] != "" {
+		hostLimitName = params[HostLimitName]
+	}
+	if params[HostIOLimitMBSec] != "" {
+		hostMBsec = params[HostIOLimitMBSec]
+	}
+	if params[HostIOLimitIOSec] != "" {
+		hostIOsec = params[HostIOLimitIOSec]
+	}
+	if params[DynamicDistribution] != "" {
+		hostDynDistribution = params[DynamicDistribution]
+	}
+
 	applicationPrefix := ""
 	if params[ApplicationPrefixParam] != "" {
 		applicationPrefix = params[ApplicationPrefixParam]
@@ -3585,14 +3603,16 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 		remoteStorageGroupName = fmt.Sprintf("%s-%s-%s-%s-%s-SG", CSIPrefix, s.getClusterPrefix(),
 			applicationPrefix, remoteServiceLevel, remoteSRPID)
 	}
-
+	if hostLimitName != "" {
+		remoteStorageGroupName = fmt.Sprintf("%s-%s", remoteStorageGroupName, hostLimitName)
+	}
 	sg, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteStorageGroupName)
 	if err != nil || sg == nil {
 		log.Debug(fmt.Sprintf("Unable to find storage group: %s", remoteStorageGroupName))
 		hostLimitsParam := &types.SetHostIOLimitsParam{
-			HostIOLimitMBSec:    sg.HostIOLimit.HostIOLimitMBSec,
-			HostIOLimitIOSec:    sg.HostIOLimit.HostIOLimitIOSec,
-			DynamicDistribution: sg.HostIOLimit.DynamicDistribution,
+			HostIOLimitMBSec:    hostMBsec,
+			HostIOLimitIOSec:    hostIOsec,
+			DynamicDistribution: hostDynDistribution,
 		}
 		optionalPayload := make(map[string]interface{})
 		optionalPayload[HostLimits] = hostLimitsParam
@@ -3762,10 +3782,40 @@ func (s *service) DeleteStorageProtectionGroup(ctx context.Context, req *csiext.
 // DeleteLocalVolume deletes the backend volume on the storage array.
 func (s *service) DeleteLocalVolume(ctx context.Context,
 	req *csiext.DeleteLocalVolumeRequest) (*csiext.DeleteLocalVolumeResponse, error) {
+	id := req.GetVolumeHandle()
+	volName, symID, devID, _, _, err := s.parseCsiID(id)
+	if err != nil {
+		// We couldn't comprehend the identifier.
+		log.Info("Could not parse CSI VolumeId: " + id)
+		return &csiext.DeleteLocalVolumeResponse{}, status.Error(codes.InvalidArgument, "Could not parse CSI VolumeId")
+	}
+	pmaxClient, err := s.GetPowerMaxClient(symID)
+	if err != nil {
+		log.Error(err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	volumeID := volumeIDType(id)
+	if err := volumeID.checkAndUpdatePendingState(&controllerPendingState); err != nil {
+		return nil, err
+	}
+	defer volumeID.clearPending(&controllerPendingState)
 
-	log.Info("!!! Deleting Remote Volume !!!")
-	log.Error("DeleteLocalVolume is not yet implemented")
+	var reqID string
+	headers, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		if req, ok := headers["csi.requestid"]; ok && len(req) > 0 {
+			reqID = req[0]
+		}
+	}
 
+	if err := s.requireProbe(ctx, pmaxClient); err != nil {
+		log.Error("Failed to probe with erro: " + err.Error())
+		return nil, err
+	}
+	err = s.deleteVolume(ctx, reqID, symID, volName, devID, id, pmaxClient)
+	if err != nil {
+		return nil, err
+	}
 	return &csiext.DeleteLocalVolumeResponse{}, nil
 }
 
