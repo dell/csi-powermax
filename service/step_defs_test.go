@@ -18,6 +18,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"github.com/cucumber/messages-go/v10"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -35,7 +36,6 @@ import (
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cucumber/godog"
-	"github.com/cucumber/messages-go/v10"
 	"github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
 	pmax "github.com/dell/gopowermax/v2"
@@ -116,6 +116,7 @@ type feature struct {
 	nodeGetInfoResponse                  *csi.NodeGetInfoResponse
 	nodeGetCapabilitiesResponse          *csi.NodeGetCapabilitiesResponse
 	deleteVolumeResponse                 *csi.DeleteVolumeResponse
+	deleteLocalVolumeResponse            *csiext.DeleteLocalVolumeResponse
 	getCapacityResponse                  *csi.GetCapacityResponse
 	controllerGetCapabilitiesResponse    *csi.ControllerGetCapabilitiesResponse
 	validateVolumeCapabilitiesResponse   *csi.ValidateVolumeCapabilitiesResponse
@@ -125,6 +126,7 @@ type feature struct {
 	publishVolumeRequest                 *csi.ControllerPublishVolumeRequest
 	unpublishVolumeRequest               *csi.ControllerUnpublishVolumeRequest
 	deleteVolumeRequest                  *csi.DeleteVolumeRequest
+	deleteLocalVolumeRequest             *csiext.DeleteLocalVolumeRequest
 	listVolumesRequest                   *csi.ListVolumesRequest
 	listVolumesResponse                  *csi.ListVolumesResponse
 	listSnapshotsRequest                 *csi.ListSnapshotsRequest
@@ -266,6 +268,7 @@ func (f *feature) aPowerMaxService() error {
 	f.wrongCapacity = false
 	f.wrongStoragePool = false
 	f.deleteVolumeRequest = nil
+	f.deleteLocalVolumeRequest = nil
 	f.deleteVolumeResponse = nil
 	f.listVolumesRequest = nil
 	f.listVolumesResponse = nil
@@ -702,6 +705,7 @@ func (f *feature) iCallCreateVolumeWithNamespace(name string, namespace string) 
 		req.Parameters[HostLimitName] = "HL1"
 		req.Parameters[HostIOLimitMBSec] = "1000"
 		req.Parameters[HostIOLimitIOSec] = "500"
+		req.Parameters[DynamicDistribution] = "Always"
 		req.Parameters[DynamicDistribution] = "Always"
 	}
 	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
@@ -3983,7 +3987,7 @@ func (f *feature) iCallDiscoverStorageProtectionGroup() error {
 	_, f.err = f.service.CreateStorageProtectionGroup(ctx, req)
 	return nil
 }
-func (f *feature) iCallDiscoverRemoteVolume() error {
+func (f *feature) iCallCreateRemoteVolume() error {
 	header := metadata.New(map[string]string{"csi.requestid": "2"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 	req := &csiext.CreateRemoteVolumeRequest{
@@ -4304,6 +4308,26 @@ func (f *feature) iHaveSetHostIOLimitsOnTheStorageGroup() error {
 	return nil
 }
 
+func (f *feature) iCallDeleteLocalVolumeWith(arg1 string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := f.deleteLocalVolumeRequest
+	if f.deleteLocalVolumeRequest == nil {
+		delreq := f.getControllerDeleteVolumeRequest(arg1)
+		f.deleteLocalVolumeRequest = &csiext.DeleteLocalVolumeRequest{
+			VolumeHandle:     delreq.GetVolumeId(),
+			VolumeAttributes: nil,
+		}
+		req = f.deleteLocalVolumeRequest
+	}
+	log.Printf("Calling DeleteLocalVolume")
+	f.deleteLocalVolumeResponse, f.err = f.service.DeleteLocalVolume(ctx, req)
+	if f.err != nil {
+		log.Printf("DeleteLocalVolume called failed: %s", f.err.Error())
+	}
+	return nil
+}
+
 func FeatureContext(s *godog.Suite) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -4500,7 +4524,7 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call  GetRDFInfoFromSGID with "([^"]*)"$`, f.iCallGetRDFInfoFromSGIDWith)
 	s.Step(`^I call ProtectStorageGroup on "([^"]*)"$`, f.iCallProtectStorageGroupOn)
 	s.Step(`^I call DiscoverStorageProtectionGroup$`, f.iCallDiscoverStorageProtectionGroup)
-	s.Step(`^I call DiscoverRemoteVolume$`, f.iCallDiscoverRemoteVolume)
+	s.Step(`^I call CreateRemoteVolume$`, f.iCallCreateRemoteVolume)
 	s.Step(`^I call DeleteStorageProtectionGroup on "([^"]*)"$`, f.iCallDeleteStorageProtectionGroup)
 	s.Step(`^deletion worker timed out for "([^"]*)"$`, f.deletionWorkerTimedOutFor)
 	s.Step(`^I call CreateVolume "([^"]*)" with namespace "([^"]*)"$`, f.iCallCreateVolumeWithNamespace)
@@ -4516,4 +4540,6 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^I call RDF enabled CreateVolume "([^"]*)" in namespace "([^"]*)", mode "([^"]*)" and RDFGNo (\d+) from snapshot$`, f.iCallRDFEnabledCreateVolumeFromSnapshot)
 	s.Step(`^I call RDF enabled CreateVolume "([^"]*)" in namespace "([^"]*)", mode "([^"]*)" and RDFGNo (\d+) from volume$`, f.iCallRDFEnabledCreateVolumeFromVolume)
 	s.Step(`^I have SetHostIOLimits on the storage group$`, f.iHaveSetHostIOLimitsOnTheStorageGroup)
+	s.Step(`^I call DeleteLocalVolume with "([^"]*)"$`, f.iCallDeleteLocalVolumeWith)
+	s.Step(`^a valid DeleteVolumeResponse is returned$`, f.aValidDeleteVolumeResponseIsReturned)
 }
