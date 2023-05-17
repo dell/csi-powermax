@@ -8,9 +8,9 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/cucumber/godog v0.10.0
 	github.com/cucumber/messages-go/v10 v10.0.3
-	github.com/dell/dell-csi-extensions/common v1.1.2-0.20230330153121-7ee6c5ed22ea
-	github.com/dell/dell-csi-extensions/migration v1.1.1-0.20230330153121-7ee6c5ed22ea
-	github.com/dell/dell-csi-extensions/replication v1.3.1-0.20230330153121-7ee6c5ed22ea
+	github.com/dell/dell-csi-extensions/common v1.1.2-0.20230517135918-9920e636bff1
+	github.com/dell/dell-csi-extensions/migration v1.1.1-0.20230517135918-9920e636bff1
+	github.com/dell/dell-csi-extensions/replication v1.3.1-0.20230517135918-9920e636bff1
 	github.com/dell/gobrick v1.7.1-0.20230509091132-fb6b80aa79f1
 	github.com/dell/gocsi v1.7.0
 	github.com/dell/gofsutil v1.12.0
@@ -23,8 +23,8 @@ require (
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
 	github.com/vmware/govmomi v0.29.0
-	golang.org/x/net v0.8.0
-	google.golang.org/grpc v1.54.0
+	golang.org/x/net v0.10.0
+	google.golang.org/grpc v1.55.0
 	k8s.io/client-go v0.20.0
 )
 
@@ -68,14 +68,14 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.17.0 // indirect
 	golang.org/x/crypto v0.3.0 // indirect
-	golang.org/x/oauth2 v0.4.0 // indirect
+	golang.org/x/oauth2 v0.6.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
-	golang.org/x/sys v0.6.0 // indirect
-	golang.org/x/term v0.6.0 // indirect
-	golang.org/x/text v0.8.0 // indirect
+	golang.org/x/sys v0.8.0 // indirect
+	golang.org/x/term v0.8.0 // indirect
+	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20230323203342-db269f900576 // indirect
+	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.51.0 // indirect
