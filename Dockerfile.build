@@ -53,6 +53,8 @@ ONBUILD RUN microdnf update -y \
     microdnf install -y e2fsprogs which xfsprogs device-mapper-multipath \
     && \
     microdnf clean all
+     
+FROM ${SOURCE_REPO}:${SOURCE_IMAGE_TAG} as driver-ubimicro
 
 FROM driver-${IMAGE_TYPE} as verify
 RUN which mkfs.ext4
