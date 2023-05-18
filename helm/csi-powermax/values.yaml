@@ -360,7 +360,7 @@ replication:
   enabled: false
   # Change this to use any specific version of the dell-csi-replicator sidecar
   # Default value: None
-  image: dellemc/dell-csi-replicator:v1.4.0
+  image: dellemc/dell-csi-replicator:v1.5.0
   # replicationContextPrefix enables side cars to read
   # required information from the volume context
   # Default value: "powermax"
@@ -381,10 +381,10 @@ migration:
   enabled: false
   # Change this to use any specific version of the dell-csi-migrator sidecar
   # Default value: None
-  image: dellemc/dell-csi-migrator:v1.1.0
+  image: dellemc/dell-csi-migrator:v1.1.1
   # Node rescan sidecar does a rescan on nodes for identifying new paths
-  # Default value: dellemc/dell-csi-node-rescanner:v1.0.0
-  nodeRescanSidecarImage: dellemc/dell-csi-node-rescanner:v1.0.0
+  # Default value: dellemc/dell-csi-node-rescanner:v1.0.1
+  nodeRescanSidecarImage: dellemc/dell-csi-node-rescanner:v1.0.1
   # migrationPrefix: Determine if migration is enabled
   # Default value: "migration.storage.dell.com"
   # Examples: "migration.storage.dell.com"
