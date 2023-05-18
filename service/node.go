@@ -1262,13 +1262,13 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		// Get fibre channel initiators
 		portWWNs, err = gofsutil.GetFCHostPortWWNs(context.Background())
 		if err != nil {
-			log.Error("nodeStartup could not GetFCHostPortWWNs")
+			log.Errorf("nodeStartup could not GetFCHostPortWWNs %s", err.Error())
 		}
 
 		// Get iscsi initiators.
 		IQNs, err = s.iscsiClient.GetInitiators("")
 		if err != nil {
-			log.Error("nodeStartup could not GetInitiatorIQNs")
+			log.Errorf("nodeStartup could not GetInitiatorIQNs: %s", err.Error())
 		}
 
 		log.Infof("TransportProtocol %s FC portWWNs: %s ... IQNs: %s", s.opts.TransportProtocol, portWWNs, IQNs)

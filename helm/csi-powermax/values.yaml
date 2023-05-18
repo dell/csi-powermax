@@ -277,6 +277,21 @@ csireverseproxy:
   # Default value: None
   # Example: "StandAlone"
   mode: StandAlone
+  # Auto-create TLS certificate for csi-reverseproxy
+  certManager:
+    # Set selfSignedCert to use a self-signed certificate
+    # Default value: false
+    selfSignedCert: false
+    # certificateFile has tls.key content in encoded format
+    # Allowed Values:
+    #   - encoded base64 value of tls.crt: cat tls.crt | base64
+    #   - comment the param, if selfsigned should be used
+    certificateFile: tls.crt.encoded64
+    # privateKeyFile has tls.key content in encoded format
+    # Allowed Values:
+    #   - encoded base64 value of tls.key: cat tls.key | base64
+    #   - comment the param, if selfsigned should be used
+    privateKeyFile: tls.key.encoded64
 # clusterPrefix: Define a prefix that is appended onto
 # all resources created in the Array
 # This should be unique per K8s/CSI deployment

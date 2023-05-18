@@ -17,6 +17,11 @@ dependencies:
   - name: csireverseproxy
     version: 2.6.0
     condition: required
+  - name: cert-manager
+    version: v1.11.0
+    repository: https://charts.jetstack.io
+    alias: cert-manager
+    condition: required
 home: https://github.com/dell/csi-powermax
 icon: https://avatars1.githubusercontent.com/u/20958494?s=200&v=4
 sources:
