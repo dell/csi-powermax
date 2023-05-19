@@ -333,7 +333,12 @@ elif [ "$SOURCE_IMAGE_TYPE" = "ubim" ]; then
    IMAGE_TYPE="ubim"
 elif [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
    SOURCE_IMAGE_TAG=$UBIMICRO_VERSION
-   IMAGE_TYPE="ubimicro"
+   IMAGE_TYPE="ubimicro"   
+fi
+
+build_source_image_repo_name
+
+if [ "$SOURCR_IMAGE_TYPE" = "ubimicro" ]; then
    microcontainer=$(buildah from $SOURCE_REPO)
    micromount=$(buildah mount $microcontainer)
    dnf install --installroot $micromount --releasever=8 --nodocs --setopt install_weak_deps=false --setopt=reposdir=/etc/yum.repos.d/ e2fsprogs which xfsprogs device-mapper-multipath util-linux -y
@@ -342,9 +347,7 @@ elif [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
    buildah commit $microcontainer csipowermax-ubimicro
    SOURCE_REPO="localhost/csipowermax-ubimicro"
    SOURCE_IMAGE_TAG="latest"
-fi
-
-build_source_image_repo_name
+fi 
 
 if [ "$SOURCE_IMAGE_TYPE" = "ubim" ]; then
   if [ -n "$UBIM_SHA" ]; then
