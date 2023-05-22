@@ -267,19 +267,19 @@ Feature: PowerMax CSI interface
     Then the error contains <errormsg>
 
     Examples:
-    | voltype      | access                         | fstype     | errormsg                                     |
-    | "mount"      | "single-reader"                | "none"     | "none"                                       |
-    | "mount"      | "single-reader"                | "xfs"      | "none"                                       |
-    | "mount"      | "multiple-reader"              | "ext4"     | "Invalid access mode"                        |
-    | "mount"      | "single-writer"                | "ext4"     | "access mode conflicts with existing mounts" |
-    | "mount"      | "multiple-writer"              | "ext4"     | "Mount volumes do not support AccessMode"    |
-    | "block"      | "multiple-reader"              | "none"     | "read only not supported for Block Volume"   |
-    | "mount"      | "single-node-single-writer"    | "none"     | "access mode conflicts with existing mounts" |
-    | "mount"      | "single-node-multiple-writer"  | "none"     | "Unknown Access Mode"                        |
+      | voltype | access                        | fstype | errormsg                                     |
+      | "mount" | "single-reader"               | "none" | "none"                                       |
+      | "mount" | "single-reader"               | "xfs"  | "none"                                       |
+      | "mount" | "multiple-reader"             | "ext4" | "Invalid access mode"                        |
+      | "mount" | "single-writer"               | "ext4" | "access mode conflicts with existing mounts" |
+      | "mount" | "multiple-writer"             | "ext4" | "Mount volumes do not support AccessMode"    |
+      | "block" | "multiple-reader"             | "none" | "none"                                       |
+      | "mount" | "single-node-single-writer"   | "none" | "access mode conflicts with existing mounts" |
+      | "mount" | "single-node-multiple-writer" | "none" | "Unknown Access Mode"                        |
 
 
-@nodePublish
-@v1.1.0
+  @nodePublish
+    @v1.1.0
   Scenario Outline: Node Unstage various use cases from examples
     Given a PowerMax service
     And I have a Node "node1" with MaskingView

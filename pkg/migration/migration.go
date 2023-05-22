@@ -31,6 +31,8 @@ const (
 	CsiVolumePrefix = "csi-"
 	//Synchronized to be used for migration state check
 	Synchronized = "Synchronized"
+	//HostLimits to be used in SG payload
+	HostLimits = "hostLimits"
 )
 
 // ResetCache resets all the maps being used with migration
@@ -143,8 +145,18 @@ func StorageGroupMigration(ctx context.Context, symID, remoteSymID, clusterPrefi
 			// get local SG Params
 			sg, err := pmaxClient.GetStorageGroup(ctx, symID, localSGID)
 			// create SG on remote SG
+			hostLimitsParam := &types.SetHostIOLimitsParam{
+				HostIOLimitMBSec:    sg.HostIOLimit.HostIOLimitMBSec,
+				HostIOLimitIOSec:    sg.HostIOLimit.HostIOLimitIOSec,
+				DynamicDistribution: sg.HostIOLimit.DynamicDistribution,
+			}
+			optionalPayload := make(map[string]interface{})
+			optionalPayload[HostLimits] = hostLimitsParam
+			if *hostLimitsParam == (types.SetHostIOLimitsParam{}) {
+				optionalPayload = nil
+			}
 			_, err = pmaxClient.CreateStorageGroup(ctx, remoteSymID, localSGID, sg.SRP,
-				sg.SLO, true, nil)
+				sg.SLO, true, optionalPayload)
 			if err != nil {
 				log.Error("Error creating storage group on remote array: " + err.Error())
 				return false, status.Errorf(codes.Internal, "Error creating storage group on remote array: %s", err.Error())

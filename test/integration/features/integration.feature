@@ -3,7 +3,7 @@ Feature: Powermax OS CSI interface
   I want to run a system test
   So that I know the service functions correctly.
 
-@v1.0.0
+  @v1.0.0
   Scenario: Create and delete basic thick large volume
     Given a Powermax service
     And a basic block volume request "integration1" "65536"
@@ -17,7 +17,7 @@ Feature: Powermax OS CSI interface
     And there are no errors
     And all volumes are deleted successfully
 
-@v1.0.0
+  @v1.0.0
   Scenario: Create and delete basic volume using Gold Service Level
     Given a Powermax service
     And a basic block volume request "integration1" "50"
@@ -30,7 +30,7 @@ Feature: Powermax OS CSI interface
     Then there are no errors
     And all volumes are deleted successfully
 
-@v1.1.0
+  @v1.1.0
   Scenario Outline: Create and delete basic volume using various volume sizes
     Given a Powermax service
     And a basic block volume request "integration11" <sizeMB>
@@ -43,14 +43,14 @@ Feature: Powermax OS CSI interface
     And all volumes are deleted successfully
 
     Examples:
-    | sizeMB       | expectedGB    | errormsg                                       |
-    | "0"          | "1.00"        | "none"                                         |
-    | "8192"       | "8.00"        | "none"                                         |
+      | sizeMB      | expectedGB | errormsg                                      |
+      | "0"         | "1.00"     | "none"                                        |
+      | "8192"      | "8.00"     | "none"                                        |
 # 2 TB
-    | "2097152"    | "2048.00"     | "none"                                         |
-    | "100000000"  | "0.00"        | "greater than the maximum available capacity"  |
+      | "2097152"   | "2048.00"  | "none"                                        |
+      | "100000000" | "0.00"     | "greater than the maximum available capacity" |
 
-@v1.0.0
+  @v1.0.0
 # This test checks an important DL scenario, that to delete a volume 
 # it must match not only the symmetrix ID and device ID, but also the volume name.
   Scenario: Create volume, try to delete it with incorrect CSI VolumeID, then delete it.
@@ -68,7 +68,7 @@ Feature: Powermax OS CSI interface
     Then there are no errors
     And all volumes are deleted successfully
 
-@v1.0.0
+  @v1.0.0
   Scenario: Idempotent create and delete basic volume
     Given a Powermax service
     And a basic block volume request "integration2" "50"
@@ -80,7 +80,7 @@ Feature: Powermax OS CSI interface
     Then there are no errors
     And all volumes are deleted successfully
 
-@v1.0.0
+  @v1.0.0
   Scenario: Create and delete mount volume
     Given a Powermax service
     And a mount volume request "integration5"
@@ -89,7 +89,7 @@ Feature: Powermax OS CSI interface
     Then there are no errors
     And all volumes are deleted successfully
 
-@v1.0.0
+  @v1.0.0
   Scenario: Create, publish, unpublish and delete basic volume
     Given a Powermax service
     And a basic block volume request "integration5" "100"
@@ -103,8 +103,8 @@ Feature: Powermax OS CSI interface
     Then there are no errors
     And all volumes are deleted successfully
 
-@v1.1.0
-@xwip
+  @v1.1.0
+  @xwip
   Scenario: Create publish, node stage, node publish, node unpublish, node unstage, unpublish, delete basic volume
     Given a Powermax service
     And a mount volume request "integration6"
@@ -126,8 +126,8 @@ Feature: Powermax OS CSI interface
     Then there are no errors
     And all volumes are deleted successfully
 
-@v1.0.0
-@xwip
+  @v1.0.0
+  @xwip
   Scenario: Idempotent create publish, node publish, node unpublish, unpublish, delete basic volume
     Given a Powermax service
     And an idempotent test
@@ -165,8 +165,8 @@ Feature: Powermax OS CSI interface
     And when I call DeleteVolume
     Then there are no errors
     And all volumes are deleted successfully
-	
-@v1.0.0
+
+  @v1.0.0
   Scenario: Create and delete basic volume to maximum capacity
     Given a Powermax service
     And max retries 1
@@ -176,16 +176,16 @@ Feature: Powermax OS CSI interface
     And when I call DeleteVolume
     Then there are no errors
     And all volumes are deleted successfully
-	
-@v1.0.0
+
+  @v1.0.0
   Scenario: Create and delete basic volume beyond maximum capacity
     Given a Powermax service
     And max retries 1
     And a basic block volume request "integration4" "1073741824"
     When I call CreateVolume
     Then the error message should contain "OutOfRange desc = bad capacity"
-	
-@v1.0.0
+
+  @v1.0.0
   Scenario: Create and delete basic volume of minimum capacity
     Given a Powermax service
     And max retries 1
@@ -195,17 +195,17 @@ Feature: Powermax OS CSI interface
     And when I call DeleteVolume
     Then there are no errors
     And all volumes are deleted successfully
-	
-@v1.0.0
-    Scenario: Create and delete basic volume below minimum capacity
+
+  @v1.0.0
+  Scenario: Create and delete basic volume below minimum capacity
     Given a Powermax service
     And max retries 1
     And a basic block volume request "integration4" "48"
     When I call CreateVolume
     Then the error message should contain "OutOfRange desc = bad capacity"
-	
-@v1.0.0
-  Scenario: Call GetCapacity 
+
+  @v1.0.0
+  Scenario: Call GetCapacity
     Given a Powermax service
     And a get capacity request "SRP_1"
     And I call GetCapacity
@@ -245,7 +245,7 @@ Feature: Powermax OS CSI interface
     And I call DeleteSnapshot
     And when I call DeleteVolume
     And when I call DeleteAllVolumes
-    
+
 
   Scenario: Create volume, idempotent create snapshot, delete volume
     Given a Powermax service
@@ -295,17 +295,17 @@ Feature: Powermax OS CSI interface
     Then the error message should contain <errormsg>
 
     Examples:
-    | voltype      | access                         | fstype     | errormsg                                     |
-    | "mount"      | "single-writer"                | "xfs"      | "none"                                       |
-    | "mount"      | "single-writer"                | "ext4"     | "none"                                       |
-    | "mount"      | "multi-writer"                 | "ext4"     | "multi-writer not allowed"                   |
-    | "block"      | "single-writer"                | "none"     | "none"                                       |
-    | "block"      | "multi-writer"                 | "none"     | "none"                                       |
-    | "block"      | "single-writer"                | "none"     | "none"                                       |
-    | "mount"      | "single-node-single-writer"    | "xfs"      | "none"                                       |
-    | "mount"      | "single-node-single-writer"    | "ext4"     | "none"                                       |
-    | "block"      | "single-node-single-writer"    | "none"     | "none"                                       |
-    
+      | voltype | access                      | fstype | errormsg                   |
+      | "mount" | "single-writer"             | "xfs"  | "none"                     |
+      | "mount" | "single-writer"             | "ext4" | "none"                     |
+      | "mount" | "multi-writer"              | "ext4" | "multi-writer not allowed" |
+      | "block" | "single-writer"             | "none" | "none"                     |
+      | "block" | "multi-writer"              | "none" | "none"                     |
+      | "block" | "single-writer"             | "none" | "none"                     |
+      | "mount" | "single-node-single-writer" | "xfs"  | "none"                     |
+      | "mount" | "single-node-single-writer" | "ext4" | "none"                     |
+      | "block" | "single-node-single-writer" | "none" | "none"                     |
+
 
   Scenario: Create publish, unpublish, and delete basic volume
     Given a Powermax service
@@ -352,8 +352,8 @@ Feature: Powermax OS CSI interface
     And when I call DeleteVolume
     Then there are no errors
 
-@v1.0.0
-@xwip
+  @v1.0.0
+    @xwip
   Scenario Outline: Scalability test to create volumes, publish, node publish, node unpublish, unpublish, delete volumes in parallel
     Given a Powermax service
     When I create <numberOfVolumes> volumes in parallel
@@ -375,19 +375,19 @@ Feature: Powermax OS CSI interface
     And all volumes are deleted successfully
 
     Examples:
-    | numberOfVolumes |
-    | 1               |
-    | 2               |
-    | 5               |
-    | 8               |
+      | numberOfVolumes |
+      | 1               |
+      | 2               |
+      | 5               |
+      | 8               |
    # | 10              |
    # | 20              |
    # | 50              |
    # | 100             |
    # | 200             |
 
-@v1.1.0
-@xwip
+  @v1.1.0
+    @xwip
   Scenario Outline: Scalability test to create volumes, publish, node stage, node publish, node unpublish, node unstage,  unpublish, delete volumes in parallel
     Given a Powermax service
     When I create <numberOfVolumes> volumes in parallel
@@ -409,18 +409,18 @@ Feature: Powermax OS CSI interface
     And all volumes are deleted successfully
 
     Examples:
-    | numberOfVolumes |
-    | 1               |
-    | 2               |
-    | 5               |
-    | 8               |
+      | numberOfVolumes |
+      | 1               |
+      | 2               |
+      | 5               |
+      | 8               |
     # | 10              |
     # | 20              |
     # | 50              |
     # | 100             |
     # | 200             |
 
-@v1.0.0
+  @v1.0.0
   Scenario Outline: Idempotent create volumes, publish, node stage, node publish, node unpublish, node unstage, unpublish, delete volumes in parallel
     Given a Powermax service
     When I create <numberOfVolumes> volumes in parallel
@@ -457,12 +457,12 @@ Feature: Powermax OS CSI interface
     Then there are no errors
 
     Examples:
-    | numberOfVolumes |
-    | 1               |
+      | numberOfVolumes |
+      | 1               |
     #| 10               |
     #| 20               |
 
-@v1.0.0
+  @v1.0.0
   Scenario Outline: Create publish, node-publish, node-unpublish, unpublish, and delete basic volume
     Given a Powermax service
     And a volume request with file system "integration5" fstype <fstype> access <access> voltype <voltype>
@@ -482,14 +482,14 @@ Feature: Powermax OS CSI interface
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
-   
+
     Examples:
-    | fstype | access          | voltype |
-    | "xfs"  | "single-writer" | "mount" |
-    | "ext4" | "single-writer" | "mount" |
+      | fstype | access          | voltype |
+      | "xfs"  | "single-writer" | "mount" |
+      | "ext4" | "single-writer" | "mount" |
 
 
-@v1.2.0
+  @v1.2.0
   Scenario: Create volume, create snapshot, create volume from snapshot, create volume from volume
     Given a Powermax service
     And a basic block volume request "integration1" "50"
@@ -508,8 +508,8 @@ Feature: Powermax OS CSI interface
     And when I call DeleteAllVolumes
     And there are no errors
 
-@v1.2.0
-Scenario: Create 'n' snapshots from a volume in parallel
+  @v1.2.0
+  Scenario: Create 'n' snapshots from a volume in parallel
     Given a Powermax service
     And a basic block volume request "integration1" "50"
     When I call CreateVolume
@@ -521,8 +521,8 @@ Scenario: Create 'n' snapshots from a volume in parallel
     And when I call DeleteAllVolumes
     And there are no errors
 
-@v1.2.0
-Scenario: Create 'n' volumes from snapshot in parallel
+  @v1.2.0
+  Scenario: Create 'n' volumes from snapshot in parallel
     Given a Powermax service
     And a basic block volume request "integration1" "50"
     When I call CreateVolume
@@ -536,8 +536,8 @@ Scenario: Create 'n' volumes from snapshot in parallel
     And when I call DeleteAllVolumes
     And there are no errors
 
-@v1.2.0
-Scenario: Create 'n' volumes from volume in parallel
+  @v1.2.0
+  Scenario: Create 'n' volumes from volume in parallel
     Given a Powermax service
     And a basic block volume request "integration1" "50"
     When I call CreateVolume
@@ -547,8 +547,8 @@ Scenario: Create 'n' volumes from volume in parallel
     Then when I call DeleteAllVolumes
     And there are no errors
 
-@v1.2.0
-Scenario: Delete snapshot
+  @v1.2.0
+  Scenario: Delete snapshot
     Given a Powermax service
     And a basic block volume request "integration1" "50"
     When I call CreateVolume
@@ -561,8 +561,8 @@ Scenario: Delete snapshot
     And there are no errors
 
 
-@v1.2.0
-Scenario: Delete 'n' snapshots in parallel
+  @v1.2.0
+  Scenario: Delete 'n' snapshots in parallel
     Given a Powermax service
     And a basic block volume request "integration1" "50"
     When I call CreateVolume
@@ -574,37 +574,37 @@ Scenario: Delete 'n' snapshots in parallel
     Then when I call DeleteVolume
     And there are no errors
 
-@v1.2.0
-Scenario: Delete Snapshot then the Volume having a snapshot
-  Given a Powermax service
-  And a basic block volume request "integration1" "50"
-  When I call CreateVolume
-  And there are no errors
-  And I create 2 snapshots in parallel
-  And there are no errors
-  Then I call DeleteAllSnapshots
-  And there are no errors
-  Then when I call DeleteVolume
-  And there are no errors
+  @v1.2.0
+  Scenario: Delete Snapshot then the Volume having a snapshot
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    And I create 2 snapshots in parallel
+    And there are no errors
+    Then I call DeleteAllSnapshots
+    And there are no errors
+    Then when I call DeleteVolume
+    And there are no errors
 
-@v1.2.0
-Scenario: Deleting and creating a snapshot concurrently on source and target volumes
-  Given a Powermax service
-  And a basic block volume request "integration1" "50"
-  When I call CreateVolume
-  And there are no errors
-  And I call CreateSnapshot
-  And there are no errors
-  And I call LinkVolumeToSnapshot
-  And there are no errors
-  Then I call DeleteSnapshot and CreateSnapshot in parallel
-  And there are no errors
-  And I call DeleteSnapshot
-  And there are no errors
-  And when I call DeleteAllVolumes
-  And there are no errors
+  @v1.2.0
+  Scenario: Deleting and creating a snapshot concurrently on source and target volumes
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    And I call CreateSnapshot
+    And there are no errors
+    And I call LinkVolumeToSnapshot
+    And there are no errors
+    Then I call DeleteSnapshot and CreateSnapshot in parallel
+    And there are no errors
+    And I call DeleteSnapshot
+    And there are no errors
+    And when I call DeleteAllVolumes
+    And there are no errors
 
-@v1.2.0
+  @v1.2.0
   Scenario: Creating a Snapshot on newly created Volume from Snasphot
     Given a Powermax service
     And a basic block volume request "integration1" "50"
@@ -620,7 +620,8 @@ Scenario: Deleting and creating a snapshot concurrently on source and target vol
     And there are no errors
     And when I call DeleteAllVolumes
     And there are no errors
-@v1.2.0
+
+  @v1.2.0
   Scenario: Deleting Target Volume then the Source Volume
     Given a Powermax service
     And a basic block volume request "integration1" "50"
@@ -632,14 +633,14 @@ Scenario: Deleting and creating a snapshot concurrently on source and target vol
     And there are no errors
     Then I call LinkVolumeToSnapshot
     And there are no errors
-    And I call DeleteTargetVolume
+    And I call DeleteLocalVolume
     And there are no errors
     Then I call DeleteSnapshot
     And there are no errors
     And when I call DeleteAllVolumes
     And there are no errors
 
-@v1.2.0
+  @v1.2.0
   Scenario: Creating a Volume from newly created Volume from Volume
     Given a Powermax service
     And a basic block volume request "integration1" "50"
@@ -652,7 +653,7 @@ Scenario: Deleting and creating a snapshot concurrently on source and target vol
     And when I call DeleteAllVolumes
     And there are no errors
 
-@v1.2.0
+  @v1.2.0
   Scenario: Checks if a soft deleted volume is hard deleted
     Given a Powermax service
     And a basic block volume request "integration1" "50"
@@ -661,7 +662,7 @@ Scenario: Deleting and creating a snapshot concurrently on source and target vol
     And I create 2 snapshots in parallel
     And there are no errors
     And when I call DeleteVolume
-    And there are no errors 
+    And there are no errors
     And I delete a snapshot
     And there are no errors
     Then I check if volume exist
@@ -671,9 +672,9 @@ Scenario: Deleting and creating a snapshot concurrently on source and target vol
     Then I check if volume is deleted
     And there are no errors
 
-@wip
-@v1.4.0
-Scenario: Expand Mount Volume
+  @wip
+  @v1.4.0
+  Scenario: Expand Mount Volume
     Given a Powermax service
     And a mount volume request "integration6"
     When I call CreateVolume
@@ -698,7 +699,7 @@ Scenario: Expand Mount Volume
     Then there are no errors
     And all volumes are deleted successfully
 
-@v1.4.0
+  @v1.4.0
   Scenario: Expand Mount Volume with Capacity Bytes not set
     Given a Powermax service
     And a mount volume request "integration6"
@@ -718,9 +719,9 @@ Scenario: Expand Mount Volume
     Then there are no errors
     And all volumes are deleted successfully
 
-@wip
-@v1.4.0
-Scenario: Expand Raw Block Volume
+  @wip
+  @v1.4.0
+  Scenario: Expand Raw Block Volume
     Given a Powermax service
     And a mount volume request "integration6"
     And a basic block volume request "integration7" "100"
@@ -746,26 +747,26 @@ Scenario: Expand Raw Block Volume
     Then there are no errors
     And all volumes are deleted successfully
 
-@v1.4.0
-Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel and retry for failing snapshot request
-  Given a Powermax service
-  And a basic block volume request "integration1" "50"
-  When I create <n> volumes in parallel
-  And there are no errors
-  And I create a snapshot per volume in parallel
-  And there are no errors
-  Then I call DeleteSnapshot in parallel
-  And there are no errors
-  And when I call DeleteAllVolumes
-  And there are no errors
+  @v1.4.0
+  Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel and retry for failing snapshot request
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I create <n> volumes in parallel
+    And there are no errors
+    And I create a snapshot per volume in parallel
+    And there are no errors
+    Then I call DeleteSnapshot in parallel
+    And there are no errors
+    And when I call DeleteAllVolumes
+    And there are no errors
 
-  Examples:
-  | n  |
-  | 10 |
-  | 20 |
-  | 35 |
+    Examples:
+      | n  |
+      | 10 |
+      | 20 |
+      | 35 |
 
-@v1.6.0
+  @v1.6.0
   Scenario: Create and delete replication volume
     Given a Powermax service
     And a basic block volume request "integration1" "100"
@@ -778,15 +779,15 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
-    And all volumes are deleted successfully
-    And I call DeleteTargetVolume
+    And I call DeleteLocalVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
     And there are no errors
 
-@v1.6.0
+  @v1.6.0
   Scenario: Idempotent create and delete replication volume
     Given a Powermax service
     And a basic block volume request "integration1" "100"
@@ -801,14 +802,14 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And when I call DeleteVolume
     And when I call DeleteVolume
     Then there are no errors
-    And I call DeleteTargetVolume
+    And I call DeleteLocalVolume
     Then there are no errors
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
     And there are no errors
 
-@v1.6.0
+  @v1.6.0
   Scenario: Create, publish, unpublish and delete replication volume
     Given a Powermax service
     And a basic block volume request "integration1" "100"
@@ -825,15 +826,15 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
-    And all volumes are deleted successfully
-    And I call DeleteTargetVolume
+    And I call DeleteLocalVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
     And there are no errors
 
-@v1.6.0
+  @v1.6.0
   Scenario: Create and delete replication mount volume
     Given a Powermax service
     And a mount volume request "integration5"
@@ -846,15 +847,15 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
-    And all volumes are deleted successfully
-    And I call DeleteTargetVolume
+    And I call DeleteLocalVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
     And there are no errors
 
-@v1.6.0
+  @v1.6.0
   Scenario: SRDF Actions on a protected SG
     Given a Powermax service
     And a basic block volume request "integration1" "100"
@@ -881,15 +882,15 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
-    And all volumes are deleted successfully
-    And I call DeleteTargetVolume
+    And I call DeleteLocalVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
     And there are no errors
 
-@v1.6.0
+  @v1.6.0
   Scenario: Get Status of a protected SG
     Given a Powermax service
     And a basic block volume request "integration1" "100"
@@ -916,15 +917,15 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
-    And all volumes are deleted successfully
-    And I call DeleteTargetVolume
+    And I call DeleteLocalVolume
     Then there are no errors
+    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
     And there are no errors
 
-@v2.2.0
+  @v2.2.0
   Scenario: Volume Health Montioring method
     Given a Powermax service
     And a mount volume request "integration6"
@@ -950,7 +951,7 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     Then there are no errors
     And all volumes are deleted successfully
 
-@v2.4.0
+  @v2.4.0
   Scenario: Create and delete replication volume with auto SRDF group
     Given a Powermax service
     And a basic block volume request "integration1" "100"
@@ -963,9 +964,31 @@ Scenario Outline: Create and Delete 'n' Snapshots from 'n' Volumes in parallel a
     And there are no errors
     And when I call DeleteVolume
     Then there are no errors
-    And all volumes are deleted successfully
-    And I call DeleteTargetVolume
+    And when I call DeleteLocalVolume
     Then there are no errors
+    And all volumes are deleted successfully
+    And I call Delete LocalStorageProtectionGroup
+    And there are no errors
+    And I call Delete RemoteStorageProtectionGroup
+    And there are no errors
+
+  @v2.7.0
+  Scenario: Create and delete replication volume with HostIOLimits
+    Given a Powermax service
+    And I have SetHostIOLimits on the storage group
+    And a basic block volume request "integration1" "100"
+    And adds replication capability with mode "ASYNC" namespace "INT"
+    When I call CreateVolume
+    And I receive a valid volume
+    And I call CreateStorageProtectionGroup with mode "ASYNC"
+    And there are no errors
+    And I call CreateRemoteVolume with mode "ASYNC"
+    And there are no errors
+    And when I call DeleteVolume
+    Then there are no errors
+    And when I call DeleteLocalVolume
+    Then there are no errors
+    And all volumes are deleted successfully
     And I call Delete LocalStorageProtectionGroup
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup

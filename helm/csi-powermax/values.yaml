@@ -49,7 +49,7 @@ global:
 
 # Current version of the driver
 # Don't modify this value as this value will be used by the install script
-version: "v2.6.0"
+version: "v2.7.0"
 
 images:
   # "driver" defines the container image, used for the driver container.
@@ -255,8 +255,8 @@ enableCHAP: false
 csireverseproxy:
   # image: Define the container images used for the reverse proxy
   # Default value: None
-  # Example: "csipowermax-reverseproxy:v2.5.0"
-  image: dellemc/csipowermax-reverseproxy:v2.5.0
+  # Example: "csipowermax-reverseproxy:v2.6.0"
+  image: dellemc/csipowermax-reverseproxy:v2.6.0
   # "tlsSecret" defines the TLS secret that is created with certificate
   # and its associated key
   # Default value: None
@@ -360,7 +360,7 @@ replication:
   enabled: false
   # Change this to use any specific version of the dell-csi-replicator sidecar
   # Default value: None
-  image: dellemc/dell-csi-replicator:v1.4.0
+  image: dellemc/dell-csi-replicator:v1.5.0
   # replicationContextPrefix enables side cars to read
   # required information from the volume context
   # Default value: "powermax"
@@ -381,10 +381,10 @@ migration:
   enabled: false
   # Change this to use any specific version of the dell-csi-migrator sidecar
   # Default value: None
-  image: dellemc/dell-csi-migrator:v1.1.0
+  image: dellemc/dell-csi-migrator:v1.1.1
   # Node rescan sidecar does a rescan on nodes for identifying new paths
-  # Default value: dellemc/dell-csi-node-rescanner:v1.0.0
-  nodeRescanSidecarImage: dellemc/dell-csi-node-rescanner:v1.0.0
+  # Default value: dellemc/dell-csi-node-rescanner:v1.0.1
+  nodeRescanSidecarImage: dellemc/dell-csi-node-rescanner:v1.0.1
   # migrationPrefix: Determine if migration is enabled
   # Default value: "migration.storage.dell.com"
   # Examples: "migration.storage.dell.com"
@@ -423,8 +423,8 @@ vSphere:
   # fcPortGroup: an existing portGroup that driver will use for vSphere
   # recommended format: csi-x-VC-PG, x can be anything of user choice
   fcPortGroup: "csi-vsphere-VC-PG"
-  # fcHostName: an existing host(initiator group) that driver will use for vSphere
-  # this host should contain initiators from all the ESXs/ESXi host
+  # fcHostName: an existing host(initiator group) or hostGroup that driver will use for vSphere
+  # this host/hostGroup should contain initiators from all the ESXs/ESXi host
   # where the cluster is deployed
   # recommended format: csi-x-VC-HN, x can be anything of user choice
   fcHostName: "csi-vsphere-VC-HN"

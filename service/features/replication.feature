@@ -170,21 +170,21 @@ Feature: PowerMax CSI Interface
 
   @srdf
   @v1.6.0
-  Scenario: DiscoverRemoteVolume with no error
+  Scenario: CreateRemoteVolume with no error
     Given a PowerMax service
     And I call RDF enabled CreateVolume "volume1" in namespace "csi-test", mode "ASYNC" and RDFGNo 13
     And a valid CreateVolumeResponse is returned
-    And I call DiscoverRemoteVolume
+    And I call CreateRemoteVolume
     Then no error was received
 
   @srdf
   @v1.6.0
-  Scenario Outline: DiscoverRemoteVolume with different error
+  Scenario Outline: CreateRemoteVolume with different error
     Given a PowerMax service
     And I call RDF enabled CreateVolume "volume1" in namespace "csi-test", mode "ASYNC" and RDFGNo 13
     And a valid CreateVolumeResponse is returned
     Then I induce error <induced>
-    And I call DiscoverRemoteVolume
+    And I call CreateRemoteVolume
     Then the error contains <errormsg>
     Examples:
       | induced                      | errormsg                                        |

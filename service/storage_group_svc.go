@@ -17,6 +17,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -569,7 +570,8 @@ func (g *storageGroupSvc) addVolumesToSGMV(ctx context.Context, reqID, symID, tg
 	}
 	if maskingViewExists {
 		// We just need to confirm if all the other entities are in order
-		if tgtMaskingView.HostID == hostID && tgtMaskingView.StorageGroupID == tgtStorageGroupID {
+		//Check for host group too in case of vsphere
+		if (tgtMaskingView.HostID == hostID || tgtMaskingView.HostGroupID == hostID) && tgtMaskingView.StorageGroupID == tgtStorageGroupID {
 			// Add the volumes to masking view, if any to be added
 			if len(devIDs) > 0 {
 				log.WithFields(f).Info("Calling AddVolumesToStorageGroup")
@@ -595,10 +597,22 @@ func (g *storageGroupSvc) addVolumesToSGMV(ctx context.Context, reqID, symID, tg
 		log.WithFields(f).Infof("calling GetHostByID: %s", hostID)
 		host, err := pmaxClient.GetHostByID(ctx, symID, hostID)
 		if err != nil {
-			errormsg := fmt.Sprintf(
-				"ControllerPublishVolume: Failed to fetch host details for host %s on %s with error - %s", hostID, symID, err.Error())
-			log.WithFields(f).Error(errormsg)
-			return status.Error(codes.NotFound, errormsg)
+			//check for hostGroup
+			if strings.Contains(err.Error(), "cannot be found") && g.svc.opts.IsVsphereEnabled {
+				hostg, err := pmaxClient.GetHostGroupByID(ctx, symID, hostID)
+				if err != nil {
+					errormsg := fmt.Sprintf(
+						"ControllerPublishVolume: Failed to fetch host groups details for %s on %s with error - %s", hostID, symID, err.Error())
+					log.WithFields(f).Error(errormsg)
+					return status.Error(codes.NotFound, errormsg)
+				}
+				host = &types.Host{HostID: hostg.HostGroupID}
+			} else {
+				errormsg := fmt.Sprintf(
+					"ControllerPublishVolume: Failed to fetch host details for host %s on %s with error - %s", hostID, symID, err.Error())
+				log.WithFields(f).Error(errormsg)
+				return status.Error(codes.NotFound, errormsg)
+			}
 		}
 		// Fetch or create a Port Group
 		log.WithFields(f).Info("calling SelectOrCreatePortGroup")
