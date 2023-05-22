@@ -340,12 +340,7 @@ build_source_image_repo_name
 
 if [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
    echo "Adding driver dependencies to ubi micro image"
-   microcontainer=$(buildah from $SOURCE_REPO)
-   micromount=$(buildah mount $microcontainer)
-   dnf install --installroot $micromount --releasever=8 --nodocs --setopt install_weak_deps=false --setopt=reposdir=/etc/yum.repos.d/ e2fsprogs which xfsprogs device-mapper-multipath util-linux -y
-   dnf clean all --installroot $micromount
-   buildah umount $microcontainer
-   buildah commit $microcontainer csipowermax-ubimicro
+   bash ./buildubimicro.sh $SOURCE_REPO
    SOURCE_REPO="localhost/csipowermax-ubimicro"
    SOURCE_IMAGE_TAG="latest"
 fi 
