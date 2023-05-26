@@ -3,7 +3,7 @@ module revproxy/v2
 go 1.20
 
 require (
-	github.com/dell/gopowermax/v2 v2.2.1-0.20230508123753-234fe4f71f72
+	github.com/dell/gopowermax/v2 v2.2.1-0.20230515094200-4d5eb1408ea0
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gorilla/mux v1.7.3
 	github.com/kubernetes-csi/csi-lib-utils v0.9.1

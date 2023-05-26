@@ -281,7 +281,7 @@ csireverseproxy:
   certManager:
     # Set selfSignedCert to use a self-signed certificate
     # Default value: false
-    selfSignedCert: false
+    selfSignedCert: true
     # certificateFile has tls.key content in encoded format
     # Allowed Values:
     #   - encoded base64 value of tls.crt: cat tls.crt | base64
