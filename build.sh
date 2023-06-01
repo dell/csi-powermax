@@ -350,7 +350,7 @@ if [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
    SOURCE_IMAGE_TAG="latest"
 fi 
 
-if [ "$SOURCE_IMAGE_TYPE" = "ubim" || $SOURCE_IMAGE_TYPE" = "ubimicro"]; then
+if [ "$SOURCE_IMAGE_TYPE" = "ubim" || "$SOURCE_IMAGE_TYPE" = "ubimicro"]; then
   if [ -n "$UBIM_SHA" || -n "$UBIMICRO_SHA" ]; then
     SOURCE_REPO="$SOURCE_REPO@sha256"
   fi
