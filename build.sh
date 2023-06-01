@@ -332,6 +332,10 @@ elif [ "$SOURCE_IMAGE_TYPE" = "ubim" ]; then
    fi
    IMAGE_TYPE="ubim"
 elif [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
+   if [ -n "$UBIMICRO_SHA" ]; then
+     # We need to use the SHA
+     SOURCE_IMAGE_TAG=$UBIMICRO_SHA
+   else
    SOURCE_IMAGE_TAG=$UBIMICRO_VERSION
    IMAGE_TYPE="ubimicro"   
 fi
@@ -345,8 +349,8 @@ if [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
    SOURCE_IMAGE_TAG="latest"
 fi 
 
-if [ "$SOURCE_IMAGE_TYPE" = "ubim" ]; then
-  if [ -n "$UBIM_SHA" ]; then
+if [ "$SOURCE_IMAGE_TYPE" = "ubim" || $SOURCE_IMAGE_TYPE" = "ubimicro"]; then
+  if [ -n "$UBIM_SHA" || -n "$UBIMICRO_SHA" ]; then
     SOURCE_REPO="$SOURCE_REPO@sha256"
   fi
 fi
