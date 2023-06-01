@@ -345,13 +345,16 @@ build_source_image_repo_name
 
 if [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
    echo "Adding driver dependencies to ubi micro image"
+   if [ -n "$UBIMICRO_SHA" ]; then
+    SOURCE_REPO="$SOURCE_REPO@sha256"
+   fi
    bash ./buildubimicro.sh $SOURCE_REPO
    SOURCE_REPO="localhost/csipowermax-ubimicro"
    SOURCE_IMAGE_TAG="latest"
 fi 
 
-if [ "$SOURCE_IMAGE_TYPE" = "ubim" || "$SOURCE_IMAGE_TYPE" = "ubimicro"]; then
-  if [ -n "$UBIM_SHA" || -n "$UBIMICRO_SHA" ]; then
+if [ "$SOURCE_IMAGE_TYPE" = "ubim" ]; then
+  if [ -n "$UBIM_SHA" ]; then
     SOURCE_REPO="$SOURCE_REPO@sha256"
   fi
 fi
