@@ -348,7 +348,7 @@ if [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
    if [ -n "$UBIMICRO_SHA" ]; then
     SOURCE_REPO="$SOURCE_REPO@sha256"
    fi
-   bash ./buildubimicro.sh $SOURCE_REPO
+   bash ./buildubimicro.sh "$SOURCE_REPO:$SOURCE_IMAGE_TAG"
    SOURCE_REPO="localhost/csipowermax-ubimicro"
    SOURCE_IMAGE_TAG="latest"
 fi 
