@@ -336,8 +336,8 @@ elif [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
      # We need to use the SHA
      SOURCE_IMAGE_TAG=$UBIMICRO_SHA
    else
-   SOURCE_IMAGE_TAG=$UBIMICRO_VERSION
-   IMAGE_TYPE="ubimicro"   
+     SOURCE_IMAGE_TAG=$UBIMICRO_VERSION
+     IMAGE_TYPE="ubimicro"   
    fi
 fi
 
