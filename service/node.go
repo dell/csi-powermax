@@ -1120,6 +1120,8 @@ func (s *service) NodeGetVolumeStats(
 		log.Debug("---- check 1 ----")
 		replace := CSIPrefix + "-" + s.getClusterPrefix() + "-"
 		volName = strings.Replace(volName, replace, "", 1)
+		//remove the namespace from the volName as the mount paths will not have it
+		volName = strings.Join(strings.Split(volName, "-")[:2], "-")
 		isMounted, err := isVolumeMounted(ctx, volName, volPath)
 		log.Debug("---- isMounted ----", isMounted)
 		if err != nil {
