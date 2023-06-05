@@ -681,7 +681,7 @@ Feature: PowerMax CSI interface
 @v2.2.0
     Scenario Outline: Call NodeGetVolumeStats
       Given a PowerMax service
-      And a valid volume
+      And I call CreateVolume "volume1" with namespace "ns"
       And I induce error <induced>
       When I call NodeGetVolumeStats with volumePath as <volPath>
       Then the error contains <errormsg>
