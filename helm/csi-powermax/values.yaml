@@ -106,7 +106,7 @@ fsGroupPolicy: ReadWriteOnceWithFSType
 # This limit is applicable to all the nodes in the cluster for which node label 'max-Powermax-volumes-per-node' is not set.
 # Allowed values: n, where n >= 0
 # Default value: 0
-maxPowermaxVolumesPerNode: 0
+maxPowerMaxVolumesPerNode: 0
 
 # controller: configure controller specific parameters
 controller:
