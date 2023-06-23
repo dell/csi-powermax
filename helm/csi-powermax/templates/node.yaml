@@ -289,6 +289,8 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: spec.nodeName
+            - name: X_CSI_MAX_VOLUMES_PER_NODE
+              value: "{{ .Values.maxPowerMaxVolumesPerNode }}"
           volumeMounts:
             - name: registration-dir
               mountPath: /registration
