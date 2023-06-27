@@ -2672,17 +2672,6 @@ func (s *service) GetCapacity(
 		return nil, err
 	}
 
-	// Optionally validate the volume capability
-	vcs := req.GetVolumeCapabilities()
-	if vcs != nil {
-		supported, reason := valVolumeCaps(vcs, nil)
-		if !supported {
-			log.Error("GetVolumeCapabilities failed with error: " + reason)
-			return nil, status.Errorf(codes.InvalidArgument, reason)
-		}
-		log.Infof("Supported capabilities - Error(%s)", reason)
-	}
-
 	// Storage (resource) Pool. Validate it against exist Pools
 	storagePoolID := params[StoragePoolParam]
 	err = s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
