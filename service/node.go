@@ -1056,6 +1056,40 @@ func (s *service) NodeGetInfo(
 			Segments: topology,
 		},
 	}, nil
+	
+	// Check for node label 'max-PowerMax-volumes-per-node'. If present set 'MaxVolumesPerNode' to this value.
+	// If node label is not present, set 'MaxVolumesPerNode' to default value i.e., 0
+	var maxPowerMaxVolumesPerNode int64
+	labels, err := s.GetNodeLabels()
+	if err != nil {
+		log.Error("failed to get Node Labels with error", err.Error())
+		return nil, err
+	}
+	if val, ok := labels["max-powermax-volumes-per-node"]; ok {
+		maxPowerMaxVolumesPerNode, err = strconv.ParseInt(val, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value '%s' specified for 'max-powermax-volumes-per-node' node label", val)
+		}
+		log.Infof("node label 'max-powermax-volumes-per-node' is available and is set to value '%v'", maxPowerMaxVolumesPerNode)
+	} else {
+		// As per the csi spec the plugin MUST NOT set negative values to
+		// 'MaxVolumesPerNode' in the NodeGetInfoResponse response
+		if s.opts.MaxVolumesPerNode < 0 {
+			return nil, fmt.Errorf("maxPowerMaxVolumesPerNode MUST NOT be set to negative value")
+		}
+		maxPowerMaxVolumesPerNode = s.opts.MaxVolumesPerNode
+		log.Infof("node label 'max-powermax-volumes-per-node' is not available. Using default volume limit '%v'", maxPowerMaxVolumesPerNode)
+	}
+	
+	// Create NodeGetInfoResponse including nodeID and AccessibleTopology information
+	return &csi.NodeGetInfoResponse{
+		NodeId: nodeID,
+		AccessibleTopology: &csi.Topology{
+			Segments: topology,
+		},
+		MaxVolumesPerNode: maxPowerMaxVolumesPerNode,
+	}, nil
+
 }
 
 func (s *service) NodeGetVolumeStats(
