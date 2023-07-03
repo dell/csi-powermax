@@ -293,7 +293,7 @@ Feature: PowerMax CSI interface
      Scenario: Call GetCapacity with invalid capabilities
       Given a PowerMax service
       And I call GetCapacity with Invalid capabilities
-      Then the error contains "access mode cannot be UNKNOWN"
+      Then the error contains "A valid SRP parameter is required"
 
 @v1.0.0
      Scenario: Call ControllerGetCapabilities
