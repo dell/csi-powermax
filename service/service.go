@@ -41,6 +41,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"github.com/dell/csi-powermax/k8sutils"
 
 	"github.com/dell/csi-powermax/v2/core"
 	migrext "github.com/dell/dell-csi-extensions/migration"
@@ -791,4 +792,20 @@ func getLogFields(ctx context.Context) log.Fields {
 	}
 	fields["RequestID"] = csiReqID
 	return fields
+}
+
+func (s *service) GetNodeLabels() (map[string]string, error) {
+	k8sclientset, err := k8sutils.CreateKubeClientSet(s.opts.KubeConfigPath)
+	if err != nil {
+		log.Errorf("init client failed: '%s'", err.Error())
+		return nil, err
+	}
+	// access the API to fetch node object
+	node, err := k8sclientset.CoreV1().Nodes().Get(context.TODO(), s.nodeID, v1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	log.Debugf("Node %s details\n", node)
+
+	return node.Labels, nil
 }
