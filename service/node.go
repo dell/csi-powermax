@@ -1083,7 +1083,7 @@ func (s *service) NodeGetInfo(
 	
 	// Create NodeGetInfoResponse including nodeID and AccessibleTopology information
 	return &csi.NodeGetInfoResponse{
-		NodeId: nodeID,
+		NodeId: s.opts.NodeName,
 		AccessibleTopology: &csi.Topology{
 			Segments: topology,
 		},
