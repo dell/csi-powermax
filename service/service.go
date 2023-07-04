@@ -41,7 +41,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"github.com/dell/csi-powermax/k8sutils"
+	"github.com/dell/csi-powermax/v2/k8sutils"
 
 	"github.com/dell/csi-powermax/v2/core"
 	migrext "github.com/dell/dell-csi-extensions/migration"
