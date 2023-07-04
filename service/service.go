@@ -389,7 +389,7 @@ func (s *service) BeforeServe(
 	}
 	if MaxVolumesPerNode, ok := csictx.LookupEnv(ctx, EnvMaxVolumesPerNode); ok {
 		if MaxVolumesPerNode, err := strconv.ParseInt(MaxVolumesPerNode, 10, 64); err!=nil {
-			log.Warningf("error while parsing env variable '%s', %s, defaulting to 0", constants.EnvMaxVolumesPerNode, err)
+			log.Warningf("error while parsing env variable '%s', %s, defaulting to 0", EnvMaxVolumesPerNode, err)
 			opts.MaxVolumesPerNode = 0
 	}
 	} else {
