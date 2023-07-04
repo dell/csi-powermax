@@ -126,6 +126,7 @@ type Opts struct {
 	VCenterHostURL             string // vCenter host url
 	VCenterHostUserName        string // vCenter host username
 	VCenterHostPassword        string // vCenter password
+	MaxVolumesPerNode	   int64  // to specify volume limits
 }
 
 // NodeConfig defines rules for given node
@@ -271,6 +272,7 @@ func (s *service) BeforeServe(
 			"VsphereHostNames":         s.opts.VSphereHostName,
 			"VsphereHostURL":           s.opts.VCenterHostURL,
 			"VsphereHostUsername":      s.opts.VCenterHostUserName,
+			"MaxVolumesPerNode":        s.opts.MaxVolumesPerNode,
 		}
 
 		if s.opts.Password != "" {
@@ -385,7 +387,12 @@ func (s *service) BeforeServe(
 	if replicationPrefix, ok := csictx.LookupEnv(ctx, EnvReplicationPrefix); ok {
 		opts.ReplicationPrefix = replicationPrefix
 	}
-
+	if MaxVolumesPerNode, err := utils.ParseInt64FromContext(ctx, constants.EnvMaxVolumesPerNode); err != nil {
+		log.Warningf("error while parsing env variable '%s', %s, defaulting to 0", constants.EnvMaxVolumesPerNode, err)
+		opts.MaxVolumesPerNode = 0
+	} else {
+		opts.MaxVolumesPerNode = MaxVolumesPerNode
+	}
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
 	opts.ProxyServiceHost, opts.ProxyServicePort, opts.UseProxy = s.getProxySettingsFromEnv()
 	if !opts.UseProxy && !inducedMockReverseProxy {
