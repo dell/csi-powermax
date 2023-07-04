@@ -387,9 +387,11 @@ func (s *service) BeforeServe(
 	if replicationPrefix, ok := csictx.LookupEnv(ctx, EnvReplicationPrefix); ok {
 		opts.ReplicationPrefix = replicationPrefix
 	}
-	if MaxVolumesPerNode, err := utils.ParseInt64FromContext(ctx, constants.EnvMaxVolumesPerNode); err != nil {
-		log.Warningf("error while parsing env variable '%s', %s, defaulting to 0", constants.EnvMaxVolumesPerNode, err)
-		opts.MaxVolumesPerNode = 0
+	if MaxVolumesPerNode, ok := csictx.LookupEnv(ctx, EnvMaxVolumesPerNode); ok {
+		if MaxVolumesPerNode, err := strconv.ParseInt(MaxVolumesPerNode, 10, 64); err!=nil {
+			log.Warningf("error while parsing env variable '%s', %s, defaulting to 0", constants.EnvMaxVolumesPerNode, err)
+			opts.MaxVolumesPerNode = 0
+	}
 	} else {
 		opts.MaxVolumesPerNode = MaxVolumesPerNode
 	}
