@@ -121,6 +121,9 @@ const (
 	// EnvConfigFilePath is an env variable which contains the full path for the config file
 	EnvConfigFilePath = "X_CSI_POWERMAX_CONFIG_PATH"
 
+	// EnvMaxVolumesPerNode specifies maximum number of volumes that controller can publish to the node.
+	EnvMaxVolumesPerNode = "X_CSI_MAX_VOLUMES_PER_NODE"
+
 	// EnvHealthMonitorEnabled is an env variable which indicated if volume health monitor is enabled
 	EnvHealthMonitorEnabled = "X_CSI_HEALTH_MONITOR_ENABLED"
 
