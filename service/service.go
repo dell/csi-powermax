@@ -804,7 +804,7 @@ func getLogFields(ctx context.Context) log.Fields {
 }
 
 func (s *service) GetNodeLabels() (map[string]string, error) {
-	k8sclientset, err := k8sutils.CreateKubeClientSet(s.opts.KubeConfigPath)
+	k8sclientset, err := k8sutils.CreateKubeClientSet(s.opts.*kubeconfig)
 	if err != nil {
 		log.Errorf("init client failed: '%s'", err.Error())
 		return nil, err
