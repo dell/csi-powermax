@@ -272,7 +272,6 @@ func (s *service) BeforeServe(
 			"VsphereHostNames":         s.opts.VSphereHostName,
 			"VsphereHostURL":           s.opts.VCenterHostURL,
 			"VsphereHostUsername":      s.opts.VCenterHostUserName,
-			"MaxVolumesPerNode":        s.opts.MaxVolumesPerNode,
 		}
 
 		if s.opts.Password != "" {
