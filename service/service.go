@@ -815,7 +815,7 @@ func (s *service) GetNodeLabels() (map[string]string, error) {
 		return nil, err
 	}
 	// access the API to fetch node object
-	node, err := k8sclientset.CoreV1().Nodes().Get(context.TODO(), s.nodeID, v1.GetOptions{})
+	node, err := k8sclientset.CoreV1().Nodes().Get(context.TODO(), s.opts.NodeName, v1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
