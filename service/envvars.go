@@ -118,6 +118,9 @@ const (
 	// EnvManagedArrays is an env variable with a list of space separated arrays.
 	EnvManagedArrays = "X_CSI_MANAGED_ARRAYS"
 
+	// EnvKubeConfigPath indicates kubernetes configuration that has to be used by CSI Driver
+	EnvKubeConfigPath = "KUBECONFIG"
+
 	// EnvConfigFilePath is an env variable which contains the full path for the config file
 	EnvConfigFilePath = "X_CSI_POWERMAX_CONFIG_PATH"
 
