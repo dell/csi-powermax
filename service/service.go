@@ -127,6 +127,7 @@ type Opts struct {
 	VCenterHostUserName        string // vCenter host username
 	VCenterHostPassword        string // vCenter password
 	MaxVolumesPerNode	   int64  // to specify volume limits
+	kubeConfigPath		   string // to specify k8s configuration to be used CSI driver
 }
 
 // NodeConfig defines rules for given node
@@ -378,6 +379,10 @@ func (s *service) BeforeServe(
 	} else {
 		log.Error("No managed arrays specified")
 		os.Exit(1)
+	}
+
+	if kubeConfigPath, ok := csictx.LookupEnv(ctx, constants.EnvKubeConfigPath); ok {
+		opts.KubeConfigPath = kubeConfigPath
 	}
 
 	if replicationContextPrefix, ok := csictx.LookupEnv(ctx, EnvReplicationContextPrefix); ok {
