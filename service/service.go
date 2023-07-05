@@ -381,7 +381,7 @@ func (s *service) BeforeServe(
 		os.Exit(1)
 	}
 
-	if kubeConfigPath, ok := csictx.LookupEnv(ctx, constants.EnvKubeConfigPath); ok {
+	if kubeConfigPath, ok := csictx.LookupEnv(ctx, EnvKubeConfigPath); ok {
 		opts.KubeConfigPath = kubeConfigPath
 	}
 
