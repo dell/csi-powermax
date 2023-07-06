@@ -47,6 +47,7 @@ import (
 	migrext "github.com/dell/dell-csi-extensions/migration"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 	pmax "github.com/dell/gopowermax/v2"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Constants for the service
