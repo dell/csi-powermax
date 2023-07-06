@@ -1050,13 +1050,6 @@ func (s *service) NodeGetInfo(
 		return nil, status.Error(codes.FailedPrecondition, "no topology keys could be generate")
 	}
 
-	return &csi.NodeGetInfoResponse{
-		NodeId: s.opts.NodeName,
-		AccessibleTopology: &csi.Topology{
-			Segments: topology,
-		},
-	}, nil
-	
 	// Check for node label 'max-PowerMax-volumes-per-node'. If present set 'MaxVolumesPerNode' to this value.
 	// If node label is not present, set 'MaxVolumesPerNode' to default value i.e., 0
 	var maxPowerMaxVolumesPerNode int64
