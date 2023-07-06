@@ -127,7 +127,7 @@ type Opts struct {
 	VCenterHostUserName        string // vCenter host username
 	VCenterHostPassword        string // vCenter password
 	MaxVolumesPerNode	   int64  // to specify volume limits
-	kubeConfigPath		   string // to specify k8s configuration to be used CSI driver
+	KubeConfigPath		   string // to specify k8s configuration to be used CSI driver
 }
 
 // NodeConfig defines rules for given node
