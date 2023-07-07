@@ -53,7 +53,25 @@ version: "v2.7.0"
 
 images:
   # "driver" defines the container image, used for the driver container.
-  driverRepository: dellemc
+  driver: dellemc/csi-powermax:v2.7.0
+  csireverseproxy: dellemc/csipowermax-reverseproxy:v2.6.0
+  # CSI sidecars
+  attacher: registry.k8s.io/sig-storage/csi-attacher:v4.3.0
+  provisioner: registry.k8s.io/sig-storage/csi-provisioner:v3.5.0
+  snapshotter: registry.k8s.io/sig-storage/csi-snapshotter:v6.2.2
+  resizer: registry.k8s.io/sig-storage/csi-resizer:v1.8.0
+  registrar: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.8.0
+  healthmonitor: registry.k8s.io/sig-storage/csi-external-health-monitor-controller:v0.9.0
+  # CSM sidecars
+  replication: dellemc/dell-csi-replicator:v1.5.0
+  vgsnapshotter: dellemc/csi-volumegroup-snapshotter:v1.2.0
+  podmon: dellemc/podmon:v1.6.0
+  authorization: dellemc/csm-authorization-sidecar:v1.7.0
+  migration: dellemc/dell-csi-migrator:v1.1.1
+  # Node rescan sidecar does a rescan on nodes for identifying new paths
+  # Default value: dellemc/dell-csi-node-rescanner:v1.0.1
+  noderescan: dellemc/dell-csi-node-rescanner:v1.0.1
+
 ## K8S/DRIVER ATTRIBUTES
 ########################
 # customDriverName: If enabled, sets the driver name to the
@@ -253,10 +271,6 @@ enableCHAP: false
 
 # csireverseproxy: Refers to the subchart csireverseproxy
 csireverseproxy:
-  # image: Define the container images used for the reverse proxy
-  # Default value: None
-  # Example: "csipowermax-reverseproxy:v2.6.0"
-  image: dellemc/csipowermax-reverseproxy:v2.6.0
   # "tlsSecret" defines the TLS secret that is created with certificate
   # and its associated key
   # Default value: None
@@ -373,9 +387,6 @@ openshift: false
 # Default value: "false"
 replication:
   enabled: false
-  # Change this to use any specific version of the dell-csi-replicator sidecar
-  # Default value: None
-  image: dellemc/dell-csi-replicator:v1.5.0
   # replicationContextPrefix enables side cars to read
   # required information from the volume context
   # Default value: "powermax"
@@ -394,12 +405,6 @@ replication:
 # Default value: "false"
 migration:
   enabled: false
-  # Change this to use any specific version of the dell-csi-migrator sidecar
-  # Default value: None
-  image: dellemc/dell-csi-migrator:v1.1.1
-  # Node rescan sidecar does a rescan on nodes for identifying new paths
-  # Default value: dellemc/dell-csi-node-rescanner:v1.0.1
-  nodeRescanSidecarImage: dellemc/dell-csi-node-rescanner:v1.0.1
   # migrationPrefix: Determine if migration is enabled
   # Default value: "migration.storage.dell.com"
   # Examples: "migration.storage.dell.com"
@@ -414,9 +419,6 @@ migration:
 # Default value: "false"
 authorization:
   enabled: false
-  # sidecarProxyImage: the container image used for the csm-authorization-sidecar.
-  # Default value: dellemc/csm-authorization-sidecar:v1.7.0
-  sidecarProxyImage: dellemc/csm-authorization-sidecar:v1.7.0
   # proxyHost: hostname of the csm-authorization server
   # Default value: None
   proxyHost:
