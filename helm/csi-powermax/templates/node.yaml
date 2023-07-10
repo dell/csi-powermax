@@ -121,6 +121,8 @@ spec:
               value: unix://{{ .Values.kubeletConfigDir }}/plugins/powermax.emc.dell.com/csi_sock
             - name: X_CSI_MODE
               value: node
+            - name: X_CSI_MAX_VOLUMES_PER_NODE
+              value: "{{ .Values.maxPowerMaxVolumesPerNode }}"
             - name: X_CSI_PRIVATE_MOUNT_DIR
               value: "{{ .Values.kubeletConfigDir }}/plugins/powermax.emc.dell.com/disks"
             - name: X_CSI_MANAGED_ARRAYS
@@ -289,8 +291,6 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: spec.nodeName
-            - name: X_CSI_MAX_VOLUMES_PER_NODE
-              value: "{{ .Values.maxPowerMaxVolumesPerNode }}"
           volumeMounts:
             - name: registration-dir
               mountPath: /registration
