@@ -64,8 +64,6 @@ images:
   healthmonitor: registry.k8s.io/sig-storage/csi-external-health-monitor-controller:v0.9.0
   # CSM sidecars
   replication: dellemc/dell-csi-replicator:v1.5.0
-  vgsnapshotter: dellemc/csi-volumegroup-snapshotter:v1.2.0
-  podmon: dellemc/podmon:v1.6.0
   authorization: dellemc/csm-authorization-sidecar:v1.7.0
   migration: dellemc/dell-csi-migrator:v1.1.1
   # Node rescan sidecar does a rescan on nodes for identifying new paths
