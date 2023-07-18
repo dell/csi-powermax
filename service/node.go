@@ -1071,7 +1071,7 @@ func (s *service) NodeGetInfo(
 		return nil, fmt.Errorf("maxPowerMaxVolumesPerNode MUST NOT be set to negative value")
 	}
 	maxPowerMaxVolumesPerNode = s.opts.MaxVolumesPerNode
-	log.Infof("node CSI-POWERMAXLS label 'max-powermax-volumes-per-node' is not available. Using default volume limit '%v'", maxPowerMaxVolumesPerNode)
+	log.Infof("Node label 'max-powermax-volumes-per-node' is not available. Using default volume limit '%v'", maxPowerMaxVolumesPerNode)
 	}
 	
 	// Create NodeGetInfoResponse including nodeID and AccessibleTopology information
