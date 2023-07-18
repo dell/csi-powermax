@@ -14,6 +14,9 @@ metadata:
   name: {{ .Release.Name }}-node
   {{- end }}
 rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch", "update", "patch"]
   {{- if eq .Values.openshift true }}
   - apiGroups: ["security.openshift.io"]
     resources: ["securitycontextconstraints"]
