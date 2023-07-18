@@ -1050,7 +1050,7 @@ func (s *service) NodeGetInfo(
 		return nil, status.Error(codes.FailedPrecondition, "no topology keys could be generate")
 	}
 
-	// Check for node label 'max-PowerMax-volumes-per-node'. If present set 'MaxVolumesPerNode' to this value.
+	// Check for node label 'max-powermax-volumes-per-node'. If present set 'MaxVolumesPerNode' to this value.
 	// If node label is not present, set 'MaxVolumesPerNode' to default value i.e., 0
 	var maxPowerMaxVolumesPerNode int64
 	labels, err := s.GetNodeLabels()
