@@ -406,6 +406,10 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 								device.updateStatus(device.Status.State, "device is in masking view, can't delete")
 								continue
 							}
+							if sg.NumOfVolumes < 1 {
+								log.Debugf("SG: %s have no devices, ignoring it as its empty", storageGroupID)
+								continue
+							}
 							sgID = storageGroupID
 							break
 						}

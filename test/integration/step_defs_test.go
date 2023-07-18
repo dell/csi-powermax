@@ -444,7 +444,7 @@ func (f *feature) whenICallDeleteVolume() error {
 	}
 	return nil
 }
-func (f *feature) whenICallDeleteLocalVolume() error {
+func (f *feature) iCallDeleteLocalVolume() error {
 	err := f.deleteLocalVolume(f.createRemoteVolumeResponse.RemoteVolume.VolumeId)
 	if err != nil {
 		fmt.Printf("DeleteLocalVolume %s:\n", err.Error())
@@ -1522,7 +1522,7 @@ func (f *feature) allVolumesAreDeletedSuccessfully() error {
 		for i := 0; i < max; i++ {
 			vol, err := f.pmaxClient.GetVolumeByID(context.Background(), symID, symVolumeID)
 			if vol == nil {
-				deleted = strings.Contains(err.Error(), "cannot be found")
+				deleted = strings.Contains(err.Error(), "cannot be found") || strings.Contains(err.Error(), "Could not find")
 				fmt.Printf("volume deleted?: %s\n", err)
 				break
 			}
@@ -2257,5 +2257,5 @@ func FeatureContext(s *godog.Suite) {
 	s.Step(`^when I call ControllerGetVolume$`, f.iCallControllerGetVolume)
 	s.Step(`^when I call NodeGetVolumeStats$`, f.iCallNodeGetVolumeStats)
 	s.Step(`^I have SetHostIOLimits on the storage group$`, f.iHaveSetHostIOLimitsOnTheStorageGroup)
-	s.Step(`^when I call DeleteLocalVolume`, f.whenICallDeleteLocalVolume)
+	s.Step(`^I call DeleteLocalVolume`, f.iCallDeleteLocalVolume)
 }
