@@ -1,4 +1,3 @@
-{{- if or (eq .Values.migration.enabled true) (eq .Values.openshift true) }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
