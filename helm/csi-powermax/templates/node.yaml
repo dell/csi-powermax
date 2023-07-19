@@ -62,7 +62,6 @@ roleRef:
   {{- end }}
   apiGroup: rbac.authorization.k8s.io
 ---
-{{ end }}
 kind: DaemonSet
 apiVersion: apps/v1
 metadata:
@@ -83,9 +82,7 @@ spec:
       labels:
         app: {{ .Release.Name }}-node
     spec:
-      {{- if or (eq .Values.migration.enabled true) (eq .Values.openshift true) }}
       serviceAccountName: {{ .Release.Name }}-node
-      {{ end }}
       {{ if .Values.node.nodeSelector }}
       nodeSelector:
       {{- toYaml .Values.node.nodeSelector | nindent 8 }}
