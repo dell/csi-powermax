@@ -393,12 +393,12 @@ func (s *service) BeforeServe(
 		opts.ReplicationPrefix = replicationPrefix
 	}
 	if MaxVolumesPerNode, ok := csictx.LookupEnv(ctx, EnvMaxVolumesPerNode); ok {
-		MaximumVolumesPerNode, err := strconv.ParseInt(MaxVolumesPerNode, 10, 64) 
+		val, err := strconv.ParseInt(MaxVolumesPerNode, 10, 64) 
 		if err!=nil {
 			log.Warningf("error while parsing env variable '%s', %s, defaulting to 0", EnvMaxVolumesPerNode, err)
 			opts.MaxVolumesPerNode = 0
 		} else {
-		opts.MaxVolumesPerNode = MaximumVolumesPerNode
+		opts.MaxVolumesPerNode = val
 		}
 	}
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
