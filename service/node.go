@@ -1067,9 +1067,9 @@ func (s *service) NodeGetInfo(
 	} else {
 		 // As per the csi spec the plugin MUST NOT set negative values to
 		 // 'MaxVolumesPerNode' in the NodeGetInfoResponse response
-	if s.opts.MaxVolumesPerNode < 0 {
-		return nil, fmt.Errorf("maxPowerMaxVolumesPerNode MUST NOT be set to negative value")
-	}
+		if s.opts.MaxVolumesPerNode < 0 {
+			return nil, fmt.Errorf("maxPowerMaxVolumesPerNode MUST NOT be set to negative value")
+		}
 	maxPowerMaxVolumesPerNode = s.opts.MaxVolumesPerNode
 	log.Infof("Node label 'max-powermax-volumes-per-node' is not available. Using default volume limit '%v'", maxPowerMaxVolumesPerNode)
 	}
