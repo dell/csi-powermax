@@ -97,6 +97,7 @@ type Opts struct {
 	Password                   string
 	SystemName                 string
 	NodeName                   string
+	NodeFullName               string
 	TransportProtocol          string
 	DriverName                 string
 	CHAPUserName               string
@@ -366,6 +367,7 @@ func (s *service) BeforeServe(
 	if name, ok := csictx.LookupEnv(ctx, EnvNodeName); ok {
 		shortHostName := strings.Split(name, ".")[0]
 		opts.NodeName = shortHostName
+		opts.NodeFullName = name
 	}
 	if portgroups, ok := csictx.LookupEnv(ctx, EnvPortGroups); ok {
 		tempList, err := s.parseCommaSeperatedList(portgroups)
@@ -816,7 +818,7 @@ func (s *service) GetNodeLabels() (map[string]string, error) {
 		return nil, err
 	}
 	// access the API to fetch node object
-	node, err := k8sclientset.CoreV1().Nodes().Get(context.TODO(), s.opts.NodeName, v1.GetOptions{})
+	node, err := k8sclientset.CoreV1().Nodes().Get(context.TODO(), s.opts.NodeFullName, v1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
