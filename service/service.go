@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/dell/csi-powermax/v2/k8sutils"
 	"github.com/dell/gocsi"
 	csictx "github.com/dell/gocsi/context"
 	"github.com/dell/goiscsi"
@@ -46,6 +47,7 @@ import (
 	migrext "github.com/dell/dell-csi-extensions/migration"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 	pmax "github.com/dell/gopowermax/v2"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Constants for the service
@@ -95,6 +97,7 @@ type Opts struct {
 	Password                   string
 	SystemName                 string
 	NodeName                   string
+	NodeFullName               string
 	TransportProtocol          string
 	DriverName                 string
 	CHAPUserName               string
@@ -125,6 +128,8 @@ type Opts struct {
 	VCenterHostURL             string // vCenter host url
 	VCenterHostUserName        string // vCenter host username
 	VCenterHostPassword        string // vCenter password
+	MaxVolumesPerNode          int64  // to specify volume limits
+	KubeConfigPath             string // to specify k8s configuration to be used CSI driver
 }
 
 // NodeConfig defines rules for given node
@@ -362,6 +367,7 @@ func (s *service) BeforeServe(
 	if name, ok := csictx.LookupEnv(ctx, EnvNodeName); ok {
 		shortHostName := strings.Split(name, ".")[0]
 		opts.NodeName = shortHostName
+		opts.NodeFullName = name
 	}
 	if portgroups, ok := csictx.LookupEnv(ctx, EnvPortGroups); ok {
 		tempList, err := s.parseCommaSeperatedList(portgroups)
@@ -378,11 +384,25 @@ func (s *service) BeforeServe(
 		os.Exit(1)
 	}
 
+	if kubeConfigPath, ok := csictx.LookupEnv(ctx, EnvKubeConfigPath); ok {
+		opts.KubeConfigPath = kubeConfigPath
+	}
+
 	if replicationContextPrefix, ok := csictx.LookupEnv(ctx, EnvReplicationContextPrefix); ok {
 		opts.ReplicationContextPrefix = replicationContextPrefix
 	}
 	if replicationPrefix, ok := csictx.LookupEnv(ctx, EnvReplicationPrefix); ok {
 		opts.ReplicationPrefix = replicationPrefix
+	}
+
+	if MaxVolumesPerNode, ok := csictx.LookupEnv(ctx, EnvMaxVolumesPerNode); ok {
+		val, err := strconv.ParseInt(MaxVolumesPerNode, 10, 64)
+		if err != nil {
+			log.Warningf("error while parsing env variable '%s', %s, defaulting to 0", EnvMaxVolumesPerNode, err)
+			opts.MaxVolumesPerNode = 0
+		} else {
+			opts.MaxVolumesPerNode = val
+		}
 	}
 
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
@@ -791,4 +811,20 @@ func getLogFields(ctx context.Context) log.Fields {
 	}
 	fields["RequestID"] = csiReqID
 	return fields
+}
+
+func (s *service) GetNodeLabels() (map[string]string, error) {
+	k8sclientset, err := k8sutils.CreateKubeClientSet(s.opts.KubeConfigPath)
+	if err != nil {
+		log.Errorf("init client failed: '%s'", err.Error())
+		return nil, err
+	}
+	// access the API to fetch node object
+	node, err := k8sclientset.CoreV1().Nodes().Get(context.TODO(), s.opts.NodeFullName, v1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	log.Debugf("Node %s details\n", node)
+
+	return node.Labels, nil
 }
