@@ -1049,11 +1049,52 @@ func (s *service) NodeGetInfo(
 		return nil, status.Error(codes.FailedPrecondition, "no topology keys could be generate")
 	}
 
+	var maxPowerMaxVolumesPerNode int64
+	labels, err := s.GetNodeLabels()
+	if err != nil {
+		log.Error("failed to get Node Labels with error", err.Error())
+		return nil, err
+	}
+	if val, ok := labels["max-powermax-volumes-per-node"]; ok {
+		maxPowerMaxVolumesPerNode, err = strconv.ParseInt(val, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value '%s' specified for 'max-powermax-volumes-per-node' node label", val)
+		}
+		if s.opts.IsVsphereEnabled {
+			if maxPowerMaxVolumesPerNode <= 0 || maxPowerMaxVolumesPerNode > 60 {
+				log.Errorf("Node label max-powermax-volumes-per-node should not be greater than 60 or set to any negative value for RDM volumes, Setting to default value 60")
+			}
+			maxPowerMaxVolumesPerNode = 60
+		} else {
+			if maxPowerMaxVolumesPerNode < 0 {
+				log.Errorf("Node label max-powermax-volumes-per-node should not be set to negative value, Using default value 0")
+				maxPowerMaxVolumesPerNode = 0
+			}
+		}
+		log.Infof("node label 'max-powermax-volumes-per-node' is available and is set to value '%v'", maxPowerMaxVolumesPerNode)
+	} else {
+		// As per the csi spec the plugin MUST NOT set negative values to
+		// 'MaxVolumesPerNode' in the NodeGetInfoResponse response
+		log.Infof("Node label 'max-powermax-volumes-per-node' is not available. Retrieving the value from yaml file")
+		if s.opts.IsVsphereEnabled {
+			if s.opts.MaxVolumesPerNode <= 0 || s.opts.MaxVolumesPerNode > 60 {
+				log.Errorf("maxPowerMaxVolumesPerNode MUST NOT be greater than 60 or set to any negative value for RDM volumes. Setting to default value 60")
+			}
+			s.opts.MaxVolumesPerNode = 60
+		} else {
+			if s.opts.MaxVolumesPerNode < 0 {
+				log.Errorf("maxPowerMaxVolumesPerNode MUST NOT be set to negative value, setting to default value 0")
+				s.opts.MaxVolumesPerNode = 0
+			}
+		}
+		maxPowerMaxVolumesPerNode = s.opts.MaxVolumesPerNode
+	}
 	return &csi.NodeGetInfoResponse{
 		NodeId: s.opts.NodeName,
 		AccessibleTopology: &csi.Topology{
 			Segments: topology,
 		},
+		MaxVolumesPerNode: maxPowerMaxVolumesPerNode,
 	}, nil
 }
 
