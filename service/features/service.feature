@@ -249,12 +249,48 @@ Feature: PowerMax CSI interface
       When I call NodeGetInfo
       Then the error contains "Unable to get Node Name"
 
+@v2.8.0
+     Scenario: Call NodeGetInfo with volume limit
+      Given a PowerMax service
+      When I call set attribute MaxVolumesPerNode "852"
+      And I call NodeGetInfo
+      Then a valid NodeGetInfoResponse is returned with volume limit "852"
+
+@v2.8.0
+     Scenario: Call NodeGetInfo with invalid volume limit
+      Given a PowerMax service
+      When I call NodeGetInfo with invalid volume limit "-10"
+      Then a valid NodeGetInfoResponse is returned with volume limit "0"
+
+@v2.8.0
+     Scenario: Call NodeGetInfo with volume limit and vsphere enabled
+      Given a PowerMax service
+      When I call set attribute MaxVolumesPerNode "12"
+      And I call set attribute IsVsphereEnabled "true"
+      And I call NodeGetInfo
+      Then a valid NodeGetInfoResponse is returned with volume limit "12"
+
+@v2.8.0
+     Scenario: Call NodeGetInfo with volume limit with limits greater than 60 and vsphere enabled 
+      Given a PowerMax service
+      When I call set attribute MaxVolumesPerNode "852"
+      And I call set attribute IsVsphereEnabled "true"
+      And I call NodeGetInfo
+      Then a valid NodeGetInfoResponse is returned with volume limit "60"
+
+@v2.8.0
+     Scenario: Call NodeGetInfo with volume limit with negative value and vsphere enabled 
+      Given a PowerMax service
+      When I call set attribute MaxVolumesPerNode "-100"
+      And I call set attribute IsVsphereEnabled "true"
+      And I call NodeGetInfo
+      Then a valid NodeGetInfoResponse is returned with volume limit "60"
+
 @v1.0.0
      Scenario: Call GetCapacity with valid Storage Pool Name
       Given a PowerMax service
       And I call GetCapacity with storage pool "SRP_1"
       Then a valid GetCapacityResponse is returned
-
 
      Scenario: Call GetCapacity without probe
       Given a PowerMax service

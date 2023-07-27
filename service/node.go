@@ -1078,14 +1078,9 @@ func (s *service) NodeGetInfo(
 			return nil, fmt.Errorf("invalid value '%s' specified for 'max-powermax-volumes-per-node' node label", val)
 		}
 		if s.opts.IsVsphereEnabled {
-			if maxPowerMaxVolumesPerNode <= 0 || maxPowerMaxVolumesPerNode > 60 {
+			if maxPowerMaxVolumesPerNode == 0 || maxPowerMaxVolumesPerNode > 60 {
 				log.Errorf("Node label max-powermax-volumes-per-node should not be greater than 60 or set to any negative value for RDM volumes, Setting to default value 60")
-			}
-			maxPowerMaxVolumesPerNode = 60
-		} else {
-			if maxPowerMaxVolumesPerNode < 0 {
-				log.Errorf("Node label max-powermax-volumes-per-node should not be set to negative value, Using default value 0")
-				maxPowerMaxVolumesPerNode = 0
+				maxPowerMaxVolumesPerNode = 60
 			}
 		}
 		log.Infof("node label 'max-powermax-volumes-per-node' is available and is set to value '%v'", maxPowerMaxVolumesPerNode)
@@ -1096,8 +1091,8 @@ func (s *service) NodeGetInfo(
 		if s.opts.IsVsphereEnabled {
 			if s.opts.MaxVolumesPerNode <= 0 || s.opts.MaxVolumesPerNode > 60 {
 				log.Errorf("maxPowerMaxVolumesPerNode MUST NOT be greater than 60 or set to any negative value for RDM volumes. Setting to default value 60")
+				s.opts.MaxVolumesPerNode = 60
 			}
-			s.opts.MaxVolumesPerNode = 60
 		} else {
 			if s.opts.MaxVolumesPerNode < 0 {
 				log.Errorf("maxPowerMaxVolumesPerNode MUST NOT be set to negative value, setting to default value 0")
