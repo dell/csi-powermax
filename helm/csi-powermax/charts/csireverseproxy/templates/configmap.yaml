@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ .Release.Name }}-reverseproxy-config
-data:
-{{ tpl (.Files.Glob "conf/config.yaml").AsConfig . | indent 2 }}
