@@ -417,6 +417,8 @@ func (f *feature) getService() *service {
 	opts.Insecure = true
 	opts.DisableCerts = true
 	opts.EnableBlock = true
+	opts.KubeConfigPath = "/etc/kubernetes/admin.conf"
+	opts.NodeName, _ = os.Hostname()
 	opts.PortGroups = []string{"portgroup1", "portgroup2"}
 	mock.AddPortGroup("portgroup1", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 	mock.AddPortGroup("portgroup2", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
