@@ -1053,7 +1053,7 @@ func (s *service) NodeGetInfo(
 	var maxPowerMaxVolumesPerNode int64
 	labels, err := s.GetNodeLabels()
 	if err != nil {
-		log.Infof("failed to get Node Labels with error", err.Error())
+		log.Infof("failed to get Node Labels with error %s", err.Error())
 	}
 	if val, ok := labels["max-powermax-volumes-per-node"]; ok {
 		maxPowerMaxVolumesPerNode, err = strconv.ParseInt(val, 10, 64)
