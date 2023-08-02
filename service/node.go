@@ -17,7 +17,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path"
@@ -561,7 +560,7 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		time.Sleep(disconnectVolumeRetryTime)
 
 		// Check that the /sys/block/DeviceName actually exists
-		if _, err := ioutil.ReadDir(sysBlock + deviceName); err != nil {
+		if _, err := os.ReadDir(sysBlock + deviceName); err != nil {
 			// If not, make sure the symlink is removed
 			os.Remove(symlinkPath) // #nosec G20
 		}
@@ -2353,7 +2352,7 @@ func (s *service) getAndConfigureArrayISCSITargets(ctx context.Context, arrayTar
 // writeWWNFile writes a volume's WWN to a file copy on the node
 func (s *service) writeWWNFile(id, volumeWWN string) error {
 	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
-	err := ioutil.WriteFile(wwnFileName, []byte(volumeWWN), 0644) // #nosec G306
+	err := os.WriteFile(wwnFileName, []byte(volumeWWN), 0644) // #nosec G306
 	if err != nil {
 		return status.Errorf(codes.Internal, "Could not read WWN file: %s", wwnFileName)
 	}
@@ -2364,7 +2363,7 @@ func (s *service) writeWWNFile(id, volumeWWN string) error {
 func (s *service) readWWNFile(id string) (string, error) {
 	// READ volume WWN
 	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
-	wwnBytes, err := ioutil.ReadFile(wwnFileName) // #nosec G304
+	wwnBytes, err := os.ReadFile(wwnFileName) // #nosec G304
 	if err != nil {
 		return "", status.Errorf(codes.Internal, "Could not read WWN file: %s", wwnFileName)
 	}
