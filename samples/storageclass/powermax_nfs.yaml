@@ -16,16 +16,29 @@ parameters:
   # Allowed values:
   #   "ext4" - EXT4 File system
   #   "xfs"  - XFS File system
+  #   "nfs"  - Network File system
   # Optional: true
   # Default value: None if defaultFsType is not mentioned in values.yaml
   # Else defaultFsType value mentioned in values.yaml
   # will be used as default value
-  csi.storage.k8s.io/fstype: xfs
+  csi.storage.k8s.io/fstype: nfs
+  # nasServerName: name of the NAS server that should be used for provisioning
+  # Allowed values: string
+  # Optional: true
+  # Default value: None
+  nasServer: "nasServer-1"
+  # allowRoot: enables or disables root squashing (valid only for NFS)
+  # Allowed values:
+  #   true: will allow root users to use their privileges
+  #   false: will prevent root users on NFS clients from exercising root privileges on the NFS server
+  # Optional: true
+  # Default value: false
+  allowRoot: "false"
   # Name of SRP on the PowerMax array that should be used for provisioning
   # Optional: false
   # Examples: "DEFAULT_SRP" , "SRP_1"
   SRP: <SRP Name>
-  # Serial ID of the array that is used for provisioning
+  # Serial ID of the array that is used for provisionin
   # Optional: false
   # Example: "000000000001"
   SYMID: <SYMID>
@@ -67,7 +80,7 @@ reclaimPolicy: Delete
 # Allowed values:
 #   Immediate - indicates that volume binding and dynamic provisioning
 #              occurs once the PersistentVolumeClaim is created
-#   WaitForFirstConsumer- will delay binding and provisioning of a PV
+#   WaitForFirstConsumer - will delay binding and provisioning of a PV
 #              until a Pod using the PersistentVolumeClaim is created
 # Optional: true, Default value: None
 volumeBindingMode: WaitForFirstConsumer
@@ -85,7 +98,7 @@ allowedTopologies:
       - key: csi-powermax.dellemc.com/<SYMID>
         values:
           - csi-powermax.dellemc.com
-      - key: csi-powermax.dellemc.com/<SYMID>.fc
+      - key: csi-powermax.dellemc.com/<SYMID>.nfs
         values:
           - csi-powermax.dellemc.com
 

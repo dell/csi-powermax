@@ -26,13 +26,13 @@ import (
 	"sync"
 	"time"
 
-	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cucumber/godog"
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
-	service "github.com/dell/csi-powermax/v2/service"
+	"github.com/dell/csi-powermax/v2/service"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 	pmax "github.com/dell/gopowermax/v2"
-	ptypes "github.com/golang/protobuf/ptypes"
+	"github.com/golang/protobuf/ptypes"
 )
 
 const (
@@ -178,7 +178,7 @@ func (f *feature) aBasicBlockVolumeRequest(name string, size int64) error {
 	params[service.CSIPVCNamespace] = "INT"
 	req.Parameters = params
 	now := time.Now()
-	req.Name = fmt.Sprintf("Int%d", now.Nanosecond())
+	req.Name = fmt.Sprintf("pmax-Int%d", now.Nanosecond())
 	if size > 0 {
 		capacityRange := new(csi.CapacityRange)
 		capacityRange.RequiredBytes = size * 1024 * 1024
@@ -551,7 +551,7 @@ func (f *feature) getMountVolumeRequest(name string) *csi.CreateVolumeRequest {
 	params[service.StoragePoolParam] = f.srpID
 	req.Parameters = params
 	now := time.Now()
-	req.Name = fmt.Sprintf("Int%d", now.Nanosecond())
+	req.Name = fmt.Sprintf("pmax-Int%d", now.Nanosecond())
 	capacityRange := new(csi.CapacityRange)
 	capacityRange.RequiredBytes = 100 * 1024 * 1024
 	req.CapacityRange = capacityRange
@@ -591,7 +591,7 @@ func (f *feature) getVolumeRequestFileSystem(name, fstype, access, voltype strin
 	}
 	req.Parameters = params
 	now := time.Now()
-	req.Name = fmt.Sprintf("Int%d", now.Nanosecond())
+	req.Name = fmt.Sprintf("pmax-Int%d", now.Nanosecond())
 	capacityRange := new(csi.CapacityRange)
 	capacityRange.RequiredBytes = 100 * 1024 * 1024
 	req.CapacityRange = capacityRange
@@ -2178,7 +2178,7 @@ func (f *feature) iHaveSetHostIOLimitsOnTheStorageGroup() error {
 	return nil
 }
 
-func FeatureContext(s *godog.Suite) {
+func FeatureContext(s *godog.ScenarioContext) {
 	f := &feature{}
 	s.Step(`^a Powermax service$`, f.aPowermaxService)
 	s.Step(`^a basic block volume request "([^"]*)" "(\d+)"$`, f.aBasicBlockVolumeRequest)

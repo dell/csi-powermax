@@ -17,6 +17,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"github.com/dell/csi-powermax/v2/pkg/file"
 	"math/rand"
 	"path"
 	"sort"
@@ -44,6 +45,7 @@ import (
 // constants
 const (
 	cylinderSizeInBytes    = 1966080
+	MiBSizeInBytes         = 1048576
 	DefaultVolumeSizeBytes = 1073741824
 	// MinVolumeSizeBytes - This is the minimum volume size in bytes. This is equal to
 	// the number of bytes to create a volume which requires 1 cylinder less than
@@ -104,6 +106,9 @@ const (
 	HostIOLimitMBSec                = "HostIOLimitMBSec"
 	HostIOLimitIOSec                = "HostIOLimitIOSec"
 	DynamicDistribution             = "DynamicDistribution"
+	NFS                             = "nfs"
+	NASServerName                   = "nasServer"
+	fileSystemID                    = "file_system_id"
 )
 
 // Keys for parameters to CreateVolume
@@ -137,6 +142,7 @@ const (
 	RemoteSRPParam                       = "RemoteSRP"
 	BiasParam                            = "Bias"
 	FsTypeParam                          = "csi.storage.k8s.io/fstype"
+	AllowRootParam                       = "allowRoot"
 )
 
 // Pair - structure which holds a pair
@@ -356,6 +362,17 @@ func (s *service) CreateVolume(
 		namespace = params[CSIPVCNamespace]
 	}
 
+	// File related params
+	useNFS := false
+	nasServer := ""
+	allowRoot := ""
+	if params[NASServerName] != "" {
+		nasServer = params[NASServerName]
+	}
+	if params[AllowRootParam] != "" {
+		allowRoot = params[AllowRootParam]
+	}
+
 	// Remote Replication based paramsMes
 	var replicationEnabled string
 	var remoteSymID string
@@ -485,6 +502,10 @@ func (s *service) CreateVolume(
 		if isBlock && !s.opts.EnableBlock {
 			return nil, status.Error(codes.InvalidArgument, "Block Volume Capability is not supported")
 		}
+		useNFS = accTypeIsNFS(vcs)
+		if isBlock && useNFS {
+			return nil, status.Errorf(codes.InvalidArgument, "NFS with Block is not supported")
+		}
 	}
 
 	// Get the volume name
@@ -506,6 +527,12 @@ func (s *service) CreateVolume(
 		namespaceSuffix = "-" + namespace
 	}
 	volumeIdentifier := fmt.Sprintf("%s%s-%s%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespaceSuffix)
+
+	if useNFS {
+		// calculate size in MiB
+		reqSizeInMiB := cr.GetRequiredBytes() / MiBSizeInBytes
+		return file.CreateFileSystem(ctx, reqID, accessibility, params, symmetrixID, storagePoolID, serviceLevel, nasServer, volumeIdentifier, allowRoot, reqSizeInMiB, pmaxClient)
+	}
 	// Storage Group is required to be derived from the parameters (such as service level and storage resource pool which are supplied in parameters)
 	// Storage Group Name can optionally be supplied in the parameters (for testing) to over-ride the default.
 	if storageGroupName == "" {
@@ -1627,14 +1654,24 @@ func (s *service) parseCsiID(csiID string) (
 	// Protect against mal-formed component
 	numOfIDComponents := len(idComponents)
 	if numOfIDComponents < 3 {
-		// Not well formed
+		// Not well-formed
 		err = fmt.Errorf("The CSI ID %s is not formed correctly", csiID)
 		return
 	}
+	// check for file system and non FS, format:
+	// fS:     csi-ABC-pmax-448c258b72-ns1-nsx-000120000549-649112ce-742b-b93a-abcd-026048200208
+	// non-fs: csi-ABC-pmax-260602731A-ns1-nsx-000120000548-011AB
+	lastElem := idComponents[numOfIDComponents-1]
+	scndLastElem := idComponents[numOfIDComponents-2]
 	// Device ID is the last token
-	devID = idComponents[numOfIDComponents-1]
+	devID = lastElem
 	// Array ID is the second to last token
-	arrayID = idComponents[numOfIDComponents-2]
+	arrayID = scndLastElem
+	if len(lastElem) > 5 && len(scndLastElem) < 12 {
+		// devID is fsID
+		devID = strings.Join(idComponents[numOfIDComponents-5:], "-")
+		arrayID = idComponents[numOfIDComponents-6]
+	}
 	// The two here is for two dashes - one at front of array ID and one between the Array ID and Device ID
 	lengthOfTrailer := len(devID) + len(arrayID) + 2
 	length := len(csiID)
@@ -1692,6 +1729,21 @@ func (s *service) DeleteVolume(
 		log.Error("Failed to probe with erro: " + err.Error())
 		return nil, err
 	}
+	// Check if devID is a file system
+	_, err = pmaxClient.GetFileSystemByID(ctx, symID, devID)
+	if err != nil {
+		log.Debugf("Error:(%s) fetching file system with ID %s", err.Error(), devID)
+		log.Debugf("GetfileSystem failed, continuing with GetVolumeID...")
+	} else {
+		// found file system
+		err := s.deleteFileSystem(ctx, reqID, symID, volName, devID, id, pmaxClient)
+		if err != nil {
+			return nil, err
+		}
+		return &csi.DeleteVolumeResponse{}, nil
+	}
+
+	// delete non-FS volumes
 	err = s.deleteVolume(ctx, reqID, symID, volName, devID, id, pmaxClient)
 	if err != nil {
 		return nil, err
@@ -1792,6 +1844,55 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 	return nil
 }
 
+func (s *service) deleteFileSystem(ctx context.Context, reqID, symID, fsName, fsID, id string, pmaxClient pmax.Pmax) error {
+	// log all parameters used in DeleteVolume call
+	fields := map[string]interface{}{
+		"SymmetrixID":    symID,
+		"fileSystemName": fsName,
+		"fileSystemID":   fsID,
+		"CSIRequestID":   reqID,
+	}
+	log.WithFields(fields).Info("Executing Delete File System with following fields")
+
+	fileSystem, err := pmaxClient.GetFileSystemByID(ctx, symID, fsID)
+	log.Debugf("fileSysetm: %#v, error: %#v", fileSystem, err)
+
+	if err != nil {
+		if strings.Contains(err.Error(), cannotBeFound) {
+			// The volume is already deleted
+			log.Info(fmt.Sprintf("DeleteVolume: Could not find file system: %s/%s so assume it's already deleted", symID, fsID))
+			return nil
+		}
+		return status.Errorf(codes.Internal, "Could not retrieve fileSystem: (%s)", err.Error())
+	}
+
+	if fileSystem.Name != fsName {
+		// This volume is already deleted or marked for deletion,
+		// or volume id is an old stale identifier not matching a volume.
+		// Either way idempotence calls for doing nothing and returning ok.
+		log.Info(fmt.Sprintf("DeleteVolume: FileSystem name %s did not match fileSystem name %s so assume it's already deleted",
+			fileSystem.Name, fsName))
+		return nil
+	}
+
+	// find if file system has any NFS export
+	query := types.QueryParams{fileSystemID: fsID}
+	nfsExportList, err := pmaxClient.GetNFSExportList(ctx, symID, query)
+	if nfsExportList.Count > 0 {
+		nfsExportItem := nfsExportList.ResultList.NFSExportList[0]
+		log.Errorf("DeleteVolume: file system has NFS export ID:%s/name:%s on symID: %s", nfsExportItem.ID, nfsExportItem.ID, symID)
+		return status.Errorf(codes.Internal, "file system has NFS export ID:%s/name:%s on symID: %s", nfsExportItem.ID, nfsExportItem.ID, symID)
+	}
+
+	// Delete the file System as there is no NFS export
+	err = file.DeleteFileSystem(ctx, symID, fsID, pmaxClient)
+	if err != nil {
+		log.Error("DeleteFileSystem failed with error - ", err.Error())
+		return status.Errorf(codes.Internal, "Failed deletion of File System with error (%s)", err.Error())
+	}
+	return nil
+}
+
 func (s *service) ControllerPublishVolume(
 	ctx context.Context,
 	req *csi.ControllerPublishVolumeRequest) (
@@ -1819,7 +1920,7 @@ func (s *service) ControllerPublishVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"volume ID is required")
 	}
-	_, symID, _, remoteSymID, remoteVolumeID, err := s.parseCsiID(volID)
+	_, symID, devID, remoteSymID, remoteVolumeID, err := s.parseCsiID(volID)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", volID)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", volID)
@@ -1866,7 +1967,11 @@ func (s *service) ControllerPublishVolume(
 		log.Error(errUnknownAccessMode)
 		return nil, status.Error(codes.InvalidArgument, errUnknownAccessMode)
 	}
-
+	isNFS := accTypeIsNFS([]*csi.VolumeCapability{vc})
+	if isNFS {
+		// incoming request for file system volume
+		return file.CreateNFSExport(ctx, reqID, symID, devID, am, volumeContext, pmaxClient)
+	}
 	//Fetch the volume details from array
 	symID, devID, vol, err := s.GetVolumeByID(ctx, volID, pmaxClient)
 	if err != nil {
@@ -1884,6 +1989,8 @@ func (s *service) ControllerPublishVolume(
 		"IsVsphereVolume": s.opts.IsVsphereEnabled,
 	}
 	log.WithFields(fields).Info("Executing ControllerPublishVolume with following fields")
+	// flag createNFSExport()
+
 	isISCSI := false
 	// Check if node ID is present in cache
 	nodeInCache := false
@@ -2294,7 +2401,7 @@ func (s *service) ControllerUnpublishVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume ID is required")
 	}
-	_, symID, _, remoteSymID, remoteVolID, err := s.parseCsiID(volID)
+	_, symID, devID, remoteSymID, remoteVolID, err := s.parseCsiID(volID)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", volID)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", volID)
@@ -2320,6 +2427,16 @@ func (s *service) ControllerUnpublishVolume(
 	if err := s.requireProbe(ctx, pmaxClient); err != nil {
 		log.Error("Failed to probe with error: " + err.Error())
 		return nil, err
+	}
+
+	//Check if devID is a file system
+	_, err = pmaxClient.GetFileSystemByID(ctx, symID, devID)
+	if err != nil {
+		log.Debugf("Error:(%s) fetching file system with ID %s", err.Error(), devID)
+		log.Debugf("GetfileSystem failed, continuing with GetVolumeID...")
+	} else {
+		// found file system
+		return file.DeleteNFSExport(ctx, reqID, symID, devID, pmaxClient)
 	}
 
 	//Fetch the volume details from array
@@ -2509,6 +2626,15 @@ func (s *service) ValidateVolumeCapabilities(
 func accTypeIsBlock(vcs []*csi.VolumeCapability) bool {
 	for _, vc := range vcs {
 		if at := vc.GetBlock(); at != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func accTypeIsNFS(vcs []*csi.VolumeCapability) bool {
+	for _, vc := range vcs {
+		if vc.GetMount().GetFsType() == NFS {
 			return true
 		}
 	}
@@ -3247,7 +3373,7 @@ func (s *service) ControllerExpandVolume(
 	}
 
 	id := req.GetVolumeId()
-	_, symID, _, _, _, err := s.parseCsiID(id)
+	_, symID, devID, _, _, err := s.parseCsiID(id)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", id)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
@@ -3263,6 +3389,18 @@ func (s *service) ControllerExpandVolume(
 		return nil, err
 	}
 
+	// Check if ExpandVolume request has CapacityRange set
+	if req.CapacityRange == nil {
+		err = fmt.Errorf("Invalid argument - CapacityRange not set")
+		log.Error(err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	if accTypeIsNFS([]*csi.VolumeCapability{req.VolumeCapability}) {
+		newSizeInMib := (req.CapacityRange.GetRequiredBytes()) / MiBSizeInBytes
+		return file.ExpandFileSystem(ctx, reqID, symID, devID, newSizeInMib, pmaxClient)
+	}
+
 	symID, devID, vol, err := s.GetVolumeByID(ctx, id, pmaxClient)
 	if err != nil {
 		log.Errorf("GetVolumeByID failed with (%s) for devID (%s)", err.Error(), devID)
@@ -3270,12 +3408,6 @@ func (s *service) ControllerExpandVolume(
 	}
 	volName := vol.VolumeIdentifier
 
-	// Check if ExpandVolume request has CapacityRange set
-	if req.CapacityRange == nil {
-		err = fmt.Errorf("Invalid argument - CapacityRange not set")
-		log.Error(err.Error())
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
 	// Get the required capacity in cylinders
 	requestedSize, err := s.validateVolSize(ctx, req.CapacityRange, "", "", pmaxClient)
 	if err != nil {
