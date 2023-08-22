@@ -48,7 +48,7 @@ Feature: Powermax OS CSI interface
       | "8192"      | "8.00"     | "none"                                        |
 # 2 TB
       | "2097152"   | "2048.00"  | "none"                                        |
-      | "100000000" | "0.00"     | "greater than the maximum available capacity" |
+      | "100000000" | "0.00"     | "The device size specified exceeds the maximum allowed" |
 
   @v1.0.0
 # This test checks an important DL scenario, that to delete a volume 
