@@ -38,6 +38,7 @@ const (
 	NFSExportIDParam                     = "NFSExportID"
 )
 
+// CreateFileSystem creates a file system
 func CreateFileSystem(ctx context.Context, reqID string, accessibility *csi.TopologyRequirement, params map[string]string, symID, storagePoolID, serviceLevel, nasServerName, fileSystemIdentifier, allowRoot string, sizeInMiB int64, pmaxClient pmax.Pmax) (*csi.CreateVolumeResponse, error) {
 	// Get NAS Server ID from NASServer Name
 	nasServerList, err := pmaxClient.GetNASServerList(ctx, symID, types.QueryParams{QueryName: nasServerName})
@@ -132,11 +133,13 @@ func checkIfFileSystemExist(ctx context.Context, symID, nasServerID, fileSystemN
 	return true, fileSystem, nil
 }
 
+// DeleteFileSystem deletes a file system
 func DeleteFileSystem(ctx context.Context, symID, fileSystemID string, pmaxClient pmax.Pmax) error {
 	err := pmaxClient.DeleteFileSystem(ctx, symID, fileSystemID)
 	return err
 }
 
+// CreateNFSExport creates a NFS export for the given file system
 func CreateNFSExport(ctx context.Context, reqID, symID, fsID string, am *csi.VolumeCapability_AccessMode, volumeContext map[string]string, pmaxClient pmax.Pmax) (*csi.ControllerPublishVolumeResponse, error) {
 	nasServerID := volumeContext[NASServerIDParam]
 	nasServerName := volumeContext[NASServerNameParam]
@@ -220,6 +223,8 @@ func checkIfNFSExportExist(ctx context.Context, symID, fsID string, nfsName stri
 	}
 	return true, nfsExport, nil
 }
+
+// DeleteNFSExport deletes a NFS Export for the given file system
 func DeleteNFSExport(ctx context.Context, reqID, symID, fsID string, pmaxClient pmax.Pmax) (*csi.ControllerUnpublishVolumeResponse, error) {
 	// get the fileSystem
 	fs, err := pmaxClient.GetFileSystemByID(ctx, symID, fsID)
@@ -257,6 +262,7 @@ func DeleteNFSExport(ctx context.Context, reqID, symID, fsID string, pmaxClient 
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
 }
 
+// StageFileSystem creates a folder structure on the node
 func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt string, publishContext map[string]string, pmaxClient pmax.Pmax) (
 	*csi.NodeStageVolumeResponse, error) {
 
@@ -303,6 +309,7 @@ func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt str
 	return &csi.NodeStageVolumeResponse{}, nil
 }
 
+// PublishFileSystem bind the file system mount on the node
 func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, reqID, symID, fsID string, pmaxClient pmax.Pmax) (*csi.NodePublishVolumeResponse, error) {
 	// get params for publish
 	publishContext := req.GetPublishContext()
@@ -357,6 +364,8 @@ func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, r
 	log.Info("volume successfully binded")
 	return &csi.NodePublishVolumeResponse{}, nil
 }
+
+// ExpandFileSystem expands the given file system on the array
 func ExpandFileSystem(ctx context.Context, reqID, symID, fsID string, requestedSize int64, pmaxClient pmax.Pmax) (*csi.ControllerExpandVolumeResponse, error) {
 	// log all parameters used in ExpandVolume call
 	fields := map[string]interface{}{

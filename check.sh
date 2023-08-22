@@ -32,9 +32,9 @@ fmt_count() {
 
 fmt() {
     if [ "$REVPROXY" = true ] ; then
-      gofmt -d ./service ./csireverseproxy ./k8sutils | tee $FMT_TMPFILE
+      gofmt -d ./service ./csireverseproxy ./k8sutils ./pkg | tee $FMT_TMPFILE
     else
-      gofmt -d ./service ./k8sutils | tee $FMT_TMPFILE
+      gofmt -d ./service ./k8sutils ./pkg| tee $FMT_TMPFILE
     fi
     cat $FMT_TMPFILE | wc -l > $FMT_COUNT_TMPFILE
     if [ ! `cat $FMT_COUNT_TMPFILE` -eq "0" ]; then
@@ -49,7 +49,7 @@ FMT_RETURN_CODE=$?
 echo === Finished
 
 echo === Vetting csi-powermax
-CGO_ENABLED=0 go vet ${MOD_FLAGS} ./service/... ./k8sutils/...
+CGO_ENABLED=0 go vet ${MOD_FLAGS} ./service/... ./k8sutils/... ./pkg/...
 VET_RETURN_CODE=$?
 echo === Finished
 
@@ -64,17 +64,17 @@ if [ -z ${GOLINT+x} ]; then
   if [ "$REVPROXY" = true ] ; then
     (command -v golint >/dev/null 2>&1 \
         || GO111MODULE=on go install golang.org/x/lint/golint@latest) \
-        && golint --set_exit_status ./service/... ./csireverseproxy/...
+        && golint --set_exit_status ./service/... ./csireverseproxy/... ./pkg/...
   else
     (command -v golint >/dev/null 2>&1 \
         || GO111MODULE=on go install golang.org/x/lint/golint@latest) \
-        && golint --set_exit_status ./service/...
+        && golint --set_exit_status ./service/... ./pkg/...
   fi
 else
   if [ "$REVPROXY" = true ] ; then
     $GOLINT --set_exit_status ./service/... ./csireverseproxy/...
   else
-    $GOLINT --set_exit_status ./service/...
+    $GOLINT --set_exit_status ./service/... ./pkg/...
   fi
 fi
 LINT_RETURN_CODE=$?
