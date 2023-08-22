@@ -397,6 +397,7 @@ func (revProxy *StandAloneProxy) GetRouter() http.Handler {
 
 	// file
 	router.PathPrefix(utils.InternalPrefix + "/{version}/file/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
+	router.PathPrefix(utils.Prefix + "/{version}/file/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 
 	//migration
 	router.PathPrefix(utils.Prefix + "/{version}/migration/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)

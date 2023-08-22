@@ -74,7 +74,7 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.0.0
-     Scenario: Publish volume with single writer with an invalid volume
+     Scenario Outline: Publish volume with single writer with an invalid volume
       Given a PowerMax service
       And I have a Node "node1" with MaskingView
       And I call PublishVolume with <access> to "node1"

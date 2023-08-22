@@ -48,7 +48,7 @@ const (
 	// that the controller service should automatically probe itself if it
 	// receives incoming requests before having been probed, in direct
 	// violation of the CSI spec
-	EnvAutoProbe = "X_CSI_POWERMAX_AUTOPROBE"
+	EnvAutoProbe = "X_CSI_POWERMAX_AUTOPROBE" // #nosec 101
 
 	// EnvPortGroups is the name of the environment variable that is used
 	// to specifiy a list of Port Groups that the driver can choose from
@@ -57,7 +57,7 @@ const (
 
 	// EnvClusterPrefix is the name of the environment variable that is used
 	// to specifiy a a prefix to apply to objects creaated via this CSI cluster
-	EnvClusterPrefix = "X_CSI_K8S_CLUSTER_PREFIX"
+	EnvClusterPrefix = "X_CSI_K8S_CLUSTER_PREFIX" // #nosec 101
 
 	// EnvISCSIChroot is the path to which the driver will chroot before
 	// running any iscsi commands. This value should only be set when instructed
@@ -74,14 +74,14 @@ const (
 	// EnvPreferredTransportProtocol enables you to be able to force the transport protocol.
 	// Valid values are "FC" or "ISCSI" or "". If "", will choose FC if both are available.
 	// This is mainly for testing.
-	EnvPreferredTransportProtocol = "X_CSI_TRANSPORT_PROTOCOL"
+	EnvPreferredTransportProtocol = "X_CSI_TRANSPORT_PROTOCOL" // #nosec 101
 
 	// EnvUnisphereProxyServiceName is the name of the proxy service in kubernetes
 	// If set, then driver will attempt to read the associated env value
 	// If set to none, then the driver will connect to Unisphere
 	EnvUnisphereProxyServiceName = "X_CSI_POWERMAX_PROXY_SERVICE_NAME"
 
-	// EnvSidecarProxyPort is the port port on which the reverse proxy
+	// EnvSidecarProxyPort is the port on which the reverse proxy
 	// server run, if run as a sidecar container
 	EnvSidecarProxyPort = "X_CSI_POWERMAX_SIDECAR_PROXY_PORT"
 
@@ -90,12 +90,12 @@ const (
 	// of node plugin boot
 	EnvEnableCHAP = "X_CSI_POWERMAX_ISCSI_ENABLE_CHAP"
 
-	// EnvISCSICHAPUserName is the the username for the ISCSI CHAP
+	// EnvISCSICHAPUserName is the username for the ISCSI CHAP
 	// authentication for the host initiator(s)
 	// If set to none, then the driver will use the ISCSI IQN as the username
 	EnvISCSICHAPUserName = "X_CSI_POWERMAX_ISCSI_CHAP_USERNAME"
 
-	// EnvISCSICHAPPassword is the the password for the ISCSI CHAP
+	// EnvISCSICHAPPassword is the password for the ISCSI CHAP
 	// authentication for the host initiator(s)
 	// #nosec G101
 	EnvISCSICHAPPassword = "X_CSI_POWERMAX_ISCSI_CHAP_PASSWORD" // #nosec 101
@@ -107,13 +107,13 @@ const (
 
 	// EnvModifyHostName when this value is set to "true", the driver will
 	// modify the existing host name to a new name as specified in the EnvNodeNameTemplate
-	EnvModifyHostName = "X_CSI_IG_MODIFY_HOSTNAME"
+	EnvModifyHostName = "X_CSI_IG_MODIFY_HOSTNAME" // #nosec 101
 
 	// EnvReplicationContextPrefix enables sidecars to read required information from volume context
 	EnvReplicationContextPrefix = "X_CSI_REPLICATION_CONTEXT_PREFIX"
 
 	// EnvReplicationPrefix is used as a prefix to find out if replication is enabled
-	EnvReplicationPrefix = "X_CSI_REPLICATION_PREFIX"
+	EnvReplicationPrefix = "X_CSI_REPLICATION_PREFIX" // #nosec 101
 
 	// EnvManagedArrays is an env variable with a list of space separated arrays.
 	EnvManagedArrays = "X_CSI_MANAGED_ARRAYS"
