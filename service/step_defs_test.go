@@ -423,6 +423,7 @@ func (f *feature) getService() *service {
 	mock.AddPortGroup("portgroup1", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 	mock.AddPortGroup("portgroup2", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 	opts.ManagedArrays = []string{"000197900046", "000197900047"}
+	opts.NodeFullName, _ = os.Hostname()
 	opts.EnableSnapshotCGDelete = true
 	opts.EnableListVolumesSnapshots = true
 	opts.ClusterPrefix = "TST"
@@ -1671,6 +1672,40 @@ func (f *feature) iCallNodeGetInfo() error {
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 	req := new(csi.NodeGetInfoRequest)
 	f.nodeGetInfoResponse, f.err = f.service.NodeGetInfo(ctx, req)
+	return nil
+}
+
+func (f *feature) iCallSetAttributeMaxVolumesPerNode(volumeLimit int64) error {
+	f.service.opts.MaxVolumesPerNode = volumeLimit
+	return nil
+}
+
+func (f *feature) iCallSetAttributeIsVsphereEnabled() error {
+	f.service.opts.IsVsphereEnabled = true
+	return nil
+}
+
+func (f *feature) aValidNodeGetInfoResponseIsReturnedWithVolumeLimit(volumeLimit int64) error {
+	if f.err != nil {
+		return f.err
+	}
+	fmt.Printf("The node ID is %s\n", f.nodeGetInfoResponse.NodeId)
+	fmt.Printf("Default volume limit is %v\n", f.nodeGetInfoResponse.MaxVolumesPerNode)
+	if f.nodeGetInfoResponse.MaxVolumesPerNode != volumeLimit {
+		return fmt.Errorf("default volume limit is not set to %v", volumeLimit)
+	}
+
+	return nil
+}
+
+func (f *feature) iCallNodeGetInfoWithInvalidVolumeLimit(volumeLimit int64) error {
+	req := new(csi.NodeGetInfoRequest)
+	f.service.opts.MaxVolumesPerNode = volumeLimit
+	f.nodeGetInfoResponse, f.err = f.service.NodeGetInfo(context.Background(), req)
+	if f.err != nil {
+		log.Printf("NodeGetInfo call failed: %s\n", f.err.Error())
+		return nil
+	}
 	return nil
 }
 
@@ -4378,6 +4413,10 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^a valid UnpublishVolumeResponse is returned$`, f.aValidUnpublishVolumeResponseIsReturned)
 	s.Step(`^I call NodeGetInfo$`, f.iCallNodeGetInfo)
 	s.Step(`^a valid NodeGetInfoResponse is returned$`, f.aValidNodeGetInfoResponseIsReturned)
+	s.Step(`^I call set attribute MaxVolumesPerNode "([^"]*)"$`, f.iCallSetAttributeMaxVolumesPerNode)
+	s.Step(`^I call set attribute IsVsphereEnabled "([^"]*)"$`, f.iCallSetAttributeIsVsphereEnabled)
+	s.Step(`^a valid NodeGetInfoResponse is returned with volume limit "([^"]*)"$`, f.aValidNodeGetInfoResponseIsReturnedWithVolumeLimit)
+	s.Step(`^I call NodeGetInfo with invalid volume limit "([^"]*)"$`, f.iCallNodeGetInfoWithInvalidVolumeLimit)
 	s.Step(`^I call DeleteVolume with "([^"]*)"$`, f.iCallDeleteVolumeWith)
 	s.Step(`^a valid DeleteVolumeResponse is returned$`, f.aValidDeleteVolumeResponseIsReturned)
 	s.Step(`^I call GetCapacity with storage pool "([^"]*)"$`, f.iCallGetCapacityWithStoragePool)
