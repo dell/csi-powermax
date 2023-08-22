@@ -926,7 +926,7 @@ Feature: Powermax OS CSI interface
     And there are no errors
 
   @v2.2.0
-  Scenario: Volume Health Montioring method
+  Scenario: Volume Health Monitoring method
     Given a Powermax service
     And a mount volume request "integration6"
     When I call CreateVolume

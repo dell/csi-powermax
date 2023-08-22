@@ -48,14 +48,18 @@ func TestMain(m *testing.M) {
 
 func TestGoDog(t *testing.T) {
 	fmt.Printf("starting godog...\n")
-	testStatus += godog.RunWithOptions("godog", func(s *godog.Suite) {
-		FeatureContext(s)
-	}, godog.Options{
+	runOptions := godog.Options{
 		Format: "pretty",
 		Paths:  []string{"features"},
 		Tags:   "v1.0.0, v1.1.0, v1.2.0, v1.3.0, v1.4.0, v1.5.0, v1.6.0, v2.2.0, v2.3.0, v2.4.0, v2.5.0, v2.6.0, v2.7.0",
 		//Tags:   "wip",
-	})
+	}
+	testStatus = godog.TestSuite{
+		Name:                "CSI Powermax Unit Test",
+		ScenarioInitializer: FeatureContext,
+		Options:             &runOptions,
+	}.Run()
+
 	fmt.Printf("godog finished\n")
 	if testStatus != 0 {
 		t.Error("Error encountered in godog testing")

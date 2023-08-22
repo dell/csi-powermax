@@ -17,6 +17,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/dell/csi-powermax/v2/pkg/file"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"path"
@@ -112,7 +114,7 @@ func (s *service) NodeStageVolume(
 
 	// Get the VolumeID and parse it, check if pending op for this volume ID
 	id := req.GetVolumeId()
-	_, symID, _, remoteSymID, remoteVolID, err := s.parseCsiID(id)
+	_, symID, devID, remoteSymID, remoteVolID, err := s.parseCsiID(id)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", id)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
@@ -123,7 +125,7 @@ func (s *service) NodeStageVolume(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	var volID volumeIDType = volumeIDType(id)
+	var volID = volumeIDType(id)
 	if err := volID.checkAndUpdatePendingState(&nodePendingState); err != nil {
 		return nil, err
 	}
@@ -135,7 +137,11 @@ func (s *service) NodeStageVolume(
 		log.Error("nodeProbe failed with error :" + err.Error())
 		return nil, err
 	}
-
+	// Check if fileSystem
+	if accTypeIsNFS([]*csi.VolumeCapability{req.GetVolumeCapability()}) {
+		// devID is fsID
+		return file.StageFileSystem(ctx, reqID, symID, devID, privTgt, req.GetPublishContext(), pmaxClient)
+	}
 	// Parse the CSI VolumeId and validate against the volume
 	symID, devID, vol, err := s.GetVolumeByID(ctx, id, pmaxClient)
 	if err != nil {
@@ -382,7 +388,7 @@ func (s *service) NodeUnstageVolume(
 
 	// Get the VolumeID and parse it, check if pending op for this volume ID
 	id := req.GetVolumeId()
-	_, symID, _, _, _, err := s.parseCsiID(id)
+	_, symID, devID, _, _, err := s.parseCsiID(id)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", id)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
@@ -409,6 +415,10 @@ func (s *service) NodeUnstageVolume(
 		log.Infof("NodeUnstageVolume error unmount stage target %s: %s", stageTgt, err.Error())
 	}
 	removeWithRetry(stageTgt) // #nosec G20
+
+	if len(devID) > 5 {
+		return &csi.NodeUnstageVolumeResponse{}, nil
+	}
 
 	// READ volume WWN from the local file copy
 	var volumeWWN string
@@ -438,7 +448,7 @@ func (s *service) NodeUnstageVolume(
 	}
 
 	// Parse the volume ID to get the symID and devID
-	_, symID, devID, _, _, err := s.parseCsiID(id)
+	_, symID, devID, _, _, err = s.parseCsiID(id)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -560,7 +570,7 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		time.Sleep(disconnectVolumeRetryTime)
 
 		// Check that the /sys/block/DeviceName actually exists
-		if _, err := os.ReadDir(sysBlock + deviceName); err != nil {
+		if _, err := ioutil.ReadDir(sysBlock + deviceName); err != nil {
 			// If not, make sure the symlink is removed
 			os.Remove(symlinkPath) // #nosec G20
 		}
@@ -590,7 +600,7 @@ func (s *service) NodePublishVolume(
 
 	// Get the VolumeID and parse it
 	id := req.GetVolumeId()
-	_, symID, _, _, _, err := s.parseCsiID(id)
+	_, symID, devID, _, _, err := s.parseCsiID(id)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", id)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", id)
@@ -607,9 +617,16 @@ func (s *service) NodePublishVolume(
 		log.Error("nodeProbe failed with error :" + err.Error())
 		return nil, err
 	}
+	// Get publishContext
+	publishContext := req.GetPublishContext()
+
+	// check if it is FileSystem volume
+	if accTypeIsNFS([]*csi.VolumeCapability{req.GetVolumeCapability()}) {
+		return file.PublishFileSystem(ctx, req, reqID, symID, devID, pmaxClient)
+	}
 
 	// Parse the CSI VolumeId and validate against the volume
-	symID, devID, _, err := s.GetVolumeByID(ctx, id, pmaxClient)
+	symID, devID, _, err = s.GetVolumeByID(ctx, id, pmaxClient)
 	if err != nil {
 		return nil, err
 	}
@@ -622,9 +639,7 @@ func (s *service) NodePublishVolume(
 			log.Infof("    [%s]=%s", key, value)
 		}
 	}
-
 	// Get publishContext
-	publishContext := req.GetPublishContext()
 	deviceWWN := publishContext[PublishContextDeviceWWN]
 	volumeLUNAddress := publishContext[PublishContextLUNAddress]
 	if deviceWWN == "" {
@@ -954,6 +969,7 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[s
 		if protocol == FcTransportProtocol && s.checkIfArrayProtocolValid(nodeName, array, strings.ToLower(FcTransportProtocol)) {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(FcTransportProtocol)] = s.getDriverName()
+			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(NFS)] = s.getDriverName()
 		}
 		if protocol == Vsphere {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
@@ -966,6 +982,8 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[s
 			s.checkIfArrayProtocolValid(nodeName, array, strings.ToLower(IscsiTransportProtocol)) {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(IscsiTransportProtocol)] = s.getDriverName()
+			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(NFS)] = s.getDriverName()
+
 		}
 	}
 
@@ -1547,7 +1565,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 	return nil
 }
 
-// getHostForVsphere fetches pre defined host or host group from array for vSphere
+// getHostForVsphere fetches predefined host or host group from array for vSphere
 func (s *service) getHostForVsphere(ctx context.Context, array string, pmaxClient pmax.Pmax) (err error) {
 	//Check if the Host exist
 	_, err = pmaxClient.GetHostByID(ctx, array, s.opts.VSphereHostName)
@@ -2076,6 +2094,11 @@ func (s *service) NodeExpandVolume(
 		log.Error("nodeProbe failed with error :" + err.Error())
 		return nil, err
 	}
+	// Check if it s a file System
+	if accTypeIsNFS([]*csi.VolumeCapability{req.GetVolumeCapability()}) {
+		log.Debug("file system is expanded, nothing to do on node...")
+		return &csi.NodeExpandVolumeResponse{}, nil
+	}
 
 	// Parse the CSI VolumeId and validate against the volume
 	_, _, vol, err := s.GetVolumeByID(ctx, id, pmaxClient)
@@ -2351,7 +2374,7 @@ func (s *service) getAndConfigureArrayISCSITargets(ctx context.Context, arrayTar
 // writeWWNFile writes a volume's WWN to a file copy on the node
 func (s *service) writeWWNFile(id, volumeWWN string) error {
 	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
-	err := os.WriteFile(wwnFileName, []byte(volumeWWN), 0644) // #nosec G306
+	err := ioutil.WriteFile(wwnFileName, []byte(volumeWWN), 0644) // #nosec G306
 	if err != nil {
 		return status.Errorf(codes.Internal, "Could not read WWN file: %s", wwnFileName)
 	}
@@ -2362,7 +2385,7 @@ func (s *service) writeWWNFile(id, volumeWWN string) error {
 func (s *service) readWWNFile(id string) (string, error) {
 	// READ volume WWN
 	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
-	wwnBytes, err := os.ReadFile(wwnFileName) // #nosec G304
+	wwnBytes, err := ioutil.ReadFile(wwnFileName) // #nosec G304
 	if err != nil {
 		return "", status.Errorf(codes.Internal, "Could not read WWN file: %s", wwnFileName)
 	}

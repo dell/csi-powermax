@@ -210,7 +210,7 @@ func (f *feature) checkGoRoutines(tag string) {
 }
 
 func (f *feature) aPowerMaxService() error {
-	// print the duration of the last operation so we can tell which tests are slow
+	// print the duration of the last operation, so we can tell which tests are slow
 	now := time.Now()
 	if f.lastTime.IsZero() {
 		dur := now.Sub(testStartTime)
@@ -1288,7 +1288,11 @@ func (f *feature) getControllerPublishVolumeRequest(accessType, nodeID string) *
 		if inducedErrors.invalidVolumeID {
 			req.VolumeId = "000-000"
 		} else {
-			req.VolumeId = f.volumeID
+			if f.volumeID == "" {
+				req.VolumeId = s.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, goodVolumeID)
+			} else {
+				req.VolumeId = f.volumeID
+			}
 		}
 	}
 	if !f.noNodeID {
@@ -4330,7 +4334,7 @@ func (f *feature) iCallDeleteLocalVolumeWith(arg1 string) error {
 	return nil
 }
 
-func FeatureContext(s *godog.Suite) {
+func FeatureContext(s *godog.ScenarioContext) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
 	s.Step(`^a PostELMSR Array$`, f.aPostELMSRArray)
