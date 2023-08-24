@@ -18,6 +18,8 @@ RUN yum install -y \
     e2fsprogs \
     which \
     xfsprogs \
+    nfs-utils \
+    nfs4-acl-tools \
     device-mapper-multipath \
     && \
     yum clean all \
