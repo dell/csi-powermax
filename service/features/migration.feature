@@ -72,6 +72,6 @@ Feature: PowerMax CSI Interface
     And the error contains <errormsg>
     Examples:
       | volID                                    | errormsg            |
-      | "csi-TST-volume1-000197900046-531379167" | "Volume not found"  |
+      | "csi-TST-volume1-000197900046-531379167" | "Volume cannot be found"  |
       | "volume1"                                | "Invalid volume id" |
 

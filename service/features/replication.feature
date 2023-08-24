@@ -163,7 +163,7 @@ Feature: PowerMax CSI Interface
       | induced                      | errormsg                                        |
       | "GetVolumeError"             | "Error retrieving Volume"                       |
       | "InvalidLocalVolumeError"    | "Failed to find protected local storage group"  |
-      | "GetRemoteVolumeError"       | "Volume not found"                              |
+      | "GetRemoteVolumeError"       | "Volume cannot be found"                              |
       | "InvalidRemoteVolumeError"   | "Failed to find protected remote storage group" |
       | "GetSRDFPairInfoError"       | "Could not retrieve pair info"                  |
       | "FetchResponseError"         | "failure checking volume"                       |
@@ -189,7 +189,7 @@ Feature: PowerMax CSI Interface
     Examples:
       | induced                      | errormsg                                        |
       | "GetVolumeError"             | "Error retrieving Volume"                       |
-      | "GetRemoteVolumeError"       | "Volume not found"                              |
+      | "GetRemoteVolumeError"       | "Volume cannot be found"                              |
       | "InvalidRemoteVolumeError"   | "Failed to find protected remote storage group" |
       | "GetSRDFPairInfoError"       | "Could not retrieve pair info"                  |
       | "FetchResponseError"         | "failure checking volume"                       |
@@ -216,7 +216,7 @@ Feature: PowerMax CSI Interface
     Then the error contains <errormsg>
     Examples:
       | induced                           | errormsg                          |
-      | "GetProtectedStorageGroupError"   | "none"                            |
+      | "GetProtectedStorageGroupError"   | "cannot be found"                 |
       | "RDFGroupHasPairError"            | "it is not empty"                 |
       | "DeleteStorageGroupError"         | "Error deleting storage group"    |
       | "FetchResponseError"              | "GetProtectedStorageGroup failed" |

@@ -78,7 +78,7 @@ Feature: PowerMax CSI interface
       Given a PowerMax service
       And I have a Node "node1" with MaskingView
       And I call PublishVolume with <access> to "node1"
-      Then the error contains "Volume not found"
+      Then the error contains "Volume cannot be found"
 
      Examples:
       | access                      |
@@ -382,7 +382,7 @@ Feature: PowerMax CSI interface
      Scenario: Publish volume with an invalid volumeID
       Given a PowerMax service
       And I call PublishVolume with "single-writer" to "node1"
-      Then the error contains "Volume not found"
+      Then the error contains "Volume cannot be found"
 
 @controllerPublish
 @v1.0.0

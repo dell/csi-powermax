@@ -32,8 +32,8 @@ parameters:
   #   true: will allow root users to use their privileges
   #   false: will prevent root users on NFS clients from exercising root privileges on the NFS server
   # Optional: true
-  # Default value: false
-  allowRoot: "false"
+  # Default value: true
+  allowRoot: "true"
   # Name of SRP on the PowerMax array that should be used for provisioning
   # Optional: false
   # Examples: "DEFAULT_SRP" , "SRP_1"
