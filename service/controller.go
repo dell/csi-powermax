@@ -79,8 +79,8 @@ const (
 	MaxPortIdentifierLength         = 128
 	FCSuffix                        = "-FC"
 	PGSuffix                        = "PG"
-	notFound                        = "not found"       // error message from s.GetVolumeByID when volume not found
-	cannotBeFound                   = "cannot be found" // error message from pmax when volume not found
+	notFound                        = "not found"      // error message from s.GetVolumeByID when volume not found
+	cannotBeFound                   = "Could not find" // error message from pmax when volume not found
 	failedToValidateVolumeNameAndID = "Failed to validate combination of Volume Name and Volume ID"
 	IscsiTransportProtocol          = "ISCSI"
 	FcTransportProtocol             = "FC"
@@ -373,6 +373,19 @@ func (s *service) CreateVolume(
 		allowRoot = params[AllowRootParam]
 	}
 
+	// Validate volume capabilities
+	vcs := req.GetVolumeCapabilities()
+	if vcs != nil {
+		isBlock := accTypeIsBlock(vcs)
+		if isBlock && !s.opts.EnableBlock {
+			return nil, status.Error(codes.InvalidArgument, "Block Volume Capability is not supported")
+		}
+		useNFS = accTypeIsNFS(vcs)
+		if isBlock && useNFS {
+			return nil, status.Errorf(codes.InvalidArgument, "NFS with Block is not supported")
+		}
+	}
+
 	// Remote Replication based paramsMes
 	var replicationEnabled string
 	var remoteSymID string
@@ -386,6 +399,9 @@ func (s *service) CreateVolume(
 	if params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)] == "true" {
 		if s.opts.IsVsphereEnabled {
 			return nil, status.Errorf(codes.Unavailable, "Replication on a vSphere volume is not supported")
+		}
+		if useNFS {
+			return nil, status.Errorf(codes.Unavailable, "Replication on a NFS volume is not supported")
 		}
 		replicationEnabled = params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)]
 		// remote symmetrix ID and rdf group name are mandatory params when replication is enabled
@@ -443,6 +459,9 @@ func (s *service) CreateVolume(
 	// greater than or equal to the size of snapshot source
 	contentSource := req.GetVolumeContentSource()
 	if contentSource != nil {
+		if useNFS {
+			return nil, status.Errorf(codes.Unavailable, "Cloning on a NFS volume is not supported")
+		}
 		switch req.GetVolumeContentSource().GetType().(type) {
 		case *csi.VolumeContentSource_Volume:
 			srcVolID = req.GetVolumeContentSource().GetVolume().GetVolumeId()
@@ -492,19 +511,6 @@ func (s *service) CreateVolume(
 		if requiredCylinders < srcVol.CapacityCYL {
 			log.Error("Capacity specified is smaller than the source")
 			return nil, status.Error(codes.InvalidArgument, "Requested capacity is smaller than the source")
-		}
-	}
-
-	// Validate volume capabilities
-	vcs := req.GetVolumeCapabilities()
-	if vcs != nil {
-		isBlock := accTypeIsBlock(vcs)
-		if isBlock && !s.opts.EnableBlock {
-			return nil, status.Error(codes.InvalidArgument, "Block Volume Capability is not supported")
-		}
-		useNFS = accTypeIsNFS(vcs)
-		if isBlock && useNFS {
-			return nil, status.Errorf(codes.InvalidArgument, "NFS with Block is not supported")
 		}
 	}
 
@@ -1755,7 +1761,7 @@ func (s *service) DeleteVolume(
 		if err != nil {
 			if strings.Contains(err.Error(), cannotBeFound) {
 				// The remote volume is already deleted
-				log.Info(fmt.Sprintf("DeleteVolume: Could not find volume: %s/%s so assume it's already deleted", symID, devID))
+				log.Infof("DeleteVolume: Could not find volume: %s/%s so assume it's already deleted", symID, devID)
 				return &csi.DeleteVolumeResponse{}, nil
 			}
 			return nil, status.Errorf(codes.InvalidArgument, "RenameRemoteVolume: Failed to rename volume %s %s", remDevID, err.Error())
@@ -3170,7 +3176,6 @@ func (s *service) CreateSnapshot(
 		return nil, status.Error(codes.InvalidArgument,
 			"Could not parse CSI VolumeId")
 	}
-
 	symID, devID := localSymID, localDevID
 	if snapSymID, ok := req.Parameters[SymmetrixIDParam]; ok {
 		if snapSymID == remoteSymID {
@@ -3187,7 +3192,12 @@ func (s *service) CreateSnapshot(
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-
+	// Check if the volume is not fileSystem
+	_, err = pmaxClient.GetFileSystemByID(ctx, symID, volID)
+	if err == nil {
+		// there is a file system
+		return nil, status.Errorf(codes.Unavailable, "snapshot on a NFS volume is not supported")
+	}
 	// Requires probe
 	if err := s.requireProbe(ctx, pmaxClient); err != nil {
 		return nil, err
