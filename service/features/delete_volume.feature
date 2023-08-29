@@ -86,7 +86,7 @@ Feature: PowerMax CSI interface
     Examples:
       | induced                | errormsg                       |
       | "NoVolumeID"           | "Could not parse CSI VolumeId" |
-      | "InvalidVolumeID"      | "none"                         |
+      | "InvalidVolumeID"      | "cannot be found"              |
       | "UpdateVolumeError"    | "Failed to rename volume"      |
       | "GetStorageGroupError" | "Unable to find storage group" |
       | "GetVolumeError"       | "Could not retrieve volume"    |
@@ -157,7 +157,7 @@ Feature: PowerMax CSI interface
       | induced                | errormsg                       |
       | "none"                 | "none"                         |
       | "NoVolumeID"           | "Could not parse CSI VolumeId" |
-      | "InvalidVolumeID"      | "none"                         |
+      | "InvalidVolumeID"      | "cannot be found"              |
       | "UpdateVolumeError"    | "Failed to rename volume"      |
       | "GetStorageGroupError" | "Unable to find storage group" |
       | "GetVolumeError"       | "Could not retrieve volume"    |

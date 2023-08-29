@@ -61,15 +61,20 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 		return nil, err
 	}
 
+	// Get the parameters
+	params := req.GetScParameters()
+	sourceScParams := req.GetScSourceParameters()
+
+	// check if this is a fileSystemVolume
+	if sourceScParams[FsTypeParam] == "nfs" {
+		return nil, status.Errorf(codes.Unavailable, "volume migration is not supported on NFS volumes")
+	}
+
 	symID, devID, vol, err := s.GetVolumeByID(ctx, volID, pmaxClient)
 	if err != nil {
 		log.Errorf("GetVolumeByID failed with (%s) for devID (%s)", err.Error(), devID)
 		return nil, err
 	}
-	// Get the parameters
-
-	params := req.GetScParameters()
-	sourceScParams := req.GetScSourceParameters()
 
 	applicationPrefix := ""
 	if params[ApplicationPrefixParam] != "" {
