@@ -1978,6 +1978,18 @@ func (s *service) ControllerPublishVolume(
 		// incoming request for file system volume
 		return file.CreateNFSExport(ctx, reqID, symID, devID, am, volumeContext, pmaxClient)
 	}
+
+	if vc.GetMount().GetFsType() == "" {
+		// can happen when doing static provisioning, check for filesystem existence
+		log.Debug("fsType empty...checking for file system existence")
+		_, err := pmaxClient.GetFileSystemByID(ctx, symID, devID)
+		if err == nil {
+			// we found fs, proceed to CreateNFSExport
+			return nil, status.Errorf(codes.Unavailable, "static provisioning on a file system is not supported.")
+
+		}
+	}
+
 	//Fetch the volume details from array
 	symID, devID, vol, err := s.GetVolumeByID(ctx, volID, pmaxClient)
 	if err != nil {
