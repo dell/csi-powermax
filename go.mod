@@ -1,6 +1,7 @@
 module github.com/dell/csi-powermax/v2
 
 go 1.21
+replace github.com/dell/gobrick => ../gobrick
 
 require (
 	github.com/akutz/goof v0.1.2
