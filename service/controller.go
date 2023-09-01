@@ -381,7 +381,7 @@ func (s *service) CreateVolume(
 			return nil, status.Error(codes.InvalidArgument, "Block Volume Capability is not supported")
 		}
 		useNFS = accTypeIsNFS(vcs)
-		if isBlock && useNFS {
+		if isBlock && (useNFS || len(nasServer) > 0) {
 			return nil, status.Errorf(codes.InvalidArgument, "NFS with Block is not supported")
 		}
 	}
@@ -3205,7 +3205,7 @@ func (s *service) CreateSnapshot(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	// Check if the volume is not fileSystem
-	_, err = pmaxClient.GetFileSystemByID(ctx, symID, volID)
+	_, err = pmaxClient.GetFileSystemByID(ctx, localSymID, localDevID)
 	if err == nil {
 		// there is a file system
 		return nil, status.Errorf(codes.Unavailable, "snapshot on a NFS volume is not supported")
