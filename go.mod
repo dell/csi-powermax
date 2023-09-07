@@ -11,11 +11,11 @@ require (
 	github.com/dell/dell-csi-extensions/common v1.2.0
 	github.com/dell/dell-csi-extensions/migration v1.2.0
 	github.com/dell/dell-csi-extensions/replication v1.5.0
-	github.com/dell/gobrick v1.8.1-0.20230822081427-ebb18b2b3dfe
+	github.com/dell/gobrick v1.9.0
 	github.com/dell/gocsi v1.7.0
-	github.com/dell/gofsutil v1.12.1-0.20230828060700-f7f26c1aa088
-	github.com/dell/goiscsi v1.7.1-0.20230825102553-355cf13bfb97
-	github.com/dell/gopowermax/v2 v2.3.1-0.20230822074322-4ff408a66ad3
+	github.com/dell/gofsutil v1.13.0
+	github.com/dell/goiscsi v1.8.0
+	github.com/dell/gopowermax/v2 v2.4.0
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.3
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
@@ -35,7 +35,7 @@ require (
 	github.com/cucumber/gherkin-go/v19 v19.0.3 // indirect
 	github.com/cucumber/messages-go/v16 v16.0.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dell/gonvme v1.4.0 // indirect
+	github.com/dell/gonvme v1.5.0 // indirect
 	github.com/go-logr/logr v0.2.0 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
