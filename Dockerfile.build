@@ -41,7 +41,7 @@ RUN CGO_ENABLED=0 go build
 RUN go run core/semver/semver.go -f mk
 
 FROM ${SOURCE_REPO}:${SOURCE_IMAGE_TAG} as driver-others
-ONBUILD RUN yum install -y e2fsprogs which xfsprogs device-mapper-multipath nfs-utils nfs4-acl-tools \
+ONBUILD RUN yum install -y e2fsprogs which xfsprogs device-mapper-multipath nfs-utils libxcrypt-compat libblockdev nfs4-acl-tools \
     && \
     yum clean all \
     && \
@@ -50,7 +50,7 @@ ONBUILD RUN yum install -y e2fsprogs which xfsprogs device-mapper-multipath nfs-
 FROM ${SOURCE_REPO}:${SOURCE_IMAGE_TAG} as driver-ubim
 ONBUILD RUN microdnf update -y \
     && \
-    microdnf install -y e2fsprogs which xfsprogs nfs-utils nfs4-acl-tools device-mapper-multipath \
+    microdnf install -y e2fsprogs which xfsprogs nfs-utils nfs4-acl-tools libxcrypt-compat libblockdev device-mapper-multipath \
     && \
     microdnf clean all
      
