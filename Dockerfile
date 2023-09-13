@@ -21,6 +21,8 @@ RUN yum install -y \
     nfs-utils \
     nfs4-acl-tools \
     device-mapper-multipath \
+    libxcrypt-compat \
+    libblockdev \
     && \
     yum clean all \
     && \
