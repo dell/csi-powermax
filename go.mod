@@ -13,7 +13,7 @@ require (
 	github.com/dell/dell-csi-extensions/replication v1.5.0
 	github.com/dell/gobrick v1.9.0
 	github.com/dell/gocsi v1.7.0
-	github.com/dell/gofsutil v1.13.0
+	github.com/dell/gofsutil v1.13.1
 	github.com/dell/goiscsi v1.8.0
 	github.com/dell/gopowermax/v2 v2.4.0
 	github.com/fsnotify/fsnotify v1.4.9
