@@ -167,7 +167,7 @@ func (f *feature) aPowermaxService() error {
 }
 
 // A size of zero causes no capacity range to be specified.
-func (f *feature) aBasicBlockVolumeRequest(name string, size int64) error {
+func (f *feature) aBasicBlockVolumeRequest(_ string, size int64) error {
 	req := new(csi.CreateVolumeRequest)
 	params := make(map[string]string)
 	params[service.SymmetrixIDParam] = f.symID
@@ -522,9 +522,8 @@ func (f *feature) theErrorMessageShouldContain(expected string) error {
 	if expected == "none" {
 		if len(f.errs) == 0 {
 			return nil
-		} else {
-			return fmt.Errorf("Unexpected error(s): %s", f.errs[0])
 		}
+		return fmt.Errorf("Unexpected error(s): %s", f.errs[0])
 	}
 	// We expect an error...
 	if len(f.errs) == 0 {
@@ -532,7 +531,7 @@ func (f *feature) theErrorMessageShouldContain(expected string) error {
 	}
 	err0 := f.errs[0]
 	if !strings.Contains(err0.Error(), expected) {
-		return errors.New(fmt.Sprintf("Error %s does not contain the expected message: %s", err0.Error(), expected))
+		return fmt.Errorf("Error %s does not contain the expected message: %s", err0.Error(), expected)
 	}
 	return nil
 }
@@ -543,7 +542,7 @@ func (f *feature) aMountVolumeRequest(name string) error {
 	return nil
 }
 
-func (f *feature) getMountVolumeRequest(name string) *csi.CreateVolumeRequest {
+func (f *feature) getMountVolumeRequest(_ string) *csi.CreateVolumeRequest {
 	req := new(csi.CreateVolumeRequest)
 	params := make(map[string]string)
 	params[service.SymmetrixIDParam] = f.symID
@@ -580,7 +579,7 @@ func (f *feature) aVolumeRequestFileSystem(name, fstype, access, voltype string)
 	return nil
 }
 
-func (f *feature) getVolumeRequestFileSystem(name, fstype, access, voltype string) *csi.CreateVolumeRequest {
+func (f *feature) getVolumeRequestFileSystem(_, fstype, access, voltype string) *csi.CreateVolumeRequest {
 	req := new(csi.CreateVolumeRequest)
 	params := make(map[string]string)
 	params[service.SymmetrixIDParam] = f.symID
@@ -659,7 +658,7 @@ func (f *feature) whenICallPublishVolume(nodeIDEnvVar string) error {
 	return nil
 }
 
-func (f *feature) controllerPublishVolume(id string, nodeIDEnvVar string) error {
+func (f *feature) controllerPublishVolume(id string, _ string) error {
 	var resp *csi.ControllerPublishVolumeResponse
 	var err error
 	req := f.getControllerPublishVolumeRequest()
@@ -695,7 +694,7 @@ func (f *feature) whenICallUnpublishVolume(nodeIDEnvVar string) error {
 	return nil
 }
 
-func (f *feature) controllerUnpublishVolume(id string, nodeIDEnvVar string) error {
+func (f *feature) controllerUnpublishVolume(id string, _ string) error {
 	var err error
 	req := new(csi.ControllerUnpublishVolumeRequest)
 	req.VolumeId = id
@@ -803,7 +802,7 @@ func (f *feature) getNodePublishVolumeRequest() *csi.NodePublishVolumeRequest {
 	return req
 }
 
-func (f *feature) whenICallNodeStageVolume(arg1 string) error {
+func (f *feature) whenICallNodeStageVolume(_ string) error {
 	pub := f.nodePublishVolumeRequest
 	if pub == nil {
 		pub = f.getNodePublishVolumeRequest()
@@ -848,7 +847,7 @@ func (f *feature) nodeStageVolume(id string, path string) error {
 	return err
 }
 
-func (f *feature) whenICallNodePublishVolume(arg1 string) error {
+func (f *feature) whenICallNodePublishVolume(_ string) error {
 	err := f.nodePublishVolume(f.volID, "")
 	if err != nil {
 		fmt.Printf("NodePublishVolume failed: %s\n", err.Error())
@@ -895,7 +894,7 @@ func (f *feature) nodePublishVolume(id string, path string) error {
 	return err
 }
 
-func (f *feature) whenICallNodeUnstageVolume(arg1 string) error {
+func (f *feature) whenICallNodeUnstageVolume(_ string) error {
 	req := &csi.NodeUnstageVolumeRequest{}
 	req.VolumeId = f.volID
 	req.StagingTargetPath = f.nodePublishVolumeRequest.TargetPath
@@ -926,7 +925,7 @@ func (f *feature) nodeUnstageVolume(id string, path string) error {
 	return err
 }
 
-func (f *feature) whenICallNodeUnpublishVolume(arg1 string) error {
+func (f *feature) whenICallNodeUnpublishVolume(_ string) error {
 	fmt.Printf("calling nodeUnpublish vol %s targetPath %s\n", f.volID, f.nodePublishVolumeRequest.TargetPath)
 	err := f.nodeUnpublishVolume(f.volID, f.nodePublishVolumeRequest.TargetPath)
 	if err != nil {
@@ -956,7 +955,7 @@ func (f *feature) nodeUnpublishVolume(id string, path string) error {
 	return err
 }
 
-func (f *feature) verifyPublishedVolumeWithVoltypeAccessFstype(voltype, access, fstype string) error {
+func (f *feature) verifyPublishedVolumeWithVoltypeAccessFstype(voltype, _, fstype string) error {
 	if len(f.errs) > 0 {
 		fmt.Printf("Not verifying published volume because of previous error")
 		return nil
@@ -967,7 +966,7 @@ func (f *feature) verifyPublishedVolumeWithVoltypeAccessFstype(voltype, access, 
 	} else if voltype == "block" {
 		cmd = exec.Command("/bin/bash", "-c", "mount | grep /tmp/datafile")
 	} else {
-		return errors.New("unepected volume type")
+		return fmt.Errorf("unexpected volume type")
 	}
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {
@@ -977,13 +976,13 @@ func (f *feature) verifyPublishedVolumeWithVoltypeAccessFstype(voltype, access, 
 	if voltype == "mount" {
 		// output: /dev/scinia on /tmp/datadir type xfs (rw,relatime,seclabel,attr2,inode64,noquota)
 		if !strings.Contains(string(stdout), "/dev/scini") {
-			return errors.New("Mount did not contain /dev/scini for scale-io")
+			return fmt.Errorf("Mount did not contain /dev/scini for scale-io")
 		}
 		if !strings.Contains(string(stdout), "/tmp/datadir") {
-			return errors.New("Mount did not contain /tmp/datadir for type mount")
+			return fmt.Errorf("Mount did not contain /tmp/datadir for type mount")
 		}
 		if !strings.Contains(string(stdout), fmt.Sprintf("type %s", fstype)) {
-			return errors.New(fmt.Sprintf("Did not find expected fstype %s", fstype))
+			return fmt.Errorf("Did not find expected fstype %s", fstype)
 		}
 
 	} else if voltype == "block" {
@@ -1277,7 +1276,7 @@ func (f *feature) iPublishVolumesInParallel(nVols int) error {
 }
 
 // waitOnParallelResponses waits on the responses from threads and returns the number of errors and/or and error
-func (f *feature) waitOnParallelResponses(method string, nVols int, volIDList []string, done chan bool, errchan chan error) (int, error) {
+func (f *feature) waitOnParallelResponses(method string, nVols int, _ []string, done chan bool, errchan chan error) (int, error) {
 	nerrors := 0
 	for i := 0; i < nVols; i++ {
 		if f.volIDList[i] == "" {
@@ -1541,7 +1540,7 @@ func (f *feature) allVolumesAreDeletedSuccessfully() error {
 	return nil
 }
 
-func (f *feature) iMungeTheCSIVolumeId() error {
+func (f *feature) iMungeTheCSIVolumeID() error {
 	str := []byte(f.volID)
 	strlen := len(str)
 	str[strlen-20] = 'z'
@@ -1549,7 +1548,7 @@ func (f *feature) iMungeTheCSIVolumeId() error {
 	return nil
 }
 
-func (f *feature) iUnmungeTheCSIVolumeId() error {
+func (f *feature) iUnmungeTheCSIVolumeID() error {
 	f.volID = f.volIDList[0]
 	f.errs = make([]error, 0)
 	return nil
@@ -1971,7 +1970,7 @@ func (f *feature) iCheckIfVolumeExist() error {
 		if strings.Contains(volume.VolumeIdentifier, "DS") {
 			fmt.Printf("Volume (%s) exist and is tagged to delete (%s)\n", volume.VolumeID, volume.VolumeIdentifier)
 		} else {
-			f.addError(fmt.Errorf("Volume (%s) exist and Soft-Delete Failed\n", volume.VolumeID))
+			f.addError(fmt.Errorf("volume (%s) exist and Soft-Delete Failed", volume.VolumeID))
 		}
 	}
 	return nil
@@ -1992,8 +1991,8 @@ func (f *feature) checkIfVolumeIsDeleted(volName, symID, devID string) error {
 		fmt.Println(", Volume is successfully deleted")
 	} else {
 		if volName+"-DS" == vol.VolumeIdentifier {
-			f.addError(errors.New("Volume still exist\n"))
-			fmt.Printf("Volume (%s) exist", vol.VolumeID)
+			f.addError(errors.New("Volume still exist"))
+			fmt.Printf("volume (%s) exist", vol.VolumeID)
 		} else {
 			fmt.Println("Volume is successfully deleted")
 		}
@@ -2230,8 +2229,8 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I receive a valid volume$`, f.iReceiveAValidVolume)
 	s.Step(`^all volumes are deleted successfully$`, f.allVolumesAreDeletedSuccessfully)
 	s.Step(`^I use thick provisioning$`, f.iUseThickProvisioning)
-	s.Step(`^I munge the CSI VolumeId$`, f.iMungeTheCSIVolumeId)
-	s.Step(`^I unmunge the CSI VolumeId$`, f.iUnmungeTheCSIVolumeId)
+	s.Step(`^I munge the CSI VolumeId$`, f.iMungeTheCSIVolumeID)
+	s.Step(`^I unmunge the CSI VolumeId$`, f.iUnmungeTheCSIVolumeID)
 	s.Step(`^the volume is not deleted$`, f.theVolumeIsNotDeleted)
 	s.Step(`^a get capacity request "([^"]*)"$`, f.aGetCapacityRequest)
 	s.Step(`^I call GetCapacity$`, f.iCallGetCapacity)

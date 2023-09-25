@@ -157,7 +157,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 	return csiResp, nil
 }
 
-func nonReplToRepl(ctx context.Context, params map[string]string, sourceScParams map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
+func nonReplToRepl(ctx context.Context, params map[string]string, _ map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
 	var replicationEnabled string
 	var remoteSymID string
 	var localRDFGrpNo string
@@ -281,7 +281,7 @@ func nonReplToRepl(ctx context.Context, params map[string]string, sourceScParams
 	return nil
 }
 
-func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
+func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams map[string]string, _, _, _, _, symID string, s *service, vol *types.Volume) error {
 	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
 		log.Error(err.Error())
@@ -313,7 +313,7 @@ func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams
 	return nil
 }
 
-func versionUpgrade(ctx context.Context, params map[string]string, sourceScParams map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
+func versionUpgrade(_ context.Context, _ map[string]string, _ map[string]string, _, _, _, _, _ string, _ *service, _ *types.Volume) error {
 	return status.Error(codes.Unimplemented, "Unimplemented")
 }
 

@@ -351,13 +351,12 @@ func (queue *deletionQueue) cleanupSnapshots(pmaxClient pmax.Pmax) bool {
 				_, _ = device.SymVolumeCache.getOrUpdateVolume(queue.SymID, volumeID, pmaxClient, true)
 				count++
 				continue
-			} else { // device is neither a source or target
-				if len(symVol.StorageGroupIDList) == 0 {
-					device.updateStatus(deletionStateDeleteVol, "")
-				} else {
-					log.Warningf("%s: Unexpected error. Moving back volume to disAssociateSG step", device.print())
-					device.updateStatus(deletionStateDisAssociateSG, "")
-				}
+			} // device is neither a source or target
+			if len(symVol.StorageGroupIDList) == 0 {
+				device.updateStatus(deletionStateDeleteVol, "")
+			} else {
+				log.Warningf("%s: Unexpected error. Moving back volume to disAssociateSG step", device.print())
+				device.updateStatus(deletionStateDisAssociateSG, "")
 			}
 		} else {
 			continue
@@ -382,56 +381,54 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 		// If state is disassociateSG
 		if device.Status.State != deletionStateDisAssociateSG {
 			continue
-		} else {
-			// First get the volume from cache
-			symVol, err := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, device.SymDeviceID.DeviceID, pmaxClient, false)
-			if err != nil {
-				device.updateStatus(device.Status.State, err.Error())
-				continue
-			}
-			if len(symVol.StorageGroupIDList) > 0 {
-				if sgID == "" {
-					// Iterate through the SG list to find a SG which we can process
-					for _, storageGroupID := range symVol.StorageGroupIDList {
-						sg, err := pmaxClient.GetStorageGroup(context.Background(), queue.SymID, storageGroupID)
-						if err != nil {
-							// failed to fetch the SG details
-							// update error for this device
-							device.updateStatus(device.Status.State, errorMsg(err))
-							continue
-						} else {
-							if sg.NumOfMaskingViews > 0 {
-								log.Warningf("%s: SG: %s in masking view. Can't proceed with deletion of devices",
-									device.print(), storageGroupID)
-								device.updateStatus(device.Status.State, "device is in masking view, can't delete")
-								continue
-							}
-							sgID = storageGroupID
-							break
-						}
-					}
-					if sgID == "" {
-						log.Debugf("%s: couldn't find any sg from which this volume could be removed. Proceeding to the next volume",
-							device.print())
+		}
+		// First get the volume from cache
+		symVol, err := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, device.SymDeviceID.DeviceID, pmaxClient, false)
+		if err != nil {
+			device.updateStatus(device.Status.State, err.Error())
+			continue
+		}
+		if len(symVol.StorageGroupIDList) > 0 {
+			if sgID == "" {
+				// Iterate through the SG list to find a SG which we can process
+				for _, storageGroupID := range symVol.StorageGroupIDList {
+					sg, err := pmaxClient.GetStorageGroup(context.Background(), queue.SymID, storageGroupID)
+					if err != nil {
+						// failed to fetch the SG details
+						// update error for this device
+						device.updateStatus(device.Status.State, errorMsg(err))
 						continue
 					}
-					volumeIDs = append(volumeIDs, device.SymDeviceID.DeviceID)
-					count++
-				} else {
-					for _, storageGroupID := range symVol.StorageGroupIDList {
-						if storageGroupID == sgID {
-							volumeIDs = append(volumeIDs, device.SymDeviceID.DeviceID)
-							count++
-							break
-						}
+					if sg.NumOfMaskingViews > 0 {
+						log.Warningf("%s: SG: %s in masking view. Can't proceed with deletion of devices",
+							device.print(), storageGroupID)
+						device.updateStatus(device.Status.State, "device is in masking view, can't delete")
+						continue
+					}
+					sgID = storageGroupID
+					break
+				}
+				if sgID == "" {
+					log.Debugf("%s: couldn't find any sg from which this volume could be removed. Proceeding to the next volume",
+						device.print())
+					continue
+				}
+				volumeIDs = append(volumeIDs, device.SymDeviceID.DeviceID)
+				count++
+			} else {
+				for _, storageGroupID := range symVol.StorageGroupIDList {
+					if storageGroupID == sgID {
+						volumeIDs = append(volumeIDs, device.SymDeviceID.DeviceID)
+						count++
+						break
 					}
 				}
+			}
+		} else {
+			if symVol.SnapSource || symVol.SnapTarget {
+				device.updateStatus(deletionStateCleanupSnaps, "")
 			} else {
-				if symVol.SnapSource || symVol.SnapTarget {
-					device.updateStatus(deletionStateCleanupSnaps, "")
-				} else {
-					device.updateStatus(deletionStateDeleteVol, "")
-				}
+				device.updateStatus(deletionStateDeleteVol, "")
 			}
 		}
 		if count == MaxRequestsPerStep {
@@ -446,10 +443,9 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 				log.Errorf("SG: %s in masking view. Can't proceed with deletion of devices", sgID)
 				return false
 			}
-		} else {
-			// We failed to get SG details. This could be a transient error
-			// Proceed with the removal of volumes
 		}
+		// We failed to get SG details. This could be a transient error
+		// Proceed with the removal of volumes
 		ns, rdfNo, mode, err := GetRDFInfoFromSGID(sgID)
 		if err != nil {
 			log.Debugf("GetRDFInfoFromSGID failed for (%s) on symID (%s). Proceeding for RemoveVolumesFromStorageGroup", sgID, queue.SymID)
@@ -813,28 +809,26 @@ func (worker *deletionWorker) populateDeletionQueue() {
 		if err != nil {
 			log.Errorf("Could not retrieve volume IDs to be deleted. Error: %s", err.Error())
 			continue
-		} else {
-			log.Infof("Total number of volumes found which have been tagged for deletion: %d", len(volList))
-			if len(volList) > 0 {
-				log.Infof("Volumes with the prefix: %s - %v", volDeletePrefix, volList)
+		}
+		log.Infof("Total number of volumes found which have been tagged for deletion: %d", len(volList))
+		if len(volList) > 0 {
+			log.Infof("Volumes with the prefix: %s - %v", volDeletePrefix, volList)
+		}
+		for _, id := range volList {
+			volume, err := pmaxClient.GetVolumeByID(context.Background(), symID, id)
+			if err != nil {
+				log.Warningf("Could not retrieve details for volume: %s. Ignoring it", id)
+				continue
 			}
-			for _, id := range volList {
-				volume, err := pmaxClient.GetVolumeByID(context.Background(), symID, id)
+			// Put volume on the queue if appropriate
+			if strings.HasPrefix(volume.VolumeIdentifier, volDeletePrefix) {
+				err = worker.QueueDeviceForDeletion(id, volume.VolumeIdentifier, symID)
 				if err != nil {
-					log.Warningf("Could not retrieve details for volume: %s. Ignoring it", id)
-					continue
-				} else {
-					// Put volume on the queue if appropriate
-					if strings.HasPrefix(volume.VolumeIdentifier, volDeletePrefix) {
-						err = worker.QueueDeviceForDeletion(id, volume.VolumeIdentifier, symID)
-						if err != nil {
-							log.Errorf("Error in queuing device for deletion. Error: %s", err.Error())
-						}
-					} else {
-						log.Warningf("(Device ID: %s, SymID: %s): skipping as it is not tagged for deletion",
-							volume.VolumeID, symID)
-					}
+					log.Errorf("Error in queuing device for deletion. Error: %s", err.Error())
 				}
+			} else {
+				log.Warningf("(Device ID: %s, SymID: %s): skipping as it is not tagged for deletion",
+					volume.VolumeID, symID)
 			}
 		}
 	}
