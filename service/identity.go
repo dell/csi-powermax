@@ -33,8 +33,8 @@ import (
 )
 
 func (s *service) GetPluginInfo(
-	ctx context.Context,
-	req *csi.GetPluginInfoRequest) (
+	_ context.Context,
+	_ *csi.GetPluginInfoRequest) (
 	*csi.GetPluginInfoResponse, error,
 ) {
 	return &csi.GetPluginInfoResponse{
@@ -45,8 +45,8 @@ func (s *service) GetPluginInfo(
 }
 
 func (s *service) GetPluginCapabilities(
-	ctx context.Context,
-	req *csi.GetPluginCapabilitiesRequest) (
+	_ context.Context,
+	_ *csi.GetPluginCapabilitiesRequest) (
 	*csi.GetPluginCapabilitiesResponse, error,
 ) {
 	var rep csi.GetPluginCapabilitiesResponse
@@ -80,7 +80,7 @@ func (s *service) GetPluginCapabilities(
 
 func (s *service) Probe(
 	ctx context.Context,
-	req *csi.ProbeRequest) (
+	_ *csi.ProbeRequest) (
 	*csi.ProbeResponse, error,
 ) {
 	log.Debug("Probe called")
@@ -116,7 +116,7 @@ func (s *service) Probe(
 }
 
 func (s *service) ProbeController(ctx context.Context,
-	req *commonext.ProbeControllerRequest) (
+	_ *commonext.ProbeControllerRequest) (
 	*commonext.ProbeControllerResponse, error,
 ) {
 	if !strings.EqualFold(s.mode, "node") {
@@ -141,8 +141,8 @@ func (s *service) ProbeController(ctx context.Context,
 }
 
 func (s *service) GetReplicationCapabilities(
-	ctx context.Context,
-	req *csiext.GetReplicationCapabilityRequest) (
+	_ context.Context,
+	_ *csiext.GetReplicationCapabilityRequest) (
 	*csiext.GetReplicationCapabilityResponse, error,
 ) {
 	rep := new(csiext.GetReplicationCapabilityResponse)
@@ -261,7 +261,7 @@ func (s *service) GetReplicationCapabilities(
 	return rep, nil
 }
 
-func (s *service) GetMigrationCapabilities(ctx context.Context, request *migrext.GetMigrationCapabilityRequest) (*migrext.GetMigrationCapabilityResponse, error) {
+func (s *service) GetMigrationCapabilities(_ context.Context, _ *migrext.GetMigrationCapabilityRequest) (*migrext.GetMigrationCapabilityResponse, error) {
 	return &migrext.GetMigrationCapabilityResponse{
 		Capabilities: []*migrext.MigrationCapability{
 			{

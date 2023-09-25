@@ -49,7 +49,7 @@ var (
 
 func incrementCounter(identifier string, num int) {
 	lockNumber := RequestLock(identifier, "")
-	timeToSleep := rand.Intn(1010-500) + 500
+	timeToSleep := rand.Intn(1010-500) + 500 // #nosec G404
 	time.Sleep(time.Duration(timeToSleep) * time.Microsecond)
 	if debugUnitTest {
 		fmt.Printf("Sleeping for :%d microseconds\n", timeToSleep)
@@ -61,14 +61,14 @@ func incrementCounter(identifier string, num int) {
 
 // TestReleaseLockWOAcquiring tries to release a lock that
 // was never acquired.
-func TestReleaseLockWOAcquiring(t *testing.T) {
+func TestReleaseLockWOAcquiring(_ *testing.T) {
 	LockRequestHandler()
 	CleanupMapEntries(10 * time.Millisecond)
 	ReleaseLock("nonExistentLock", "", 0)
 }
 
 // TestReleasingOtherLock tries to release a lock that it didn't acquire
-func TestReleasingOtherLock(t *testing.T) {
+func TestReleasingOtherLock(_ *testing.T) {
 	LockRequestHandler()
 	CleanupMapEntries(10 * time.Millisecond)
 	lockNumber := RequestLock("new_lock", "")
@@ -92,7 +92,7 @@ func TestLockCounter(t *testing.T) {
 		incrementLockCounter()
 	}
 	if lockCounter != 500 {
-		t.Error(fmt.Sprintf("Expected lock counter to be 500 but found: %d", lockCounter))
+		t.Errorf("Expected lock counter to be 500 but found: %d", lockCounter)
 	}
 }
 
@@ -133,7 +133,7 @@ func TestLocks(t *testing.T) {
 	// Check if all the counters were updated properly
 	for _, counter := range counters {
 		if counter != 6 {
-			t.Error(fmt.Sprintf("expected counter to be %d but found %d", 6, counter))
+			t.Errorf("expected counter to be %d but found %d", 6, counter)
 		}
 	}
 }
@@ -337,7 +337,7 @@ func TestStringSliceRegexMatcher(t *testing.T) {
 	}
 }
 
-func TestExecCommandHelper(t *testing.T) {
+func TestExecCommandHelper(_ *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return
 	}
@@ -358,7 +358,7 @@ func TestAppendIfMissing(t *testing.T) {
 		}
 	}
 	if count != 1 {
-		t.Error(fmt.Sprintf("Expected no more than one occurence of string Test1 in slice but found %d", count))
+		t.Errorf("Expected no more than one occurence of string Test1 in slice but found %d", count)
 	}
 	count = 0
 	testStrings = appendIfMissing(testStrings, "Test4")
@@ -368,7 +368,7 @@ func TestAppendIfMissing(t *testing.T) {
 		}
 	}
 	if count != 1 {
-		t.Error(fmt.Sprintf("Expected no more than one occurence of string Test4 in slice but found %d", count))
+		t.Errorf("Expected no more than one occurence of string Test4 in slice but found %d", count)
 	}
 }
 

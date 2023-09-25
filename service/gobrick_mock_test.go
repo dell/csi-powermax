@@ -35,7 +35,7 @@ func mockGobrickReset() {
 
 type mockFCGobrick struct{}
 
-func (g *mockFCGobrick) ConnectVolume(ctx context.Context, info gobrick.FCVolumeInfo) (gobrick.Device, error) {
+func (g *mockFCGobrick) ConnectVolume(_ context.Context, info gobrick.FCVolumeInfo) (gobrick.Device, error) {
 	dev := gobrick.Device{
 		WWN:         nodePublishWWN,
 		Name:        goodVolumeName,
@@ -54,7 +54,7 @@ func (g *mockFCGobrick) ConnectVolume(ctx context.Context, info gobrick.FCVolume
 	return dev, nil
 }
 
-func (g *mockFCGobrick) DisconnectVolumeByDeviceName(ctx context.Context, name string) error {
+func (g *mockFCGobrick) DisconnectVolumeByDeviceName(_ context.Context, _ string) error {
 	if mockGobrickInducedErrors.DisconnectVolumeError {
 		return fmt.Errorf("induced DisconnectVolumeError")
 	}
@@ -63,7 +63,7 @@ func (g *mockFCGobrick) DisconnectVolumeByDeviceName(ctx context.Context, name s
 	return nil
 }
 
-func (g *mockFCGobrick) GetInitiatorPorts(ctx context.Context) ([]string, error) {
+func (g *mockFCGobrick) GetInitiatorPorts(_ context.Context) ([]string, error) {
 	result := make([]string, 0)
 	return result, nil
 }
@@ -92,7 +92,7 @@ func (g *mockISCSIGobrick) ConnectVolume(ctx context.Context, info gobrick.ISCSI
 	return dev, nil
 }
 
-func (g *mockISCSIGobrick) DisconnectVolumeByDeviceName(ctx context.Context, name string) error {
+func (g *mockISCSIGobrick) DisconnectVolumeByDeviceName(ctx context.Context, _ string) error {
 	if mockGobrickInducedErrors.DisconnectVolumeError {
 		return fmt.Errorf("induced DisconnectVolumeError")
 	}
@@ -103,12 +103,12 @@ func (g *mockISCSIGobrick) DisconnectVolumeByDeviceName(ctx context.Context, nam
 	return nil
 }
 
-func (g *mockISCSIGobrick) GetInitiatorName(ctx context.Context) ([]string, error) {
+func (g *mockISCSIGobrick) GetInitiatorName(_ context.Context) ([]string, error) {
 	result := make([]string, 0)
 	return result, nil
 }
 
-func (g *mockFCGobrick) ConnectRDMVolume(ctx context.Context, info gobrick.RDMVolumeInfo) (gobrick.Device, error) {
+func (g *mockFCGobrick) ConnectRDMVolume(_ context.Context, info gobrick.RDMVolumeInfo) (gobrick.Device, error) {
 	dev := gobrick.Device{
 		WWN:         nodePublishWWN,
 		Name:        goodVolumeName,

@@ -1002,7 +1002,7 @@ func (f *feature) iCallCreateVolumeSize(name string, size int64) error {
 	return nil
 }
 
-func (f *feature) iChangeTheStoragePool(storagePoolName string) error {
+func (f *feature) iChangeTheStoragePool(_ string) error {
 	params := make(map[string]string)
 	params[SymmetrixIDParam] = f.symmetrixID
 	params[ServiceLevelParam] = "Diamond"
@@ -1612,7 +1612,7 @@ func (f *feature) iHaveAFCPortGroup(portGroupID string) error {
 	return nil
 }
 
-func (f *feature) iAddTheVolumeTo(nodeID string) error {
+func (f *feature) iAddTheVolumeTo(_ string) error {
 	volumeIdentifier, _, devID, _, _, _ := f.service.parseCsiID(f.volumeID)
 	mock.AddOneVolumeToStorageGroup(devID, volumeIdentifier, f.sgID, 1)
 	return nil
@@ -2013,7 +2013,7 @@ func parseListVolumesTable(dt *messages.PickleStepArgument_PickleTable) (int32, 
 			if err != nil {
 				return 0, "", fmt.Errorf("expected a valid number for max_entries, got %v", err)
 			}
-			maxEntries = int32(n)
+			maxEntries = int32(n) // #nosec G109
 		case "starting_token":
 			startingToken = dt.Rows[1].Cells[i].Value
 		default:
@@ -2105,7 +2105,7 @@ func (f *feature) aValidControllerGetCapabilitiesResponseIsReturned() error {
 	return fmt.Errorf("expected ControllerGetCapabilitiesResponse but didn't get one")
 }
 
-func (f *feature) iCallValidateVolumeCapabilitiesWithVoltypeAccessFstype(voltype, access, fstype, pool, level string) error {
+func (f *feature) iCallValidateVolumeCapabilitiesWithVoltypeAccessFstype(voltype, access, _, pool, level string) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 	req := new(csi.ValidateVolumeCapabilitiesRequest)
@@ -2883,19 +2883,19 @@ func (f *feature) theWrongStoragePool() error {
 	return nil
 }
 
-func (f *feature) thereAreValidSnapshotsOfVolume(nsnapshots int, volume string) error {
+func (f *feature) thereAreValidSnapshotsOfVolume(_ int, _ string) error {
 	return godog.ErrPending
 }
 
-func (f *feature) iCallListSnapshotsWithMaxEntriesAndStartingToken(maxEntriesString, startingTokenString string) error {
+func (f *feature) iCallListSnapshotsWithMaxEntriesAndStartingToken(_, _ string) error {
 	return godog.ErrPending
 }
 
-func (f *feature) iCallListSnapshotsForVolume(arg1 string) error {
+func (f *feature) iCallListSnapshotsForVolume(_ string) error {
 	return godog.ErrPending
 }
 
-func (f *feature) iCallListSnapshotsForSnapshot(arg1 string) error {
+func (f *feature) iCallListSnapshotsForSnapshot(_ string) error {
 	return godog.ErrPending
 }
 
@@ -3452,7 +3452,7 @@ func (f *feature) deviceIsMounted(device string) error {
 	return nil
 }
 
-func (f *feature) thereAreRemainingDeviceEntriesForLun(number int, lun string) error {
+func (f *feature) thereAreRemainingDeviceEntriesForLun(number int, _ string) error {
 	if len(gofsutil.GOFSMockWWNToDevice) != number {
 		return fmt.Errorf("Expected %d device entries got %d", number, len(gofsutil.GOFSMockWWNToDevice))
 	}
@@ -3466,7 +3466,7 @@ func (f *feature) aNodeRootWithMultipathConfigFile() error {
 	return err
 }
 
-func (f *feature) iCallCopyMultipathConfigFileWithRoot(testRoot string) error {
+func (f *feature) iCallCopyMultipathConfigFileWithRoot(_ string) error {
 	// TODO: remove
 	// f.err = copyMultipathConfigFile("test/noderoot", testRoot)
 	return nil
@@ -4047,17 +4047,15 @@ func (f *feature) iRetryOnFailedSnapshotToSucceed() error {
 				if f.err == nil {
 					delete(f.failedSnaps, failedSnap.snapID)
 					break
-				} else {
-					fmt.Printf("Retry CreateSnapshot (%d) failed for SnapID (%s) with error (%s)\n", i, failedSnap.snapID, f.err.Error())
 				}
+				fmt.Printf("Retry CreateSnapshot (%d) failed for SnapID (%s) with error (%s)\n", i, failedSnap.snapID, f.err.Error())
 			} else if failedSnap.operation == "delete" {
 				_ = f.iCallDeleteSnapshot()
 				if f.err == nil {
 					delete(f.failedSnaps, failedSnap.snapID)
 					break
-				} else {
-					fmt.Printf("Retry DeleteSnapshot (%d) failed for SnapID (%s) with error (%s)\n", i, failedSnap.snapID, f.err.Error())
 				}
+				fmt.Printf("Retry DeleteSnapshot (%d) failed for SnapID (%s) with error (%s)\n", i, failedSnap.snapID, f.err.Error())
 			}
 			time.Sleep(2 * time.Second)
 		}

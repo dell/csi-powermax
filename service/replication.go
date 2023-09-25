@@ -402,20 +402,19 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 					// Idempotent operation, return success
 					log.Warningf("SG Name: %s, state: %s already in the desired state", sgName, state)
 					return true, psg, nil
-				} else {
-					// We try a best effort failover & if it doesn't succeed, then return a failed precondition
-					// TODO: Revisit this
-					err := pmaxClient.ExecuteReplicationActionOnSG(ctx, symID, FailOver, sgName, rdfGrpNo, unplanned, true, false)
-					if err != nil {
-						log.Errorf("Fail over: Failed to modify SG (%s) - Error (%s)",
-							sgName, err.Error())
-						return false, nil, status.Errorf(codes.FailedPrecondition,
-							"Unable to perform Fail over for SG Name: %s, state: %s. An attempt failed with", sgName, err.Error())
-					}
-					log.Infof("Action (%s) with Swap set to (%v), Unplanned (%v), successful on SG(%s)",
-						FailOver, !withoutSwap, unplanned, sgName)
-					return false, nil, nil
 				}
+				// We try a best effort failover & if it doesn't succeed, then return a failed precondition
+				// TODO: Revisit this
+				err := pmaxClient.ExecuteReplicationActionOnSG(ctx, symID, FailOver, sgName, rdfGrpNo, unplanned, true, false)
+				if err != nil {
+					log.Errorf("Fail over: Failed to modify SG (%s) - Error (%s)",
+						sgName, err.Error())
+					return false, nil, status.Errorf(codes.FailedPrecondition,
+						"Unable to perform Fail over for SG Name: %s, state: %s. An attempt failed with", sgName, err.Error())
+				}
+				log.Infof("Action (%s) with Swap set to (%v), Unplanned (%v), successful on SG(%s)",
+					FailOver, !withoutSwap, unplanned, sgName)
+				return false, nil, nil
 			}
 			if (isR1 && !toLocal) || (isR1 && toLocal) {
 				// 1. Planned failover without Swap
@@ -443,13 +442,12 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 					// idempotent call
 					log.Warningf("SG name: %s, state: %s, idempotent operation. Nothing to do here", sgName, state)
 					return true, psg, nil
-				} else {
-					// We don't know what to do here
-					errorMsg := fmt.Sprintf("SG name: %s,state: %s. driver unable to determine next SRDF action",
-						sgName, state)
-					log.Error(errorMsg)
-					return false, nil, status.Errorf(codes.Internal, errorMsg)
 				}
+				// We don't know what to do here
+				errorMsg := fmt.Sprintf("SG name: %s,state: %s. driver unable to determine next SRDF action",
+					sgName, state)
+				log.Error(errorMsg)
+				return false, nil, status.Errorf(codes.Internal, errorMsg)
 			}
 			if (toLocal && !isR1) || (!toLocal && isR1) {
 				skipFailover := false

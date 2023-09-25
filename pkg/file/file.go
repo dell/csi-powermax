@@ -264,7 +264,7 @@ func DeleteNFSExport(ctx context.Context, reqID, symID, fsID string, pmaxClient 
 }
 
 // StageFileSystem creates a folder structure on the node
-func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt string, publishContext map[string]string, pmaxClient pmax.Pmax) (
+func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt string, publishContext map[string]string, _ pmax.Pmax) (
 	*csi.NodeStageVolumeResponse, error,
 ) {
 	nasServerName := publishContext[NASServerNameParam]
@@ -311,7 +311,7 @@ func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt str
 }
 
 // PublishFileSystem bind the file system mount on the node
-func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, reqID, symID, fsID string, pmaxClient pmax.Pmax) (*csi.NodePublishVolumeResponse, error) {
+func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, reqID, symID, fsID string, _ pmax.Pmax) (*csi.NodePublishVolumeResponse, error) {
 	// get params for publish
 	publishContext := req.GetPublishContext()
 	targetPath := req.GetTargetPath()

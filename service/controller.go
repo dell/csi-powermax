@@ -1376,7 +1376,7 @@ func addReplicationParamsToVolumeAttributes(attributes map[string]string, prefix
 	attributes[path.Join(prefix, RemoteRDFGroupParam)] = remoteRDFGrpNo
 }
 
-func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID string, pmaxClient pmax.Pmax) (*types.RDFStorageGroup, error) {
+func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, localProtectionGroupID, _, localRDFGrpNo, repMode, reqID string, pmaxClient pmax.Pmax) (*types.RDFStorageGroup, error) {
 	var lockHandle string
 	lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
 	lockNum := RequestLock(lockHandle, reqID)
@@ -1593,7 +1593,7 @@ func splitFibreChannelInitiatorID(initiatorID string) (string, string, string, e
 }
 
 // Create a CSI VolumeId from component parts.
-func (s *service) createCSIVolumeID(volumePrefix, volumeName, symID, devID string) string {
+func (s *service) createCSIVolumeID(_, volumeName, symID, devID string) string {
 	// return fmt.Sprintf("%s-%s-%s-%s", volumePrefix, volumeName, symID, devID)
 	return fmt.Sprintf("%s%s-%s-%s-%s", CsiVolumePrefix, s.getClusterPrefix(), volumeName, symID, devID)
 }
@@ -1807,7 +1807,7 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 	return nil
 }
 
-func (s *service) deleteFileSystem(ctx context.Context, reqID, symID, fsName, fsID, id string, pmaxClient pmax.Pmax) error {
+func (s *service) deleteFileSystem(ctx context.Context, reqID, symID, fsName, fsID, _ string, pmaxClient pmax.Pmax) error {
 	// log all parameters used in DeleteVolume call
 	fields := map[string]interface{}{
 		"SymmetrixID":    symID,
@@ -2683,7 +2683,7 @@ func (s *service) valVolumeContext(ctx context.Context, attributes map[string]st
 }
 
 func valVolumeCaps(
-	vcs []*csi.VolumeCapability, vol *types.Volume,
+	vcs []*csi.VolumeCapability, _ *types.Volume,
 ) (bool, string) {
 	var (
 		supported = true
@@ -2734,16 +2734,16 @@ func valVolumeCaps(
 }
 
 func (s *service) ListVolumes(
-	ctx context.Context,
-	req *csi.ListVolumesRequest) (
+	_ context.Context,
+	_ *csi.ListVolumesRequest) (
 	*csi.ListVolumesResponse, error,
 ) {
 	return nil, status.Error(codes.Unimplemented, "")
 }
 
 func (s *service) ListSnapshots(
-	ctx context.Context,
-	req *csi.ListSnapshotsRequest) (
+	_ context.Context,
+	_ *csi.ListSnapshotsRequest) (
 	*csi.ListSnapshotsResponse, error,
 ) {
 	return nil, status.Error(codes.Unimplemented, "")
@@ -2854,8 +2854,8 @@ func (s *service) getStoragePoolCapacities(ctx context.Context, symmetrixID, sto
 }
 
 func (s *service) ControllerGetCapabilities(
-	ctx context.Context,
-	req *csi.ControllerGetCapabilitiesRequest) (
+	_ context.Context,
+	_ *csi.ControllerGetCapabilitiesRequest) (
 	*csi.ControllerGetCapabilitiesResponse, error,
 ) {
 	capabilities := []*csi.ControllerServiceCapability{
@@ -3032,15 +3032,14 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 			if err != nil {
 				log.Errorf("Failed to get details for initiator - %s", initiator)
 				continue
-			} else {
-				for _, initiatorID := range initList.InitiatorIDs {
-					_, dirPort, _, err := splitFibreChannelInitiatorID(initiatorID)
-					if err != nil {
-						continue
-					}
-					portListFromHost = appendIfMissing(portListFromHost, dirPort)
-					isValidHost = true
+			}
+			for _, initiatorID := range initList.InitiatorIDs {
+				_, dirPort, _, err := splitFibreChannelInitiatorID(initiatorID)
+				if err != nil {
+					continue
 				}
+				portListFromHost = appendIfMissing(portListFromHost, dirPort)
+				isValidHost = true
 			}
 		}
 	}
@@ -3064,21 +3063,20 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 		if err != nil {
 			log.Error("Failed to fetch port group details")
 			continue
-		} else {
-			var portList []string
-			if (portGroup.PortGroupType == "Fibre") || (portGroup.PortGroupType == "SCSI_FC") {
-				for _, portKey := range portGroup.SymmetrixPortKey {
-					dirPort := fmt.Sprintf("%s:%s", portKey.DirectorID, portKey.PortID)
-					portList = append(portList, dirPort)
-				}
-				sort.Strings(portList)
-				sort.Strings(portListFromHost)
-				if stringSlicesEqual(portList, portListFromHost) {
-					validPortGroupID = portGroupID
-					log.Debug(fmt.Sprintf("Found valid port group %s on the array %s",
-						portGroupID, symID))
-					break
-				}
+		}
+		var portList []string
+		if (portGroup.PortGroupType == "Fibre") || (portGroup.PortGroupType == "SCSI_FC") {
+			for _, portKey := range portGroup.SymmetrixPortKey {
+				dirPort := fmt.Sprintf("%s:%s", portKey.DirectorID, portKey.PortID)
+				portList = append(portList, dirPort)
+			}
+			sort.Strings(portList)
+			sort.Strings(portListFromHost)
+			if stringSlicesEqual(portList, portListFromHost) {
+				validPortGroupID = portGroupID
+				log.Debug(fmt.Sprintf("Found valid port group %s on the array %s",
+					portGroupID, symID))
+				break
 			}
 		}
 	}
