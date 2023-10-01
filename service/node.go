@@ -560,11 +560,11 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		nodeUnstageCtx = setLogFields(nodeUnstageCtx, f)
 		switch s.arrayTransportProtocolMap[symID] {
 		case Vsphere:
-			s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName) // #nosec G20
+			_ = s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
 		case FcTransportProtocol:
-			s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName) // #nosec G20
+			_ = s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
 		case IscsiTransportProtocol:
-			s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName) // #nosec G20
+			_ = s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
 		}
 		cancel()
 		time.Sleep(disconnectVolumeRetryTime)
