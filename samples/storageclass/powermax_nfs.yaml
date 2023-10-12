@@ -6,11 +6,14 @@
 # Change all instances to <SYMID> to the Symmetrix ID of the PowerMax array
 # In case you installed the driver with a custom name, then replace
 # all instances of "csi-powermax.dellemc.com" with the custom provisioner name
+# PowerMax CSI Driver for NFS requires PowerMax 2500 or 8500 array running PowerMAX OS 10.x Minumum, 
+# Unisphere for PowerMax instance controlling SD-NAS needs to be embedded instance on the array.
+# Older PowerMax with eNas is not supported with CSI Driver.
 
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: powermax-fc
+  name: powermax-nfs
 parameters:
   # "csi.storage.k8s.io/fstype" is used to set the filesystem type which will be used to format the new volume
   # Allowed values:
