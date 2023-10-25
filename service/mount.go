@@ -404,16 +404,22 @@ func contains(list []string, item string) bool {
 // return pair is a bool flag of whether file was created, and an error
 func mkfile(path string) (bool, error) {
 	st, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		file, err := os.OpenFile(path, os.O_CREATE, 0600) // #nosec G304
-		if err != nil {
+	if err != nil {
+		if os.IsNotExist(err) {
+			file, err := os.OpenFile(path, os.O_CREATE, 0600) // #nosec G304
+			if err != nil {
+				log.WithField("path", path).WithError(
+					err).Error("Unable to create file")
+			} else {
+				file.Close() // #nosec G20
+				log.WithField("path", path).Debug("created file")
+				return true, nil
+			}
+		} else {
 			log.WithField("path", path).WithError(
 				err).Error("Unable to create file")
-			return false, err
 		}
-		file.Close() // #nosec G20
-		log.WithField("path", path).Debug("created file")
-		return true, nil
+		return false, err
 	}
 	if st.IsDir() {
 		return false, fmt.Errorf("existing path is a directory")
@@ -425,14 +431,19 @@ func mkfile(path string) (bool, error) {
 // return pair is a bool flag of whether dir was created, and an error
 func mkdir(path string) (bool, error) {
 	st, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		if err := os.Mkdir(path, 0750); err != nil {
-			log.WithField("dir", path).WithError(
+	if err != nil {
+		if os.IsNotExist(err) {
+			if err := os.Mkdir(path, 0750); err != nil {
+				log.WithField("dir", path).WithError(
+					err).Error("Unable to create dir")
+			} else {
+				log.WithField("path", path).Debug("created directory")
+			}
+		} else {
+			log.WithField("path", path).WithError(
 				err).Error("Unable to create dir")
-			return false, err
 		}
-		log.WithField("path", path).Debug("created directory")
-		return true, nil
+		return false, err
 	}
 	if !st.IsDir() {
 		return false, fmt.Errorf("existing path is not a directory")
