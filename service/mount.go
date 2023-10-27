@@ -134,7 +134,7 @@ func publishVolume(
 		return err
 	}
 
-	// Handle block as a short cut
+	// Handle block as a shortcut
 	if isBlock {
 		// BLOCK only ===================================================================================================
 		mntFlags := mntVol.GetMountFlags()
@@ -438,6 +438,7 @@ func mkdir(path string) (bool, error) {
 					err).Error("Unable to create dir")
 			} else {
 				log.WithField("path", path).Debug("created directory")
+				return true, nil
 			}
 		} else {
 			log.WithField("path", path).WithError(
