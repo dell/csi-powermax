@@ -19,9 +19,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"revproxy/v2/pkg/common"
 	"strconv"
 	"time"
+
+	"revproxy/v2/pkg/common"
 
 	log "github.com/sirupsen/logrus"
 	"k8s.io/client-go/tools/clientcmd"

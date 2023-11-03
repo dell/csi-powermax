@@ -74,7 +74,7 @@ Feature: PowerMax CSI interface
     Then the error contains "Volume is in use"
 
   @delete
-    @v1.0.0
+  @v1.0.0
   Scenario Outline: Delete volume with various induced errors
     Given a PowerMax service
     And a valid volume
@@ -86,13 +86,13 @@ Feature: PowerMax CSI interface
     Examples:
       | induced                | errormsg                       |
       | "NoVolumeID"           | "Could not parse CSI VolumeId" |
-      | "InvalidVolumeID"      | "cannot be found"              |
+      | "InvalidVolumeID"      | "Could not parse"              |
       | "UpdateVolumeError"    | "Failed to rename volume"      |
       | "GetStorageGroupError" | "Unable to find storage group" |
       | "GetVolumeError"       | "Could not retrieve volume"    |
 
   @delete
-    @v1.0.0
+  @v1.0.0
   Scenario Outline: Restart deletion worker with volumes on the Queue
     Given a PowerMax service
     And <num> existing volumes to be deleted
@@ -106,7 +106,7 @@ Feature: PowerMax CSI interface
       | 5   | 5        | "none"  | "none"   |
 
   @delete
-    @v1.1.0
+  @v1.1.0
   Scenario Outline: Re-run populateDeletionQueuesThread
     Given a PowerMax service
     And <num> existing volumes to be deleted
@@ -144,7 +144,7 @@ Feature: PowerMax CSI interface
     Then deletion worker timed out for "volume2"
 
   @delete
-    @v2.7.0
+  @v2.7.0
   Scenario Outline: DeleteLocalVolume with various induced errors
     Given a PowerMax service
     And a valid volume
@@ -157,7 +157,32 @@ Feature: PowerMax CSI interface
       | induced                | errormsg                       |
       | "none"                 | "none"                         |
       | "NoVolumeID"           | "Could not parse CSI VolumeId" |
-      | "InvalidVolumeID"      | "cannot be found"              |
+      | "InvalidVolumeID"      | "Could not parse"              |
       | "UpdateVolumeError"    | "Failed to rename volume"      |
       | "GetStorageGroupError" | "Unable to find storage group" |
       | "GetVolumeError"       | "Could not retrieve volume"    |
+
+  @v2.9.0
+  Scenario: Delete an SRDF volume with no errors : METRO
+    Given a PowerMax service
+    And I call RDF enabled CreateVolume "volume1" in namespace "csi-test", mode "METRO" and RDFGNo 14
+    And a valid CreateVolumeResponse is returned
+    When I call DeleteVolume with "single-writer"
+    Then no error was received
+
+  @v2.9.0
+  Scenario: Delete a fileSystem volume
+    Given a PowerMax service
+    And I call fileSystem CreateVolume "volume1"
+    And a valid CreateVolumeResponse is returned
+    When I call fileSystem DeleteVolume
+    Then the error contains "file system has NFS export ID"
+
+  @v2.9.0
+  Scenario: Delete a fileSystem volume
+    Given a PowerMax service
+    And I call fileSystem CreateVolume "volume1"
+    And a valid CreateVolumeResponse is returned
+    And I induce error "GetFileSystemError"
+    When I call fileSystem DeleteVolume
+    Then no error was received

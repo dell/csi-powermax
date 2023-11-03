@@ -24,13 +24,14 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"reflect"
-	"revproxy/v2/pkg/common"
-	"revproxy/v2/pkg/config"
-	"revproxy/v2/pkg/utils"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"revproxy/v2/pkg/common"
+	"revproxy/v2/pkg/config"
+	"revproxy/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 
@@ -392,14 +393,14 @@ func (revProxy *StandAloneProxy) GetRouter() http.Handler {
 	router.HandleFunc(utils.Prefix+"/{version}/system/version", revProxy.ifNoSymIDInvoke(revProxy.ServeVersions))
 	router.HandleFunc(utils.Prefix+"/version", revProxy.ifNoSymIDInvoke(revProxy.ServeVersions))
 
-	//Snapshot
+	// Snapshot
 	router.HandleFunc(utils.Prefix+"/{version}/replication/capabilities/symmetrix", revProxy.ifNoSymIDInvoke(revProxy.ServeReplicationCapabilities))
 
 	// file
 	router.PathPrefix(utils.InternalPrefix + "/{version}/file/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 	router.PathPrefix(utils.Prefix + "/{version}/file/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 
-	//migration
+	// migration
 	router.PathPrefix(utils.Prefix + "/{version}/migration/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 
 	return revProxy.loggingMiddleware(router)
@@ -615,8 +616,8 @@ func (revProxy *StandAloneProxy) ServeReplicationCapabilities(res http.ResponseW
 					utils.WriteHTTPError(res, "decoding error: "+err.Error(), 400)
 					log.Errorf("decoding error: %s", err.Error())
 				}
-				//symCapability := symCapabilities.SymmetrixCapability
-				//symRepCapabilities.SymmetrixCapability = append(symRepCapabilities.SymmetrixCapability, symCapability)
+				// symCapability := symCapabilities.SymmetrixCapability
+				// symRepCapabilities.SymmetrixCapability = append(symRepCapabilities.SymmetrixCapability, symCapability)
 				for _, symCapability := range symCapabilities.SymmetrixCapability {
 					symRepCapabilities.SymmetrixCapability = append(symRepCapabilities.SymmetrixCapability, symCapability)
 				}

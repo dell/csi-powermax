@@ -23,10 +23,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"revproxy/v2/pkg/common"
 	"runtime"
 	"strings"
 	"time"
+
+	"revproxy/v2/pkg/common"
 
 	log "github.com/sirupsen/logrus"
 )

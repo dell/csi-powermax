@@ -17,11 +17,12 @@ package config
 import (
 	"fmt"
 	"os"
+	"testing"
+
 	"revproxy/v2/pkg/common"
 	"revproxy/v2/pkg/k8smock"
 	"revproxy/v2/pkg/k8sutils"
 	"revproxy/v2/pkg/utils"
-	"testing"
 
 	log "github.com/sirupsen/logrus"
 )

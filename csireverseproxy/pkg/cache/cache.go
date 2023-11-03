@@ -15,9 +15,10 @@
 package cache
 
 import (
-	log "github.com/sirupsen/logrus"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // Cache is the interface for a timed key-value store

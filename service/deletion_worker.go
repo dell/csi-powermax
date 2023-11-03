@@ -482,7 +482,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 			if (mode == Metro) && (rdfInfo.NumDevices == 1 || rdfInfo.NumDevices == len(volumeIDs)) {
 				state := psg.States[0]
 				if state != Suspended {
-					//SUSPEND the protected storage group
+					// SUSPEND the protected storage group
 					err := suspend(context.Background(), queue.SymID, sgID, rdfNo, pmaxClient)
 					if err != nil {
 						log.Error(errorMsg(err))

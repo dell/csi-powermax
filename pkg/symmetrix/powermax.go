@@ -17,10 +17,11 @@ package symmetrix
 import (
 	"context"
 	"fmt"
-	pmax "github.com/dell/gopowermax/v2"
-	types "github.com/dell/gopowermax/v2/types/v100"
 	"sync"
 	"time"
+
+	pmax "github.com/dell/gopowermax/v2"
+	types "github.com/dell/gopowermax/v2/types/v100"
 )
 
 const (
@@ -156,9 +157,9 @@ func (p *PowerMax) GetDefaultServiceLevel() string {
 // GetVolumeIdentifier ...
 func (p *PowerMax) GetVolumeIdentifier(volumeName string) string {
 	maxLength := MaxVolIdentifierLength - len(p.ClusterPrefix) - len(CSIPrefix) - 1
-	//First get the short volume name
+	// First get the short volume name
 	shortVolumeName := truncateString(volumeName, maxLength)
-	//Form the volume identifier using short volume name
+	// Form the volume identifier using short volume name
 	return fmt.Sprintf("%s-%s-%s", CSIPrefix, p.ClusterPrefix, shortVolumeName)
 }
 

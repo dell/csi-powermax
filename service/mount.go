@@ -30,8 +30,10 @@ import (
 )
 
 // Variables set only for unit testing.
-var unitTestEmulateBlockDevice bool
-var removeWithRetrySleepTime = 2 * time.Second
+var (
+	unitTestEmulateBlockDevice bool
+	removeWithRetrySleepTime   = 2 * time.Second
+)
 
 // Device is a struct for holding details about a block device
 type Device struct {
@@ -43,7 +45,6 @@ type Device struct {
 // GetDevice returns a Device struct with info about the given device, or
 // an error if it doesn't exist or is not a block device
 func GetDevice(path string) (*Device, error) {
-
 	fi, err := os.Lstat(path)
 	if err != nil {
 		log.Error("Could not lstat path: " + path)
@@ -87,8 +88,8 @@ func GetDevice(path string) (*Device, error) {
 // publishVolume handles both Mount and Block access types
 func publishVolume(
 	req *csi.NodePublishVolumeRequest,
-	privDir, device string, reqID string) error {
-
+	privDir, device string, reqID string,
+) error {
 	id := req.GetVolumeId()
 
 	target := req.GetTargetPath()
@@ -364,8 +365,8 @@ func handlePrivFSMount(
 	accMode *csi.VolumeCapability_AccessMode,
 	sysDevice *Device,
 	mntFlags []string,
-	fs, privTgt string) error {
-
+	fs, privTgt string,
+) error {
 	// Invoke the formats with a No Discard option to reduce formatting time
 	formatCtx := context.WithValue(ctx, gofsutil.ContextKey(gofsutil.NoDiscard), gofsutil.NoDiscard)
 
@@ -406,7 +407,7 @@ func mkfile(path string) (bool, error) {
 	st, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			file, err := os.OpenFile(path, os.O_CREATE, 0600) // #nosec G304
+			file, err := os.OpenFile(path, os.O_CREATE, 0o600) // #nosec G304
 			if err != nil {
 				log.WithField("path", path).WithError(
 					err).Error("Unable to create file")
@@ -433,7 +434,7 @@ func mkdir(path string) (bool, error) {
 	st, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			if err := os.Mkdir(path, 0750); err != nil {
+			if err := os.Mkdir(path, 0o750); err != nil {
 				log.WithField("dir", path).WithError(
 					err).Error("Unable to create dir")
 			} else {
@@ -459,7 +460,8 @@ func mkdir(path string) (bool, error) {
 // The req.TargetPath should be a path starting with "/" (except for unit testing).
 func unpublishVolume(
 	req *csi.NodeUnpublishVolumeRequest,
-	privDir, device string, reqID string) (bool, error) {
+	privDir, device string, reqID string,
+) (bool, error) {
 	lastUnmounted := false
 
 	ctx := context.Background()
@@ -536,7 +538,8 @@ func unpublishVolume(
 func unmountPrivMount(
 	ctx context.Context,
 	dev *Device,
-	target string) (bool, error) {
+	target string,
+) (bool, error) {
 	lastUnmounted := false
 
 	mnts, err := getDevMounts(dev)

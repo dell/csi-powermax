@@ -3,6 +3,11 @@ package file
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/dell/gofsutil"
 	pmax "github.com/dell/gopowermax/v2"
@@ -10,10 +15,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"os"
-	"strconv"
-	"strings"
-	"time"
 )
 
 // These map to the above fields in the form of HTTP header names.
@@ -86,7 +87,7 @@ func CreateFileSystem(ctx context.Context, reqID string, accessibility *csi.Topo
 	// Formulate the return response
 	fsID := fileSystem.ID
 	volID := fmt.Sprintf("%s-%s-%s", fileSystemIdentifier, symID, fsID)
-	//Set the volume context
+	// Set the volume context
 	attributes := map[string]string{
 		NASServerIDParam:   nasServerID,
 		NASServerNameParam: nasServerName,
@@ -94,7 +95,7 @@ func CreateFileSystem(ctx context.Context, reqID string, accessibility *csi.Topo
 		StoragePoolParam:   storagePoolID,
 		AllowRootParam:     allowRoot,
 		CapacityMiB:        strconv.FormatInt(fileSystem.SizeTotal, 10),
-		//Format the time output
+		// Format the time output
 		"CreationTime": time.Now().Format("20060102150405"),
 	}
 	volResp := &csi.Volume{
@@ -264,8 +265,8 @@ func DeleteNFSExport(ctx context.Context, reqID, symID, fsID string, pmaxClient 
 
 // StageFileSystem creates a folder structure on the node
 func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt string, publishContext map[string]string, pmaxClient pmax.Pmax) (
-	*csi.NodeStageVolumeResponse, error) {
-
+	*csi.NodeStageVolumeResponse, error,
+) {
 	nasServerName := publishContext[NASServerNameParam]
 	nasServerID := publishContext[NASServerIDParam]
 	nfsExportPath := publishContext[NFSExportPathParam]
@@ -294,7 +295,7 @@ func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt str
 		// staging already done
 		return &csi.NodeStageVolumeResponse{}, nil
 	}
-	if err := os.MkdirAll(privTgt, 0750); err != nil {
+	if err := os.MkdirAll(privTgt, 0o750); err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"can't create target folder %s: %s", privTgt, err.Error())
 	}
@@ -343,7 +344,7 @@ func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, r
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
-	if err := os.MkdirAll(targetPath, 0750); err != nil {
+	if err := os.MkdirAll(targetPath, 0o750); err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"can't create target folder %s: %s", targetPath, err.Error())
 	}
@@ -390,17 +391,19 @@ func ExpandFileSystem(ctx context.Context, reqID, symID, fsID string, requestedS
 	if requestedSize == allocatedSize {
 		log.Infof("Idempotent call detected for file system(%s) with requested size (%d) MiB and allocated size (%d) MiB",
 			fs.Name, requestedSize, allocatedSize)
-		return &csi.ControllerExpandVolumeResponse{CapacityBytes: allocatedSize * MiBSizeInBytes,
-			NodeExpansionRequired: false}, nil
+		return &csi.ControllerExpandVolumeResponse{
+			CapacityBytes:         allocatedSize * MiBSizeInBytes,
+			NodeExpansionRequired: false,
+		}, nil
 	}
 
-	//Expand the file system
+	// Expand the file system
 	fs, err = pmaxClient.ModifyFileSystem(ctx, symID, fsID, types.ModifyFileSystem{SizeTotal: requestedSize})
 	if err != nil {
 		log.Errorf("Failed to execute ModifyFileSystem()/expand with error (%s)", err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	//return the response with NodeExpansionRequired = false, as NodeExpandVolume in not required for a file system
+	// return the response with NodeExpansionRequired = false, as NodeExpandVolume in not required for a file system
 	csiResp := &csi.ControllerExpandVolumeResponse{
 		CapacityBytes:         int64(fs.SizeTotal) * MiBSizeInBytes,
 		NodeExpansionRequired: false,

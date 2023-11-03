@@ -570,7 +570,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(ctx context.Context, reqID, symID, tg
 	}
 	if maskingViewExists {
 		// We just need to confirm if all the other entities are in order
-		//Check for host group too in case of vsphere
+		// Check for host group too in case of vsphere
 		if (tgtMaskingView.HostID == hostID || tgtMaskingView.HostGroupID == hostID) && tgtMaskingView.StorageGroupID == tgtStorageGroupID {
 			// Add the volumes to masking view, if any to be added
 			if len(devIDs) > 0 {
@@ -597,7 +597,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(ctx context.Context, reqID, symID, tg
 		log.WithFields(f).Infof("calling GetHostByID: %s", hostID)
 		host, err := pmaxClient.GetHostByID(ctx, symID, hostID)
 		if err != nil {
-			//check for hostGroup
+			// check for hostGroup
 			if strings.Contains(err.Error(), "cannot be found") && g.svc.opts.IsVsphereEnabled {
 				hostg, err := pmaxClient.GetHostGroupByID(ctx, symID, hostID)
 				if err != nil {
@@ -696,7 +696,7 @@ func (g *storageGroupSvc) removeVolumesFromSGMV(ctx context.Context, clientSymID
 		return nil
 	}
 	maskingViewDeleted := false
-	//First check if these are the only volumes in the SG
+	// First check if these are the only volumes in the SG
 	if storageGroups[0].NumOfVolumes == len(devIDs) {
 		// We need to delete the MV first
 		err = pmaxClient.DeleteMaskingView(ctx, symID, tgtMaskingViewID)

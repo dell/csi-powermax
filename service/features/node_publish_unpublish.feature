@@ -111,12 +111,12 @@ Feature: PowerMax CSI interface
     | "GOFSMockMountError"                    | "error bind mounting to target path"                              |
     | "NoDeviceWWNError"                      | "Device WWN required to be in PublishContext"                     |
     | "GOFSMockGetMountsError"                | "Could not getDevMounts for"                                      |
-    | "NoSymlinkForNodePublish"               | "cannot find the path specified@@no such file or directory@@none"  |
+    | "NoSymlinkForNodePublish"               | "cannot find the path specified@@no such file or directory@@none" |
     # may be different for Windows vs. Linux
     | "NoBlockDevForNodePublish"              | "is not a block device@@no such file or directory"                |
     | "TargetNotCreatedForNodePublish"        | "none"                                                            |
     # may be different for Windows vs. Linux
-    | "PrivateDirectoryNotExistForNodePublish"| "cannot find the path specified@@no such file or directory@@none"  |
+    | "PrivateDirectoryNotExistForNodePublish"| "cannot find the path specified@@no such file or directory@@none" |
     | "BlockMkfilePrivateDirectoryNodePublish"| "existing path is not a directory"                                |
     | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
     | "NodePublishNoVolumeCapability"         | "Volume Capability is required"                                   |
@@ -147,12 +147,12 @@ Feature: PowerMax CSI interface
     | "GOFSMockMountError"                    | "none"                        | "mode conflicts with existing mounts@@mount induced error"                |
     | "GOFSMockGetMountsError"                | "none"                        | "could not reliably determine existing mount status"                      |
     # may be different for Windows vs. Linux
-    | "NoSymlinkForNodePublish"               | "none"                        | "cannot find the path specified@@no such file or directory@@none"          |
+    | "NoSymlinkForNodePublish"               | "none"                        | "cannot find the path specified@@no such file or directory@@none"         |
     # may be different for Windows vs. Linux
     | "NoBlockDevForNodePublish"              | "none"                        | "is not a block device@@not published to node@@no such file or directory" |
     | "TargetNotCreatedForNodePublish"        | "none"                        | "none"                                                                    |
     # may be different for Windows vs. Linux
-    | "PrivateDirectoryNotExistForNodePublish"| "none"                        | "cannot find the path specified@@no such file or directory@@none"          |
+    | "PrivateDirectoryNotExistForNodePublish"| "none"                        | "cannot find the path specified@@no such file or directory@@none"         |
     | "BlockMkfilePrivateDirectoryNodePublish"| "none"                        | "existing path is not a directory"                                        |
     | "NodePublishNoTargetPath"               | "none"                        | "Target Path is required"                                                 |
     | "NodePublishNoVolumeCapability"         | "none"                        | "Volume Capability is required"                                           |
@@ -160,7 +160,7 @@ Feature: PowerMax CSI interface
     | "NodePublishNoAccessType"               | "none"                        | "Volume Access Type is required"                                          |
     | "NodePublishFileTargetNotDir"           | "none"                        | "existing path is not a directory"                                        |
     | "NodePublishRequestReadOnly"            | "none"                        | "none"                                                                    |
-    | "BadVolumeIdentifier"                   | "none"                        | "bad volume identifier"                                             |
+    | "BadVolumeIdentifier"                   | "none"                        | "bad volume identifier"                                                   |
     | "PrivMountAlreadyMounted"               | "none"                        | "none"                                                                    |
     | "PrivMountByDifferentDev"               | "none"                        | "mounted by different device"                                             |
     | "PrivMountByDifferentDev"               | "GOFSMockGetMountsError"      | "could not reliably determine existing mount status"                      |
@@ -191,12 +191,12 @@ Feature: PowerMax CSI interface
     | "GOFSMockMountError"                    | "none"                        | "mode conflicts with existing mounts@@mount induced error"                |
     | "GOFSMockGetMountsError"                | "none"                        | "could not reliably determine existing mount status"                      |
     # may be different for Windows vs. Linux
-    | "NoSymlinkForNodePublish"               | "none"                        | "cannot find the path specified@@no such file or directory@@none"          |
+    | "NoSymlinkForNodePublish"               | "none"                        | "cannot find the path specified@@no such file or directory@@none"         |
     # may be different for Windows vs. Linux
     | "NoBlockDevForNodePublish"              | "none"                        | "is not a block device@@not published to node@@no such file or directory" |
     | "TargetNotCreatedForNodePublish"        | "none"                        | "none"                                                                    |
     # may be different for Windows vs. Linux
-    | "PrivateDirectoryNotExistForNodePublish"| "none"                        | "cannot find the path specified@@no such file or directory@@none"          |
+    | "PrivateDirectoryNotExistForNodePublish"| "none"                        | "cannot find the path specified@@no such file or directory@@none"         |
     | "BlockMkfilePrivateDirectoryNodePublish"| "none"                        | "existing path is not a directory"                                        |
     | "NodePublishNoTargetPath"               | "none"                        | "Target Path is required"                                                 |
     | "NodePublishNoVolumeCapability"         | "none"                        | "Volume Capability is required"                                           |
@@ -204,7 +204,7 @@ Feature: PowerMax CSI interface
     | "NodePublishNoAccessType"               | "none"                        | "Volume Access Type is required"                                          |
     | "NodePublishFileTargetNotDir"           | "none"                        | "existing path is not a directory"                                        |
     | "NodePublishRequestReadOnly"            | "none"                        | "none"                                                                    |
-    | "BadVolumeIdentifier"                   | "none"                        | "bad volume identifier"                                             |
+    | "BadVolumeIdentifier"                   | "none"                        | "bad volume identifier"                                                   |
     | "PrivMountAlreadyMounted"               | "none"                        | "none"                                                                    |
     | "PrivMountByDifferentDev"               | "none"                        | "mounted by different device"                                             |
     | "PrivMountByDifferentDev"               | "GOFSMockGetMountsError"      | "could not reliably determine existing mount status"                      |
@@ -232,7 +232,7 @@ Feature: PowerMax CSI interface
     | "mount"      | "single-writer"                | "xfs"      | "none"                                               |
     | "mount"      | "single-writer"                | "ext4"     | "none"                                               |
     | "mount"      | "multiple-writer"              | "ext4"     | "Mount volumes do not support AccessMode"            |
-    | "mount"      | "single-node-single-writer"    | "none"     | "none"					        |
+    | "mount"      | "single-node-single-writer"    | "none"     | "none"					                            |
     | "mount"      | "single-node-multiple-writer"  | "none"     | "Unknown Access Mode"                                |
     | "block"      | "single-node-single-writer"    | "none"     | "Access mode conflicts with existing mounts"         |
     | "block"      | "single-node-multiple-writer"  | "none"     | "Unknown Access Mode"                                |
@@ -249,8 +249,8 @@ Feature: PowerMax CSI interface
     Then the error contains <errormsg>
 
     Examples:
-    | voltype      | access                         | fstype     | errormsg                                             |
-    | "block"      | "multiple-writer"              | "none"     | "none"                                               |
+    | voltype      | access                         | fstype     | errormsg   |
+    | "block"      | "multiple-writer"              | "none"     | "none"     |
 
 @nodePublish
 @v1.0.0

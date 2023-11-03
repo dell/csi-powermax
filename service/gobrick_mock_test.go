@@ -33,8 +33,7 @@ func mockGobrickReset() {
 	mockGobrickInducedErrors.DisconnectVolumeError = false
 }
 
-type mockFCGobrick struct {
-}
+type mockFCGobrick struct{}
 
 func (g *mockFCGobrick) ConnectVolume(ctx context.Context, info gobrick.FCVolumeInfo) (gobrick.Device, error) {
 	dev := gobrick.Device{
@@ -69,8 +68,7 @@ func (g *mockFCGobrick) GetInitiatorPorts(ctx context.Context) ([]string, error)
 	return result, nil
 }
 
-type mockISCSIGobrick struct {
-}
+type mockISCSIGobrick struct{}
 
 func (g *mockISCSIGobrick) ConnectVolume(ctx context.Context, info gobrick.ISCSIVolumeInfo) (gobrick.Device, error) {
 	dev := gobrick.Device{

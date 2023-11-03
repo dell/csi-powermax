@@ -35,13 +35,17 @@ const (
 	numOfCylindersForDefaultSize = 547
 )
 
-var s service
-var mockedExitStatus = 0
-var mockedStdout string
-var debugUnitTest = false
+var (
+	s                service
+	mockedExitStatus = 0
+	mockedStdout     string
+	debugUnitTest    = false
+)
 
-var counters = [60]int{}
-var testwg sync.WaitGroup
+var (
+	counters = [60]int{}
+	testwg   sync.WaitGroup
+)
 
 func incrementCounter(identifier string, num int) {
 	lockNumber := RequestLock(identifier, "")
@@ -91,6 +95,7 @@ func TestLockCounter(t *testing.T) {
 		t.Error(fmt.Sprintf("Expected lock counter to be 500 but found: %d", lockCounter))
 	}
 }
+
 func TestLocks(t *testing.T) {
 	LockRequestHandler()
 	CleanupMapEntries(10 * time.Millisecond)
@@ -303,7 +308,6 @@ func TestMetroCSIDeviceID(t *testing.T) {
 }
 
 func TestStringSliceComparison(t *testing.T) {
-
 	valA := []string{"a", "b", "c"}
 	valB := []string{"c", "b", "a"}
 	valC := []string{"a", "b"}
@@ -406,22 +410,26 @@ func TestPending(t *testing.T) {
 		differentIDs bool
 		errormsg     string
 	}{
-		{npending: 2,
+		{
+			npending:     2,
 			maxpending:   1,
 			differentIDs: true,
 			errormsg:     "overload",
 		},
-		{npending: 4,
+		{
+			npending:     4,
 			maxpending:   5,
 			differentIDs: true,
 			errormsg:     "none",
 		},
-		{npending: 2,
+		{
+			npending:     2,
 			maxpending:   5,
 			differentIDs: false,
 			errormsg:     "pending",
 		},
-		{npending: 0,
+		{
+			npending:     0,
 			maxpending:   1,
 			differentIDs: false,
 			errormsg:     "none",

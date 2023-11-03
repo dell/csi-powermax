@@ -83,7 +83,6 @@ func NewVMHost(insecure bool, hostURLparam, user, pass string) (*VMHost, error) 
 ////////////////////////////////////////////////////////////////////
 
 func (vmh *VMHost) getMACAddressOfVM(vm *object.VirtualMachine) (string, error) {
-
 	vmDeviceList, err := vm.Device(context.TODO())
 	if err != nil {
 		return "", errors.New("Cannot read VM VirtualDevices")
@@ -112,7 +111,6 @@ func getLocalMAC() (string, error) {
 ///////////////////////////////////////////////////////////////////
 
 func (vmh *VMHost) findVM(targetMACAddress string) (vm *object.VirtualMachine, err error) {
-
 	targetMACAddress = strings.ToUpper(targetMACAddress)
 	f := find.NewFinder(vmh.client.Client, true)
 	allDatacenters, err := f.DatacenterList(vmh.Ctx, "*")
@@ -147,7 +145,7 @@ func (vmh *VMHost) getVMScsiDiskDeviceInfo(vm *object.VirtualMachine) ([]types.V
 		return nil, fmt.Errorf("Error finding Environment Browser for VM - %S", err)
 	}
 
-	//Query VM To Find Devices avilable for attaching to VM
+	// Query VM To Find Devices avilable for attaching to VM
 	var queryConfigRequest types.QueryConfigTarget
 	queryConfigRequest.This = VMwithProp.EnvironmentBrowser
 	queryConfigResp, err := methods.QueryConfigTarget(vmh.Ctx, vmh.client.Client, &queryConfigRequest)
@@ -212,7 +210,6 @@ func (vmh *VMHost) GetSCSILuns() ([]*types.ScsiLun, error) {
 }
 
 func (vmh *VMHost) createController(controller *types.BaseVirtualDevice) error {
-
 	devices, err := vmh.VM.Device(context.TODO())
 	if err != nil {
 		return err
@@ -234,14 +231,13 @@ func (vmh *VMHost) createController(controller *types.BaseVirtualDevice) error {
 // AttachRDM adds the device to the VM as an RDM
 // This method is referenced from https://github.com/codedellemc/govmax/blob/master/api/v1/vmomi.go
 func (vmh *VMHost) AttachRDM(vm *object.VirtualMachine, deviceNAA string) (err error) {
-
 	vmScsiDiskDeviceInfo, err := vmh.getVMScsiDiskDeviceInfo(vm)
 	if err != nil {
 		return err
 	}
 
 	// var scsiCtlrUnitNumber int
-	//Build new Virtual Device to add to VM from list of avilable devices found from our query
+	// Build new Virtual Device to add to VM from list of avilable devices found from our query
 	for _, ScsiDisk := range vmScsiDiskDeviceInfo {
 		if !strings.Contains(ScsiDisk.Disk.CanonicalName, deviceNAA) {
 			continue
@@ -321,7 +317,6 @@ func (vmh *VMHost) AttachRDM(vm *object.VirtualMachine, deviceNAA string) (err e
 // DetachRDM removes the device from the VM
 // This method is referenced from https://github.com/codedellemc/govmax/blob/master/api/v1/vmomi.go
 func (vmh *VMHost) DetachRDM(vm *object.VirtualMachine, deviceNAA string) error {
-
 	scsiLuns, err := vmh.GetSCSILuns()
 	if err != nil {
 		return err
