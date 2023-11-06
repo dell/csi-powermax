@@ -32,7 +32,6 @@ import (
 	"revproxy/v2/pkg/k8smock"
 	"revproxy/v2/pkg/servermock"
 	"revproxy/v2/pkg/utils"
-	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -61,12 +60,10 @@ func (mock *mockServer) certPEMBytes() []byte {
 }
 
 const (
-	tmpLinkedConfigFile    = "linked-config-test-main.yaml"
-	tmpSAConfigFile        = "sa-config-test-main.yaml"
-	authenticationEndpoint = "/univmax/authenticate"
-	timeoutEndpoint        = "/univmax/timeout"
-	defaultEndpoint        = "/univmax"
-	// Linked proxy config constants
+	tmpSAConfigFile           = "sa-config-test-main.yaml"
+	authenticationEndpoint    = "/univmax/authenticate"
+	timeoutEndpoint           = "/univmax/timeout"
+	defaultEndpoint           = "/univmax"
 	primaryCertSecretName     = "cert-secret-4"
 	backupCertSecretName      = "cert-secret-9"
 	proxySecretName           = "proxy-secret-1"
@@ -78,46 +75,33 @@ const (
 )
 
 var (
-	linkedServer                        *Server
 	standAloneServer                    *Server
 	primaryMockServer, backupMockServer *mockServer
 	httpClient                          *http.Client
 )
 
 func startTestServer() error {
-	if linkedServer != nil && standAloneServer != nil {
+	if standAloneServer != nil {
 		return nil
 	}
 	k8sUtils := k8smock.Init()
 	serverOpts := getServerOpts()
 	serverOpts.ConfigDir = common.TempConfigDir
-	serverOpts.ConfigFileName = tmpLinkedConfigFile
-	// Create test linked proxy config and start the linked server
-	err := createTempConfig("Linked")
-	if err != nil {
-		return err
-	}
-	k8sUtils.SecretCert = primaryMockServer.certPEMBytes()
-	_, err = k8sUtils.CreateNewCertSecret(primaryCertSecretName)
-	if err != nil {
-		return err
-	}
-	k8sUtils.SecretCert = backupMockServer.certPEMBytes()
-	_, err = k8sUtils.CreateNewCertSecret(backupCertSecretName)
-	if err != nil {
-		return err
-	}
-	linkedServer, err = startServer(k8sUtils, serverOpts)
-	if err != nil {
-		return err
-	}
 	// Create test standAlone proxy config and start the standAlone server
 	serverOpts.ConfigFileName = tmpSAConfigFile
-	err = createTempConfig("StandAlone")
+	err := createTempConfig("StandAlone")
 	if err != nil {
 		return err
 	}
 	_, err = k8sUtils.CreateNewCredentialSecret(proxySecretName)
+	if err != nil {
+		return err
+	}
+	_, err = k8sUtils.CreateNewCertSecret(primaryCertSecretName)
+	if err != nil {
+		return err
+	}
+	_, err = k8sUtils.CreateNewCertSecret(backupCertSecretName)
 	if err != nil {
 		return err
 	}
@@ -216,9 +200,6 @@ func stopServers() {
 	if backupMockServer != nil {
 		backupMockServer.server.Close()
 	}
-	if linkedServer != nil {
-		linkedServer.SigChan <- syscall.SIGHUP
-	}
 	if standAloneServer != nil {
 		standAloneServer.SigChan <- syscall.SIGHUP
 	}
@@ -255,19 +236,8 @@ func createTempConfig(mode string) error {
 	}
 	// set proxy mode for respective server
 	proxyConfigMap.Mode = config.ProxyMode(mode)
-	// Configure Linked proxy
-	proxyConfigMap.LinkConfig.Primary.CertSecret = primaryCertSecretName
-	proxyConfigMap.LinkConfig.Primary.URL = getURL(primaryPort, "/")
-	proxyConfigMap.LinkConfig.Primary.SkipCertificateValidation = skipPrimaryCertValidation
-	proxyConfigMap.LinkConfig.Backup.CertSecret = backupCertSecretName
-	proxyConfigMap.LinkConfig.Backup.URL = getURL(backupPort, "/")
-	proxyConfigMap.LinkConfig.Backup.SkipCertificateValidation = skipBackupCertValidation
-	// Configure StandAlone proxy
-	filename := tmpLinkedConfigFile
-	if mode == "StandAlone" {
-		proxyConfigMap.Port = "8080"
-		filename = tmpSAConfigFile
-	}
+	filename := tmpSAConfigFile
+	proxyConfigMap.Port = "8080"
 	// Create a ManagementServerConfig
 	tempMgmtServerConfig := createTempManagementServers()
 	proxyConfigMap.StandAloneConfig.ManagementServerConfig = tempMgmtServerConfig
@@ -367,15 +337,9 @@ func TestServer_Start(t *testing.T) {
 
 func TestServer_EventHandler(t *testing.T) {
 	k8sUtils := k8smock.Init()
-	oldCertFile := linkedServer.config.LinkProxyConfig.Primary.CertFile
-	newSecret, err := k8sUtils.CreateNewCertSecret(primaryCertSecretName)
+	_, err := k8sUtils.CreateNewCertSecret(primaryCertSecretName)
 	if err != nil {
 		t.Error(err.Error())
-	}
-	linkedServer.EventHandler(k8sUtils, newSecret)
-	newCertFile := linkedServer.config.LinkProxyConfig.Primary.CertFile
-	if oldCertFile == newCertFile {
-		t.Errorf("cert file should change after update")
 	}
 }
 
@@ -418,15 +382,6 @@ func TestServer_SAEventHandler(t *testing.T) {
 	} else {
 		fmt.Println("Secret Reverted Successfully")
 	}
-}
-
-func TestLinkedHTTPRequest(t *testing.T) {
-	resp, err := doHTTPRequest(linkedServer.Port, defaultEndpoint)
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
-	fmt.Printf("RESPONSE_BODY: %s\n", resp)
 }
 
 func TestSAHTTPRequest(t *testing.T) {
@@ -484,102 +439,4 @@ func TestSAHTTPRequest(t *testing.T) {
 		return
 	}
 	fmt.Printf("RESPONSE_BODY: %s\n", resp)
-}
-
-func TestFailOver(t *testing.T) {
-	failureCount, successCount, duration := 50, 5, 1*time.Second
-	linkedServer.LinkedProxy.Envoy.ConfigureHealthParams(failureCount, successCount, duration)
-	// Trigger fail-over to primary URL.
-	err := runRequestLoop(failureCount, duration, linkedServer.Port, authenticationEndpoint)
-	if err != nil {
-		t.Errorf("Failed to make HTTP request. (%s)\n", err.Error())
-		return
-	}
-	body, err := doHTTPRequest(linkedServer.Port, authenticationEndpoint)
-	if err != nil {
-		t.Errorf("Failed to make HTTP request. (%s)\n", err.Error())
-		return
-	}
-	if !strings.Contains(body, backupPort) {
-		t.Error("Failed to trigger fail-over to backup URL\n")
-		return
-	}
-	// Trigger fail-over back to primary URL.
-	err = runRequestLoop(failureCount, duration, linkedServer.Port, timeoutEndpoint)
-	if err != nil {
-		t.Errorf("Failed to make HTTP request. (%s)\n", err.Error())
-		return
-	}
-	body, err = doHTTPRequest(linkedServer.Port, timeoutEndpoint)
-	if err != nil {
-		t.Errorf("Failed to make HTTP request. (%s)\n", err.Error())
-		return
-	}
-	if !strings.Contains(body, primaryPort) {
-		t.Error("Failed to trigger fail-over to primary URL\n")
-		return
-	}
-}
-
-func TestProxyHealthReset(t *testing.T) {
-	failureCount, successCount, duration := 50, 5, 1*time.Second
-	linkedServer.LinkedProxy.Envoy.ConfigureHealthParams(failureCount, successCount, duration)
-	// Record failures
-	err := runRequestLoop(10, time.Nanosecond, linkedServer.Port, authenticationEndpoint)
-	if err != nil {
-		t.Errorf("Failed to make HTTP request. (%s)\n", err.Error())
-		return
-	}
-	if !linkedServer.LinkedProxy.Envoy.HasHealthDeteriorated() {
-		t.Error("Health deterioration not recorded properly.")
-		return
-	}
-	err = runRequestLoop(successCount, time.Nanosecond, linkedServer.Port, defaultEndpoint)
-	if err != nil {
-		t.Errorf("Failed to make HTTP request. (%s)\n", err.Error())
-		return
-	}
-	if linkedServer.LinkedProxy.Envoy.HasHealthDeteriorated() {
-		t.Error("Proxy health not reset properly")
-	} else {
-		fmt.Printf("Proxy health reset successfully after %d successful HTTP requests.\n", successCount)
-	}
-}
-
-func TestConfigUpdate(t *testing.T) {
-	primaryHost, err := doHTTPRequest(linkedServer.Port, defaultEndpoint)
-	if err != nil {
-		t.Errorf("Failed to make HTTP request. (%s)\n", err.Error())
-		return
-	}
-
-	config := linkedServer.Config().DeepCopy()
-	config.LinkProxyConfig.Primary.URL, config.LinkProxyConfig.Backup.URL = config.LinkProxyConfig.Backup.URL, config.LinkProxyConfig.Primary.URL
-	linkedServer.GetRevProxy().UpdateConfig(*config)
-	linkedServer.SetConfig(config)
-	time.Sleep(time.Second * 10)
-	secondaryHost, err := doHTTPRequest(linkedServer.Port, defaultEndpoint)
-	if err != nil {
-		t.Errorf("Failed to make HTTP request. (%s)\n", err.Error())
-		return
-	}
-	if primaryHost == secondaryHost {
-		t.Error("Config update failed!\n")
-	} else {
-		fmt.Println("Config updated successfully")
-	}
-}
-
-func TestConfigFileUpdate(t *testing.T) {
-	configMap, err := readYAMLConfig(linkedServer.Opts.ConfigFileName, linkedServer.Opts.ConfigDir)
-	if err != nil {
-		t.Errorf("Failed to read temp config file. (%s)\n", err.Error())
-		return
-	}
-	configMap.LinkConfig.Primary.SkipCertificateValidation = !skipPrimaryCertValidation
-	err = writeYAMLConfig(configMap, linkedServer.Opts.ConfigFileName, linkedServer.Opts.ConfigDir)
-	if err != nil {
-		t.Errorf("Failed to update config file. (%s)\n", err.Error())
-	}
-	time.Sleep(1 * time.Second)
 }
