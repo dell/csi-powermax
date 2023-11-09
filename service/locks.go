@@ -22,8 +22,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type lockWorkers struct {
-}
+type lockWorkers struct{}
 
 var lockWorker *lockWorkers
 
@@ -49,8 +48,10 @@ type LockInfo struct {
 	Count              int
 }
 
-var lockMutex sync.Mutex
-var fifolocks = make(map[string]*LockInfo)
+var (
+	lockMutex sync.Mutex
+	fifolocks = make(map[string]*LockInfo)
+)
 
 var lockRequestsQueue = make(chan LockRequest, 1000)
 
@@ -81,7 +82,7 @@ func LockRequestHandler() {
 						request.WaitChannel <- 1
 					}
 				} else {
-					//ResourceID is present in the fifolocks map
+					// ResourceID is present in the fifolocks map
 					if lockInfo.CurrentLockNumber == request.LockNumber {
 						// RequestID matches with the CurrentRequestId for the resourceID
 						// Lock is held by this request id
@@ -128,7 +129,7 @@ func LockRequestHandler() {
 							}
 						}
 					}
-					//fmt.Printf("Current number of requests pending in the queue: %d\n", len(lockInfo.LockRequests))
+					// fmt.Printf("Current number of requests pending in the queue: %d\n", len(lockInfo.LockRequests))
 				}
 				lockMutex.Unlock()
 			}

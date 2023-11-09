@@ -373,7 +373,7 @@ Feature: PowerMax CSI interface
       Examples:
       | voltype       | access               | fstype      | induced                    | errormsg                   | pool           | level               |
       | "block"       | "single-writer"      | "none"      | "InvalidVolumeID"          | "is not formed correctly"  | "SRP_1"        | "Optimized"         |
-      | "block"       | "single-writer"      | "none"      | "DifferentVolumeID"        | "Volume cannot be found"   | "SRP_1"        | "Optimized"         |
+      | "block"       | "single-writer"      | "none"      | "DifferentVolumeID"        | "Could not find volume"    | "SRP_1"        | "Optimized"         |
 
 
      Scenario Outline: Call with no probe volume to validate volume capabilities
@@ -519,7 +519,7 @@ Feature: PowerMax CSI interface
       | induced1               | errormsg                                         | count |
 #      | "GetSymmetrixError"    | "Unable to retrieve Array List"                  | 0     |
       | "GOISCSIDiscoveryError"| "failed to login to (some) ISCSI targets"        | 0     |
-      | "none"                 | "none"                                           | 2     |
+      | "none"                 | "none"                                           | 3     |
 
 @v1.3.0
     Scenario Outline: Validate ensureLoggedIntoEveryArray with CHAP
@@ -538,7 +538,7 @@ Feature: PowerMax CSI interface
 #      | "GetSymmetrixError"    | "Unable to retrieve Array List"                  | 0     |
       | "InduceLoginError"     | "failed to login to (some) ISCSI targets"        | 0     |
       | "InduceSetCHAPError"   | "set CHAP induced error"                         | 0     |
-      | "none"                 | "none"                                           | 2     |
+      | "none"                 | "none"                                           | 3     |
 
 @v1.0.0
     Scenario Outline: Test GetVolumeByID function
@@ -553,7 +553,7 @@ Feature: PowerMax CSI interface
       | induced                    | errormsg                           |
       | "none"                     | "none"                             |
       | "NoVolumeID"               | "malformed"                        |
-      | "InvalidVolumeID"          | "cannot be found"                  |
+      | "InvalidVolumeID"          | "Could not find"                   |
       | "DifferentVolumeID"        | "Failed to validate combination"   |
       | "GetVolumeError"           | "failure checking volume"          |
 
@@ -761,3 +761,68 @@ Feature: PowerMax CSI interface
   And I have SetHostIOLimits on the storage group
   And I call CreateVolume "volume1" with namespace "ns"
   Then a valid CreateVolumeResponse is returned
+
+@v2.9.0
+Scenario: Identity ProbeController good call
+  Given a PowerMax service
+  When I call ProbeController
+  Then a valid ProbeControllerResponse is returned
+
+@v2.9.0
+Scenario: Identity GetReplicationCapabilities good call
+  Given a PowerMax service
+  When I call GetReplicationCapabilities
+  Then a valid GetReplicationCapabilities is returned
+
+@v2.9.0
+Scenario: Identity GetMigrationCapabilities good call
+  Given a PowerMax service
+  When I call GetMigrationCapabilities
+  Then a valid GetMigrationCapabilities is returned
+  
+@v2.9.0
+Scenario: Node setup for vSphere
+  Given a PowerMax service
+  And I enable vSphere
+  When I call Probe
+  Then a valid vmHost is returned
+
+@v2.9.0
+Scenario: ControllerGetVolume on a unpublished volume
+  Given a PowerMax service
+  And I call CreateVolume "volume1"
+  And a valid CreateVolumeResponse is returned
+  Then I call ControllerGetVolume
+  And a valid ControllerGetVolume response is returned
+
+@v2.9.0
+Scenario: ControllerGetVolume on a invalid volume
+  Given a PowerMax service
+  And I call CreateVolume "volume1"
+  And a valid CreateVolumeResponse is returned
+  And I induce error "NoVolumeID"
+  Then I call ControllerGetVolume
+  And the error contains "Invalid volume id"
+
+@v2.9.0
+Scenario: ControllerGetVolume on a invalid symmetrix
+  Given a PowerMax service
+  And I call CreateVolume "volume1"
+  And a valid CreateVolumeResponse is returned
+  And I induce error "InvalidSymID"
+  Then I call ControllerGetVolume
+  And the error contains "not found"
+
+@v2.9.0
+Scenario: Create a fileSystem volume
+  Given a PowerMax service
+  And I call fileSystem CreateVolume "volume1"
+  Then a valid CreateVolumeResponse is returned
+
+@v2.9.0
+Scenario: Create a fileSystem volume with error
+  Given a PowerMax service
+  And I induce error "GetFileSystemError"
+  And I call fileSystem CreateVolume "volume1"
+  Then the error contains "induced error"
+

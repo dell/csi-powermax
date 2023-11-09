@@ -34,7 +34,6 @@ import (
 )
 
 func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRequest) (*csimgr.VolumeMigrateResponse, error) {
-
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -142,7 +141,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 		path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam): symID,
 		CapacityGB:   fmt.Sprintf("%.2f", vol.CapacityGB),
 		StorageGroup: storageGroupName,
-		//Format the time output
+		// Format the time output
 		"MigrationTime": time.Now().Format("20060102150405"),
 	}
 	volume := new(csimgr.Volume)
@@ -319,7 +318,6 @@ func versionUpgrade(ctx context.Context, params map[string]string, sourceScParam
 }
 
 func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequest) (*csimgr.ArrayMigrateResponse, error) {
-
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -359,7 +357,7 @@ func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequ
 	case csimgr.ActionTypes_MG_MIGRATE:
 		// reset migration cache
 		migration.ResetCache()
-		//env setup call
+		// env setup call
 		_, err := migration.GetOrCreateMigrationEnvironment(ctx, localSymID, remoteSymID, pmaxClient)
 		if err != nil {
 			csiMgrResp := &csimgr.ArrayMigrateResponse{
@@ -407,7 +405,7 @@ func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequ
 
 		}
 
-		//reset env
+		// reset env
 		err = pmaxClient.DeleteMigrationEnvironment(ctx, localSymID, remoteSymID)
 		if err != nil {
 			csiMgrResp := &csimgr.ArrayMigrateResponse{

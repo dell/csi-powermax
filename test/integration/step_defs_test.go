@@ -216,6 +216,7 @@ func (f *feature) anAlternateServiceLevel(serviceLevel string) error {
 	f.createVolumeRequest.Parameters[service.ServiceLevelParam] = serviceLevel
 	return nil
 }
+
 func (f *feature) addsReplicationCapability(replicationMode string, namespace string) error {
 	f.createVolumeRequest.Parameters[path.Join(f.replicationPrefix, service.RepEnabledParam)] = "true"
 	f.createVolumeRequest.Parameters[path.Join(f.replicationPrefix, service.LocalRDFGroupParam)] = f.localRdfGrpNo
@@ -393,8 +394,7 @@ func (f *feature) iCallGetStorageProtectionGroupStatus(expectedStatus string) er
 func (f *feature) accessTypeIs(arg1 string) error {
 	switch arg1 {
 	case "multi-writer":
-		f.createVolumeRequest.VolumeCapabilities[0].AccessMode.Mode =
-			csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER
+		f.createVolumeRequest.VolumeCapabilities[0].AccessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER
 	}
 	return nil
 }
@@ -444,6 +444,7 @@ func (f *feature) whenICallDeleteVolume() error {
 	}
 	return nil
 }
+
 func (f *feature) whenICallDeleteLocalVolume() error {
 	err := f.deleteLocalVolume(f.createRemoteVolumeResponse.RemoteVolume.VolumeId)
 	if err != nil {
@@ -578,6 +579,7 @@ func (f *feature) aVolumeRequestFileSystem(name, fstype, access, voltype string)
 	f.createVolumeRequest = req
 	return nil
 }
+
 func (f *feature) getVolumeRequestFileSystem(name, fstype, access, voltype string) *csi.CreateVolumeRequest {
 	req := new(csi.CreateVolumeRequest)
 	params := make(map[string]string)
@@ -786,7 +788,7 @@ func (f *feature) getNodePublishVolumeRequest() *csi.NodePublishVolumeRequest {
 		now := time.Now()
 		targetPath := fmt.Sprintf("%s-datadir-%d", f.volID, now.Nanosecond())
 		var fileMode os.FileMode
-		fileMode = 0777
+		fileMode = 0o777
 		err := os.Mkdir(targetPath, fileMode)
 		if err != nil && !os.IsExist(err) {
 			fmt.Printf("%s: %s\n", req.TargetPath, err)
@@ -1302,7 +1304,7 @@ func (f *feature) iNodeStageVolumesInParallel(nVols int) error {
 		dataDirName := fmt.Sprintf("/tmp/stagedir%d", i)
 		fmt.Printf("Creating %s\n", dataDirName)
 		var fileMode os.FileMode
-		fileMode = 0777
+		fileMode = 0o777
 		err := os.Mkdir(dataDirName, fileMode)
 		if err != nil && !os.IsExist(err) {
 			fmt.Printf("%s: %s\n", dataDirName, err)
@@ -1345,7 +1347,7 @@ func (f *feature) iNodePublishVolumesInParallel(nVols int) error {
 		dataDirName := fmt.Sprintf("/tmp/datadir%d", i)
 		fmt.Printf("Checking %s\n", dataDirName)
 		var fileMode os.FileMode
-		fileMode = 0777
+		fileMode = 0o777
 		err := os.Mkdir(dataDirName, fileMode)
 		if err != nil && !os.IsExist(err) {
 			fmt.Printf("%s: %s\n", dataDirName, err)
@@ -1623,11 +1625,12 @@ func (f *feature) theVolumeSizeIs(expectedVolSize string) error {
 	}
 	return nil
 }
+
 func (f *feature) iCreateSnapshotsInParallel(nSnaps int) error {
 	idchan := make(chan string, nSnaps)
 	errchan := make(chan error, nSnaps)
 	t0 := time.Now()
-	//Send requests
+	// Send requests
 	for i := 0; i < nSnaps; i++ {
 		name := fmt.Sprintf("Scale_Test_Snap%d", i)
 		go func(name string, idchan chan string, errchan chan error) {
@@ -1650,7 +1653,7 @@ func (f *feature) iCreateSnapshotsInParallel(nSnaps int) error {
 			errchan <- err
 		}(name, idchan, errchan)
 	}
-	//wait on complete, collecting ids and errors
+	// wait on complete, collecting ids and errors
 	nerrors := 0
 	for i := 0; i < nSnaps; i++ {
 		var id string
@@ -1774,6 +1777,7 @@ func (f *feature) iCreateVolumesFromVolumeInParallel(nVols int) error {
 	time.Sleep(SleepTime)
 	return nil
 }
+
 func (f *feature) iCallDeleteSnapshotInParallel() error {
 	nSnaps := len(f.snapIDList)
 	fmt.Printf("The number of snapshots to delete%d ", nSnaps)
@@ -1810,6 +1814,7 @@ func (f *feature) iCallDeleteSnapshotInParallel() error {
 	time.Sleep(SleepTime)
 	return nil
 }
+
 func (f *feature) iCallCreateSnapshotOnNewVolume() error {
 	ctx := context.Background()
 	client := csi.NewControllerClient(grpcClient)
@@ -1835,7 +1840,7 @@ func (f *feature) iCallCreateSnapshotOnNewVolume() error {
 func (f *feature) iCallCreateVolumeFromNewVolume() error {
 	req := f.createVolumeRequest
 	req.Name = "volFromVol-" + req.Name
-	//Take the latest VolumeId created from f.volIDList
+	// Take the latest VolumeId created from f.volIDList
 	source := &csi.VolumeContentSource_VolumeSource{VolumeId: f.volIDList[len(f.volIDList)-1]}
 	req.VolumeContentSource = new(csi.VolumeContentSource)
 	req.VolumeContentSource.Type = &csi.VolumeContentSource_Volume{Volume: source}
@@ -1886,7 +1891,7 @@ func (f *feature) iCreateASnapshotPerVolumeInParallel() error {
 	idchan := make(chan string, nSnaps)
 	errchan := make(chan error, nSnaps)
 	t0 := time.Now()
-	//Send requests
+	// Send requests
 	for i := 0; i < nSnaps; i++ {
 		name := fmt.Sprintf("Scale_Test_Snap%d", i)
 		go func(volID, name string, idchan chan string, errchan chan error) {
@@ -1909,7 +1914,7 @@ func (f *feature) iCreateASnapshotPerVolumeInParallel() error {
 			errchan <- err
 		}(f.volIDList[i], name, idchan, errchan)
 	}
-	//wait on complete, collecting ids and errors
+	// wait on complete, collecting ids and errors
 	nerrors := 0
 	for i := 0; i < nSnaps; i++ {
 		var id string
@@ -1933,6 +1938,7 @@ func (f *feature) iCreateASnapshotPerVolumeInParallel() error {
 	time.Sleep(SleepTime)
 	return nil
 }
+
 func (f *feature) iCallDeleteSnapshotAndCreateSnapshotInParallel() error {
 	errChan := make(chan error, 2)
 	go func() {
@@ -2005,7 +2011,8 @@ func (f *feature) iDeleteASnapshot() error {
 }
 
 func (f *feature) parseCsiID(csiID string) (
-	volName string, arrayID string, devID string, err error) {
+	volName string, arrayID string, devID string, err error,
+) {
 	if csiID == "" {
 		err = fmt.Errorf("A Volume ID is required for the request")
 		return
@@ -2095,6 +2102,7 @@ func (f *feature) whenICallNodeExpandVolume() error {
 	time.Sleep(SleepTime)
 	return nil
 }
+
 func (f *feature) nodeExpandVolume(volID, volPath string) error {
 	var resp *csi.NodeExpandVolumeResponse
 	var err error

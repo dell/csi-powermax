@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+
 	"revproxy/v2/pkg/common"
 	"revproxy/v2/pkg/k8sutils"
 	"revproxy/v2/pkg/utils"
@@ -201,7 +202,7 @@ func (proxy *StandAloneProxyConfig) updateProxyCredentials(creds common.Credenti
 
 // GetManagementServers - Returns the list of management servers present in StandAloneProxyConfig
 func (proxy *StandAloneProxyConfig) GetManagementServers() []ManagementServer {
-	var mgmtServers = make([]ManagementServer, 0)
+	mgmtServers := make([]ManagementServer, 0)
 	for _, v := range proxy.managementServers {
 		mgmtServers = append(mgmtServers, *v)
 	}
@@ -355,7 +356,7 @@ func (proxy *StandAloneProxyConfig) UpdateManagementServers(config *StandAlonePr
 	// Check for deleted management servers, if any delete the map entry for it
 	for url, server := range proxy.managementServers {
 		if _, ok := config.managementServers[url]; !ok {
-			//the management server is not present in new config, delete its entry from active config
+			// the management server is not present in new config, delete its entry from active config
 			deletedManagementServers = append(deletedManagementServers, *server)
 			delete(proxy.managementServers, url)
 		}
@@ -363,7 +364,7 @@ func (proxy *StandAloneProxyConfig) UpdateManagementServers(config *StandAlonePr
 	// Check for adding/updating a new/existing management server, if any
 	for url, mgmntServer := range config.managementServers {
 		if _, ok := proxy.managementServers[url]; !ok {
-			//Not found, the management server is not present in active config so add its entry
+			// Not found, the management server is not present in active config so add its entry
 			updatedManagemetServers = append(updatedManagemetServers, *mgmntServer)
 			proxy.managementServers[url] = config.managementServers[url]
 		} else {
@@ -391,7 +392,7 @@ func (proxy *StandAloneProxyConfig) UpdateManagedArrays(config *StandAloneProxyC
 
 // GetAuthorizedArrays - Given a credential, returns the list of authorized storage arrays
 func (proxy *StandAloneProxyConfig) GetAuthorizedArrays(username, password string) []string {
-	var authorisedArrays = make([]string, 0)
+	authorisedArrays := make([]string, 0)
 	for _, a := range proxy.managedArrays {
 		isAuth, err := proxy.IsUserAuthorized(username, password, a.StorageArrayIdentifier)
 		if err != nil {
@@ -428,7 +429,7 @@ func (proxy *StandAloneProxyConfig) IsUserAuthorized(username, password, storage
 
 // GetStorageArray - Returns a list of storage array given a storage array id
 func (proxy *StandAloneProxyConfig) GetStorageArray(storageArrayID string) []StorageArray {
-	var storageArrays = make([]StorageArray, 0)
+	storageArrays := make([]StorageArray, 0)
 	if storageArrayID != "" {
 		if storageArray, ok := proxy.managedArrays[storageArrayID]; ok {
 			storageArrays = append(storageArrays, *storageArray)
@@ -621,7 +622,7 @@ func ReadConfig(configFile, configPath string) (*ProxyConfigMap, error) {
 	viper.SetConfigName(configFile)
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(configPath)
-	//viper.SetEnvPrefix("X_CSI_REVPROXY")
+	// viper.SetEnvPrefix("X_CSI_REVPROXY")
 	err := viper.ReadInConfig()
 	if err != nil {
 		return nil, err

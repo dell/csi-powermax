@@ -5,7 +5,7 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.0.0
-     Scenario: Publish volume with single writer
+    Scenario Outline: Publish volume with single writer
       Given a PowerMax service
       And I call CreateVolume "volume1"
       When I request a PortGroup
@@ -13,16 +13,15 @@ Feature: PowerMax CSI interface
       And I have a Node "node1" with MaskingView
       And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
-
-     Examples:
-      | access                      |
-      | "single-writer"             |
-      | "single-node-single-writer" |
-      | "single-node-multi-writer"  |
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.1.0
-     Scenario: Publish volume with single writer for FC when PG is present
+     Scenario Outline: Publish volume with single writer for FC when PG is present
       Given a PowerMax service
       And I call CreateVolume "volume1"
       And a valid CreateVolumeResponse is returned
@@ -31,16 +30,15 @@ Feature: PowerMax CSI interface
       And I have a FC PortGroup "PG1"
       And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
-
-     Examples:
-      | access                      |
-      | "single-writer"             |
-      | "single-node-single-writer" |
-      | "single-node-multi-writer"  |
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.1.0
-     Scenario: Publish volume with single writer for FC when PG is not present
+     Scenario Outline: Publish volume with single writer for FC when PG is not present
       Given a PowerMax service
       And I call CreateVolume "volume1"
       And a valid CreateVolumeResponse is returned
@@ -48,16 +46,15 @@ Feature: PowerMax CSI interface
       And I have a Node "node1" with Host
       And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
-
-     Examples:
-      | access                      |
-      | "single-writer"             |
-      | "single-node-single-writer" |
-      | "single-node-multi-writer"  |
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.1.0
-     Scenario: Publish volume with single writer for FC when PG is not present and initiator is mapped to lot of dir/ports
+     Scenario Outline: Publish volume with single writer for FC when PG is not present and initiator is mapped to lot of dir/ports
       Given a PowerMax service
       And I call CreateVolume "volume1"
       And a valid CreateVolumeResponse is returned
@@ -65,12 +62,11 @@ Feature: PowerMax CSI interface
       And I have a Node "node1" with Host with Initiator mapped to multiple ports
       And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
-
-     Examples:
-      | access                      |
-      | "single-writer"             |
-      | "single-node-single-writer" |
-      | "single-node-multi-writer"  |
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
@@ -78,7 +74,7 @@ Feature: PowerMax CSI interface
       Given a PowerMax service
       And I have a Node "node1" with MaskingView
       And I call PublishVolume with <access> to "node1"
-      Then the error contains "Volume cannot be found"
+      Then the error contains "Could not find volume"
 
      Examples:
       | access                      |
@@ -97,14 +93,13 @@ Feature: PowerMax CSI interface
       And I induce error <induced>
       And I call PublishVolume with "single-writer" to "node1"
       Then the error contains <errormsg>
+      Examples:
+       | induced                           | errormsg                                              |
+       | "UpdateStorageGroupError"         | "Failed to add volume to storage group"               |
+       | "GetMaskingViewConnectionsError"  | "Could not get MV Connections"                        |
+       | "GetPortError"                    | "Failed to fetch port details for any director ports" |
 
-     Examples:
-      | induced                           | errormsg                                              |
-      | "UpdateStorageGroupError"         | "Failed to add volume to storage group"               |
-      | "GetMaskingViewConnectionsError"  | "Could not get MV Connections"                        |
-      | "GetPortError"                    | "Failed to fetch port details for any director ports" |
 
-#@wip
 @controllerPublish
 @v1.0.0
      Scenario Outline: Publish volume with no masking view and induced errors
@@ -117,13 +112,12 @@ Feature: PowerMax CSI interface
       And I induce error <induced>
       And I call PublishVolume with "single-writer" to "node1"
       Then the error contains <errormsg>
-
-     Examples:
-      | induced                   | errormsg                                         |
-      | "CreateStorageGroupError" | "Failed to create storage group"                 |
-      | "CreateMaskingViewError"  | "Failed to create masking view"                  |
-      | "UpdateStorageGroupError" | "Failed to add volume to storage group"          |
-      | "GetStorageGroupError"    | "Failed to fetch SG details"                     |
+      Examples:
+       | induced                   | errormsg                                         |
+       | "CreateStorageGroupError" | "Failed to create storage group"                 |
+       | "CreateMaskingViewError"  | "Failed to create masking view"                  |
+       | "UpdateStorageGroupError" | "Failed to add volume to storage group"          |
+       | "GetStorageGroupError"    | "Failed to fetch SG details"                     |
 
 @controllerPublish
 @v1.0.0
@@ -137,14 +131,13 @@ Feature: PowerMax CSI interface
       And I induce error <induced>
       And I call PublishVolume with "single-writer" to "node1"
       Then the error contains <errormsg>
-
-     Examples:
-      | induced                   | errormsg                                         |
-      | "CreateStorageGroupError" | "Failed to create storage group"                 |
-      | "CreateMaskingViewError"  | "Failed to create masking view"                  |
-      | "UpdateStorageGroupError" | "Failed to add volume to storage group"          |
-      | "GetStorageGroupError"    | "Failed to fetch SG details"                     |
-      | "GetMaskingViewError"     | "none"                                           |
+      Examples:
+       | induced                   | errormsg                                         |
+       | "CreateStorageGroupError" | "Failed to create storage group"                 |
+       | "CreateMaskingViewError"  | "Failed to create masking view"                  |
+       | "UpdateStorageGroupError" | "Failed to add volume to storage group"          |
+       | "GetStorageGroupError"    | "Failed to fetch SG details"                     |
+       | "GetMaskingViewError"     | "none"                                           |
 
 @controllerPublish
 @v1.0.0
@@ -160,7 +153,7 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.0.0
-     Scenario: Publish volume with single writer with conflicting SG
+     Scenario Outline: Publish volume with single writer with conflicting SG
       Given a PowerMax service
       And I call CreateVolume "volume1"
       When I request a PortGroup
@@ -170,16 +163,15 @@ Feature: PowerMax CSI interface
       And I add the Volume to "node1"
       When I call PublishVolume with <access> to "node1"
       Then the error contains "Conflicting SG present"
-
-     Examples:
-      | access                      |
-      | "single-writer"             |
-      | "single-node-single-writer" |
-      | "single-node-multi-writer"  |
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
-     Scenario: Publish volume with single writer with conflicting SG but no MV
+     Scenario Outline: Publish volume with single writer with conflicting SG but no MV
       Given a PowerMax service
       And I call CreateVolume "volume1"
       When I request a PortGroup
@@ -188,12 +180,11 @@ Feature: PowerMax CSI interface
       And I have a Node "node1" with FastManagedStorageGroup
       When I call PublishVolume with <access> to "node1"
       Then the error contains "Storage group exists with same name but with conflicting params"
-
-     Examples:
-      | access                      |
-      | "single-writer"             |
-      | "single-node-single-writer" |
-      | "single-node-multi-writer"  |
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
@@ -212,7 +203,7 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.0.0
-     Scenario: Publish volume with single writer to multiple Nodes
+     Scenario Outline: Publish volume with single writer to multiple Nodes
       Given a PowerMax service
       And I call CreateVolume "volume1"
       When I request a PortGroup
@@ -227,16 +218,15 @@ Feature: PowerMax CSI interface
       Then a valid PublishVolumeResponse is returned
       And I call PublishVolume with <access> to "node2"
       Then the error contains "volume already present in a different masking view"
-
-     Examples:
-      | access                      |
-      | "single-writer"             |
-      | "single-node-single-writer" |
-      | "single-node-multi-writer"  |
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
-     Scenario: Publish volume with single writer without masking view
+     Scenario Outline: Publish volume with single writer without masking view
       Given a PowerMax service
       And I call CreateVolume "volume1"
       When I request a PortGroup
@@ -244,32 +234,30 @@ Feature: PowerMax CSI interface
       And I have a Node "node1" with Host
       And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
-
-     Examples:
-      | access                      |
-      | "single-writer"             |
-      | "single-node-single-writer" |
-      | "single-node-multi-writer"  |
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
-     Scenario: Publish volume with single writer without host
+     Scenario Outline: Publish volume with single writer without host
       Given a PowerMax service
       And I call CreateVolume "volume1"
       When I request a PortGroup
       And a valid CreateVolumeResponse is returned
       And I call PublishVolume with <access> to "node1"
       Then the error contains "Failed to fetch host"
-
-     Examples:
-      | access                      |
-      | "single-writer"             |
-      | "single-node-single-writer" |
-      | "single-node-multi-writer"  |
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
-     Scenario: Publish volume with single writer without masking view
+     Scenario Outline: Publish volume with single writer without masking view
       Given a PowerMax service
       And I call CreateVolume "volume1"
       When I request a PortGroup
@@ -278,16 +266,15 @@ Feature: PowerMax CSI interface
       And I have a Node "node1" with StorageGroup
       And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
-
-     Examples:
-      | access                      |
-      | "single-writer"             |
-      | "single-node-single-writer" |
-      | "single-node-multi-writer"  |
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
-     Scenario: Publish volume with single writer with PortGroupError
+     Scenario Outline: Publish volume with single writer with PortGroupError
       Given a PowerMax service
       And I call CreateVolume "volume1"
       And a valid CreateVolumeResponse is returned
@@ -297,17 +284,16 @@ Feature: PowerMax CSI interface
       When I request a PortGroup
       And I call PublishVolume with <access> to "node1"
       Then the error contains "No port groups have been supplied"
-
-     Examples:
-      | access                      |
-      | "single-writer"             |
-      | "single-node-single-writer" |
-      | "single-node-multi-writer"  |
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
 
 
 @controllerPublish
 @v1.0.0
-     Scenario: Idempotent publish volume with single writer
+     Scenario Outline: Idempotent publish volume with single writer
       Given a PowerMax service
       And I call CreateVolume "volume1"
       When I request a PortGroup
@@ -317,12 +303,11 @@ Feature: PowerMax CSI interface
       Then a valid PublishVolumeResponse is returned
       And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
-
-     Examples:
-      | access                      |
-      | "single-writer"             |
-      | "single-node-single-writer" |
-      | "single-node-multi-writer"  |
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
 
 @controllerPublish
 @v1.0.0
@@ -364,7 +349,6 @@ Feature: PowerMax CSI interface
       And I call PublishVolume with "multiple-writer" to "node1"
       Then a valid PublishVolumeResponse is returned
 
-#@wip
 @controllerPublish
 @v1.0.0
      Scenario: Publish volume to a Node with conflicting MV
@@ -382,7 +366,7 @@ Feature: PowerMax CSI interface
      Scenario: Publish volume with an invalid volumeID
       Given a PowerMax service
       And I call PublishVolume with "single-writer" to "node1"
-      Then the error contains "Volume cannot be found"
+      Then the error contains "Could not find volume"
 
 @controllerPublish
 @v1.0.0
@@ -434,7 +418,7 @@ Feature: PowerMax CSI interface
       And I call PublishVolume with "unknown" to "node1"
       Then the error contains "access mode cannot be UNKNOWN"
 
-#@wip
+
 @controllerPublish
 @v1.0.0
      Scenario: Unpublish volume
@@ -495,17 +479,16 @@ Feature: PowerMax CSI interface
       And I induce error <induced>
       And I call UnpublishVolume from "node1"
       Then the error contains <errormsg>
-
-     Examples:
-      | induced                   | errormsg                                         |
-      | "DeleteMaskingViewError"  | "Error deleting Masking view: induced error"     |
-      # The new code retries individually if there was an error, and the masking view has been
-      # deleted, so on the retry there is no error but the volume is left in the SG.
-      # I'm not sure what to do about this. It would be true in the real world if k8s retried also.
-      | "UpdateStorageGroupError" | "none"                                           |
-      #| "UpdateStorageGroupError" | "Error updating Storage Group: induced error"    |
-      | "GetStorageGroupError"    | "Failed to fetch SG details"                     |
-      | "DeleteStorageGroupError" | "none"                                           |
+      Examples:
+       | induced                   | errormsg                                         |
+       | "DeleteMaskingViewError"  | "Error deleting Masking view: induced error"     |
+       # The new code retries individually if there was an error, and the masking view has been
+       # deleted, so on the retry there is no error but the volume is left in the SG.
+       # I'm not sure what to do about this. It would be true in the real world if k8s retried also.
+       | "UpdateStorageGroupError" | "none"                                           |
+       #| "UpdateStorageGroupError" | "Error updating Storage Group: induced error"    |
+       | "GetStorageGroupError"    | "Failed to fetch SG details"                     |
+       | "DeleteStorageGroupError" | "none"                                           |
 
      Scenario: UnPublish volume with no previous probe
       Given a PowerMax service
@@ -566,7 +549,6 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.3.0
-#@wip
    Scenario Outline: Call requestAddVolumesToSGMV and runAddVolumesToSGMV with various scenarios
       Given a PowerMax service
       And I call CreateVolume "volume1"
@@ -587,7 +569,6 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.3.0
-@wip
    Scenario Outline: Call requestAddVolumesToSGMV and runAddVolumesToSGMV when creating masking view
       Given a PowerMax service
       And I call CreateVolume "volume1"
@@ -604,7 +585,6 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.3.0
-#@wip
    Scenario Outline: Test handleAddVolumeToSGMV with various scenarios
       Given a PowerMax service
       And I call CreateVolume "volume1"
@@ -626,7 +606,6 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.3.0
-#@wip
    Scenario Outline: Test requestAddVolumesToSGMV with multiple requests
       Given a PowerMax service
       And I call CreateVolume "volume1"
@@ -648,7 +627,6 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.3.0
-@wip
      Scenario Outline: Test requestRemoveVolumesFromSGMV and runRemoveVolumesFromSGMV
       Given a PowerMax service
       And I call CreateVolume "volume1"
@@ -669,7 +647,6 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.3.0
-@wip
    Scenario Outline: Test handleRemoveVolumeFromSGMV with various scenarios
       Given a PowerMax service
       And I call CreateVolume "volume1"
@@ -693,7 +670,6 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.3.0
-@wip
    Scenario Outline: Test requestRemoveVolumesFromSGMV with multiple requests
       Given a PowerMax service
       And I call CreateVolume "volume1"
@@ -714,3 +690,35 @@ Feature: PowerMax CSI interface
       | "node1"  |  "badmv"   | "default" | "none"                  | "none"                                        |
       | "node1"  |  "default" | "badmv"   | "none"                  | "none"                                        |
       | "node1"  |  "default" | "default" | "none"                  | "none"                                        |
+
+@controllerPublish
+@v2.9.0
+   Scenario: ControllerGetVolume on a published volume
+     Given a PowerMax service
+     And I call CreateVolume "volume1"
+     When I request a PortGroup
+     And a valid CreateVolumeResponse is returned
+     And I have a Node "node1" with MaskingView
+     And I call PublishVolume with "single-writer" to "node1"
+     And a valid PublishVolumeResponse is returned
+     Then I call ControllerGetVolume
+     And a valid ControllerGetVolume response is returned
+
+
+ @controllerPublish
+ @v2.9.0
+ Scenario Outline: ControllerGetVolume on a published volume with error
+  Given a PowerMax service
+  And I call CreateVolume "volume1"
+  When I request a PortGroup
+  And a valid CreateVolumeResponse is returned
+  And I have a Node "node1" with MaskingView
+  And I call PublishVolume with "single-writer" to "node1"
+  And a valid PublishVolumeResponse is returned
+  And I induce error <induced>
+  Then I call ControllerGetVolume
+  And an abnormal ControllerGetVolume response is returned
+  Examples:
+   | induced                |
+   | "GetVolumeError"       |
+   | "GetStorageGroupError" |

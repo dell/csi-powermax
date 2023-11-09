@@ -131,7 +131,7 @@ Feature: PowerMax CSI Interface
         Given a PowerMax service
         And a non-existent volume
         When I call IsVolumeInSnapSession on ""
-        Then the error contains "Volume cannot be found"
+        Then the error contains "Could not find volume"
 @v1.2.0
     Scenario: Link/Unlink snapshot
         Given a PowerMax service

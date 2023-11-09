@@ -16,8 +16,9 @@ package utils
 
 import (
 	"fmt"
-	"revproxy/v2/pkg/common"
 	"sync"
+
+	"revproxy/v2/pkg/common"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -114,8 +115,7 @@ var lockMutex sync.Mutex
 
 var lockRequestsQueue = make(chan LockRequest, LockRequestQueueLength)
 
-type lockWorkers struct {
-}
+type lockWorkers struct{}
 
 var lockWorker *lockWorkers
 
@@ -129,7 +129,7 @@ func InitializeLock() {
 
 // LockRequestHandler - goroutine which listens for any lock/unlock requests
 func LockRequestHandler() {
-	var fifoLocks = make(map[string]*LockProperties)
+	fifoLocks := make(map[string]*LockProperties)
 	go func() {
 		log.Debug("Successfully started the lock request handler")
 		for {

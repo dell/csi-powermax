@@ -17,7 +17,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/dell/csi-powermax/v2/pkg/file"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -27,6 +26,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dell/csi-powermax/v2/pkg/file"
 
 	"github.com/vmware/govmomi/object"
 
@@ -97,8 +98,8 @@ var vmHost *VMHost
 func (s *service) NodeStageVolume(
 	ctx context.Context,
 	req *csi.NodeStageVolumeRequest) (
-	*csi.NodeStageVolumeResponse, error) {
-
+	*csi.NodeStageVolumeResponse, error,
+) {
 	privTgt := req.GetStagingTargetPath()
 	if privTgt == "" {
 		return nil, status.Error(codes.InvalidArgument, "Target Path is required")
@@ -125,7 +126,7 @@ func (s *service) NodeStageVolume(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	var volID = volumeIDType(id)
+	volID := volumeIDType(id)
 	if err := volID.checkAndUpdatePendingState(&nodePendingState); err != nil {
 		return nil, err
 	}
@@ -317,7 +318,8 @@ func (s *service) connectDevice(ctx context.Context, data publishContextData, us
 }
 
 func (s *service) connectISCSIDevice(ctx context.Context,
-	lun int, data publishContextData) (gobrick.Device, error) {
+	lun int, data publishContextData,
+) (gobrick.Device, error) {
 	logFields := getLogFields(ctx)
 	var targets []gobrick.ISCSITargetInfo
 	for _, t := range data.iscsiTargets {
@@ -336,7 +338,8 @@ func (s *service) connectISCSIDevice(ctx context.Context,
 }
 
 func (s *service) connectFCDevice(ctx context.Context,
-	lun int, data publishContextData) (gobrick.Device, error) {
+	lun int, data publishContextData,
+) (gobrick.Device, error) {
 	logFields := getLogFields(ctx)
 	var targets []gobrick.FCTargetInfo
 	for _, t := range data.fcTargets {
@@ -355,7 +358,8 @@ func (s *service) connectFCDevice(ctx context.Context,
 }
 
 func (s *service) connectRDMDevice(ctx context.Context,
-	lun int, data publishContextData) (gobrick.Device, error) {
+	lun int, data publishContextData,
+) (gobrick.Device, error) {
 	logFields := getLogFields(ctx)
 	var targets []gobrick.FCTargetInfo
 	for _, t := range data.fcTargets {
@@ -373,11 +377,12 @@ func (s *service) connectRDMDevice(ctx context.Context,
 		WWN:     strings.Replace(data.deviceWWN, "0x", "", 1),
 	})
 }
+
 func (s *service) NodeUnstageVolume(
 	ctx context.Context,
 	req *csi.NodeUnstageVolumeRequest) (
-	*csi.NodeUnstageVolumeResponse, error) {
-
+	*csi.NodeUnstageVolumeResponse, error,
+) {
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -492,7 +497,7 @@ func (s *service) attachRDM(volID, volumeWWN string) error {
 	}
 	log.Debugf("rescanning HBAs on host done...")
 
-	//Attach RDM
+	// Attach RDM
 	err = vmHost.AttachRDM(vmHost.VM, volumeWWN)
 	if err != nil {
 		log.Errorf("Could not attach RDM (%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
@@ -513,7 +518,7 @@ func (s *service) detachRDM(volID, volumeWWN string) error {
 	}
 	log.Debugf("found host: (%v)", host)
 
-	//Detach RDM
+	// Detach RDM
 	err = vmHost.DetachRDM(vmHost.VM, volumeWWN)
 	if err != nil {
 		log.Errorf("Could not detach RDM (%s) vol: %s, on host %s with error: %s", volumeWWN, volID, vmHost.VM, err.Error())
@@ -588,8 +593,8 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 func (s *service) NodePublishVolume(
 	ctx context.Context,
 	req *csi.NodePublishVolumeRequest) (
-	*csi.NodePublishVolumeResponse, error) {
-
+	*csi.NodePublishVolumeResponse, error,
+) {
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -693,8 +698,8 @@ func (s *service) NodePublishVolume(
 func (s *service) NodeUnpublishVolume(
 	ctx context.Context,
 	req *csi.NodeUnpublishVolumeRequest) (
-	*csi.NodeUnpublishVolumeResponse, error) {
-
+	*csi.NodeUnpublishVolumeResponse, error,
+) {
 	var reqID string
 	var err error
 	headers, ok := metadata.FromIncomingContext(ctx)
@@ -837,7 +842,8 @@ func (s *service) nodeProbe(ctx context.Context) error {
 func (s *service) NodeGetCapabilities(
 	ctx context.Context,
 	req *csi.NodeGetCapabilitiesRequest) (
-	*csi.NodeGetCapabilitiesResponse, error) {
+	*csi.NodeGetCapabilitiesResponse, error,
+) {
 	capabilities := []*csi.NodeServiceCapability{
 		{
 			Type: &csi.NodeServiceCapability_Rpc{
@@ -1044,8 +1050,8 @@ func checkIfKeyIsIncludedOrNot(rulesList []string, key string) bool {
 func (s *service) NodeGetInfo(
 	ctx context.Context,
 	req *csi.NodeGetInfoRequest) (
-	*csi.NodeGetInfoResponse, error) {
-
+	*csi.NodeGetInfoResponse, error,
+) {
 	// Get the Node ID
 	if s.opts.NodeName == "" {
 		log.Error("Unable to get Node Name from the environment")
@@ -1111,7 +1117,8 @@ func (s *service) NodeGetInfo(
 }
 
 func (s *service) NodeGetVolumeStats(
-	ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
+	ctx context.Context, req *csi.NodeGetVolumeStatsRequest,
+) (*csi.NodeGetVolumeStatsResponse, error) {
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -1172,7 +1179,7 @@ func (s *service) NodeGetVolumeStats(
 		log.Debug("---- check 1 ----")
 		replace := CSIPrefix + "-" + s.getClusterPrefix() + "-"
 		volName = strings.Replace(volName, replace, "", 1)
-		//remove the namespace from the volName as the mount paths will not have it
+		// remove the namespace from the volName as the mount paths will not have it
 		volName = strings.Join(strings.Split(volName, "-")[:2], "-")
 		isMounted, err := isVolumeMounted(ctx, volName, volPath)
 		log.Debug("---- isMounted ----", isMounted)
@@ -1258,7 +1265,6 @@ func (s *service) NodeGetVolumeStats(
 // getVolumeStats - Returns the stats for the volume mounted on given volume path
 func getVolumeStats(ctx context.Context, volumePath string) (int64, int64, int64, int64, int64, int64, error) {
 	availableBytes, totalBytes, usedBytes, totalInodes, freeInodes, usedInodes, err := gofsutil.FsInfo(ctx, volumePath)
-
 	if err != nil {
 		return 0, 0, 0, 0, 0, 0, status.Error(codes.Internal, fmt.Sprintf(
 			"failed to get volume stats: %s", err))
@@ -1269,7 +1275,6 @@ func getVolumeStats(ctx context.Context, volumePath string) (int64, int64, int64
 // isVolumeMounted fetches the mount info for a volume
 // and compare the volume mount path with the target
 func isVolumeMounted(ctx context.Context, volName string, target string) (bool, error) {
-
 	devmnt, err := gofsutil.GetMountInfoFromDevice(ctx, volName)
 	if err != nil {
 		return false, status.Errorf(codes.Internal,
@@ -1292,7 +1297,6 @@ func isVolumeMounted(ctx context.Context, volName string, target string) (bool, 
 //
 // returns an error if unable to perform node startup tasks without error
 func (s *service) nodeStartup(ctx context.Context) error {
-
 	if s.nodeIsInitialized {
 		return nil
 	}
@@ -1300,8 +1304,8 @@ func (s *service) nodeStartup(ctx context.Context) error {
 	nodePendingState.maxPending = 10
 
 	// Copy the multipath.conf file from /noderoot/etc/multipath.conf (EnvISCSIChroot)to /etc/multipath.conf if present
-	//iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
-	//copyMultipathConfigFile(iscsiChroot, "")
+	// iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
+	// copyMultipathConfigFile(iscsiChroot, "")
 
 	// make sure we have a connection to Unisphere
 	if s.adminClient == nil {
@@ -1396,7 +1400,7 @@ func isValidHostID(hostID string) bool {
 // It returns the number of initiators for the host that were found.
 // Do not mix both FC and iSCSI initiators in a single call.
 func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symID string, nodeInitiators []string, hostID string, pmaxClient pmax.Pmax) ([]string, error) {
-	var validInitiators = make([]string, 0)
+	validInitiators := make([]string, 0)
 	var errormsg string
 	initList, err := pmaxClient.GetInitiatorList(ctx, symID, "", false, false)
 	if err != nil {
@@ -1562,11 +1566,11 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 
 // getHostForVsphere fetches predefined host or host group from array for vSphere
 func (s *service) getHostForVsphere(ctx context.Context, array string, pmaxClient pmax.Pmax) (err error) {
-	//Check if the Host exist
+	// Check if the Host exist
 	_, err = pmaxClient.GetHostByID(ctx, array, s.opts.VSphereHostName)
 	if err != nil {
 		if strings.Contains(err.Error(), "cannot be found") {
-			//Check if the HostGroup exist
+			// Check if the HostGroup exist
 			_, err = pmaxClient.GetHostGroupByID(ctx, array, s.opts.VSphereHostName)
 		}
 	}
@@ -1821,7 +1825,7 @@ func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, skipLogin bool
 			// First set the CHAP credentials if required
 			err = s.setCHAPCredentials(array, maskingViewTargets, IQNs)
 			if err != nil {
-				//log the error and continue
+				// log the error and continue
 				log.Errorf("Failed to set CHAP credentials for %v", maskingViewTargets)
 				// Reset the error
 				err = nil
@@ -2051,8 +2055,8 @@ func (s *service) retryableGetSymmetrixIDList() (*types.SymmetrixIDList, error) 
 func (s *service) NodeExpandVolume(
 	ctx context.Context,
 	req *csi.NodeExpandVolumeRequest) (
-	*csi.NodeExpandVolumeResponse, error) {
-
+	*csi.NodeExpandVolumeResponse, error,
+) {
 	var reqID string
 	var err error
 	headers, ok := metadata.FromIncomingContext(ctx)
@@ -2103,14 +2107,14 @@ func (s *service) NodeExpandVolume(
 	}
 	volumeWWN := vol.EffectiveWWN
 
-	//Get the pmax volume name so that it can be searched in the system
-	//to find mount information
+	// Get the pmax volume name so that it can be searched in the system
+	// to find mount information
 	replace := CSIPrefix + "-" + s.getClusterPrefix() + "-"
 	volName := strings.Replace(vol.VolumeIdentifier, replace, "", 1)
-	//remove the namespace from the volName as the mount paths will not have it
+	// remove the namespace from the volName as the mount paths will not have it
 	volName = strings.Join(strings.Split(volName, "-")[:2], "-")
 
-	//Locate and fetch all (multipath/regular) mounted paths using this volume
+	// Locate and fetch all (multipath/regular) mounted paths using this volume
 	devMnt, err := gofsutil.GetMountInfoFromDevice(ctx, volName)
 	if err != nil {
 		var devName string
@@ -2176,8 +2180,8 @@ func (s *service) NodeExpandVolume(
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	}
-	//For a regular device, get the device path (devMnt.DeviceNames[1]) where the filesystem is mounted
-	//PublishVolume creates devMnt.DeviceNames[0] but is left unused for regular devices
+	// For a regular device, get the device path (devMnt.DeviceNames[1]) where the filesystem is mounted
+	// PublishVolume creates devMnt.DeviceNames[0] but is left unused for regular devices
 	var devicePath string
 	if len(devMnt.DeviceNames) > 1 {
 		devicePath = "/dev/" + devMnt.DeviceNames[1]
@@ -2193,7 +2197,7 @@ func (s *service) NodeExpandVolume(
 	}
 	log.Infof("Found %s filesystem mounted on volume %s", fsType, devMnt.MountPoint)
 
-	//Resize the filesystem
+	// Resize the filesystem
 	err = gofsutil.ResizeFS(context.Background(), devMnt.MountPoint, devicePath, devMnt.PPathName, devMnt.MPathName, fsType)
 	if err != nil {
 		log.Errorf("Failed to resize filesystem: mountpoint (%s) device (%s) with error (%s)",
@@ -2369,7 +2373,7 @@ func (s *service) getAndConfigureArrayISCSITargets(ctx context.Context, arrayTar
 // writeWWNFile writes a volume's WWN to a file copy on the node
 func (s *service) writeWWNFile(id, volumeWWN string) error {
 	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
-	err := ioutil.WriteFile(wwnFileName, []byte(volumeWWN), 0644) // #nosec G306
+	err := ioutil.WriteFile(wwnFileName, []byte(volumeWWN), 0o644) // #nosec G306
 	if err != nil {
 		return status.Errorf(codes.Internal, "Could not read WWN file: %s", wwnFileName)
 	}

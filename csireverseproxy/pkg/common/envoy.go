@@ -15,10 +15,11 @@
 package common
 
 import (
-	log "github.com/sirupsen/logrus"
 	"net/http"
 	"sync/atomic"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // Envoy is an interface for failover/failback enabled proxy clients
