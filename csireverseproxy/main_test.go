@@ -27,15 +27,16 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
+	"syscall"
+	"testing"
+	"time"
+
 	"revproxy/v2/pkg/common"
 	"revproxy/v2/pkg/config"
 	"revproxy/v2/pkg/k8smock"
 	"revproxy/v2/pkg/servermock"
 	"revproxy/v2/pkg/utils"
-	"sync"
-	"syscall"
-	"testing"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -157,7 +158,8 @@ func doHTTPRequest(port, path string) (string, error) {
 	}
 	creds := common.Credentials{
 		UserName: "test-username",
-		Password: "test-password"}
+		Password: "test-password",
+	}
 	req.Header.Set("Authorization", utils.BasicAuth(creds))
 
 	resp, err := client.Do(req)
@@ -206,7 +208,7 @@ func stopServers() {
 }
 
 func readYAMLConfig(filename, fileDir string) (config.ProxyConfigMap, error) {
-	var configmap = config.ProxyConfigMap{}
+	configmap := config.ProxyConfigMap{}
 	file := filepath.Join(fileDir, filename)
 	yamlFile, err := ioutil.ReadFile(file)
 	if err != nil {
@@ -225,7 +227,7 @@ func writeYAMLConfig(val interface{}, fileName, fileDir string) error {
 		return err
 	}
 	filepath := filepath.Join(fileDir, fileName)
-	return ioutil.WriteFile(filepath, file, 0777)
+	return ioutil.WriteFile(filepath, file, 0o777)
 }
 
 func createTempConfig(mode string) error {

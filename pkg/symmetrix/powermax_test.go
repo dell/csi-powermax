@@ -15,8 +15,9 @@
 package symmetrix
 
 import (
-	pmax "github.com/dell/gopowermax/v2"
 	"testing"
+
+	pmax "github.com/dell/gopowermax/v2"
 )
 
 func TestGetPowerMaxClient(t *testing.T) {

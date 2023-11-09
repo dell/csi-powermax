@@ -15,11 +15,11 @@ require (
 	github.com/dell/gocsi v1.7.0
 	github.com/dell/gofsutil v1.13.1
 	github.com/dell/goiscsi v1.8.0
-	github.com/dell/gopowermax/v2 v2.4.0
+	github.com/dell/gopowermax/v2 v2.4.1-0.20231108074435-27281047efea
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.3
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
-	github.com/sirupsen/logrus v1.9.0
+	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.1
 	github.com/vmware/govmomi v0.29.0
@@ -73,7 +73,7 @@ require (
 	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/oauth2 v0.7.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
-	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/sys v0.14.0 // indirect
 	golang.org/x/term v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect

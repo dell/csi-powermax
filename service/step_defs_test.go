@@ -18,7 +18,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"github.com/cucumber/messages-go/v10"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -28,6 +27,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dell/dell-csi-extensions/common"
+
+	"github.com/cucumber/messages-go/v10"
 
 	migrext "github.com/dell/dell-csi-extensions/migration"
 	"github.com/dell/gocsi"
@@ -110,6 +113,9 @@ type feature struct {
 	getPluginInfoResponse                *csi.GetPluginInfoResponse
 	getPluginCapabilitiesResponse        *csi.GetPluginCapabilitiesResponse
 	probeResponse                        *csi.ProbeResponse
+	getRepCapabilitiesResponse           *csiext.GetReplicationCapabilityResponse
+	getMigrationCapabilitiesResponse     *migrext.GetMigrationCapabilityResponse
+	probeControllerResponse              *common.ProbeControllerResponse
 	createVolumeResponse                 *csi.CreateVolumeResponse
 	publishVolumeResponse                *csi.ControllerPublishVolumeResponse
 	unpublishVolumeResponse              *csi.ControllerUnpublishVolumeResponse
@@ -133,6 +139,7 @@ type feature struct {
 	listSnapshotsResponse                *csi.ListSnapshotsResponse
 	getVolumeByIDResponse                *GetVolumeByIDResponse
 	volumeMigrateResponse                *migrext.VolumeMigrateResponse
+	controllerGetVolumeResponse          *csi.ControllerGetVolumeResponse
 	response                             string
 	listedVolumeIDs                      map[string]bool
 	listVolumesNextTokenCache            string
@@ -154,7 +161,7 @@ type feature struct {
 	hostID                               string
 	volumeID                             string
 	initiators                           []string
-	ninitiators                          int
+	nInitiators                          int
 	host                                 *types.Host
 	allowedArrays                        []string
 	iscsiTargets                         []maskingViewTargetInfo
@@ -177,24 +184,25 @@ type feature struct {
 }
 
 var inducedErrors struct {
-	invalidSymID           bool
-	invalidStoragePool     bool
-	invalidServiceLevel    bool
-	rescanError            bool
-	noDeviceWWNError       bool
-	badVolumeIdentifier    bool
-	invalidVolumeID        bool
-	noVolumeID             bool
-	invalidSnapID          bool
-	differentVolumeID      bool
-	portGroupError         bool
-	noSymID                bool
-	noNodeName             bool
-	noIQNs                 bool
-	nonExistentVolume      bool
-	noVolumeSource         bool
-	noMountInfo            bool
-	invalidTopologyPathEnv bool
+	invalidSymID            bool
+	invalidStoragePool      bool
+	invalidServiceLevel     bool
+	rescanError             bool
+	noDeviceWWNError        bool
+	badVolumeIdentifier     bool
+	invalidVolumeID         bool
+	noVolumeID              bool
+	invalidSnapID           bool
+	differentVolumeID       bool
+	portGroupError          bool
+	noSymID                 bool
+	noNodeName              bool
+	noIQNs                  bool
+	nonExistentVolume       bool
+	noVolumeSource          bool
+	noMountInfo             bool
+	invalidTopologyPathEnv  bool
+	getRDFInfoFromSGIDError bool
 }
 
 type failedSnap struct {
@@ -251,6 +259,9 @@ func (f *feature) aPowerMaxService() error {
 	f.getPluginInfoResponse = nil
 	f.getPluginCapabilitiesResponse = nil
 	f.probeResponse = nil
+	f.getRepCapabilitiesResponse = nil
+	f.getMigrationCapabilitiesResponse = nil
+	f.probeControllerResponse = nil
 	f.createVolumeResponse = nil
 	f.nodeGetInfoResponse = nil
 	f.nodeGetCapabilitiesResponse = nil
@@ -281,13 +292,14 @@ func (f *feature) aPowerMaxService() error {
 	f.nodePublishVolumeRequest = nil
 	f.createSnapshotRequest = nil
 	f.createSnapshotResponse = nil
+	f.controllerGetVolumeResponse = nil
 	f.volumeIDList = f.volumeIDList[:0]
 	f.sgID = ""
 	f.mvID = ""
 	f.hostID = ""
 	f.initiators = make([]string, 0)
 	f.iscsiTargetInfo = make([]ISCSITargetInfo, 0)
-	f.ninitiators = 0
+	f.nInitiators = 0
 	f.volumeNameToID = make(map[string]string)
 	f.snapshotNameToID = make(map[string]string)
 	f.snapshotIndex = 0
@@ -321,6 +333,7 @@ func (f *feature) aPowerMaxService() error {
 	inducedErrors.invalidSnapID = false
 	inducedErrors.noVolumeSource = false
 	inducedErrors.noMountInfo = false
+	inducedErrors.getRDFInfoFromSGIDError = false
 
 	// configure gofsutil; we use a mock interface
 	gofsutil.UseMockFS()
@@ -383,7 +396,7 @@ func (f *feature) aPowerMaxService() error {
 	// Start the lock workers
 	f.service.StartLockManager(1 * time.Minute)
 	// Make sure the deletion worker is started.
-	//f.service.startDeletionWorker(false)
+	// f.service.startDeletionWorker(false)
 	f.checkGoRoutines("end aPowerMaxService")
 	symIDs, err := f.service.retryableGetSymmetrixIDList()
 	if err != nil {
@@ -422,7 +435,7 @@ func (f *feature) getService() *service {
 	opts.PortGroups = []string{"portgroup1", "portgroup2"}
 	mock.AddPortGroup("portgroup1", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 	mock.AddPortGroup("portgroup2", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
-	opts.ManagedArrays = []string{"000197900046", "000197900047"}
+	opts.ManagedArrays = []string{"000197900046", "000197900047", "000000000013"}
 	opts.NodeFullName, _ = os.Hostname()
 	opts.EnableSnapshotCGDelete = true
 	opts.EnableListVolumesSnapshots = true
@@ -465,6 +478,7 @@ func (f *feature) iCallGetPluginInfo() error {
 	}
 	return nil
 }
+
 func (f *feature) aValidGetPluginInfoResponseIsReturned() error {
 	rep := f.getPluginInfoResponse
 	url := rep.GetManifest()["url"]
@@ -496,7 +510,77 @@ func (f *feature) aValidGetPluginCapabilitiesResponseIsReturned() error {
 		}
 	}
 	if !foundController {
-		return errors.New("Expected PlugiinCapabilitiesResponse to contain CONTROLLER_SERVICE")
+		return errors.New("Expected PluginCapabilitiesResponse to contain CONTROLLER_SERVICE")
+	}
+	return nil
+}
+
+func (f *feature) iCallGetMigrationCapabilities() error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := new(migrext.GetMigrationCapabilityRequest)
+	f.getMigrationCapabilitiesResponse, f.err = f.service.GetMigrationCapabilities(ctx, req)
+	if f.err != nil {
+		return f.err
+	}
+	return nil
+}
+
+func (f *feature) aValidGetMigrationCapabilitiesIsReturned() error {
+	rep := f.getMigrationCapabilitiesResponse
+	capabilities := rep.GetCapabilities()
+	var foundMigrator bool
+	for _, capability := range capabilities {
+		if capability.GetRpc().GetType() == migrext.MigrateTypes_NON_REPL_TO_REPL {
+			foundMigrator = true
+		}
+	}
+	if !foundMigrator {
+		return errors.New("expected PluginCapabilitiesResponse to contain MigrateTypes_NON_REPL_TO_REPL")
+	}
+	return nil
+}
+
+func (f *feature) iCallGetReplicationCapabilities() error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := new(csiext.GetReplicationCapabilityRequest)
+	log.Printf("Mode %s", f.service.mode)
+	f.getRepCapabilitiesResponse, f.err = f.service.GetReplicationCapabilities(ctx, req)
+	if f.err != nil {
+		return f.err
+	}
+	return nil
+}
+
+func (f *feature) aValidGetReplicationCapabilitiesIsReturned() error {
+	rep := f.getRepCapabilitiesResponse
+	capabilities := rep.GetCapabilities()
+	var foundCreateRemVol bool
+	for _, capability := range capabilities {
+		if capability.GetRpc().GetType() == csiext.ReplicationCapability_RPC_CREATE_REMOTE_VOLUME {
+			foundCreateRemVol = true
+		}
+	}
+	if !foundCreateRemVol {
+		return errors.New("expected PluginRepCapabilitiesResponse to contain ReplicationCapability_RPC_CREATE_REMOTE_VOLUME")
+	}
+	return nil
+}
+
+func (f *feature) iCallProbeController() error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := new(common.ProbeControllerRequest)
+	f.checkGoRoutines("before probe")
+	f.probeControllerResponse, f.err = f.service.ProbeController(ctx, req)
+	f.checkGoRoutines("after probe")
+	return nil
+}
+
+func (f *feature) aValidProbeControllerResponseIsReturned() error {
+	if f.probeControllerResponse.GetReady().GetValue() != true {
+		return errors.New("ProbeController returned Ready false")
 	}
 	return nil
 }
@@ -603,19 +687,20 @@ func (f *feature) getTypicalCreateVolumeRequest() *csi.CreateVolumeRequest {
 	return req
 }
 
-func (f *feature) getSRDFCreateVolumeRequest() *csi.CreateVolumeRequest {
+func (f *feature) getSRDFCreateVolumeRequest(mode string, rdfNo int) *csi.CreateVolumeRequest {
 	req := new(csi.CreateVolumeRequest)
 	params := make(map[string]string)
 	params[SymmetrixIDParam] = f.symmetrixID
 	params[RemoteSymIDParam] = f.remoteSymID
 	params[RepEnabledParam] = "true"
-	params[LocalRDFGroupParam] = "13"
-	params[RemoteRDFGroupParam] = "13"
-	params[ReplicationModeParam] = Async
+	params[LocalRDFGroupParam] = fmt.Sprintf("%d", rdfNo)
+	params[RemoteRDFGroupParam] = fmt.Sprintf("%d", rdfNo)
+	params[ReplicationModeParam] = mode
 	params[CSIPVCNamespace] = Namespace
 	params[ServiceLevelParam] = mock.DefaultServiceLevel
 	params[StoragePoolParam] = mock.DefaultStoragePool
 	params[RemoteSRPParam] = mock.DefaultStoragePool
+	params[RemoteServiceLevelParam] = mock.DefaultServiceLevel
 	if inducedErrors.invalidSymID {
 		params[SymmetrixIDParam] = ""
 	}
@@ -643,6 +728,7 @@ func (f *feature) getSRDFCreateVolumeRequest() *csi.CreateVolumeRequest {
 	req.VolumeCapabilities = capabilities
 	return req
 }
+
 func (f *feature) iSpecifyCreateVolumeMountRequest(fstype string) error {
 	req := new(csi.CreateVolumeRequest)
 	params := make(map[string]string)
@@ -739,7 +825,7 @@ func (f *feature) iCallRDFEnabledCreateVolume(volName, namespace, mode string, r
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 	if f.createVolumeRequest == nil {
-		req := f.getSRDFCreateVolumeRequest()
+		req := f.getSRDFCreateVolumeRequest(mode, rdfgNo)
 		f.createVolumeRequest = req
 	}
 	req := f.createVolumeRequest
@@ -1063,6 +1149,10 @@ func (f *feature) iInduceError(errtype string) error {
 		mock.InducedErrors.GetLocalRDFPortDetailsError = true
 	case "CreateRDFGroupError":
 		mock.InducedErrors.CreateRDFGroupError = true
+	case "ExecuteActionError":
+		mock.InducedErrors.ExecuteActionError = true
+	case "GetFileSystemError":
+		mock.InducedErrors.GetFileSystemError = true
 	case "NoSymlinkForNodePublish":
 		cmd := exec.Command("rm", "-rf", nodePublishSymlinkDir)
 		_, err := cmd.CombinedOutput()
@@ -1236,6 +1326,8 @@ func (f *feature) iInduceError(errtype string) error {
 		inducedErrors.noMountInfo = true
 	case "InvalidTopologyConfigEnv":
 		inducedErrors.invalidTopologyPathEnv = true
+	case "GetRDFInfoFromSGIDError":
+		inducedErrors.getRDFInfoFromSGIDError = true
 	case "none":
 		return nil
 	default:
@@ -1403,6 +1495,7 @@ func (f *feature) iHaveANodeWithInitiatorsWithMaskingView(nodeID, initList strin
 	}
 	return nil
 }
+
 func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 	f.service.opts.NodeName = nodeID
 	transportProtocol := f.service.opts.TransportProtocol
@@ -1761,6 +1854,9 @@ func (f *feature) iCallDeleteVolumeWith(arg1 string) error {
 	if f.deleteVolumeRequest == nil {
 		req = f.getControllerDeleteVolumeRequest(arg1)
 		f.deleteVolumeRequest = req
+	}
+	if inducedErrors.invalidVolumeID {
+		req.VolumeId = "000-00"
 	}
 	log.Printf("Calling DeleteVolume")
 	f.deleteVolumeResponse, f.err = f.service.DeleteVolume(ctx, req)
@@ -2161,7 +2257,7 @@ func (f *feature) makeDevDirectories() error {
 	// Make the directories; on Windows these show up in test/dev/...
 	_, err = os.Stat(nodePublishSymlinkDir)
 	if err != nil {
-		err = os.MkdirAll(nodePublishSymlinkDir, 0777)
+		err = os.MkdirAll(nodePublishSymlinkDir, 0o777)
 		if err != nil {
 			fmt.Printf("by-id: " + err.Error())
 			return err
@@ -2170,7 +2266,7 @@ func (f *feature) makeDevDirectories() error {
 
 	_, err = os.Stat(nodePublishPathSymlinkDir)
 	if err != nil {
-		err = os.MkdirAll(nodePublishPathSymlinkDir, 0777)
+		err = os.MkdirAll(nodePublishPathSymlinkDir, 0o777)
 		if err != nil {
 			fmt.Printf("by-path: " + err.Error())
 			return err
@@ -2187,7 +2283,7 @@ func (f *feature) makeDevDirectories() error {
 	fmt.Printf("removed private staging directory\n")
 
 	// Remake the private staging directory
-	err = os.MkdirAll(nodePublishPrivateDir, 0777)
+	err = os.MkdirAll(nodePublishPrivateDir, 0o777)
 	if err != nil {
 		fmt.Printf("error creating private staging directory: " + err.Error())
 		return err
@@ -2238,7 +2334,7 @@ func (f *feature) aControllerPublishedVolume() error {
 	// Make the target directory if required
 	_, err = os.Stat(datadir)
 	if err != nil {
-		err = os.MkdirAll(datadir, 0777)
+		err = os.MkdirAll(datadir, 0o777)
 		if err != nil {
 			fmt.Printf("Couldn't make datadir: %s\n", datadir)
 		}
@@ -2330,7 +2426,7 @@ func (f *feature) getNodePublishVolumeRequest() error {
 	if err != nil {
 		return errors.New("couldn't parse volume1")
 	}
-	//mock.NewVolume(devID, volName, 1000, make([]string, 0))
+	// mock.NewVolume(devID, volName, 1000, make([]string, 0))
 	mock.AddOneVolumeToStorageGroup(devID, volName, f.sgID, 1000)
 	req.Readonly = false
 	req.VolumeCapability = f.capability
@@ -2363,7 +2459,7 @@ func (f *feature) iChangeTheTargetPath() error {
 	// Make the target directory if required
 	_, err := os.Stat(datadir2)
 	if err != nil {
-		err = os.MkdirAll(datadir2, 0777)
+		err = os.MkdirAll(datadir2, 0o777)
 		if err != nil {
 			fmt.Printf("Couldn't make datadir: %s\n", datadir2)
 		}
@@ -2573,7 +2669,7 @@ func (f *feature) iCallNodeExpandVolume(volPath string) error {
 		VolumePath: volPath,
 	}
 	if volPath != "" {
-		if err := os.MkdirAll(volPath, 0777); err != nil {
+		if err := os.MkdirAll(volPath, 0o777); err != nil {
 			return err
 		}
 	}
@@ -2640,6 +2736,7 @@ func (f *feature) iCallCreateSnapshotWith(SnapID string) error {
 	}
 	return nil
 }
+
 func (f *feature) addFailedSnapshotToDoARetry(volID, SnapID, operation string) {
 	f.failedSnaps[SnapID] = failedSnap{
 		volID:     volID,
@@ -2647,6 +2744,7 @@ func (f *feature) addFailedSnapshotToDoARetry(volID, SnapID, operation string) {
 		operation: operation,
 	}
 }
+
 func (f *feature) iCallCreateSnapshotOn(snapshotName, volumeName string) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
@@ -2952,7 +3050,6 @@ func (f *feature) iRestartTheDeletionWorker() error {
 	}
 	f.service.NewDeletionWorker(f.service.opts.ClusterPrefix, symIDs.SymmetrixIDs)
 	return nil
-
 }
 
 func (f *feature) volumesAreBeingProcessedForDeletion(nVols int) error {
@@ -3077,7 +3174,6 @@ func (f *feature) iInvokeNodeHostSetupWithAService(mode string) error {
 }
 
 func (f *feature) theErrorClearsAfterSeconds(seconds int64) error {
-
 	go func(seconds int64) {
 		time.Sleep(time.Duration(seconds) * time.Second)
 		switch f.errType {
@@ -3167,7 +3263,7 @@ func (f *feature) iCallNodeGetVolumeStats(volPath string) error {
 		VolumePath: volPath,
 	}
 	if volPath != "" {
-		if err := os.MkdirAll(volPath, 0777); err != nil {
+		if err := os.MkdirAll(volPath, 0o777); err != nil {
 			return err
 		}
 	}
@@ -3181,7 +3277,6 @@ func (f *feature) iCallNodeGetVolumeStats(volPath string) error {
 }
 
 func (f *feature) aValidNodeGetVolumeStatsResponseIsReturned() error {
-
 	if gofsutil.GOFSMock.InduceGetMountInfoFromDeviceError {
 		if !f.nodeGetVolumeStatsResponse.VolumeCondition.GetAbnormal() {
 			return errors.New("expected nodeGetVolumeStatsResponse to have volume condition as Abnormal")
@@ -3347,6 +3442,7 @@ func (f *feature) aDevicePathLun(device, lun string) error {
 	log.Printf("aDevicePath wwn %s dev %s", nodePublishWWN, value)
 	return nil
 }
+
 func (f *feature) deviceIsMounted(device string) error {
 	entry := gofsutil.Info{
 		Device: nodePublishDeviceDir + "/" + device,
@@ -3364,15 +3460,15 @@ func (f *feature) thereAreRemainingDeviceEntriesForLun(number int, lun string) e
 }
 
 func (f *feature) aNodeRootWithMultipathConfigFile() error {
-	os.MkdirAll("test/noderoot/etc", 0777)
-	os.MkdirAll("test/root/etc", 0777)
+	os.MkdirAll("test/noderoot/etc", 0o777)
+	os.MkdirAll("test/root/etc", 0o777)
 	_, err := exec.Command("touch", "test/noderoot/etc/multipath.conf").CombinedOutput()
 	return err
 }
 
 func (f *feature) iCallCopyMultipathConfigFileWithRoot(testRoot string) error {
 	// TODO: remove
-	//f.err = copyMultipathConfigFile("test/noderoot", testRoot)
+	// f.err = copyMultipathConfigFile("test/noderoot", testRoot)
 	return nil
 }
 
@@ -3488,7 +3584,7 @@ func (f *feature) iHaveSysblockDevices(cnt int) error {
 
 func (f *feature) iCallLinearScanToRemoveDevices() error {
 	// TODO: remove
-	//f.err = linearScanToRemoveDevices("0", nodePublishWWN)
+	// f.err = linearScanToRemoveDevices("0", nodePublishWWN)
 	return nil
 }
 
@@ -3499,13 +3595,13 @@ func (f *feature) iCallverifyAndUpdateInitiatorsInADiffHostForNode(nodeID string
 	hostID, _, _ := f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
 	var validInitiators []string
 	validInitiators, f.err = f.service.verifyAndUpdateInitiatorsInADiffHost(context.Background(), symID, initiators, hostID, f.service.adminClient)
-	f.ninitiators = len(validInitiators)
+	f.nInitiators = len(validInitiators)
 	return nil
 }
 
 func (f *feature) validInitiatorsAreReturned(expected int) error {
-	if expected != f.ninitiators {
-		return fmt.Errorf("expected %d initiators but got %d", expected, f.ninitiators)
+	if expected != f.nInitiators {
+		return fmt.Errorf("expected %d initiators but got %d", expected, f.nInitiators)
 	}
 	return nil
 }
@@ -3972,6 +4068,7 @@ func (f *feature) iRetryOnFailedSnapshotToSucceed() error {
 	}
 	return nil
 }
+
 func (f *feature) iSetModifyHostNameToFalse() error {
 	f.service.opts.ModifyHostName = false
 	return nil
@@ -4013,6 +4110,7 @@ func (f *feature) iCallProtectStorageGroupOn(sgName string) error {
 	f.err = f.service.ProtectStorageGroup(context.Background(), mock.DefaultSymmetrixID, mock.DefaultRemoteSymID, sgName, sgName, "", "", "", "", "", false, f.service.adminClient)
 	return nil
 }
+
 func (f *feature) iCallDiscoverStorageProtectionGroup() error {
 	header := metadata.New(map[string]string{"csi.requestid": "2"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
@@ -4028,6 +4126,7 @@ func (f *feature) iCallDiscoverStorageProtectionGroup() error {
 	_, f.err = f.service.CreateStorageProtectionGroup(ctx, req)
 	return nil
 }
+
 func (f *feature) iCallCreateRemoteVolume() error {
 	header := metadata.New(map[string]string{"csi.requestid": "2"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
@@ -4269,7 +4368,7 @@ func (f *feature) IsSnapshotSource(ctx context.Context, symID string, devID stri
 func (f *feature) iCallRDFEnabledCreateVolumeFromSnapshot(volName, namespace, mode string, rdfgNo int) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
-	req := f.getSRDFCreateVolumeRequest()
+	req := f.getSRDFCreateVolumeRequest(mode, rdfgNo)
 	req.Name = volName
 	req.Parameters[CSIPVCNamespace] = namespace
 	req.Parameters[ReplicationModeParam] = mode
@@ -4305,7 +4404,7 @@ func (f *feature) iCallRDFEnabledCreateVolumeFromSnapshot(volName, namespace, mo
 func (f *feature) iCallRDFEnabledCreateVolumeFromVolume(volName, namespace, mode string, rdfgNo int) error {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
-	req := f.getSRDFCreateVolumeRequest()
+	req := f.getSRDFCreateVolumeRequest(mode, rdfgNo)
 	req.Name = volName
 	req.Parameters[CSIPVCNamespace] = namespace
 	req.Parameters[ReplicationModeParam] = mode
@@ -4361,10 +4460,175 @@ func (f *feature) iCallDeleteLocalVolumeWith(arg1 string) error {
 		}
 		req = f.deleteLocalVolumeRequest
 	}
+	if inducedErrors.invalidVolumeID {
+		req.VolumeHandle = "000-00"
+	}
 	log.Printf("Calling DeleteLocalVolume")
 	f.deleteLocalVolumeResponse, f.err = f.service.DeleteLocalVolume(ctx, req)
 	if f.err != nil {
 		log.Printf("DeleteLocalVolume called failed: %s", f.err.Error())
+	}
+	return nil
+}
+
+func (f *feature) iEnableVSphere() error {
+	f.service.opts.IsVsphereEnabled = true
+	f.service.opts.VCenterHostPassword = "password"
+	f.service.opts.VCenterHostUserName = "admin"
+	f.service.opts.VCenterHostURL = "localhost://vcenter.com"
+	return nil
+}
+
+func (f *feature) aValidVMHostIsReturned() error {
+	return nil
+}
+
+func (f *feature) iCallControllerGetVolume() error {
+	header := metadata.New(map[string]string{"csi.requestid": "2"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := &csi.ControllerGetVolumeRequest{
+		VolumeId: f.volumeID,
+	}
+	if inducedErrors.noVolumeID {
+		req.VolumeId = "000"
+	}
+	if inducedErrors.invalidSymID {
+		// csi-TST-volume1-000197900046-201115778
+		cmp := strings.Split(f.volumeID, "-")
+		cmp[3] = "000xxxx00000"
+		req.VolumeId = strings.Join(cmp, "-")
+	}
+	log.Printf("Calling ControllerGetVolume")
+	f.controllerGetVolumeResponse, f.err = f.service.ControllerGetVolume(ctx, req)
+	if f.err != nil {
+		log.Printf("ControllerGetVolume call failed: %s", f.err.Error())
+	}
+	return nil
+}
+
+func (f *feature) aValidControllerGetVolumeResponseIsReturned() error {
+	if f.err != nil {
+		return errors.New("ControllerGetVolume returned error: " + f.err.Error())
+	}
+	if f.controllerGetVolumeResponse == nil {
+		return errors.New("no ControllerGetVolume is returned")
+	}
+	fmt.Printf("ControllerGetVolume %v: %s", f.controllerGetVolumeResponse.GetVolume(), f.controllerGetVolumeResponse.GetStatus())
+	return nil
+}
+
+func (f *feature) anAbnormalControllerGetVolumeResponseIsReturned() error {
+	if !f.controllerGetVolumeResponse.GetStatus().GetVolumeCondition().GetAbnormal() {
+		return errors.New("expected Abnormal condition is returned")
+	}
+	return nil
+}
+
+func (f *feature) iCallGetStorageProtectionGroupStatus(mode string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "2"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	sgID := fmt.Sprintf("%s-%d-%s", mock.DefaultASYNCProtectedSG, mock.DefaultAsyncRDFGNo, mode)
+	req := &csiext.GetStorageProtectionGroupStatusRequest{
+		ProtectionGroupId:         sgID,
+		ProtectionGroupAttributes: map[string]string{SymmetrixIDParam: mock.DefaultRemoteSymID},
+	}
+	if inducedErrors.invalidSymID {
+		req.ProtectionGroupAttributes = nil
+	}
+	if inducedErrors.getRDFInfoFromSGIDError {
+		req.ProtectionGroupId = "bad-sg"
+	}
+	_, f.err = f.service.GetStorageProtectionGroupStatus(ctx, req)
+	if f.err != nil {
+		log.Printf("GetStorageProtectionGroupStatus call failed: %s", f.err.Error())
+	}
+	return nil
+}
+
+func (f *feature) iCallExecuteAction(action string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "2"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	sgID := fmt.Sprintf("%s-%d-%s", mock.DefaultASYNCProtectedSG, mock.DefaultAsyncRDFGNo, Async)
+	req := &csiext.ExecuteActionRequest{
+		ProtectionGroupId: sgID,
+		ActionTypes: &csiext.ExecuteActionRequest_Action{
+			Action: &csiext.Action{
+				ActionTypes: csiext.ActionTypes(csiext.ActionTypes_value[action]),
+			},
+		},
+		ProtectionGroupAttributes: map[string]string{SymmetrixIDParam: mock.DefaultRemoteSymID, LocalRDFGroupParam: "13", ReplicationModeParam: "ASYNC"},
+	}
+	if inducedErrors.invalidSymID {
+		req.ProtectionGroupAttributes = nil
+	}
+	_, f.err = f.service.ExecuteAction(ctx, req)
+	if f.err != nil {
+		log.Printf("GetStorageProtectionGroupStatus call failed: %s", f.err.Error())
+	}
+	return nil
+}
+
+func (f *feature) iSetCurrentStateTo(curState string) error {
+	mock.Data.AsyncSGRDFInfo.States = []string{curState}
+	return nil
+}
+
+func (f *feature) iMixTheRDFStates() error {
+	mock.Data.AsyncSGRDFInfo.States = []string{"Failed Over", "Consistent"}
+	return nil
+}
+
+func (f *feature) iMixTheRDFPersonalities() error {
+	mock.Data.AsyncSGRDFInfo.VolumeRdfTypes = []string{"R1", "R2"}
+	return nil
+}
+
+func (f *feature) iCallFileSystemCreateVolume(volName string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	if f.createVolumeRequest == nil {
+		req := f.getTypicalCreateVolumeRequest()
+		f.createVolumeRequest = req
+	}
+	req := f.createVolumeRequest
+	capability := new(csi.VolumeCapability)
+	accessType := new(csi.VolumeCapability_Mount)
+	accessType.Mount = new(csi.VolumeCapability_MountVolume)
+	accessType.Mount.FsType = NFS
+	capability.AccessType = accessType
+	accessMode := new(csi.VolumeCapability_AccessMode)
+	accessMode.Mode = csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER
+	capability.AccessMode = accessMode
+	capabilities := make([]*csi.VolumeCapability, 0)
+	capabilities = append(capabilities, capability)
+	req.VolumeCapabilities = capabilities
+	params := req.GetParameters()
+	params[NASServerName] = "nas-1"
+	req.Parameters = params
+	req.Name = volName
+
+	f.createVolumeResponse, f.err = f.service.CreateVolume(ctx, req)
+	if f.err != nil {
+		log.Printf("CreateVolume called failed: %s", f.err.Error())
+	}
+	if f.createVolumeResponse != nil {
+		log.Printf("vol id %s", f.createVolumeResponse.GetVolume().VolumeId)
+		f.volumeID = f.createVolumeResponse.GetVolume().VolumeId
+		f.volumeNameToID[volName] = f.volumeID
+	}
+	return nil
+}
+
+func (f *feature) iCallFileSystemDeleteVolume() error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := &csi.DeleteVolumeRequest{
+		VolumeId: f.volumeID,
+	}
+	log.Printf("Calling fileSystem DeleteVolume %v", req)
+	f.deleteVolumeResponse, f.err = f.service.DeleteVolume(ctx, req)
+	if f.err != nil {
+		log.Printf("fileSystem DeleteVolume called failed: %s", f.err.Error())
 	}
 	return nil
 }
@@ -4587,4 +4851,22 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I have SetHostIOLimits on the storage group$`, f.iHaveSetHostIOLimitsOnTheStorageGroup)
 	s.Step(`^I call DeleteLocalVolume with "([^"]*)"$`, f.iCallDeleteLocalVolumeWith)
 	s.Step(`^a valid DeleteVolumeResponse is returned$`, f.aValidDeleteVolumeResponseIsReturned)
+	s.Step(`^a valid GetMigrationCapabilities is returned$`, f.aValidGetMigrationCapabilitiesIsReturned)
+	s.Step(`^I call GetMigrationCapabilities$`, f.iCallGetMigrationCapabilities)
+	s.Step(`^I call GetReplicationCapabilities$`, f.iCallGetReplicationCapabilities)
+	s.Step(`^a valid GetReplicationCapabilities is returned$`, f.aValidGetReplicationCapabilitiesIsReturned)
+	s.Step(`^I call ProbeController$`, f.iCallProbeController)
+	s.Step(`^a valid ProbeControllerResponse is returned$`, f.aValidProbeControllerResponseIsReturned)
+	s.Step(`^a valid vmHost is returned$`, f.aValidVMHostIsReturned)
+	s.Step(`^I enable vSphere$`, f.iEnableVSphere)
+	s.Step(`^a valid ControllerGetVolume response is returned$`, f.aValidControllerGetVolumeResponseIsReturned)
+	s.Step(`^I call ControllerGetVolume$`, f.iCallControllerGetVolume)
+	s.Step(`^an abnormal ControllerGetVolume response is returned$`, f.anAbnormalControllerGetVolumeResponseIsReturned)
+	s.Step(`^I call GetStorageProtectionGroupStatus with "([^"]*)"$`, f.iCallGetStorageProtectionGroupStatus)
+	s.Step(`^I call ExecuteAction with "([^"]*)"$`, f.iCallExecuteAction)
+	s.Step(`^I set current state to "([^"]*)"$`, f.iSetCurrentStateTo)
+	s.Step(`^I mix the RDF states$`, f.iMixTheRDFStates)
+	s.Step(`^I mix the RDF personalities$`, f.iMixTheRDFPersonalities)
+	s.Step(`^I call fileSystem CreateVolume "([^"]*)"$`, f.iCallFileSystemCreateVolume)
+	s.Step(`^I call fileSystem DeleteVolume$`, f.iCallFileSystemDeleteVolume)
 }

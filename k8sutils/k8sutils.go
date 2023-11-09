@@ -19,11 +19,12 @@ package k8sutils
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
 )
 
 type leaderElection interface {

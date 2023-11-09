@@ -22,6 +22,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
@@ -29,9 +31,6 @@ import (
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 
 	"google.golang.org/grpc"
-
-	"sync"
-	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/dell/csi-powermax/v2/k8sutils"
@@ -239,8 +238,8 @@ func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 }
 
 func (s *service) BeforeServe(
-	ctx context.Context, sp *gocsi.StoragePlugin, lis net.Listener) error {
-
+	ctx context.Context, sp *gocsi.StoragePlugin, lis net.Listener,
+) error {
 	defer func() {
 		fields := map[string]interface{}{
 			"endpoint":                 s.opts.Endpoint,
@@ -570,7 +569,6 @@ func (s *service) ParseConfig() {
 
 	log.Infof("proccessed allowed list: (%+v)", s.allowedTopologyKeys)
 	log.Infof("proccessed denied list: (%+v)", s.deniedTopologyKeys)
-
 }
 
 func readNodesRules(connections []NodeConfig) map[string][]string {
@@ -771,7 +769,6 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 
 // TODO Revist for additional attributes
 func (s *service) getCSIVolume(vol *types.Volume) *csi.Volume {
-
 	vi := &csi.Volume{
 		VolumeId:      vol.VolumeID,
 		CapacityBytes: int64(vol.CapacityCYL) * cylinderSizeInBytes,

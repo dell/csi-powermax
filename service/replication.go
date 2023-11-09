@@ -65,7 +65,6 @@ func buildRdfLabel(mode, namespace, clusterPrefix string) string {
 		label = fmt.Sprintf("%s%s", clusterPrefix, namespace)
 	}
 	return label
-
 }
 
 // LocalRDFPortsNotAdded checks if the RDF ports are already added to the create RDF payload
@@ -147,7 +146,7 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 		return "", "", err
 	}
 
-	//For each of the onlineDirs Obtained, get the ONLINE ports
+	// For each of the onlineDirs Obtained, get the ONLINE ports
 	for _, dirs := range onlineDirList.RdfDirs {
 		onlinePortList, err := pmaxClient.GetLocalOnlineRDFPorts(ctx, dirs, localSymID)
 		if err != nil {
@@ -164,7 +163,7 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 				// RDF Dir:Ports were online, yet we didn't get any Remote ports connected on SAN. something is wrong! Exit
 				return "", "", err
 			}
-			//Start Building the Req structure if the SAN SCAN reports a hit on the SID of the remoteSymm
+			// Start Building the Req structure if the SAN SCAN reports a hit on the SID of the remoteSymm
 			for _, remArray := range onlinePortInfo.RemotePorts {
 				log.Debugf("rem array ports: %+v", remArray)
 				if remArray.SymmID == remoteSymID {
@@ -184,7 +183,7 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 						log.Debugf("appending dir:%s,port:%d ", dirs, ports)
 						createRDFgPayload.LocalPorts = append(createRDFgPayload.LocalPorts, *LocalRDFDirPortInfo)
 					}
-					//Add Remote Ports
+					// Add Remote Ports
 					createRDFgPayload.RemotePorts = append(createRDFgPayload.RemotePorts, remArray)
 				}
 			}
@@ -364,7 +363,8 @@ func getStateAndSRDFPersonality(psg *types.StorageGroupRDFG) (string, bool, bool
 
 // Failover validates current state of replication & executes 'Failover' action on storage group replication link
 func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, pmaxClient pmax.Pmax, toLocal,
-	unplanned, withoutSwap bool) (bool, *types.StorageGroupRDFG, error) {
+	unplanned, withoutSwap bool,
+) (bool, *types.StorageGroupRDFG, error) {
 	psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, sgName, rdfGrpNo)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
@@ -466,7 +466,7 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 							return false, nil, status.Errorf(codes.Internal, errorMsg)
 						}
 					} else {
-						//return error
+						// return error
 						errorMsg := fmt.Sprintf("SG name: %s, state: %s, can't perform planned failover with Swap in this state",
 							sgName, state)
 						log.Error(errorMsg)
@@ -507,7 +507,8 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 
 // Failback validates current state of replication & executes 'Failback' on storage group replication link
 func (s *service) Failback(ctx context.Context, symID, sgName, rdfGrpNo string, pmaxClient pmax.Pmax,
-	toLocal bool) (bool, *types.StorageGroupRDFG, error) {
+	toLocal bool,
+) (bool, *types.StorageGroupRDFG, error) {
 	psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, sgName, rdfGrpNo)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
@@ -566,7 +567,8 @@ func (s *service) Failback(ctx context.Context, symID, sgName, rdfGrpNo string, 
 }
 
 func (s *service) Reprotect(ctx context.Context, symID, sgName, rdfGrpNo string, pmaxClient pmax.Pmax,
-	toLocal bool) (bool, *types.StorageGroupRDFG, error) {
+	toLocal bool,
+) (bool, *types.StorageGroupRDFG, error) {
 	psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, sgName, rdfGrpNo)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
@@ -628,7 +630,8 @@ func (s *service) Reprotect(ctx context.Context, symID, sgName, rdfGrpNo string,
 }
 
 func (s *service) Swap(ctx context.Context, symID, sgName, rdfGrpNo string, pmaxClient pmax.Pmax,
-	toLocal bool) (bool, *types.StorageGroupRDFG, error) {
+	toLocal bool,
+) (bool, *types.StorageGroupRDFG, error) {
 	psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, sgName, rdfGrpNo)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())

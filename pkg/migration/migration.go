@@ -29,9 +29,9 @@ const (
 	CsiNoSrpSGPrefix = "csi-no-srp-sg-"
 	// CsiVolumePrefix to be used as filter
 	CsiVolumePrefix = "csi-"
-	//Synchronized to be used for migration state check
+	// Synchronized to be used for migration state check
 	Synchronized = "Synchronized"
-	//HostLimits to be used in SG payload
+	// HostLimits to be used in SG payload
 	HostLimits = "hostLimits"
 )
 
@@ -79,7 +79,6 @@ func getOrCreateSGMigration(ctx context.Context, symID, remoteSymID, storageGrou
 // 2. Create migration session for no-srp SG
 // 3. Create default SRP storage group on remote array, and maintain a list of volumes to be added.
 func StorageGroupMigration(ctx context.Context, symID, remoteSymID, clusterPrefix string, pmaxClient pmax.Pmax) (bool, error) {
-
 	// Before running no-srp-sg migrate call, remove the volumes from srp SG
 	// for all the SG for this cluster on local sym ID
 	localSgList, err := pmaxClient.GetStorageGroupIDList(ctx, symID, CsiVolumePrefix+clusterPrefix, true)
@@ -97,7 +96,7 @@ func StorageGroupMigration(ctx context.Context, symID, remoteSymID, clusterPrefi
 		if volumeIDList.Count > 0 {
 			// add entry to cache
 			localSGVolumeList[localSGID] = volumeIDList
-			//Remove the volumes from the srp SG
+			// Remove the volumes from the srp SG
 			for _, vol := range volumeIDList.ResultList.VolumeList {
 				_, err := pmaxClient.RemoveVolumesFromStorageGroup(ctx, symID, localSGID, true, vol.VolumeIDs)
 				if err != nil {
@@ -139,7 +138,7 @@ func StorageGroupMigration(ctx context.Context, symID, remoteSymID, clusterPrefi
 
 	// Creating SRP storage groups on target array
 	for _, localSGID := range localSgList.StorageGroupIDs {
-		//check if SG is present on remote side or not
+		// check if SG is present on remote side or not
 		output := ListContains(remoteSgList.StorageGroupIDs, localSGID)
 		if !output {
 			// get local SG Params
@@ -164,7 +163,7 @@ func StorageGroupMigration(ctx context.Context, symID, remoteSymID, clusterPrefi
 		}
 
 		var remoteVolIDs []string
-		//check if localSGID had any volumes to be migrated
+		// check if localSGID had any volumes to be migrated
 		if _, ok := localSGVolumeList[localSGID]; ok {
 			for _, vol := range localSGVolumeList[localSGID].ResultList.VolumeList {
 				if _, ok := NodePairs[vol.VolumeIDs]; ok {

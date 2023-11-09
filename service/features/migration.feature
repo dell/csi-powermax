@@ -71,7 +71,7 @@ Feature: PowerMax CSI Interface
     And ICallWithVolIDVolumeMigrate <volID>
     And the error contains <errormsg>
     Examples:
-      | volID                                    | errormsg            |
-      | "csi-TST-volume1-000197900046-531379167" | "Volume cannot be found"  |
-      | "volume1"                                | "Invalid volume id" |
+      | volID                                    | errormsg                  |
+      | "csi-TST-volume1-000197900046-531379167" | "Could not find volume"   |
+      | "volume1"                                | "Invalid volume id"       |
 

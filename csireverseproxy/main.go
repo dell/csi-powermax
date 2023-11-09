@@ -20,15 +20,16 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
 	"revproxy/v2/pkg/common"
 	"revproxy/v2/pkg/config"
 	"revproxy/v2/pkg/k8sutils"
 	"revproxy/v2/pkg/standaloneproxy"
 	"revproxy/v2/pkg/utils"
-	"strings"
-	"sync"
-	"syscall"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 

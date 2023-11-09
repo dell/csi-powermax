@@ -25,8 +25,10 @@ import (
 
 type volumeIDType string
 
-var induceOverloadError bool // for testing only
-var inducePendingError bool  //for testing only
+var (
+	induceOverloadError bool // for testing only
+	inducePendingError  bool // for testing only
+)
 
 // pendingState type limits the number of pending requests by making sure there are no other requests for the same volumeID,
 // otherwise a "pending" error is returned.

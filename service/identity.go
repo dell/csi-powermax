@@ -16,8 +16,9 @@ package service
 
 import (
 	"fmt"
-	commonext "github.com/dell/dell-csi-extensions/common"
 	"strings"
+
+	commonext "github.com/dell/dell-csi-extensions/common"
 
 	log "github.com/sirupsen/logrus"
 
@@ -34,8 +35,8 @@ import (
 func (s *service) GetPluginInfo(
 	ctx context.Context,
 	req *csi.GetPluginInfoRequest) (
-	*csi.GetPluginInfoResponse, error) {
-
+	*csi.GetPluginInfoResponse, error,
+) {
 	return &csi.GetPluginInfoResponse{
 		Name:          s.getDriverName(),
 		VendorVersion: core.SemVer,
@@ -46,8 +47,8 @@ func (s *service) GetPluginInfo(
 func (s *service) GetPluginCapabilities(
 	ctx context.Context,
 	req *csi.GetPluginCapabilitiesRequest) (
-	*csi.GetPluginCapabilitiesResponse, error) {
-
+	*csi.GetPluginCapabilitiesResponse, error,
+) {
 	var rep csi.GetPluginCapabilitiesResponse
 	if !strings.EqualFold(s.mode, "node") {
 		rep.Capabilities = []*csi.PluginCapability{
@@ -80,8 +81,8 @@ func (s *service) GetPluginCapabilities(
 func (s *service) Probe(
 	ctx context.Context,
 	req *csi.ProbeRequest) (
-	*csi.ProbeResponse, error) {
-
+	*csi.ProbeResponse, error,
+) {
 	log.Debug("Probe called")
 	if !strings.EqualFold(s.mode, "node") {
 		log.Debug("controllerProbe")
@@ -116,7 +117,8 @@ func (s *service) Probe(
 
 func (s *service) ProbeController(ctx context.Context,
 	req *commonext.ProbeControllerRequest) (
-	*commonext.ProbeControllerResponse, error) {
+	*commonext.ProbeControllerResponse, error,
+) {
 	if !strings.EqualFold(s.mode, "node") {
 		log.Debug("controllerProbe")
 		if err := s.controllerProbe(ctx); err != nil {
@@ -141,9 +143,9 @@ func (s *service) ProbeController(ctx context.Context,
 func (s *service) GetReplicationCapabilities(
 	ctx context.Context,
 	req *csiext.GetReplicationCapabilityRequest) (
-	*csiext.GetReplicationCapabilityResponse, error) {
-
-	var rep = new(csiext.GetReplicationCapabilityResponse)
+	*csiext.GetReplicationCapabilityResponse, error,
+) {
+	rep := new(csiext.GetReplicationCapabilityResponse)
 	if !strings.EqualFold(s.mode, "node") {
 		rep.Capabilities = []*csiext.ReplicationCapability{
 			{

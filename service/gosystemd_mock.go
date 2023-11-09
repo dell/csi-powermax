@@ -16,8 +16,9 @@ package service
 
 import (
 	"fmt"
-	"github.com/coreos/go-systemd/v22/dbus"
 	"time"
+
+	"github.com/coreos/go-systemd/v22/dbus"
 )
 
 var mockgosystemdInducedErrors struct {
@@ -38,8 +39,7 @@ func mockgosystemdReset() {
 	mockgosystemdInducedErrors.JobFailure = false
 }
 
-type mockDbusConnection struct {
-}
+type mockDbusConnection struct{}
 
 func (c *mockDbusConnection) Close() {
 	// Do nothing
