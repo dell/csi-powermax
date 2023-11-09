@@ -54,7 +54,7 @@ const (
 	// the number of bytes required for 50 MB
 	MinVolumeSizeBytes = 51118080
 	// MaxVolumeSizeBytes - This is the maximum volume size in bytes. This is equal to
-	// the minimum number of bytes required to create a 65 TB volume on Powermax arrays
+	// the minimum number of bytes required to create a 65 TB volume on PowerMax arrays
 	MaxVolumeSizeBytes              = 70368745881600
 	errUnknownAccessType            = "unknown access type is not Block or Mount"
 	errUnknownAccessMode            = "access mode cannot be UNKNOWN"
