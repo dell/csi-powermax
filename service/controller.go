@@ -41,6 +41,7 @@ import (
 	types "github.com/dell/gopowermax/v2/types/v100"
 	"github.com/golang/protobuf/ptypes"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // constants
@@ -53,8 +54,8 @@ const (
 	// the number of bytes required for 50 MB
 	MinVolumeSizeBytes = 51118080
 	// MaxVolumeSizeBytes - This is the maximum volume size in bytes. This is equal to
-	// the minimum number of bytes required to create a 1 TB volume on Powermax arrays
-	MaxVolumeSizeBytes              = 1099512545280
+	// the minimum number of bytes required to create a 65 TB volume on PowerMax arrays
+	MaxVolumeSizeBytes              = 70368745881600
 	errUnknownAccessType            = "unknown access type is not Block or Mount"
 	errUnknownAccessMode            = "access mode cannot be UNKNOWN"
 	errNoMultiNodeWriter            = "multi-node with writer(s) only supported for block access type"
@@ -2818,6 +2819,7 @@ func (s *service) GetCapacity(
 
 	return &csi.GetCapacityResponse{
 		AvailableCapacity: int64(remainingCapInBytes),
+		MaximumVolumeSize: wrapperspb.Int64(MaxVolumeSizeBytes),
 	}, nil
 }
 

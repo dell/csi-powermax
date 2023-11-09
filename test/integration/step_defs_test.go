@@ -1593,7 +1593,7 @@ func (f *feature) iCallGetCapacity() error {
 		fmt.Printf("GetCapacity %s:\n", err.Error())
 		f.addError(err)
 	} else {
-		fmt.Printf("GetCapacity %d\n", f.getCapacityResponse.AvailableCapacity)
+		fmt.Printf("GetCapacity %d and MaxVolumeSize %v\n", f.getCapacityResponse.AvailableCapacity, f.getCapacityResponse.MaximumVolumeSize)
 	}
 	return nil
 }
