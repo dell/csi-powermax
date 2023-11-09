@@ -225,7 +225,7 @@ func TestGetVolSize(t *testing.T) {
 				RequiredBytes: MaxVolumeSizeBytes,
 				LimitBytes:    0,
 			},
-			numOfCylinders: 559241,
+			numOfCylinders: 35791395,
 		},
 		{
 			// requesting volume size of more than 1 TB

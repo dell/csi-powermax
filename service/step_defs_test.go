@@ -1975,7 +1975,7 @@ func (f *feature) aValidGetCapacityResponseIsReturned() error {
 	if f.getCapacityResponse.AvailableCapacity <= 0 {
 		return errors.New("Expected AvailableCapacity to be positive")
 	}
-	fmt.Printf("Available capacity: %d\n", f.getCapacityResponse.AvailableCapacity)
+	fmt.Printf("Available capacity: %d and MaximumVolumeSize: %v \n", f.getCapacityResponse.AvailableCapacity, f.getCapacityResponse.MaximumVolumeSize)
 	return nil
 }
 

@@ -4,17 +4,17 @@ go 1.21
 
 require (
 	github.com/akutz/goof v0.1.2
-	github.com/container-storage-interface/spec v1.5.0
+	github.com/container-storage-interface/spec v1.6.0
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/cucumber/godog v0.12.6
 	github.com/cucumber/messages-go/v10 v10.0.3
-	github.com/dell/dell-csi-extensions/common v1.2.0
-	github.com/dell/dell-csi-extensions/migration v1.2.0
-	github.com/dell/dell-csi-extensions/replication v1.5.0
-	github.com/dell/gobrick v1.9.0
-	github.com/dell/gocsi v1.7.0
-	github.com/dell/gofsutil v1.13.1
-	github.com/dell/goiscsi v1.8.0
+	github.com/dell/dell-csi-extensions/common v1.2.1-0.20231031131730-68f55c8c3ba2
+	github.com/dell/dell-csi-extensions/migration v1.2.1-0.20231031131730-68f55c8c3ba2
+	github.com/dell/dell-csi-extensions/replication v1.5.1-0.20231031131730-68f55c8c3ba2
+	github.com/dell/gobrick v1.9.1-0.20230904123015-2d8008560f38
+	github.com/dell/gocsi v1.8.1-0.20230915044639-4bab90258ed0
+	github.com/dell/gofsutil v1.13.2-0.20231013133348-d635f385fc6d
+	github.com/dell/goiscsi v1.8.1-0.20230925132356-9ad6f6b58261
 	github.com/dell/gopowermax/v2 v2.4.1-0.20231108074435-27281047efea
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.3
@@ -25,6 +25,7 @@ require (
 	github.com/vmware/govmomi v0.29.0
 	golang.org/x/net v0.17.0
 	google.golang.org/grpc v1.57.1
+	google.golang.org/protobuf v1.31.0
 	k8s.io/apimachinery v0.20.0
 	k8s.io/client-go v0.20.0
 )
@@ -81,7 +82,6 @@ require (
 	google.golang.org/genproto v0.0.0-20230803162519-f966b187b2e5 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230726155614-23370e0ffb3e // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230815205213-6bfd019c3878 // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.51.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

@@ -583,8 +583,8 @@ Feature: PowerMax CSI interface
       | "none"               | 29            | "Attempting to shrink the volume size"    |
       | "none"               | 30            | "none"                                    |
       | "none"               | 24            | "bad capacity"                            |
-      | "none"               | 559242        | "bad capacity"                            |
-      | "none"               | 559241        | "none"                                    |
+      | "none"               | 35791396      | "bad capacity"                            |
+      | "none"               | 35791395      | "none"                                    |
       | "none"               | 32            | "none"                                    |
       | "NoVolumeID"         | 2             | "Invalid volume id"                               |
       | "ExpandVolumeError"  | 32            | "induced error"                           |

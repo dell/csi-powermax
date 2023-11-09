@@ -24,7 +24,7 @@ MAJOR=1
 MINOR=0
 PATCH=0
 NOTES=-beta
-TAGMSG="CSI Spec 1.0"
+TAGMSG="CSI Spec 1.6"
 
 check:
 	GOLINT=$(GOLINT) bash check.sh --all
