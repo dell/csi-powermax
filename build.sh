@@ -332,23 +332,19 @@ elif [ "$SOURCE_IMAGE_TYPE" = "ubim" ]; then
    fi
    IMAGE_TYPE="ubim"
 elif [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
-   if [ -n "$UBIMICRO_SHA" ]; then
-     # We need to use the SHA
-     SOURCE_IMAGE_TAG=$UBIMICRO_SHA
-   else
-     SOURCE_IMAGE_TAG=$UBIMICRO_VERSION
-   fi   
-   IMAGE_TYPE="ubimicro"   
+   # if using ubimicro, download common CSM ubimicro image
+   curl -O -L https://raw.githubusercontent.com/dell/csm/main/config/csm-common.mk
+   source csm-common.mk
+   CSM_COMMON_BASE_IMAGE=$DEFAULT_BASEIMAGE
+   echo "Using CSM common image for ubimicro: ${CSM_COMMON_BASE_IMAGE}"
+   IMAGE_TYPE="ubimicro"
 fi
 
 build_source_image_repo_name
 
 if [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
    echo "Adding driver dependencies to ubi micro image"
-   if [ -n "$UBIMICRO_SHA" ]; then
-    SOURCE_REPO="$SOURCE_REPO@sha256"
-   fi
-   bash ./buildubimicro.sh "$SOURCE_REPO:$SOURCE_IMAGE_TAG"
+   bash ./buildubimicro.sh "$CSM_COMMON_BASE_IMAGE"
    SOURCE_REPO="localhost/csipowermax-ubimicro"
    SOURCE_IMAGE_TAG="latest"
 fi 
