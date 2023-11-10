@@ -20,7 +20,7 @@ PROG="${0}"
 NODE_VERIFY=1
 VERIFY=1
 MODE="install"
-DEFAULT_DRIVER_VERSION="v2.8.0"
+DEFAULT_DRIVER_VERSION="v2.9.0"
 WATCHLIST=""
 
 #
@@ -49,7 +49,7 @@ function usage() {
   exit 0
 }
 
-DRIVERVERSION="csi-powermax-2.8.0"
+DRIVERVERSION="csi-powermax-2.9.0"
 
 while getopts ":h-:" optchar; do
   case "${optchar}" in
