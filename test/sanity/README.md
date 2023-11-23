@@ -1,9 +1,6 @@
 # Kubernetes Sanity Script Test
 
 This test runs the Kubernetes sanity test at https://github.com/kubernetes-csi/csi-test.
-The driver was qualified with test version v3.1.1 earlier with CSI v1.2 spec.
-The driver was most recently qualified with v4.1.0 with CSI v1.3 spec.
-
 To run the test, follow these steps:
 
 1. "go get github.com/kubernetes-csi/csi-test"
