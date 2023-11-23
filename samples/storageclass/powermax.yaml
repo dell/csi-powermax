@@ -19,6 +19,7 @@ parameters:
   # Allowed values:
   #   "ext4" - EXT4 File system
   #   "xfs"  - XFS File system
+  #   "nfs"  - Network File system
   # Optional: true
   # Default value: None if defaultFsType is not mentioned in values.yaml
   # Else defaultFsType value mentioned in values.yaml
