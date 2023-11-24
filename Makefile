@@ -76,7 +76,13 @@ version:
 	make -f docker.mk version
 
 gosec:
-	gosec -quiet -log gosec.log -out=gosecresults.csv -fmt=csv ./...
+ifeq (, $(shell which gosec))
+	go install github.com/securego/gosec/v2/cmd/gosec@latest
+	$(shell $(GOBIN)/gosec -quiet -log gosec.log -out=gosecresults.csv -fmt=csv ./...)
+else
+	$(shell gosec -quiet -log gosec.log -out=gosecresults.csv -fmt=csv ./...)
+endif
+	@echo "Logs are stored at gosec.log, Outputfile at gosecresults.csv"
 
 golint:
 ifeq (, $(shell which golint))
