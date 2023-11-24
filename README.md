@@ -44,7 +44,7 @@ To build an image, execute `make docker`.
 You can run an integration test on a Linux system by populating the file `env.sh` with values for your Dell PowerMax systems and then run "`make integration-test`".
 
 ## Runtime Dependencies
-For complete Dependencies , Please visit [Prerequisites](https://dell.github.io/csm-docs/docs/csidriver/installation/helm/powermax/#prerequisites)
+For a complete list of dependencies, please visit [Prerequisites](https://dell.github.io/csm-docs/docs/csidriver/installation/helm/powermax/#prerequisites)
 
 
 ## Driver Installation
