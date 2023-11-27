@@ -44,9 +44,8 @@ To build an image, execute `make docker`.
 You can run an integration test on a Linux system by populating the file `env.sh` with values for your Dell PowerMax systems and then run "`make integration-test`".
 
 ## Runtime Dependencies
-Both the Controller and the Node portions of the driver can only be run on nodes which have network connectivity to a “`Unisphere for PowerMax`” server (which is used by the driver). 
+For a complete list of dependencies, please visit [Prerequisites](https://dell.github.io/csm-docs/docs/csidriver/installation/helm/powermax/#prerequisites)
 
-If you are using ISCSI, then the Node portion of the driver can only be run on nodes that have the iscsi-initiator-utils package installed.
 
 ## Driver Installation
 Please consult the [Installation Guide](https://dell.github.io/csm-docs/docs/csidriver/installation)
