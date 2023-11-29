@@ -91,7 +91,7 @@ ifeq (, $(shell which golint))
 	GOLINT_GEN_TMP_DIR=$$(mktemp -d) ;\
 	cd $$GOLINT_GEN_TMP_DIR ;\
 	go mod init tmp ;\
-	go get -u golang.org/x/lint/golint ;\
+	go install golang.org/x/lint/golint@latest ;\
 	rm -rf $$GOLINT_GEN_TMP_DIR ;\
 	}
 GOLINT=$(GOBIN)/golint
