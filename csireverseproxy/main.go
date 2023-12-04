@@ -160,8 +160,9 @@ func (s *Server) Start() {
 		port := utils.GetListenAddress(s.Port)
 		handler := s.GetRevProxy().GetRouter()
 		server := http.Server{
-			Addr:    port,
-			Handler: handler,
+			Addr:              port,
+			Handler:           handler,
+			ReadHeaderTimeout: 5 * time.Second,
 		}
 		go func() {
 			defer s.WaitGroup.Done()
