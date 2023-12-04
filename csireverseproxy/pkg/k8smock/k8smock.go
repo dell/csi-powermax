@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -107,6 +108,7 @@ func (mockUtils *MockUtils) GetCertFileFromSecretName(secretName string) (string
 }
 
 func (mockUtils *MockUtils) createFile(fileName string, data []byte) error {
+	fileName = filepath.Clean(fileName)
 	file, err := os.Create(fileName)
 	if err != nil {
 		return err
