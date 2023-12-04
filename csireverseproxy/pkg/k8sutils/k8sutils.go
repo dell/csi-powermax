@@ -209,6 +209,7 @@ func (utils *K8sUtils) GetCredentialsFromSecret(secret *corev1.Secret) (*common.
 }
 
 func (utils *K8sUtils) createFile(fileName string, data []byte) error {
+	fileName = filepath.Clean(fileName)
 	file, err := os.Create(fileName)
 	if err != nil {
 		return err
