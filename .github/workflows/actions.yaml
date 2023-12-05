@@ -32,7 +32,7 @@ jobs:
           directories: "csireverseproxy"
           excludes: "G108,G402"
           exclude-dir: "./..."
-          args: "./..."
+          args: "GO111MODULE=ON"
   malware_security_scan:
     name: Malware Scanner
     runs-on: ubuntu-latest
