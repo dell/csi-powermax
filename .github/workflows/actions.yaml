@@ -29,8 +29,9 @@ jobs:
       - name: Run gosec to check for reverseproxy security vulnerabilities
         uses: dell/common-github-actions/gosec-runner@main
         with:
-          directories: "./csireverseproxy"
+          directories: "csireverseproxy"
           excludes: "G108,G402"
+          exclude-dir: "./..."
           args: "./..."
   malware_security_scan:
     name: Malware Scanner
