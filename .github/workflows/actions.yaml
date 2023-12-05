@@ -18,6 +18,8 @@ jobs:
   go_security_scan:
     name: Run gosec
     runs-on: ubuntu-latest
+    env:
+      GO111MODULE: on
     steps:
       - name: Checkout the code
         uses: actions/checkout@v2
@@ -32,7 +34,7 @@ jobs:
           directories: "csireverseproxy"
           excludes: "G108,G402"
           exclude-dir: "./..."
-          args: "GO111MODULE=ON"
+          args: "./..."
   malware_security_scan:
     name: Malware Scanner
     runs-on: ubuntu-latest
