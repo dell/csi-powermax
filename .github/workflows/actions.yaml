@@ -28,11 +28,11 @@ jobs:
         with:
           directories: "./..."
           exclude-dir: "csireverseproxy"
-   proxy_go_security_scan:
-    name: Run gosec on reverseproxy
-    runs-on: ubuntu-latest  
-    steps:
-      - run: make proxygosec
+  proxy_go_security_scan:
+     name: Run gosec on reverseproxy
+     runs-on: ubuntu-latest  
+     steps:
+       - run: make proxygosec
   malware_security_scan:
     name: Malware Scanner
     runs-on: ubuntu-latest
