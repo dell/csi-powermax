@@ -84,6 +84,15 @@ else
 endif
 	@echo "Logs are stored at gosec.log, Outputfile at gosecresults.csv"
 
+proxygosec:
+ifeq (, $(shell which gosec))
+	go install github.com/securego/gosec/v2/cmd/gosec@latest
+	$(shell cd csireverseproxy ; $(GOBIN)/gosec -quiet -log gosec.log -out=gosecresults.csv -fmt=csv ./...)
+else
+	$(shell  cd csireverseproxy ; gosec -quiet -log gosec.log -out=gosecresults.csv -fmt=csv ./...)
+endif
+	@echo "Logs are stored at gosec.log, Outputfile at gosecresults.csv"
+
 golint:
 ifeq (, $(shell which golint))
 	@{ \
