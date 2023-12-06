@@ -2011,6 +2011,18 @@ func (s *service) ControllerPublishVolume(
 
 	if remoteSymID != "" && remoteVolumeID != "" {
 		remoteVol, err := pmaxClient.GetVolumeByID(ctx, remoteSymID, remoteVolumeID)
+		if !remoteVol.HasEffectiveWWN {
+			// Refresh the symmetrix
+			err := pmaxClient.RefreshSymmetrix(ctx, symID)
+			if err != nil {
+				if !strings.Contains(err.Error(), "Too Many Requests") {
+					return nil, status.Errorf(codes.Internal, "PublishVolume: Could not refresh symmetrix: (%s)", err.Error())
+				}
+				return nil, status.Errorf(codes.Internal, "symmetrix sync in progress, waiting for cache to update")
+			}
+			// wait till the remote volume has an effective wwn
+			return nil, status.Errorf(codes.Internal, "PublishVolume: Could not publish remote volume: (%s)", "remote volume does not have effective wwn, waiting for it to SYNC")
+		}
 		log.Debugf("remote-vol: %#v, error: %#v", remoteVol, err)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "PublishVolume: Could not retrieve remote volume: (%s)", err.Error())
