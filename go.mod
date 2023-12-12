@@ -11,10 +11,10 @@ require (
 	github.com/dell/dell-csi-extensions/common v1.3.0
 	github.com/dell/dell-csi-extensions/migration v1.3.0
 	github.com/dell/dell-csi-extensions/replication v1.6.0
-	github.com/dell/gobrick v1.9.1-0.20230904123015-2d8008560f38
+	github.com/dell/gobrick v1.9.0
 	github.com/dell/gocsi v1.9.0
 	github.com/dell/gofsutil v1.14.0
-	github.com/dell/goiscsi v1.8.1-0.20231130105945-7e5f49e1110d
+	github.com/dell/goiscsi v1.8.0
 	github.com/dell/gopowermax/v2 v2.5.1
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.3
