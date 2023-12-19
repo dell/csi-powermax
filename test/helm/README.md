@@ -1,5 +1,5 @@
 # Helm tests
-This folder contains helm charts and shell scripts which can be used to test various features of the CSI PowerMax driver.
+This folder contains Helm charts and shell scripts which can be used to test various features of the CSI PowerMax driver.
 
 The Helm charts typically deploy a StatefulSet with a number of PVCs created using the provided storage class names.  
 For e.g. - the test `2vols` will deploy a StatefulSet which runs a single CentOS container and uses `2` PVCs.
@@ -25,8 +25,8 @@ Additionally, some tests create cloned volumes using a source `Volume` or a `Vol
 | get.volume.ids | Script to list the volume IDs for all PVS in a namespace
 | logit.sh       | Script to print number of pods and pvcs in a namespace
 | postgres.sh    | Script used to startup a postgres pod that is backed by a PV
-| starttest.sh   | Used to instantiate one of the helm charts above. Requires argument of helm chart
-| stoptest.sh    | Stops currently running helm chart and deletes all PVCS
+| starttest.sh   | Used to instantiate one of the Helm charts above. Requires argument of Helm chart
+| stoptest.sh    | Stops currently running Helm chart and deletes all PVCS
 | volumeclonetest.sh | Tests volume clones
 | snaprestoretest.sh | Tests restore from a VolumeSnapshot (using clones) 
 | volumeexpansiontest.sh | Tests volume expansion
@@ -45,15 +45,15 @@ If you don't provide the storage class name, the test scripts will default to `p
 
 
 ### starttest.sh
-The starttest.sh script is used to deploy helm charts that test the deployment of a simple pod
-with various storage configurations. The stoptest.sh script will delete the helm chart and cleanup after the test.
+The starttest.sh script is used to deploy Helm charts that test the deployment of a simple pod
+with various storage configurations. The stoptest.sh script will delete the Helm chart and cleanup after the test.
 Procedure
-1. Navigate to the test/helm directory, which contains the starttest.sh and various helm charts.
+1. Navigate to the test/helm directory, which contains the starttest.sh and various Helm charts.
 
-2. Run the starttest.sh script with an argument of the specific helm chart to deploy and test. For example:
+2. Run the starttest.sh script with an argument of the specific Helm chart to deploy and test. For example:
 > bash starttest.sh -t <testname> -n <namespance> -s <sc-name>
   Example  -> bash starttest.sh -t 2vols -n test -s powermax	
-3. After the test has completed, run the stoptest.sh script to delete the helm chart and cleanup the volumes.
+3. After the test has completed, run the stoptest.sh script to delete the Helm chart and cleanup the volumes.
 > bash stoptest.sh -t <testname> -n <namespace>
  Example -> bash stoptest.sh -t 2vols -n test 
 
