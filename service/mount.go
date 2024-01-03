@@ -245,11 +245,10 @@ func publishVolume(
 					log.WithFields(f).Debug(
 						"private mount already in place")
 					break
-				} else {
-					log.WithFields(f).Infof("mount %#v rwo %s", m, rwo)
-					return status.Error(codes.InvalidArgument,
-						"access mode conflicts with existing mounts")
 				}
+				log.WithFields(f).Infof("mount %#v rwo %s", m, rwo)
+				return status.Error(codes.InvalidArgument,
+					"access mode conflicts with existing mounts")
 			}
 		}
 		if !mounted {
@@ -666,7 +665,7 @@ func createTarget(target string, isBlock bool) error {
 // csi.VolumeCapability_AccessMode accMode gives the access mode
 // string multiAccessFlag - "rw" or "ro" or "" as appropriate
 // error
-func validateVolumeCapability(volCap *csi.VolumeCapability, readOnly bool) (bool, *csi.VolumeCapability_MountVolume, *csi.VolumeCapability_AccessMode, string, error) {
+func validateVolumeCapability(volCap *csi.VolumeCapability, _ bool) (bool, *csi.VolumeCapability_MountVolume, *csi.VolumeCapability_AccessMode, string, error) {
 	var mntVol *csi.VolumeCapability_MountVolume
 	isBlock := false
 	isMount := false

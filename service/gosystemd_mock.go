@@ -63,7 +63,7 @@ func (c *mockDbusConnection) ListUnits() ([]dbus.UnitStatus, error) {
 	return units, nil
 }
 
-func (c *mockDbusConnection) StartUnit(name string, mode string, ch chan<- string) (int, error) {
+func (c *mockDbusConnection) StartUnit(_ string, _ string, ch chan<- string) (int, error) {
 	if mockgosystemdInducedErrors.StartUnitError {
 		fmt.Println("Induced start unit error")
 		return 0, fmt.Errorf("mock - failed to start the unit")
