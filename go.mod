@@ -2,6 +2,8 @@ module github.com/dell/csi-powermax/v2
 
 go 1.20
 
+replace github.com/dell/gopowermax/v2 => ../gopowermax
+
 require (
 	github.com/akutz/goof v0.1.2
 	github.com/container-storage-interface/spec v1.5.0

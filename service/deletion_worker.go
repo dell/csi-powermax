@@ -239,7 +239,7 @@ func unlinkTarget(tgtVol *types.Volume, snapID, srcDevID, symID string, snapGene
 			tgtList := make([]types.VolumeList, 0)
 			tgtList = append(tgtList, types.VolumeList{Name: tgtVol.VolumeID})
 			err := pmaxClient.ModifySnapshotS(context.Background(), symID, sourceList, tgtList, snapID,
-				"Unlink", "", snapGeneration)
+				"Unlink", "", snapGeneration, false)
 			if err != nil {
 				return fmt.Errorf("failed to unlink snapshot. error: %s", err.Error())
 			}
@@ -281,7 +281,7 @@ func unlinkTargetsAndTerminateSnapshot(srcVol *types.Volume, symID string, pmaxC
 					sourceVolumes = append(sourceVolumes, types.VolumeList{Name: srcVol.VolumeID})
 					if len(tgtVolumes) != 0 {
 						err := pmaxClient.ModifySnapshotS(context.Background(), symID, sourceVolumes, tgtVolumes, snapName,
-							"Unlink", "", snapSrcInfo.Generation)
+							"Unlink", "", snapSrcInfo.Generation, false)
 						if err != nil {
 							return fmt.Errorf("failed to unlink snapshot. error: %s", err.Error())
 						}
