@@ -2250,7 +2250,9 @@ func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxCli
 // GetVolumeByID - Takes a CSI volume ID and checks for its existence on array
 // along with matching with the volume identifier. Returns back the volume name
 // on array, device ID, volume structure
-func (s *service) GetVolumeByID(ctx context.Context, volID string, pmaxClient pmax.Pmax) (string, string, *types.Volume, error) {
+func (s *service) GetVolumeByID(ctx context.Context,
+	volID string, pmaxClient pmax.Pmax,
+) (string, string, *types.Volume, error) {
 	// parse the volume and get the array serial and volume ID
 	volName, symID, devID, _, _, err := s.parseCsiID(volID)
 	if err != nil {

@@ -48,13 +48,13 @@ func main() {
 	} else {
 		driverName := strings.Replace(service.Name, ".", "-", -1)
 		lockName := fmt.Sprintf("driver-%s", driverName)
-		k8sclientset, err := k8sutils.CreateKubeClientSet(*kubeconfig)
+		k8sClientSet, err := k8sutils.CreateKubeClientSet(*kubeconfig)
 		if err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "failed to initialize leader election: %v", err)
 			os.Exit(1)
 		}
 		// Attempt to become leader and start the driver
-		k8sutils.LeaderElection(k8sclientset, lockName, *leaderElectionNamespace, run)
+		k8sutils.LeaderElection(k8sClientSet, lockName, *leaderElectionNamespace, run)
 	}
 }
 
