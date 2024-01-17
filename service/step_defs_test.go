@@ -3646,7 +3646,7 @@ func (f *feature) iCallExecSnapActionToSnapshotTo(action, snapshotName, volumeNa
 	TargetList := []types.VolumeList{}
 	SourceList = append(SourceList, types.VolumeList{Name: device1})
 	TargetList = append(TargetList, types.VolumeList{Name: device2})
-	f.err = f.service.adminClient.ModifySnapshotS(context.Background(), arrayID, SourceList, TargetList, snapshotName, action, "", int64(0))
+	f.err = f.service.adminClient.ModifySnapshotS(context.Background(), arrayID, SourceList, TargetList, snapshotName, action, "", int64(0), false)
 	return nil
 }
 
@@ -3715,7 +3715,7 @@ func (f *feature) iCallCreateVolumeFrom(volumeName, snapshotName string) error {
 	reqID := strconv.Itoa(time.Now().Nanosecond())
 	reqID = "req:" + reqID
 	_, _, targetDevice, _, _, err := f.service.parseCsiID(f.volumeNameToID[volumeName])
-	f.err = f.service.LinkVolumeToSnapshot(context.Background(), arrayID, sourceDevice, targetDevice, snapshotName, reqID, f.service.adminClient)
+	f.err = f.service.LinkVolumeToSnapshot(context.Background(), arrayID, sourceDevice, targetDevice, snapshotName, reqID, false, f.service.adminClient)
 	return nil
 }
 

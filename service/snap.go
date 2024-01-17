@@ -306,7 +306,7 @@ func (s *service) UnlinkSnapshot(ctx context.Context, symID string, snapSession 
 			TargetList := []types.VolumeList{{Name: target.Target}}
 			SourceList := []types.VolumeList{{Name: snapSession.Source}}
 			log.Debugf("Executing Unlink on (%s) with source (%v) target (%v)", snapSession.Name, SourceList, TargetList)
-			err = pmaxClient.ModifySnapshotS(ctx, symID, SourceList, TargetList, snapSession.Name, Unlink, "", snapSession.Generation)
+			err = pmaxClient.ModifySnapshotS(ctx, symID, SourceList, TargetList, snapSession.Name, Unlink, "", snapSession.Generation, false)
 			if err != nil {
 				if strings.Contains(err.Error(), "The Device(s) is (are) already in the desired state or mode") {
 					log.Debugf("Unlink on (%s) with source (%v) target (%v) is already done", snapSession.Name, SourceList, TargetList)
@@ -427,7 +427,7 @@ func (s *service) GetSnapSessions(ctx context.Context, symID, deviceID string, p
 
 // LinkVolumeToSnapshot helps CreateVolume call to link the newly created
 // volume as a target to a snapshot
-func (s *service) LinkVolumeToSnapshot(ctx context.Context, symID, srcDevID, tgtDevID, snapID string, reqID string, pmaxClient pmax.Pmax) (err error) {
+func (s *service) LinkVolumeToSnapshot(ctx context.Context, symID, srcDevID, tgtDevID, snapID string, reqID string, isCopy bool, pmaxClient pmax.Pmax) (err error) {
 	lockHandle := fmt.Sprintf("%s%s", srcDevID, symID)
 	lockNum := RequestLock(lockHandle, reqID)
 	defer ReleaseLock(lockHandle, reqID, lockNum)
@@ -443,7 +443,7 @@ func (s *service) LinkVolumeToSnapshot(ctx context.Context, symID, srcDevID, tgt
 	targetList = append(targetList, types.VolumeList{Name: tgtDevID})
 
 	// Link the newly created volume as a target of the snapshot
-	err = pmaxClient.ModifySnapshotS(ctx, symID, sourceList, targetList, snapID, Link, "", 0)
+	err = pmaxClient.ModifySnapshotS(ctx, symID, sourceList, targetList, snapID, Link, "", 0, isCopy)
 	if err != nil {
 		if strings.Contains(err.Error(), "The maximum number of sessions has been exceeded for the specified Source device") {
 			return status.Errorf(codes.FailedPrecondition, "Failed to link volumes: %s", err.Error())
@@ -455,9 +455,9 @@ func (s *service) LinkVolumeToSnapshot(ctx context.Context, symID, srcDevID, tgt
 
 // LinkVolumeToVolume attaches the newly created volume
 // to a temporary snapshot created from the source volume
-func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *types.Volume, tgtDevID, snapID string, reqID string, pmaxClient pmax.Pmax) error {
+func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *types.Volume, tgtDevID, snapID string, reqID string, isCopy bool, pmaxClient pmax.Pmax) error {
 	// Create a snapshot from the Source
-	// Set max 1 hr life time for the temporary snapshot
+	// Set max 1 hr lifetime for the temporary snapshot
 	log.Debugf("Creating snapshot %s on %s and linking it to %s", snapID, vol.VolumeID, tgtDevID)
 	var TTL int64 = 1
 	snapInfo, err := s.CreateSnapshotFromVolume(ctx, symID, vol, snapID, TTL, reqID, pmaxClient)
@@ -468,7 +468,7 @@ func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *typ
 		return err
 	}
 	// Link the Target to the created snapshot
-	err = s.LinkVolumeToSnapshot(ctx, symID, vol.VolumeID, tgtDevID, snapID, reqID, pmaxClient)
+	err = s.LinkVolumeToSnapshot(ctx, symID, vol.VolumeID, tgtDevID, snapID, reqID, isCopy, pmaxClient)
 	if err != nil {
 		return err
 	}
@@ -524,7 +524,7 @@ func (s *service) CreateSnapshotFromVolume(ctx context.Context, symID string, vo
 					sourceList = append(sourceList, types.VolumeList{Name: tgtSession.Source})
 					targetList = append(targetList, types.VolumeList{Name: tgtSession.Target[0].Target})
 					// Unlink the source device which is a target of another snapshot
-					err = pmaxClient.ModifySnapshotS(ctx, symID, sourceList, targetList, tgtSession.Name, Unlink, "", tgtSession.Generation)
+					err = pmaxClient.ModifySnapshotS(ctx, symID, sourceList, targetList, tgtSession.Name, Unlink, "", tgtSession.Generation, false)
 					if err != nil {
 						return nil, err
 					}
