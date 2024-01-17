@@ -238,7 +238,7 @@ func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 }
 
 func (s *service) BeforeServe(
-	ctx context.Context, sp *gocsi.StoragePlugin, lis net.Listener,
+	ctx context.Context, _ *gocsi.StoragePlugin, _ net.Listener,
 ) error {
 	defer func() {
 		fields := map[string]interface{}{

@@ -66,7 +66,7 @@ func (s *service) initFCConnector(chroot string) {
 	}
 }
 
-func setupGobrick(srv *service) {
+func setupGobrick(_ *service) {
 	gobrick.SetLogger(&customLogger{})
 	//if srv.opts.EnableTracing {
 	//	gobrick.SetTracer(&customTracer{})

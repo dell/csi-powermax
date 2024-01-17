@@ -145,7 +145,7 @@ func (g *storageGroupSvc) getUpdateStorageGroupState(symID, tgtStorageGroupID st
 }
 
 // requestAddVolumeToSGMV requests that a volume be added to a specific storage group and masking view.
-func (g *storageGroupSvc) requestAddVolumeToSGMV(ctx context.Context, tgtStorageGroupID, tgtMaskingViewID, hostID, reqID, clientSymID, symID, devID string, accessMode *csi.VolumeCapability_AccessMode) (chan addVolumeToSGMVResponse, chan bool, error) {
+func (g *storageGroupSvc) requestAddVolumeToSGMV(_ context.Context, tgtStorageGroupID, tgtMaskingViewID, hostID, reqID, clientSymID, symID, devID string, accessMode *csi.VolumeCapability_AccessMode) (chan addVolumeToSGMVResponse, chan bool, error) {
 	responseChan := make(chan addVolumeToSGMVResponse, 1)
 	sgStateP, key := g.getUpdateStorageGroupState(symID, tgtStorageGroupID)
 
@@ -169,7 +169,7 @@ func (g *storageGroupSvc) requestAddVolumeToSGMV(ctx context.Context, tgtStorage
 // outputs include: 1)  a channel which will receive an error or nil when the request is complete,
 // 2) a channel that is the lock for the service; if you can receive on the channel you have acquired the lock
 // and should call runRemoveVolumesFromSGMV (which will release the lock by writing to the channel when complete)
-func (g *storageGroupSvc) requestRemoveVolumeFromSGMV(ctx context.Context, tgtStorageGroupID, tgtMaskingViewID, reqID, clientSymID, symID, devID string) (chan removeVolumeFromSGMVResponse, chan bool, error) {
+func (g *storageGroupSvc) requestRemoveVolumeFromSGMV(_ context.Context, tgtStorageGroupID, tgtMaskingViewID, reqID, clientSymID, symID, devID string) (chan removeVolumeFromSGMVResponse, chan bool, error) {
 	responseChan := make(chan removeVolumeFromSGMVResponse, 1)
 	sgStateP, key := g.getUpdateStorageGroupState(symID, tgtStorageGroupID)
 
@@ -189,7 +189,7 @@ func (g *storageGroupSvc) requestRemoveVolumeFromSGMV(ctx context.Context, tgtSt
 
 // runAddVolumesToSGMV gets the applicable number of requests, calls addVolumesToSGMV to process them,
 // handles any errors by calling handleAddVolumeToSGMV error, and makes sure each volume gets a return response to the error channel
-func (g *storageGroupSvc) runAddVolumesToSGMV(ctx context.Context, symID, tgtStorageGroupID string, pmaxClient pmax.Pmax) {
+func (g *storageGroupSvc) runAddVolumesToSGMV(ctx context.Context, symID, tgtStorageGroupID string, _ pmax.Pmax) {
 	// Get the key and defer releasing the lock
 	key := getKey(symID, tgtStorageGroupID)
 	sgStateInterface, ok := g.updateSGStateMap.Load(key)

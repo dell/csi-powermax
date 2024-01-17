@@ -840,8 +840,8 @@ func (s *service) nodeProbe(ctx context.Context) error {
 }
 
 func (s *service) NodeGetCapabilities(
-	ctx context.Context,
-	req *csi.NodeGetCapabilitiesRequest) (
+	_ context.Context,
+	_ *csi.NodeGetCapabilitiesRequest) (
 	*csi.NodeGetCapabilitiesResponse, error,
 ) {
 	capabilities := []*csi.NodeServiceCapability{
@@ -1049,7 +1049,7 @@ func checkIfKeyIsIncludedOrNot(rulesList []string, key string) bool {
 // MaxVolumesPerNode (optional) is left as 0 which means unlimited, and AccessibleTopology is left nil.
 func (s *service) NodeGetInfo(
 	ctx context.Context,
-	req *csi.NodeGetInfoRequest) (
+	_ *csi.NodeGetInfoRequest) (
 	*csi.NodeGetInfoResponse, error,
 ) {
 	// Get the Node ID
@@ -1066,9 +1066,9 @@ func (s *service) NodeGetInfo(
 			"Unable to get the list of symmetrix ids")
 	}
 	if len(topology) == 0 {
-		if s.opts.IsVsphereEnabled {
-			// array:vsphere
-		}
+		// if s.opts.IsVsphereEnabled {
+		// array:vsphere
+		// }
 		log.Errorf("No topology keys could be generated")
 		return nil, status.Error(codes.FailedPrecondition, "no topology keys could be generate")
 	}
@@ -1762,9 +1762,8 @@ func (s *service) ensureISCSIDaemonStarted() error {
 		if strings.Contains(err.Error(), "is masked") {
 			// If unit is masked, it can't be started even manually
 			panic(err)
-		} else {
-			return err
 		}
+		return err
 	}
 	// Wait on the response channel
 	job := <-responsechan
@@ -1778,7 +1777,7 @@ func (s *service) ensureISCSIDaemonStarted() error {
 	return nil
 }
 
-func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, skipLogin bool) error {
+func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error {
 	arrays := &types.SymmetrixIDList{}
 	var err error
 
@@ -1810,9 +1809,8 @@ func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, skipLogin bool
 			log.Debugf("(ISCSI) Already logged into the array: %s", array)
 			s.cacheMutex.Unlock()
 			break
-		} else {
-			log.Debugf("(ISCSI) No logins were done earlier for %s", array)
 		}
+		log.Debugf("(ISCSI) No logins were done earlier for %s", array)
 		s.cacheMutex.Unlock()
 		// Try to get the masking view targets from the cache
 		mvTargets, ok := symToMaskingViewTargets.Load(array)
@@ -1986,7 +1984,7 @@ func (s *service) createOrUpdateIscsiHost(ctx context.Context, array string, nod
 }
 
 // retryableCreateHost
-func (s *service) retryableCreateHost(ctx context.Context, array string, nodeName string, hostInitiators []string, flags *types.HostFlags, pmaxClient pmax.Pmax) (*types.Host, error) {
+func (s *service) retryableCreateHost(ctx context.Context, array string, nodeName string, hostInitiators []string, _ *types.HostFlags, pmaxClient pmax.Pmax) (*types.Host, error) {
 	var err error
 	var host *types.Host
 	deadline := time.Now().Add(time.Duration(s.GetPmaxTimeoutSeconds()) * time.Second)

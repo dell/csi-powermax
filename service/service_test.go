@@ -18,7 +18,7 @@ package service
 import (
 	"fmt"
 	"net/http"
-	_ "net/http/pprof"
+	_ "net/http/pprof" // #nosec G108
 	"os"
 	"testing"
 	"time"
@@ -35,7 +35,7 @@ func TestMain(m *testing.M) {
 	testStatus = 0
 	testStartTime = time.Now()
 
-	go http.ListenAndServe("localhost:6060", nil)
+	go http.ListenAndServe("localhost:6060", nil) // #nosec G114
 
 	if st := m.Run(); st > testStatus {
 		testStatus = st

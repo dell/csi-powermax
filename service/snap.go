@@ -80,7 +80,7 @@ func (q snapCleanupQueue) Len() int {
 }
 
 // Less compares two elements in the queue, return true if the ith is less than the jth
-func (q snapCleanupQueue) Less(i, j int) bool {
+func (q snapCleanupQueue) Less(_, _ int) bool {
 	// Return dummy to make the impl happy
 	return false
 }
@@ -608,29 +608,29 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 		if err != nil {
 			log.Error("Could not retrieve Snapshot IDs to be deleted")
 			continue
-		} else {
-			for _, id := range volList.SymDevice {
-				for _, snap := range id.Snapshot {
-					if snap.Generation == 0 {
-						success, snapID := s.findSnapIDFromSnapName(snap.Name)
-						if success {
-							if (strings.HasPrefix(snapID, tempSnapTag)) ||
-								strings.HasPrefix(snapID, delSnapTag) {
-								// Push the snapshot to cleanup worker
-								var cleanReq snapCleanupRequest
-								cleanReq.snapshotID = snapID
-								cleanReq.symmetrixID = symID
-								cleanReq.volumeID = id.Name
-								log.Debugf("Pushing (%s) on vol (%s) to the queue", snapID, id.Name)
-								snapCleaner.requestCleanup(&cleanReq)
-							}
-						} else {
-							log.Debugf("Snapshot (%s) is not in a supported format", snap.Name)
+		}
+		for _, id := range volList.SymDevice {
+			for _, snap := range id.Snapshot {
+				if snap.Generation == 0 {
+					success, snapID := s.findSnapIDFromSnapName(snap.Name)
+					if success {
+						if (strings.HasPrefix(snapID, tempSnapTag)) ||
+							strings.HasPrefix(snapID, delSnapTag) {
+							// Push the snapshot to cleanup worker
+							var cleanReq snapCleanupRequest
+							cleanReq.snapshotID = snapID
+							cleanReq.symmetrixID = symID
+							cleanReq.volumeID = id.Name
+							log.Debugf("Pushing (%s) on vol (%s) to the queue", snapID, id.Name)
+							snapCleaner.requestCleanup(&cleanReq)
 						}
+					} else {
+						log.Debugf("Snapshot (%s) is not in a supported format", snap.Name)
 					}
 				}
 			}
 		}
+
 	}
 	for {
 		req := scw.removeItem()
