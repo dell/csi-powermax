@@ -692,14 +692,14 @@ func (s *service) CreateVolume(
 			if volContent != "" {
 				if replicationEnabled == "true" {
 					if srcSnapID != "" {
-						err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, pmaxClient)
+						err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, false, pmaxClient)
 						if err != nil {
 							return nil, err
 						}
 					} else if srcVolID != "" {
 						// Build the temporary snapshot identifier
 						snapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
-						err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, snapID, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
+						err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, snapID, localProtectionGroupID, localRDFGrpNo, "false", false, pmaxClient)
 						if err != nil {
 							return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
 						}
@@ -788,19 +788,19 @@ func (s *service) CreateVolume(
 			// Build the temporary snapshot identifier
 			snapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
 			if replicationEnabled == "true" {
-				err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, snapID, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
+				err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, snapID, localProtectionGroupID, localRDFGrpNo, "false", false, pmaxClient)
 				if err != nil {
 					return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
 				}
 			} else {
-				err = s.LinkVolumeToVolume(ctx, symID, srcVol, vol.VolumeID, snapID, reqID, pmaxClient)
+				err = s.LinkVolumeToVolume(ctx, symID, srcVol, vol.VolumeID, snapID, reqID, false, pmaxClient)
 				if err != nil {
 					return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
 				}
 			}
 		} else if srcSnapID != "" {
 			if replicationEnabled == "true" {
-				err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, pmaxClient)
+				err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, false, pmaxClient)
 				if err != nil {
 					return nil, err
 				}
@@ -810,7 +810,7 @@ func (s *service) CreateVolume(
 				if err != nil {
 					return nil, status.Errorf(codes.Internal, "Failed unlink existing target from snapshot (%s)", err.Error())
 				}
-				err = s.LinkVolumeToSnapshot(ctx, symID, srcVol.VolumeID, vol.VolumeID, snapID, reqID, pmaxClient)
+				err = s.LinkVolumeToSnapshot(ctx, symID, srcVol.VolumeID, vol.VolumeID, snapID, reqID, false, pmaxClient)
 				if err != nil {
 					return nil, status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
 				}
@@ -1145,14 +1145,14 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 			// Check for snapshot target
 			if volContent != "" {
 				if srcSnapID != "" {
-					err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, pmaxClient)
+					err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, true, pmaxClient)
 					if err != nil {
 						return nil, err
 					}
 				} else if srcVolID != "" {
 					// Build the temporary snapshot identifier
 					snapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
-					err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, snapID, localProtectionGroupID, localRDFGrpNo, bias, pmaxClient)
+					err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, snapID, localProtectionGroupID, localRDFGrpNo, bias, true, pmaxClient)
 					if err != nil {
 						return nil, err
 					}
@@ -1266,14 +1266,14 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	// If volume content source is specified, initiate no_copy to newly created volume
 	if contentSource != nil {
 		if srcSnapID != "" {
-			err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, pmaxClient)
+			err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, true, pmaxClient)
 			if err != nil {
 				return nil, err
 			}
 		} else if srcVolID != "" {
 			// Build the temporary snapshot identifier
 			snapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
-			err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, snapID, localProtectionGroupID, localRDFGrpNo, bias, pmaxClient)
+			err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, snapID, localProtectionGroupID, localRDFGrpNo, bias, true, pmaxClient)
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
 			}
@@ -1309,7 +1309,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	return csiResp, nil
 }
 
-func (s *service) LinkSRDFVolToVolume(ctx context.Context, reqID, symID string, vol, tgtVol *types.Volume, snapID, localProtectionGroupID, localRDFGrpNo string, bias string, pmaxClient pmax.Pmax) error {
+func (s *service) LinkSRDFVolToVolume(ctx context.Context, reqID, symID string, vol, tgtVol *types.Volume, snapID, localProtectionGroupID, localRDFGrpNo string, bias string, isCopy bool, pmaxClient pmax.Pmax) error {
 	// Create a snapshot from the Source
 	// Set max 1 hr lifetime for the temporary snapshot
 	log.Debugf("Creating snapshot %s on %s and linking it to %s", snapID, vol.VolumeID, tgtVol.VolumeID)
@@ -1322,7 +1322,7 @@ func (s *service) LinkSRDFVolToVolume(ctx context.Context, reqID, symID string, 
 		return err
 	}
 	// Link the Target to the created snapshot
-	err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, vol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, tgtVol, bias, pmaxClient)
+	err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, vol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, tgtVol, bias, isCopy, pmaxClient)
 	if err != nil {
 		return err
 	}
@@ -1336,7 +1336,7 @@ func (s *service) LinkSRDFVolToVolume(ctx context.Context, reqID, symID string, 
 	return nil
 }
 
-func (s *service) LinkSRDFVolToSnapshot(ctx context.Context, reqID, symID, srcVolID, snapID, localProtectionGroupID, localRDFGrpNo string, tgtVol *types.Volume, bias string, pmaxClient pmax.Pmax) error {
+func (s *service) LinkSRDFVolToSnapshot(ctx context.Context, reqID, symID, srcVolID, snapID, localProtectionGroupID, localRDFGrpNo string, tgtVol *types.Volume, bias string, isCopy bool, pmaxClient pmax.Pmax) error {
 	// Take lock on SG
 	var lockHandle string
 	lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
@@ -1355,7 +1355,7 @@ func (s *service) LinkSRDFVolToSnapshot(ctx context.Context, reqID, symID, srcVo
 			log.Errorf("suspend failed for (%s) err: %s", localProtectionGroupID, err.Error())
 			return status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
 		}
-		err = s.LinkVolumeToSnapshot(ctx, symID, srcVolID, tgtVol.VolumeID, snapID, reqID, pmaxClient)
+		err = s.LinkVolumeToSnapshot(ctx, symID, srcVolID, tgtVol.VolumeID, snapID, reqID, isCopy, pmaxClient)
 		if err != nil {
 			return status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
 		}
