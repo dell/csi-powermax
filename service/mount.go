@@ -120,7 +120,7 @@ func publishVolume(
 	}
 
 	// Make sure target is created. The spec says the driver is responsible
-	// for creating the target, but Kubernetes generallly creates the target.
+	// for creating the target, but Kubernetes generally creates the target.
 	privTgt := getPrivateMountPoint(privDir, id)
 	err = createTarget(target, isBlock)
 	if err != nil {
@@ -171,7 +171,6 @@ func publishVolume(
 		// Make sure private mount point exists
 		var created bool
 		created, err = mkdir(privTgt)
-
 		if err != nil {
 			return status.Errorf(codes.Internal,
 				"Unable to create private mount point: %s",

@@ -301,7 +301,7 @@ func (g *storageGroupSvc) runRemoveVolumesFromSGMV(ctx context.Context, symID, t
 		return
 	}
 	sgState := sgStateInterface.(*updateStorageGroupState)
-	defer func(sgstate *updateStorageGroupState) {
+	defer func(_ *updateStorageGroupState) {
 		// Free up the lock again
 		sgState.lock <- true
 	}(sgState)

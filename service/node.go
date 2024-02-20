@@ -85,7 +85,7 @@ var isSymConnFC = make(map[string]bool)
 // InvalidateSymToMaskingViewTargets - invalidates the cache
 // Only used for testing
 func (s *service) InvalidateSymToMaskingViewTargets() {
-	deletefunc := func(key interface{}, value interface{}) bool {
+	deletefunc := func(key interface{}, _ interface{}) bool {
 		symToMaskingViewTargets.Delete(key)
 		return true
 	}
