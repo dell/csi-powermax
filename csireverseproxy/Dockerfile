@@ -13,9 +13,9 @@
 ############################
 # STEP 1 build executable binary
 ############################
-ARG GO_VERSION
+ARG GOIMAGE
 
-FROM golang:$GO_VERSION as builder
+FROM $GOIMAGE as builder
 
 # Install git + SSL ca certificates.
 # Git is required for fetching the dependencies.
