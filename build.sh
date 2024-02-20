@@ -162,7 +162,7 @@ function build_image {
                 -f csi-powermax/Dockerfile.build .\
                 --build-arg BUILD_NUMBER=$BUILD_NUMBER\
                 --build-arg BUILD_TYPE=$BUILD_TYPE\
-                --build-arg GO_VERSION=$GO_VERSION\
+                --build-arg GOIMAGE="$DEFAULT_GOIMAGE"\
                 --build-arg SOURCE_IMAGE_TAG=$SOURCE_IMAGE_TAG\
                 --build-arg SOURCE_REPO=$SOURCE_REPO\
                 --build-arg IMAGE_TYPE=$IMAGE_TYPE\
@@ -174,21 +174,21 @@ function build_image {
                 -f csi-powermax/Dockerfile.build .\
                 --build-arg BUILD_NUMBER="$BUILD_NUMBER"\
                 --build-arg BUILD_TYPE="$BUILD_TYPE"\
-                --build-arg GO_VERSION="$GO_VERSION"\
+                --build-arg GOIMAGE="$DEFAULT_GOIMAGE"\
                 --build-arg SOURCE_IMAGE_TAG="$SOURCE_IMAGE_TAG"\
                 --build-arg SOURCE_REPO="$SOURCE_REPO"\
                 --build-arg IMAGE_TYPE="$IMAGE_TYPE"\
                 $DOCKEROPT)
        if [ "$BUILD_REVPROXY" = true ]; then
          echo $BUILDCMD build -t "$REVPROXY_IMAGE_VERSION_TAG"
-         (cd csireverseproxy && $BUILDCMD build -t "$REVPROXY_IMAGE_VERSION_TAG" --build-arg GO_VERSION="$GO_VERSION" . )
+         (cd csireverseproxy && $BUILDCMD build -t "$REVPROXY_IMAGE_VERSION_TAG" --build-arg GOIMAGE="$DEFAULT_GOIMAGE" . )
        fi
    else
       echo $BUILDCMD build -t $IMAGE_VERSION_TAG\
                 -f csi-powermax/Dockerfile.build .\
                 --build-arg BUILD_NUMBER=$BUILD_NUMBER\
                 --build-arg BUILD_TYPE=$BUILD_TYPE\
-                --build-arg GO_VERSION=$GO_VERSION\
+                --build-arg GOIMAGE=$DEFAULT_GOIMAGE\
                 --build-arg SOURCE_IMAGE_TAG=$SOURCE_IMAGE_TAG\
                 --build-arg SOURCE_REPO=$SOURCE_REPO\
                 --build-arg IMAGE_TYPE="$IMAGE_TYPE"\
@@ -198,7 +198,7 @@ function build_image {
                 -f csi-powermax/Dockerfile.build .\
                 --build-arg BUILD_NUMBER="$BUILD_NUMBER"\
                 --build-arg BUILD_TYPE="$BUILD_TYPE"\
-                --build-arg GO_VERSION="$GO_VERSION"\
+                --build-arg GOIMAGE="$DEFAULT_GOIMAGE"\
                 --build-arg SOURCE_IMAGE_TAG="$SOURCE_IMAGE_TAG"\
                 --build-arg SOURCE_REPO="$SOURCE_REPO"\
                 --build-arg IMAGE_TYPE="$IMAGE_TYPE"\
