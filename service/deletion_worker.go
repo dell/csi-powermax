@@ -530,7 +530,7 @@ func (queue *deletionQueue) deleteVolumes(pmaxClient pmax.Pmax) bool {
 	// Go through all the volumes in the queue which are in deletevol state and then form device ranges and delete them
 	queue.lock.Lock()
 	defer queue.lock.Unlock()
-	deviceIDS := make([]symDeviceID, 0)
+	deviceIDs := make([]symDeviceID, 0)
 	if len(queue.DeviceList) == 0 {
 		return false
 	}
@@ -555,18 +555,18 @@ func (queue *deletionQueue) deleteVolumes(pmaxClient pmax.Pmax) bool {
 				log.Error(errorMsg)
 				device.updateStatus(deletionStateDeleteVol, errorMsg)
 			}
-			deviceIDS = append(deviceIDS, device.SymDeviceID)
+			deviceIDs = append(deviceIDs, device.SymDeviceID)
 		}
 	}
-	if len(deviceIDS) > 0 {
-		unsorteddeviceIDS := make([]symDeviceID, len(deviceIDS))
-		copy(unsorteddeviceIDS, deviceIDS)
-		sort.SliceStable(deviceIDS, func(i, j int) bool {
-			return deviceIDS[i].IntVal < deviceIDS[j].IntVal
+	if len(deviceIDs) > 0 {
+		unsorteddeviceIDs := make([]symDeviceID, len(deviceIDs))
+		copy(unsorteddeviceIDs, deviceIDs)
+		sort.SliceStable(deviceIDs, func(i, j int) bool {
+			return deviceIDs[i].IntVal < deviceIDs[j].IntVal
 		})
-		devRanges := getDeviceRanges(deviceIDS)
+		devRanges := getDeviceRanges(deviceIDs)
 		deviceRangeToBeDeleted := deviceRange{}
-		for _, deviceID := range unsorteddeviceIDS {
+		for _, deviceID := range unsorteddeviceIDs {
 			for _, devRange := range devRanges {
 				if devRange.isDeviceIDInRange(deviceID) {
 					deviceRangeToBeDeleted = devRange
