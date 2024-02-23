@@ -8,14 +8,14 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/cucumber/godog v0.12.6
 	github.com/cucumber/messages-go/v10 v10.0.3
-	github.com/dell/dell-csi-extensions/common v1.3.0
-	github.com/dell/dell-csi-extensions/migration v1.3.0
-	github.com/dell/dell-csi-extensions/replication v1.6.0
-	github.com/dell/gobrick v1.9.0
-	github.com/dell/gocsi v1.9.0
-	github.com/dell/gofsutil v1.14.0
-	github.com/dell/goiscsi v1.8.0
-	github.com/dell/gopowermax/v2 v2.5.2-0.20240125135039-10cd08184f1c
+	github.com/dell/dell-csi-extensions/common v1.3.1-0.20240222170059-da63843c4267
+	github.com/dell/dell-csi-extensions/migration v1.3.1-0.20240222170059-da63843c4267
+	github.com/dell/dell-csi-extensions/replication v1.6.1-0.20240222170059-da63843c4267
+	github.com/dell/gobrick v1.9.1-0.20240222141837-aceadfa1e314
+	github.com/dell/gocsi v1.9.1-0.20240222141900-bbe1412cfdb4
+	github.com/dell/gofsutil v1.14.1-0.20240222142128-155ffcafc3ed
+	github.com/dell/goiscsi v1.8.1-0.20240222142227-6f79b2a9d272
+	github.com/dell/gopowermax/v2 v2.5.2-0.20240223103811-4e2941dc26dc
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.3
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
