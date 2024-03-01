@@ -2013,7 +2013,8 @@ func parseListVolumesTable(dt *messages.PickleStepArgument_PickleTable) (int32, 
 			if err != nil {
 				return 0, "", fmt.Errorf("expected a valid number for max_entries, got %v", err)
 			}
-			maxEntries = int32(n) // #nosec G109
+			// #nosec G109
+			maxEntries = int32(n)
 		case "starting_token":
 			startingToken = dt.Rows[1].Cells[i].Value
 		default:
