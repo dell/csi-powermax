@@ -2011,7 +2011,7 @@ func (s *service) ControllerPublishVolume(
 
 	if remoteSymID != "" && remoteVolumeID != "" {
 		remoteVol, err := pmaxClient.GetVolumeByID(ctx, remoteSymID, remoteVolumeID)
-		if !remoteVol.HasEffectiveWWN {
+		if strings.Compare(remoteVol.EffectiveWWN, vol.EffectiveWWN) != 0 {
 			// Refresh the symmetrix
 			err := pmaxClient.RefreshSymmetrix(ctx, symID)
 			if err != nil {
