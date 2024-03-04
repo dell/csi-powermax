@@ -8,14 +8,14 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/cucumber/godog v0.12.6
 	github.com/cucumber/messages-go/v10 v10.0.3
-	github.com/dell/dell-csi-extensions/common v1.3.1-0.20240222170059-da63843c4267
-	github.com/dell/dell-csi-extensions/migration v1.3.1-0.20240222170059-da63843c4267
-	github.com/dell/dell-csi-extensions/replication v1.6.1-0.20240222170059-da63843c4267
-	github.com/dell/gobrick v1.9.1-0.20240222141837-aceadfa1e314
-	github.com/dell/gocsi v1.9.1-0.20240222141900-bbe1412cfdb4
-	github.com/dell/gofsutil v1.14.1-0.20240222142128-155ffcafc3ed
-	github.com/dell/goiscsi v1.8.1-0.20240222142227-6f79b2a9d272
-	github.com/dell/gopowermax/v2 v2.5.2-0.20240223103811-4e2941dc26dc
+	github.com/dell/dell-csi-extensions/common v1.4.0
+	github.com/dell/dell-csi-extensions/migration v1.4.0
+	github.com/dell/dell-csi-extensions/replication v1.7.0
+	github.com/dell/gobrick v1.10.0
+	github.com/dell/gocsi v1.10.0
+	github.com/dell/gofsutil v1.15.0
+	github.com/dell/goiscsi v1.9.0
+	github.com/dell/gopowermax/v2 v2.6.0
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/golang/protobuf v1.5.3
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
@@ -25,7 +25,7 @@ require (
 	github.com/vmware/govmomi v0.29.0
 	golang.org/x/net v0.17.0
 	google.golang.org/grpc v1.57.1
-	google.golang.org/protobuf v1.31.0
+	google.golang.org/protobuf v1.32.0
 	k8s.io/apimachinery v0.20.0
 	k8s.io/client-go v0.20.0
 )
@@ -36,7 +36,7 @@ require (
 	github.com/cucumber/gherkin-go/v19 v19.0.3 // indirect
 	github.com/cucumber/messages-go/v16 v16.0.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dell/gonvme v1.5.0 // indirect
+	github.com/dell/gonvme v1.7.0 // indirect
 	github.com/go-logr/logr v0.2.0 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
