@@ -17,9 +17,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -525,4 +528,161 @@ func TestEsnureISCSIDaemonIsStarted(t *testing.T) {
 	mockgosystemdInducedErrors.StartUnitMaskedError = true
 	errMsg = fmt.Sprintf("mock - unit is masked - failed to start the unit")
 	assert.PanicsWithError(t, errMsg, func() { s.ensureISCSIDaemonStarted() })
+}
+
+func TestGetLocalMAC(t *testing.T) {
+	orderedIfs := []net.Interface{
+		{
+			Index:        1,
+			MTU:          65536,
+			Name:         "lo",
+			HardwareAddr: nil,
+			Flags:        0x25,
+		},
+		{
+			Index:        2,
+			MTU:          1500,
+			Name:         "ens192",
+			HardwareAddr: net.HardwareAddr{0x0, 0x1, 0x2, 0x3, 0x4, 0x5},
+			Flags:        0x33,
+		},
+		{
+			Index:        5,
+			MTU:          1450,
+			Name:         "vxlan.calico",
+			HardwareAddr: net.HardwareAddr{0x6, 0x7, 0x8, 0x9, 0xa, 0xb},
+			Flags:        0x33,
+		},
+		{
+			Index:        8,
+			MTU:          1450,
+			Name:         "cali1d87cc7ab3f",
+			HardwareAddr: net.HardwareAddr{0xee, 0xee, 0xee, 0xee, 0xee, 0xee},
+			Flags:        0x33,
+		},
+		{
+			Index:        13,
+			MTU:          1450,
+			Name:         "cali06df89a6f82",
+			HardwareAddr: net.HardwareAddr{0xee, 0xee, 0xee, 0xee, 0xee, 0xee},
+			Flags:        0x33,
+		},
+	}
+	unorderedIfs := []net.Interface{
+		{
+			Index:        257,
+			MTU:          1450,
+			Name:         "cali24aa7dc293b",
+			HardwareAddr: net.HardwareAddr{0xee, 0xee, 0xee, 0xee, 0xee, 0xee},
+			Flags:        0x33,
+		},
+		{
+			Index:        1,
+			MTU:          65536,
+			Name:         "lo",
+			HardwareAddr: nil,
+			Flags:        0x25,
+		},
+		{
+			Index:        2,
+			MTU:          1500,
+			Name:         "ens192",
+			HardwareAddr: net.HardwareAddr{0x10, 0x11, 0x12, 0x13, 0x14, 0x15},
+			Flags:        0x33,
+		},
+		{
+			Index:        259,
+			MTU:          1450,
+			Name:         "cali1d87cc7ab3f",
+			HardwareAddr: net.HardwareAddr{0xee, 0xee, 0xee, 0xee, 0xee, 0xee},
+			Flags:        0x33,
+		},
+		{
+			Index:        7,
+			MTU:          1450,
+			Name:         "vxlan.calico",
+			HardwareAddr: net.HardwareAddr{0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b},
+			Flags:        0x33,
+		},
+		{
+			Index:        11,
+			MTU:          1450,
+			Name:         "calibbe3ea81e70",
+			HardwareAddr: net.HardwareAddr{0xee, 0xee, 0xee, 0xee, 0xee, 0xee},
+			Flags:        0x33,
+		},
+	}
+	onlyLoIfs := []net.Interface{
+		{
+			Index:        1,
+			MTU:          65536,
+			Name:         "lo",
+			HardwareAddr: nil,
+			Flags:        0x25,
+		},
+	}
+
+	tests := []struct {
+		expected           string
+		expectErr          bool
+		ifaceFunc          func() ([]net.Interface, error)
+		ifaceExcludeFilter *regexp.Regexp
+		testName           string
+	}{
+		{
+			testName:  "basic ordered IFs test",
+			expectErr: false,
+			expected:  "00:01:02:03:04:05",
+			ifaceFunc: func() ([]net.Interface, error) {
+				return orderedIfs, nil
+			},
+			ifaceExcludeFilter: nil,
+		},
+		{
+			testName:  "basic unordered IFs test",
+			expectErr: false,
+			expected:  "ee:ee:ee:ee:ee:ee",
+			ifaceFunc: func() ([]net.Interface, error) {
+				return unorderedIfs, nil
+			},
+			ifaceExcludeFilter: nil,
+		},
+		{
+			testName:  "expected error from only lo",
+			expectErr: true,
+			ifaceFunc: func() ([]net.Interface, error) {
+				return onlyLoIfs, nil
+			},
+			ifaceExcludeFilter: nil,
+		},
+		{
+			testName:  "expected error from error in ifaceFunc",
+			expectErr: true,
+			ifaceFunc: func() ([]net.Interface, error) {
+				return []net.Interface{}, errors.New("kaboom")
+			},
+			ifaceExcludeFilter: nil,
+		},
+		{
+			testName:  "exclude cali interfaces",
+			expectErr: false,
+			expected:  "10:11:12:13:14:15",
+			ifaceFunc: func() ([]net.Interface, error) {
+				return unorderedIfs, nil
+			},
+			ifaceExcludeFilter: regexp.MustCompile("^cali.+"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.testName, func(t *testing.T) {
+			returnedIf, err := getLocalMAC(tt.ifaceFunc, tt.ifaceExcludeFilter)
+			if tt.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, returnedIf)
+			}
+		})
+	}
 }
