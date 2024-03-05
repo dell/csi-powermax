@@ -106,4 +106,7 @@ const usage = `    X_CSI_POWERMAX_ENDPOINT
 
     X_CSI_POWERMAX_DEBUG
         Turns on debugging of the PowerMax (REST interface to Unisphere) layer
+	
+	X_CSI_IFACE_EXCLUDE_FILTER
+		Regular expression of interface names to exclude.
 `
