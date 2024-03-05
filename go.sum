@@ -109,8 +109,8 @@ github.com/dell/dell-csi-extensions/migration v1.4.0 h1:3KINn0kRW58YsyFdeEqVz02B
 github.com/dell/dell-csi-extensions/migration v1.4.0/go.mod h1:HeC8UO4P7SMSv6yvAM9u6RJSaPn5wcKGyO+/6fN2OuQ=
 github.com/dell/dell-csi-extensions/replication v1.7.0 h1:kBIN91grXev54CyRFB17nVwFUSagG5y1RZB/4WWbATc=
 github.com/dell/dell-csi-extensions/replication v1.7.0/go.mod h1:gYaWz/MpCxaXxzXYdXaJqYA7QXIyg4OaFT3vff6d46Y=
-github.com/dell/gobrick v1.10.0 h1:qqR2mmgchxRny/LWt2Ic59u3g/GHH8xs0bzQb7oS/DA=
-github.com/dell/gobrick v1.10.0/go.mod h1:FmMjKJLH/E/+Awo3QNh+3mhMHSNJQkQLkH8klje8Cmg=
+github.com/dell/gobrick v1.10.1 h1:YabNLVQstz1iKYUyhXEIr/y/xTF1T5W5Wmtjn0dxQdU=
+github.com/dell/gobrick v1.10.1/go.mod h1:EvUl6GW7dZgBs+5KZW5oNJ7JrlGXMnkQpZ4BNz6fjQU=
 github.com/dell/gocsi v1.10.0 h1:X3HQ4/Fx1bm857L497AF/uGCPiw1BB4OE4TpQYvsBEI=
 github.com/dell/gocsi v1.10.0/go.mod h1:RkBQHWKqPuRBDipBglo40bd5h6wBzQkU4QeRUFOeKcs=
 github.com/dell/gofsutil v1.15.0 h1:u+t+Xf6MJNw+8YzR9TzbWSfgy8dowOKUMBRMsiI4xDA=
