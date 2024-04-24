@@ -32,7 +32,6 @@ import (
 	"github.com/dell/csi-powermax/v2/service"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 	pmax "github.com/dell/gopowermax/v2"
-	"github.com/golang/protobuf/ptypes"
 )
 
 const (
@@ -1009,7 +1008,7 @@ func (f *feature) iCallCreateSnapshot() error {
 		f.snapshotID = resp.Snapshot.SnapshotId
 		f.snapIDList = append(f.snapIDList, f.snapshotID)
 		fmt.Printf("createSnapshot: SnapshotId %s SourceVolumeId %s CreationTime %s\n",
-			resp.Snapshot.SnapshotId, resp.Snapshot.SourceVolumeId, ptypes.TimestampString(resp.Snapshot.CreationTime))
+			resp.Snapshot.SnapshotId, resp.Snapshot.SourceVolumeId, resp.Snapshot.CreationTime.AsTime().Format(time.RFC3339Nano))
 	}
 	time.Sleep(RetrySleepTime)
 	return nil
@@ -1067,7 +1066,7 @@ func (f *feature) iCallCreateSnapshotConsistencyGroup() error {
 	} else {
 		f.snapshotID = resp.Snapshot.SnapshotId
 		fmt.Printf("createSnapshot: SnapshotId %s SourceVolumeId %s CreationTime %s\n",
-			resp.Snapshot.SnapshotId, resp.Snapshot.SourceVolumeId, ptypes.TimestampString(resp.Snapshot.CreationTime))
+			resp.Snapshot.SnapshotId, resp.Snapshot.SourceVolumeId, resp.Snapshot.CreationTime.AsTime().Format(time.RFC3339Nano))
 	}
 	time.Sleep(SleepTime)
 	return nil
@@ -1191,7 +1190,7 @@ func (f *feature) aValidListSnapshotResponseIsReturned() error {
 	for j := 0; j < len(entries); j++ {
 		entry := entries[j]
 		id := entry.GetSnapshot().SnapshotId
-		ts := ptypes.TimestampString(entry.GetSnapshot().CreationTime)
+		ts := entry.GetSnapshot().CreationTime.AsTime().Format(time.RFC3339Nano)
 		fmt.Printf("snapshot ID %s source ID %s timestamp %s\n", id, entry.GetSnapshot().SourceVolumeId, ts)
 	}
 	return nil
@@ -1830,7 +1829,7 @@ func (f *feature) iCallCreateSnapshotOnNewVolume() error {
 		f.snapshotID = resp.Snapshot.SnapshotId
 		f.snapIDList = append(f.snapIDList, f.snapshotID)
 		fmt.Printf("createSnapshot: SnapshotId %s SourceVolumeId %s CreationTime %s\n",
-			resp.Snapshot.SnapshotId, resp.Snapshot.SourceVolumeId, ptypes.TimestampString(resp.Snapshot.CreationTime))
+			resp.Snapshot.SnapshotId, resp.Snapshot.SourceVolumeId, resp.Snapshot.CreationTime.AsTime().Format(time.RFC3339Nano))
 	}
 	time.Sleep(RetrySleepTime)
 	return nil
