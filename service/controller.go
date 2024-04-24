@@ -39,8 +39,8 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	"github.com/golang/protobuf/ptypes"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -3201,7 +3201,7 @@ func (s *service) CreateSnapshot(
 		snapshot := &csi.Snapshot{
 			SnapshotId:     snapID,
 			SourceVolumeId: volID, ReadyToUse: true,
-			CreationTime: ptypes.TimestampNow(),
+			CreationTime: timestamppb.Now(),
 		}
 		resp := &csi.CreateSnapshotResponse{Snapshot: snapshot}
 		return resp, nil
@@ -3237,12 +3237,12 @@ func (s *service) CreateSnapshot(
 		SnapshotId:     snapID,
 		SourceVolumeId: volID,
 		ReadyToUse:     true,
-		CreationTime:   ptypes.TimestampNow(),
+		CreationTime:   timestamppb.Now(),
 	}
 	resp := &csi.CreateSnapshotResponse{Snapshot: snapshot}
 
 	log.Debugf("Created snapshot: SnapshotId %s SourceVolumeId %s CreationTime %s",
-		snapshot.SnapshotId, snapshot.SourceVolumeId, ptypes.TimestampString(snapshot.CreationTime))
+		snapshot.SnapshotId, snapshot.SourceVolumeId, snapshot.CreationTime.AsTime().Format(time.RFC3339Nano))
 	return resp, nil
 }
 
