@@ -44,7 +44,6 @@ import (
 	pmax "github.com/dell/gopowermax/v2"
 	mock "github.com/dell/gopowermax/v2/mock"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	ptypes "github.com/golang/protobuf/ptypes"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/metadata"
@@ -2930,7 +2929,7 @@ func (f *feature) aValidListSnapshotsResponseIsReturnedWithListedAndNextToken(li
 		entry := entries[j]
 		id := entry.GetSnapshot().SnapshotId
 		if expectedEntries <= 10 {
-			ts := ptypes.TimestampString(entry.GetSnapshot().CreationTime)
+			ts := entry.GetSnapshot().CreationTime.AsTime().Format(time.RFC3339)
 			fmt.Printf("snapshot ID %s source ID %s timestamp %s\n", id, entry.GetSnapshot().SourceVolumeId, ts)
 		}
 		if f.listedVolumeIDs[id] {
