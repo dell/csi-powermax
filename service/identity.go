@@ -25,7 +25,7 @@ import (
 	"golang.org/x/net/context"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	wrappers "github.com/golang/protobuf/ptypes/wrappers"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/dell/csi-powermax/v2/core"
 	migrext "github.com/dell/dell-csi-extensions/migration"
@@ -106,7 +106,7 @@ func (s *service) Probe(
 			_ = s.nodeStartup(ctx)
 		}
 	}
-	ready := new(wrappers.BoolValue)
+	ready := new(wrapperspb.BoolValue)
 	ready.Value = true
 	rep := new(csi.ProbeResponse)
 	rep.Ready = ready
@@ -127,7 +127,7 @@ func (s *service) ProbeController(ctx context.Context,
 		}
 	}
 
-	ready := new(wrappers.BoolValue)
+	ready := new(wrapperspb.BoolValue)
 	ready.Value = true
 	rep := new(commonext.ProbeControllerResponse)
 	rep.Ready = ready
