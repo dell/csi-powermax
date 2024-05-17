@@ -1501,9 +1501,9 @@ func (s *service) validateVolSize(ctx context.Context, cr *csi.CapacityRange, sy
 			"bad capacity: requested minimum size (%d bytes) is greater than the maximum available capacity (%d bytes)", minSizeBytes, maxAvailBytes)
 	}
 	if minSizeBytes < MinVolumeSizeBytes {
-		return 0, status.Errorf(
-			codes.OutOfRange,
-			"bad capacity: requested minimum size (%d bytes) is less than the minimum volume size (%d bytes)", minSizeBytes, MinVolumeSizeBytes)
+		log.Warningf("bad capacity: requested minimum size (%d bytes) is less than the minimum volume size (%d bytes)", minSizeBytes, MinVolumeSizeBytes)
+		log.Warning("provisioning vol with minimum volume size...")
+		minSizeBytes = MinVolumeSizeBytes
 	}
 	if maxSizeBytes < minSizeBytes {
 		return 0, status.Errorf(
