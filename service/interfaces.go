@@ -50,6 +50,14 @@ type fcConnector interface {
 	GetInitiatorPorts(ctx context.Context) ([]string, error)
 }
 
+// NVMeTCPConnector is wrapper of gobrick.NVMEConnector interface.
+// It allows to connect NVMe volumes to the node.
+type NVMeTCPConnector interface {
+	ConnectVolume(ctx context.Context, info gobrick.NVMeVolumeInfo, useFC bool) (gobrick.Device, error)
+	DisconnectVolumeByDeviceName(ctx context.Context, name string) error
+	GetInitiatorName(ctx context.Context) ([]string, error)
+}
+
 func (s *service) initISCSIConnector(chroot string) {
 	if s.iscsiConnector == nil {
 		setupGobrick(s)
@@ -63,6 +71,14 @@ func (s *service) initFCConnector(chroot string) {
 		setupGobrick(s)
 		s.fcConnector = gobrick.NewFCConnector(
 			gobrick.FCConnectorParams{Chroot: chroot})
+	}
+}
+
+func (s *service) initNVMeTCPConnector(chroot string) {
+	if s.nvmeTCPConnector == nil {
+		setupGobrick(s)
+		s.nvmeTCPConnector = gobrick.NewNVMeConnector(
+			gobrick.NVMeConnectorParams{Chroot: chroot})
 	}
 }
 

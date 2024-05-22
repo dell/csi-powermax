@@ -30,6 +30,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dell/gonvme"
+
 	"github.com/dell/csi-powermax/v2/k8smock"
 
 	"github.com/dell/dell-csi-extensions/common"
@@ -383,6 +385,17 @@ func (f *feature) aPowerMaxService() error {
 	goiscsi.GOISCSIMock.InduceRescanError = false
 	goiscsi.GOISCSIMock.InduceSetCHAPError = false
 
+	f.service.nvmetcpClient = gonvme.NewMockNVMe(map[string]string{})
+	gonvme.GONVMEMock.InduceDiscoveryError = false
+	gonvme.GONVMEMock.InduceInitiatorError = false
+	gonvme.GONVMEMock.InduceTCPLoginError = false
+	gonvme.GONVMEMock.InduceFCLoginError = false
+	gonvme.GONVMEMock.InduceLogoutError = false
+	gonvme.GONVMEMock.InduceGetSessionsError = false
+	gonvme.GONVMEMock.InducedNVMeDeviceAndNamespaceError = false
+	gonvme.GONVMEMock.InducedNVMeNamespaceIDError = false
+	gonvme.GONVMEMock.InducedNVMeDeviceDataError = false
+
 	// get the httptest mock handler. Only set
 	// a new server if there isn't one already.
 	handler := mock.GetHandler()
@@ -459,8 +472,10 @@ ip6t_rpfilter          12595  1
 	svc.opts = opts
 	svc.arrayTransportProtocolMap = make(map[string]string)
 	svc.arrayTransportProtocolMap[mock.DefaultSymmetrixID] = IscsiTransportProtocol
+	svc.useIscsi = true
 	svc.fcConnector = &mockFCGobrick{}
 	svc.iscsiConnector = &mockISCSIGobrick{}
+	svc.nvmetcpClient = &gonvme.MockNVMe{}
 	svc.dBusConn = &mockDbusConnection{}
 	svc.k8sUtils = k8smock.Init()
 	mockGobrickReset()
@@ -3187,10 +3202,16 @@ func (f *feature) initiatorsAreFound(expected int) error {
 func (f *feature) iInvokeNodeHostSetupWithAService(mode string) error {
 	iscsiInitiators := []string{defaultIscsiInitiator}
 	fcInitiators := []string{defaultFcInitiator}
+	// NVME
+	nvmetcpinitiators := []string{defaultIscsiInitiator}
 	symmetrixIDs := []string{f.symmetrixID}
 	f.service.mode = mode
+	// reset default protocol
+	f.service.useIscsi = false
+	f.service.useFC = false
+	f.service.useNVMeTCP = false
 	f.service.SetPmaxTimeoutSeconds(10)
-	f.err = f.service.nodeHostSetup(context.Background(), fcInitiators, iscsiInitiators, symmetrixIDs)
+	f.err = f.service.nodeHostSetup(context.Background(), fcInitiators, iscsiInitiators, nvmetcpinitiators, symmetrixIDs)
 	return nil
 }
 
@@ -3535,6 +3556,16 @@ func (f *feature) blockVolumesAreNotEnabled() error {
 
 func (f *feature) iSetTransportProtocolTo(protocol string) error {
 	os.Setenv("X_CSI_TRANSPORT_PROTOCOL", protocol)
+	switch protocol {
+	case "FC":
+		f.service.useIscsi = false
+		f.service.useNVMeTCP = false
+		f.service.useFC = true
+	case "ISCSI":
+		f.service.useNVMeTCP = false
+		f.service.useFC = false
+		f.service.useIscsi = true
+	}
 	f.service.opts.TransportProtocol = protocol
 	return nil
 }

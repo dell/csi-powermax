@@ -25,6 +25,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dell/gonvme"
+
 	"github.com/dell/csi-powermax/v2/k8sutils"
 
 	"github.com/dell/dell-csi-extensions/podmon"
@@ -157,34 +159,40 @@ type service struct {
 	adminClient    pmax.Pmax
 	deletionWorker *deletionWorker
 	iscsiClient    goiscsi.ISCSIinterface
+	nvmetcpClient  gonvme.NVMEinterface
 	// replace this with Unisphere system if needed
-	system            *interface{}
-	privDir           string
-	loggedInArrays    map[string]bool
-	mutex             sync.Mutex
-	cacheMutex        sync.Mutex
-	nodeProbeMutex    sync.Mutex
-	nodeIsInitialized bool
-	useNFS            bool
-	useFC             bool
-	useIscsi          bool
-	iscsiTargets      map[string][]string
+	system             *interface{}
+	privDir            string
+	loggedInArrays     map[string]bool
+	loggedInNVMeArrays map[string]bool
+	mutex              sync.Mutex
+	cacheMutex         sync.Mutex
+	nodeProbeMutex     sync.Mutex
+	nodeIsInitialized  bool
+	useNFS             bool
+	useFC              bool
+	useIscsi           bool
+	useNVMeTCP         bool
+	iscsiTargets       map[string][]string
+	nvmeTargets        map[string][]string
+
 	// Timeout for storage pool cache
 	storagePoolCacheDuration time.Duration
 	// only used for testing, indicates if the deletion worked finished populating queue
 	waitGroup sync.WaitGroup
 
 	// Gobrick stuff
-	fcConnector               fcConnector
-	iscsiConnector            iSCSIConnector
-	dBusConn                  dBusConn
-	arrayTransportProtocolMap map[string]string // map of array SN to IscsiTransportProtocol or FcTransportProtocol
+	fcConnector      fcConnector
+	iscsiConnector   iSCSIConnector
+	nvmeTCPConnector NVMeTCPConnector
+	dBusConn         dBusConn
 
 	sgSvc *storageGroupSvc
 
-	topologyConfig      *TopologyConfig
-	allowedTopologyKeys map[string][]string // map of nodes to allowed topology keys
-	deniedTopologyKeys  map[string][]string // map of nodes to denied topology keys
+	arrayTransportProtocolMap map[string]string // map of array SN to TransportProtocols
+	topologyConfig            *TopologyConfig
+	allowedTopologyKeys       map[string][]string // map of nodes to allowed topology keys
+	deniedTopologyKeys        map[string][]string // map of nodes to denied topology keys
 
 	k8sUtils k8sutils.UtilsInterface
 }
@@ -192,8 +200,10 @@ type service struct {
 // New returns a new Service.
 func New() Service {
 	svc := &service{
-		loggedInArrays: map[string]bool{},
-		iscsiTargets:   map[string][]string{},
+		loggedInArrays:     map[string]bool{},
+		iscsiTargets:       map[string][]string{},
+		loggedInNVMeArrays: map[string]bool{},
+		nvmeTargets:        map[string][]string{},
 	}
 	svc.sgSvc = newStorageGroupService(svc)
 	svc.pmaxTimeoutSeconds = defaultPmaxTimeout
@@ -535,10 +545,17 @@ func (s *service) BeforeServe(
 
 	// setup the iscsi client
 	iscsiOpts := make(map[string]string, 0)
-	if chroot, ok := csictx.LookupEnv(ctx, EnvISCSIChroot); ok {
+	if chroot, ok := csictx.LookupEnv(ctx, EnvNodeChroot); ok {
 		iscsiOpts[goiscsi.ChrootDirectory] = chroot
 	}
 	s.iscsiClient = goiscsi.NewLinuxISCSI(iscsiOpts)
+
+	// setup the nvme client
+	nvmetcpOpts := make(map[string]string, 0)
+	if chroot, ok := csictx.LookupEnv(ctx, EnvNodeChroot); ok {
+		nvmetcpOpts[gonvme.ChrootDirectory] = chroot
+	}
+	s.nvmetcpClient = gonvme.NewNVMe(nvmetcpOpts)
 
 	// seed the random methods
 	rand.Seed(time.Now().Unix())
@@ -702,10 +719,12 @@ func (s *service) getTransportProtocolFromEnv() string {
 			break
 		case "ISCSI":
 			break
+		case "NVMETCP":
+			break
 		case "":
 			break
 		default:
-			log.Errorf("Invalid transport protocol: %s, valid values FC or ISCSI", tp)
+			log.Errorf("Invalid transport protocol: %s, valid values FC, ISCSI or NVMETCP", tp)
 			return ""
 		}
 		transportProtocol = tp
