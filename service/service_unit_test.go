@@ -157,7 +157,7 @@ func TestGetVolSize(t *testing.T) {
 				RequiredBytes: MinVolumeSizeBytes - 1,
 				LimitBytes:    0,
 			},
-			numOfCylinders: 0,
+			numOfCylinders: 26,
 		},
 		{
 			// requesting a negative required bytes
