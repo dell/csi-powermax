@@ -839,6 +839,92 @@ func (s *service) nodeProbe(ctx context.Context) error {
 	return nil
 }
 
+func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
+	log.Debugf("Entering nodeProbe for array %s", symID)
+	defer log.Debugf("Exiting nodeProbe for array %s", symID)
+
+	if s.opts.NodeName == "" {
+		return status.Errorf(codes.FailedPrecondition,
+			"Error getting NodeName from the environment")
+	}
+
+	err := s.createPowerMaxClients(ctx)
+	if err != nil {
+		return err
+	}
+	pmaxClient, err := s.GetPowerMaxClient(symID)
+	if err != nil {
+		return err
+	}
+	// get the host from the array
+	hostID, _, _ := s.GetHostSGAndMVIDFromNodeID(s.opts.NodeName, !s.useFC)
+	host, err := pmaxClient.GetHostByID(ctx, symID, hostID)
+	if err != nil {
+		if strings.Contains(err.Error(), notFound) && s.useNFS {
+			log.Debugf("Error %s, while probing %s but since it's NFS this is expected", err.Error(), symID)
+			return nil
+		}
+		// nodeId is not right/it's not NFS and still host is not preset
+		log.Infof("Error %s, while probing %s", err.Error(), symID)
+		return err
+	}
+
+	log.Debugf("Successfully got Host %s on %s", symID, host.HostID)
+
+	// Check if host is connected to iscsi
+	// Get iscsi initiators.
+	if s.useFC {
+		log.Debugf("Checking if FC initiators are logged in or not")
+		initiatorList, err := pmaxClient.GetInitiatorList(ctx, symID, "", false, true)
+		if err != nil {
+			log.Error("Could not get initiator list: " + err.Error())
+			return err
+		}
+		for _, arrayInitrID := range initiatorList.InitiatorIDs {
+			for _, hostInitID := range host.Initiators {
+				if arrayInitrID == hostInitID || strings.HasSuffix(arrayInitrID, hostInitID) {
+					initiator, err := pmaxClient.GetInitiatorByID(ctx, symID, arrayInitrID)
+					if err != nil {
+						return err
+					}
+					if initiator.OnFabric && initiator.LoggedIn {
+						return nil
+					}
+				}
+			}
+		}
+		return fmt.Errorf("no active fc sessions")
+	}
+	IQNs, iSCSIErr := s.iscsiClient.GetInitiators("")
+	if iSCSIErr != nil {
+		return iSCSIErr
+	}
+	if host.NumberMaskingViews > 0 {
+		err = s.performIscsiLoginOnSymID(ctx, symID, IQNs, host.MaskingviewIDs[0], pmaxClient)
+		if err != nil {
+			log.Errorf("error performing iscsi login %s", err.Error())
+			return err
+		}
+	} else {
+		log.Infof("skippping login on host %s as no masking view exist", host.HostID)
+	}
+
+	log.Debugf("Checking if iscsi sessions are active on node or not")
+	sessions, _ := s.iscsiClient.GetSessions()
+	for _, target := range s.iscsiTargets[symID] {
+		for _, session := range sessions {
+			log.Debugf("matching %v with %v", target, session)
+			if session.Target == target && session.ISCSISessionState == goiscsi.ISCSISessionStateLOGGEDIN {
+				if s.useNFS {
+					s.useNFS = false
+				}
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("no active iscsi sessions")
+}
+
 func (s *service) NodeGetCapabilities(
 	_ context.Context,
 	_ *csi.NodeGetCapabilitiesRequest) (
@@ -1074,7 +1160,7 @@ func (s *service) NodeGetInfo(
 	}
 
 	var maxPowerMaxVolumesPerNode int64
-	labels, err := s.GetNodeLabels()
+	labels, err := s.k8sUtils.GetNodeLabels(s.opts.NodeFullName)
 	if err != nil {
 		log.Infof("failed to get Node Labels with error '%s'", err.Error())
 	}
@@ -1332,7 +1418,9 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		log.Infof("TransportProtocol %s FC portWWNs: %s ... IQNs: %s", s.opts.TransportProtocol, portWWNs, IQNs)
 		// The driver needs at least one FC or iSCSI initiator to be defined
 		if len(portWWNs) == 0 && len(IQNs) == 0 {
-			return fmt.Errorf("No FC or iSCSI initiators were found and at least 1 is required")
+			log.Infof("No FC or iSCSI initiators were found, assuming NFS protocol configured")
+			s.useNFS = true
+			return nil
 		}
 	} else {
 		err := s.setVMHost()
@@ -1350,8 +1438,8 @@ func (s *service) nodeStartup(ctx context.Context) error {
 	symmetrixIDs := arrays.SymmetrixIDs
 	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
 
-	s.nodeHostSetup(ctx, portWWNs, IQNs, symmetrixIDs) // #nosec G20
-
+	_ = s.nodeHostSetup(ctx, portWWNs, IQNs, symmetrixIDs) // #nosec G20
+	go s.startAPIService(ctx)
 	return err
 }
 
@@ -1483,8 +1571,6 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 	// See if it's viable to use FC and/or ISCSI
 	hostIDIscsi, _, _ := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
 	hostIDFC, _, _ := s.GetFCHostSGAndMVIDFromNodeID(s.opts.NodeName)
-	var useFC bool
-	var useIscsi bool
 
 	// Loop through the symmetrix, looking for existing initiators
 	for _, symID := range symmetrixIDs {
@@ -1512,14 +1598,14 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 		log.Infof("valid FC initiators: %v", validFCs)
 		if len(validFCs) > 0 && (s.opts.TransportProtocol == "" || s.opts.TransportProtocol == FcTransportProtocol) {
 			// We do have to have pre-existing initiators that were zoned for FC
-			useFC = true
+			s.useFC = true
 		}
 		validIscsis, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, IQNs, hostIDIscsi, pmaxClient)
 		if err != nil {
 			log.Error("Could not validate iSCSI initiators" + err.Error())
 		} else if s.opts.TransportProtocol == "" || s.opts.TransportProtocol == IscsiTransportProtocol {
 			// We do not have to have pre-existing initiators to use Iscsi (we can create them)
-			useIscsi = true
+			s.useIscsi = true
 		}
 		log.Infof("valid (existing) iSCSI initiators (must be manually created): %v", validIscsis)
 		if len(validIscsis) == 0 {
@@ -1527,13 +1613,13 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			validIscsis = IQNs
 		}
 
-		if !useFC && !useIscsi {
+		if !s.useFC && !s.useIscsi {
 			log.Error("No valid initiators- could not initialize FC or iSCSI")
 			return err
 		}
 
 		iscsiChroot, _ := csictx.LookupEnv(context.Background(), EnvISCSIChroot)
-		if useFC {
+		if s.useFC {
 			formattedFCs := make([]string, 0)
 			for _, initiatorID := range validFCs {
 				elems := strings.Split(initiatorID, ":")
@@ -1546,7 +1632,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			s.initFCConnector(iscsiChroot)
 			s.arrayTransportProtocolMap[symID] = FcTransportProtocol
 			isSymConnFC[symID] = true
-		} else if useIscsi {
+		} else if s.useIscsi {
 			err := s.ensureISCSIDaemonStarted()
 			if err != nil {
 				log.Errorf("Failed to start the ISCSI Daemon. Error - %s", err.Error())
@@ -1642,7 +1728,7 @@ func (s *service) loginIntoISCSITargets(array string, targets []maskingViewTarge
 	var err error
 	loggedInAll := true
 	if s.opts.EnableCHAP {
-		// CHAP is already enabled on the array, discovery will not work
+		// CHAP is already enabled on the array, discovery will not work,
 		// so we need to do a login (as we have already setup the database(s) successfully
 		for _, tgt := range targets {
 			loginError := s.iscsiClient.PerformLogin(tgt.target)
@@ -1652,6 +1738,7 @@ func (s *service) loginIntoISCSITargets(array string, targets []maskingViewTarge
 				err = loginError
 				loggedInAll = false
 			} else {
+				s.iscsiTargets[array] = append(s.iscsiTargets[array], tgt.target.Target)
 				log.Infof("Successfully logged into target: %s", tgt.target.Target)
 			}
 		}
@@ -1666,6 +1753,7 @@ func (s *service) loginIntoISCSITargets(array string, targets []maskingViewTarge
 				err = discoveryError
 				loggedInAll = false
 			} else {
+				s.iscsiTargets[array] = append(s.iscsiTargets[array], tgt.target.Target)
 				log.Infof("Successfully logged into target: %s on portal :%s",
 					tgt.target.Target, tgt.target.Portal)
 			}
@@ -1812,43 +1900,51 @@ func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error 
 		}
 		log.Debugf("(ISCSI) No logins were done earlier for %s", array)
 		s.cacheMutex.Unlock()
-		// Try to get the masking view targets from the cache
-		mvTargets, ok := symToMaskingViewTargets.Load(array)
-		if ok {
-			// Entry is present in cache
-			// This means that we discovered the targets
-			// but haven't logged in for some reason
-			log.Debugf("Cache hit for %s", array)
-			maskingViewTargets := mvTargets.([]maskingViewTargetInfo)
-			// First set the CHAP credentials if required
-			err = s.setCHAPCredentials(array, maskingViewTargets, IQNs)
-			if err != nil {
-				// log the error and continue
-				log.Errorf("Failed to set CHAP credentials for %v", maskingViewTargets)
-				// Reset the error
-				err = nil
-			}
-			err = s.loginIntoISCSITargets(array, maskingViewTargets)
-		} else {
-			// Entry not in cache
-			// Configure MaskingView Targets - CHAP, Discovery/Login
-			_, tempErr := s.getAndConfigureMaskingViewTargets(ctx, array, mvName, IQNs, pmaxClient)
-			if tempErr != nil {
-				if strings.Contains(tempErr.Error(), "does not exist") {
-					// Ignore this error
-					log.Debugf("Couldn't configure ISCSI targets as masking view: %s doesn't exist for array: %s",
-						mvName, array)
-					tempErr = nil
-				} else {
-					err = tempErr
-					log.Errorf("Failed to configure ISCSI targets for masking view: %s, array: %s. Error: %s",
-						mvName, array, tempErr.Error())
-				}
-			}
-		}
+		err = s.performIscsiLoginOnSymID(ctx, array, IQNs, mvName, pmaxClient)
 		if err != nil {
-			return fmt.Errorf("failed to login to (some) ISCSI targets. Error: %s", err.Error())
+			return fmt.Errorf("failed to login to (some) %s ISCSI targets. Error: %s", array, err.Error())
 		}
+	}
+	return nil
+}
+
+func (s *service) performIscsiLoginOnSymID(ctx context.Context, array string, IQNs []string, mvName string, pmaxClient pmax.Pmax) (err error) {
+	// Try to get the masking view targets from the cache
+	mvTargets, ok := symToMaskingViewTargets.Load(array)
+	if ok {
+		// Entry is present in cache
+		// This means that we discovered the targets
+		// but haven't logged in for some reason
+		log.Debugf("Cache hit for %s", array)
+		maskingViewTargets := mvTargets.([]maskingViewTargetInfo)
+		// First set the CHAP credentials if required
+		err = s.setCHAPCredentials(array, maskingViewTargets, IQNs)
+		if err != nil {
+			// log the error and continue
+			log.Errorf("Failed to set CHAP credentials for %v", maskingViewTargets)
+			// Reset the error
+			err = nil
+		}
+		err = s.loginIntoISCSITargets(array, maskingViewTargets)
+	} else {
+		// Entry not in cache
+		// Configure MaskingView Targets - CHAP, Discovery/Login
+		_, tempErr := s.getAndConfigureMaskingViewTargets(ctx, array, mvName, IQNs, pmaxClient)
+		if tempErr != nil {
+			if strings.Contains(tempErr.Error(), "does not exist") {
+				// Ignore this error
+				log.Debugf("Couldn't configure ISCSI targets as masking view: %s doesn't exist for array: %s",
+					mvName, array)
+				tempErr = nil
+			} else {
+				err = tempErr
+				log.Errorf("Failed to configure ISCSI targets for masking view: %s, array: %s. Error: %s",
+					mvName, array, tempErr.Error())
+			}
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("failed to login in array: %s ISCSI targets. Error: %s", array, err.Error())
 	}
 	return nil
 }

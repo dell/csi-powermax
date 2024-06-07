@@ -392,6 +392,10 @@ func (revProxy *StandAloneProxy) GetRouter() http.Handler {
 	router.HandleFunc(utils.Prefix+"/{version}/system/symmetrix", revProxy.ifNoSymIDInvoke(revProxy.ServeSymmetrix))
 	router.HandleFunc(utils.Prefix+"/{version}/system/version", revProxy.ifNoSymIDInvoke(revProxy.ServeVersions))
 	router.HandleFunc(utils.Prefix+"/version", revProxy.ifNoSymIDInvoke(revProxy.ServeVersions))
+	// performance
+	router.HandleFunc(utils.Prefix+"/performance/Array/keys", revProxy.ifNoSymIDInvoke(revProxy.ServePerformance))
+	router.HandleFunc(utils.Prefix+"/performance/Volume/metrics", revProxy.ifNoSymIDInvoke(revProxy.ServeVolumePerformance))
+	router.HandleFunc(utils.Prefix+"/performance/file/filesystem/metrics", revProxy.ifNoSymIDInvoke(revProxy.ServeFSPerformance))
 
 	// Snapshot
 	router.HandleFunc(utils.Prefix+"/{version}/replication/capabilities/symmetrix", revProxy.ifNoSymIDInvoke(revProxy.ServeReplicationCapabilities))
@@ -513,6 +517,70 @@ func (revProxy *StandAloneProxy) ServeVersions(res http.ResponseWriter, req *htt
 		if err != nil {
 			log.Errorf("Authorisation step fails for: (%s) symID with error (%s)", symID, err.Error())
 		}
+	}
+}
+
+// ServePerformance - handler function for the performance endpoint
+func (revProxy *StandAloneProxy) ServePerformance(res http.ResponseWriter, req *http.Request) {
+	symIDs, err := revProxy.getAuthorisedArrays(res, req)
+	if err != nil {
+		return
+	}
+	for _, symID := range symIDs {
+		_, err := revProxy.getResponseIfAuthorised(res, req, symID)
+		if err != nil {
+			log.Errorf("Authorisation step fails for: (%s) symID with error (%s)", symID, err.Error())
+		}
+	}
+}
+
+// ServeVolumePerformance - handler function for the performance endpoint
+func (revProxy *StandAloneProxy) ServeVolumePerformance(res http.ResponseWriter, req *http.Request) {
+	reqParam := new(types.VolumeMetricsParam)
+	decoder := json.NewDecoder(req.Body)
+	if err := decoder.Decode(reqParam); err != nil {
+		log.Errorf("Decoding fails for mertics req for volume: %s", err.Error())
+	}
+	resp, err := revProxy.getResponseIfAuthorised(res, req, reqParam.SystemID)
+	if err != nil {
+		log.Errorf("Authorisation step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
+	}
+	defer resp.Body.Close()
+	err = utils.IsValidResponse(resp)
+	if err != nil {
+		log.Errorf("Get performace metrics step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
+	} else {
+		metricsIterator := new(types.VolumeMetricsIterator)
+		if err := json.NewDecoder(resp.Body).Decode(metricsIterator); err != nil {
+			utils.WriteHTTPError(res, "decoding error: "+err.Error(), 400)
+			log.Errorf("decoding error: %s", err.Error())
+		}
+		utils.WriteHTTPResponse(res, metricsIterator)
+	}
+}
+
+// ServeFSPerformance - handler function for the performance endpoint
+func (revProxy *StandAloneProxy) ServeFSPerformance(res http.ResponseWriter, req *http.Request) {
+	reqParam := new(types.FileSystemMetricsParam)
+	decoder := json.NewDecoder(req.Body)
+	if err := decoder.Decode(reqParam); err != nil {
+		log.Errorf("Decoding fails for mertics req for volume: %s", err.Error())
+	}
+	resp, err := revProxy.getResponseIfAuthorised(res, req, reqParam.SystemID)
+	if err != nil {
+		log.Errorf("Authorisation step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
+	}
+	defer resp.Body.Close()
+	err = utils.IsValidResponse(resp)
+	if err != nil {
+		log.Errorf("Get performace metrics step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
+	} else {
+		metricsIterator := new(types.FileSystemMetricsIterator)
+		if err := json.NewDecoder(resp.Body).Decode(metricsIterator); err != nil {
+			utils.WriteHTTPError(res, "decoding error: "+err.Error(), 400)
+			log.Errorf("decoding error: %s", err.Error())
+		}
+		utils.WriteHTTPResponse(res, metricsIterator)
 	}
 }
 

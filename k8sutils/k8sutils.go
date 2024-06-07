@@ -20,6 +20,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
+
+	v12 "k8s.io/api/core/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
 	"k8s.io/client-go/kubernetes"
@@ -32,17 +38,54 @@ type leaderElection interface {
 	WithNamespace(namespace string)
 }
 
-// CreateKubeClientSet - Returns kubeclient set
-func CreateKubeClientSet(kubeconfig string) (*kubernetes.Clientset, error) {
-	var clientset *kubernetes.Clientset
-	if kubeconfig != "" {
-		// use the current context in kubeconfig
-		config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+// UtilsInterface - interface which provides helper methods related to k8s
+type UtilsInterface interface {
+	GetNodeLabels(string) (map[string]string, error)
+	GetNodeIPs(string) string
+}
+
+// K8sUtils stores the configuration of the k8s client, k8s client and the informer
+type K8sUtils struct {
+	KubernetesClient *KubernetesClient
+}
+
+var k8sUtils *K8sUtils
+
+// KubernetesClient - client connection
+type KubernetesClient struct {
+	ClientSet *kubernetes.Clientset
+}
+
+// Init - Initializes the k8s client and creates the secret informer
+func Init(kubeConfig string) (*K8sUtils, error) {
+	if k8sUtils != nil {
+		return k8sUtils, nil
+	}
+	var kubeClient *kubernetes.Clientset
+	kubeClient, err := CreateKubeClientSet(kubeConfig)
+	if err != nil {
+		log.Errorf("failed to create kube client. error: %s", err.Error())
+		return nil, err
+	}
+	k8sUtils := &K8sUtils{
+		KubernetesClient: &KubernetesClient{
+			ClientSet: kubeClient,
+		},
+	}
+	return k8sUtils, nil
+}
+
+// CreateKubeClientSet - Returns kubeClient set
+func CreateKubeClientSet(kubeConfig string) (*kubernetes.Clientset, error) {
+	var clientSet *kubernetes.Clientset
+	if kubeConfig != "" {
+		// use the current context in kubeConfig
+		config, err := clientcmd.BuildConfigFromFlags("", kubeConfig)
 		if err != nil {
 			return nil, err
 		}
-		// create the clientset
-		clientset, err = kubernetes.NewForConfig(config)
+		// create the clientSet
+		clientSet, err = kubernetes.NewForConfig(config)
 		if err != nil {
 			return nil, err
 		}
@@ -51,21 +94,52 @@ func CreateKubeClientSet(kubeconfig string) (*kubernetes.Clientset, error) {
 		if err != nil {
 			return nil, err
 		}
-		// creates the clientset
-		clientset, err = kubernetes.NewForConfig(config)
+		// creates the clientSet
+		clientSet, err = kubernetes.NewForConfig(config)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return clientset, nil
+	return clientSet, nil
 }
 
 // LeaderElection ...
-func LeaderElection(clientset *kubernetes.Clientset, lockName string, namespace string, runFunc func(ctx context.Context)) {
-	le := leaderelection.NewLeaderElection(clientset, lockName, runFunc)
+func LeaderElection(clientSet *kubernetes.Clientset, lockName string, namespace string, runFunc func(ctx context.Context)) {
+	le := leaderelection.NewLeaderElection(clientSet, lockName, runFunc)
 	le.WithNamespace(namespace)
 	if err := le.Run(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "failed to initialize leader election: %v", err)
 		os.Exit(1)
 	}
+}
+
+// GetNodeLabels returns back Node labels for the node name
+func (c *K8sUtils) GetNodeLabels(nodeFullName string) (map[string]string, error) {
+	// access the API to fetch node object
+	node, err := c.KubernetesClient.ClientSet.CoreV1().Nodes().Get(context.TODO(), nodeFullName, v1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	log.Debugf("Node %s details\n", node)
+
+	return node.Labels, nil
+}
+
+// GetNodeIPs returns cluster IP of the node object
+func (c *K8sUtils) GetNodeIPs(nodeID string) string {
+	// access the API to fetch node object
+	nodeList, err := c.KubernetesClient.ClientSet.CoreV1().Nodes().List(context.TODO(), v1.ListOptions{})
+	if err != nil {
+		return ""
+	}
+	for _, node := range nodeList.Items {
+		if strings.Contains(node.Name, nodeID) {
+			for _, addr := range node.Status.Addresses {
+				if addr.Type == v12.NodeInternalIP {
+					return addr.Address
+				}
+			}
+		}
+	}
+	return ""
 }
