@@ -25,6 +25,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dell/csi-powermax/v2/k8sutils"
+
+	"github.com/dell/dell-csi-extensions/podmon"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 
@@ -33,7 +36,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/dell/csi-powermax/v2/k8sutils"
 	"github.com/dell/gocsi"
 	csictx "github.com/dell/gocsi/context"
 	"github.com/dell/goiscsi"
@@ -46,7 +48,6 @@ import (
 	migrext "github.com/dell/dell-csi-extensions/migration"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 	pmax "github.com/dell/gopowermax/v2"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Constants for the service
@@ -56,12 +57,13 @@ const (
 	defaultPrivDir             = "/dev/disk/csi-powermax"
 	defaultPmaxTimeout         = 120
 	defaultLockCleanupDuration = 4
-	defaultU4PVersion          = "91" // defaultU4PVersion should be reset to base supported endpoint version for the CSI driver release
 	csiPrefix                  = "csi-"
 	logFields                  = "logFields"
 	maxAuthenticateRetryCount  = 4
 	CSILogLevelParam           = "CSI_LOG_LEVEL"
 	CSILogFormatParam          = "CSI_LOG_FORMAT"
+	ArrayStatus                = "/array-status"
+	DefaultPodmonPollRate      = 60
 )
 
 type contextKey string           // specific string type used for context keys
@@ -129,6 +131,9 @@ type Opts struct {
 	VCenterHostPassword        string // vCenter password
 	MaxVolumesPerNode          int64  // to specify volume limits
 	KubeConfigPath             string // to specify k8s configuration to be used CSI driver
+	IsPodmonEnabled            bool   // used to indicate that podmon is enabled
+	PodmonPort                 string // to indicates the port to be used for exposing podmon API health
+	PodmonPollingFreq          string // indicates the polling frequency to check array connectivity
 }
 
 // NodeConfig defines rules for given node
@@ -160,6 +165,10 @@ type service struct {
 	cacheMutex        sync.Mutex
 	nodeProbeMutex    sync.Mutex
 	nodeIsInitialized bool
+	useNFS            bool
+	useFC             bool
+	useIscsi          bool
+	iscsiTargets      map[string][]string
 	// Timeout for storage pool cache
 	storagePoolCacheDuration time.Duration
 	// only used for testing, indicates if the deletion worked finished populating queue
@@ -176,12 +185,15 @@ type service struct {
 	topologyConfig      *TopologyConfig
 	allowedTopologyKeys map[string][]string // map of nodes to allowed topology keys
 	deniedTopologyKeys  map[string][]string // map of nodes to denied topology keys
+
+	k8sUtils k8sutils.UtilsInterface
 }
 
 // New returns a new Service.
 func New() Service {
 	svc := &service{
 		loggedInArrays: map[string]bool{},
+		iscsiTargets:   map[string][]string{},
 	}
 	svc.sgSvc = newStorageGroupService(svc)
 	svc.pmaxTimeoutSeconds = defaultPmaxTimeout
@@ -274,6 +286,9 @@ func (s *service) BeforeServe(
 			"VsphereHostNames":         s.opts.VSphereHostName,
 			"VsphereHostURL":           s.opts.VCenterHostURL,
 			"VsphereHostUsername":      s.opts.VCenterHostUserName,
+			"isPodmonEnabled":          s.opts.IsPodmonEnabled,
+			"PodmonPort":               s.opts.PodmonPort,
+			"PodmonFrequency":          s.opts.PodmonPollingFreq,
 		}
 
 		if s.opts.Password != "" {
@@ -404,6 +419,14 @@ func (s *service) BeforeServe(
 		}
 	}
 
+	if podmonPort, ok := csictx.LookupEnv(ctx, EnvPodmonArrayConnectivityAPIPORT); ok {
+		opts.PodmonPort = fmt.Sprintf(":%s", podmonPort)
+	}
+
+	if podmonPollRate, ok := csictx.LookupEnv(ctx, EnvPodmonArrayConnectivityPollRate); ok {
+		opts.PodmonPollingFreq = podmonPollRate
+	}
+
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
 	opts.ProxyServiceHost, opts.ProxyServicePort, opts.UseProxy = s.getProxySettingsFromEnv()
 	if !opts.UseProxy && !inducedMockReverseProxy {
@@ -476,6 +499,7 @@ func (s *service) BeforeServe(
 	opts.ModifyHostName = pb(EnvModifyHostName)
 	opts.IsHealthMonitorEnabled = pb(EnvHealthMonitorEnabled)
 	opts.IsTopologyControlEnabled = pb(EnvTopologyFilterEnabled)
+	opts.IsPodmonEnabled = pb(EnvPodmonEnabled)
 	opts.IsVsphereEnabled = pb(EnvVSphereEnabled)
 	if opts.IsVsphereEnabled {
 		// read port group
@@ -500,6 +524,14 @@ func (s *service) BeforeServe(
 		}
 	}
 	s.opts = opts
+
+	// setup the k8sClient
+	if s.k8sUtils == nil {
+		s.k8sUtils, err = k8sutils.Init(s.opts.KubeConfigPath)
+		if err != nil {
+			return fmt.Errorf("error creating k8sClient %s", err.Error())
+		}
+	}
 
 	// setup the iscsi client
 	iscsiOpts := make(map[string]string, 0)
@@ -623,6 +655,7 @@ func ReadConfig(configPath string) (*TopologyConfig, error) {
 func (s *service) RegisterAdditionalServers(server *grpc.Server) {
 	csiext.RegisterReplicationServer(server, s)
 	migrext.RegisterMigrationServer(server, s)
+	podmon.RegisterPodmonServer(server, s)
 }
 
 func (s *service) getProxySettingsFromEnv() (string, string, bool) {
@@ -810,18 +843,15 @@ func getLogFields(ctx context.Context) log.Fields {
 	return fields
 }
 
-func (s *service) GetNodeLabels() (map[string]string, error) {
-	k8sclientset, err := k8sutils.CreateKubeClientSet(s.opts.KubeConfigPath)
-	if err != nil {
-		log.Errorf("init client failed: '%s'", err.Error())
-		return nil, err
+// SetPollingFrequency reads the pollingFrequency from Env, sets default vale if ENV not found
+func (s *service) SetPollingFrequency(ctx context.Context) int64 {
+	var pollingFrequency int64
+	if pollRateEnv, ok := csictx.LookupEnv(ctx, EnvPodmonArrayConnectivityPollRate); ok {
+		if pollingFrequency, _ = strconv.ParseInt(pollRateEnv, 10, 32); pollingFrequency != 0 {
+			log.Debugf("use pollingFrequency as %d seconds", pollingFrequency)
+			return pollingFrequency
+		}
 	}
-	// access the API to fetch node object
-	node, err := k8sclientset.CoreV1().Nodes().Get(context.TODO(), s.opts.NodeFullName, v1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-	log.Debugf("Node %s details\n", node)
-
-	return node.Labels, nil
+	log.Debugf("use default pollingFrequency as %d seconds", DefaultPodmonPollRate)
+	return DefaultPodmonPollRate
 }

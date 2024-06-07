@@ -16,9 +16,11 @@ limitations under the License.
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -28,6 +30,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dell/csi-powermax/v2/k8smock"
+
 	"github.com/dell/dell-csi-extensions/common"
 
 	"github.com/cucumber/messages-go/v10"
@@ -35,10 +39,10 @@ import (
 	migrext "github.com/dell/dell-csi-extensions/migration"
 	"github.com/dell/gocsi"
 
-	csiext "github.com/dell/dell-csi-extensions/replication"
-
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cucumber/godog"
+	podmon "github.com/dell/dell-csi-extensions/podmon"
+	csiext "github.com/dell/dell-csi-extensions/replication"
 	"github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
 	pmax "github.com/dell/gopowermax/v2"
@@ -93,6 +97,7 @@ const (
 	defaultISCSIDirPort2       = "SE2-E:4"
 	MaxRetries                 = 10
 	Namespace                  = "namespace-test"
+	kubeconfig                 = "/etc/kubernetes/admin.conf"
 )
 
 var allBlockDevices = [2]string{nodePublishBlockDevicePath, altPublishBlockDevicePath}
@@ -180,6 +185,7 @@ type feature struct {
 	uDevID                               string
 	nodeGetVolumeStatsResponse           *csi.NodeGetVolumeStatsResponse
 	setIOLimits                          bool
+	validateVHCResp                      *podmon.ValidateVolumeHostConnectivityResponse
 }
 
 var inducedErrors struct {
@@ -315,6 +321,7 @@ func (f *feature) aPowerMaxService() error {
 	f.uDevID = ""
 	f.nodeGetVolumeStatsResponse = nil
 	f.setIOLimits = false
+	f.validateVHCResp = nil
 	inducedErrors.invalidSymID = false
 	inducedErrors.invalidStoragePool = false
 	inducedErrors.invalidServiceLevel = false
@@ -420,7 +427,7 @@ func (f *feature) getService() *service {
 	// This is a temp fix and needs to be handled in a different way
 	mock.Data.JSONDir = "../../gopowermax/mock"
 	svc.loggedInArrays = map[string]bool{}
-
+	svc.iscsiTargets = map[string][]string{}
 	var opts Opts
 	opts.User = "username"
 	opts.Password = "password"
@@ -429,7 +436,7 @@ func (f *feature) getService() *service {
 	opts.Insecure = true
 	opts.DisableCerts = true
 	opts.EnableBlock = true
-	opts.KubeConfigPath = "/etc/kubernetes/admin.conf"
+	opts.KubeConfigPath = kubeconfig
 	opts.NodeName, _ = os.Hostname()
 	opts.PortGroups = []string{"portgroup1", "portgroup2"}
 	mock.AddPortGroup("portgroup1", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
@@ -442,6 +449,7 @@ func (f *feature) getService() *service {
 	opts.NonDefaultRetries = true
 	opts.ModifyHostName = false
 	opts.NodeNameTemplate = ""
+	opts.IsPodmonEnabled = true
 	opts.Lsmod = `
 Module                  Size  Used by
 vsock_diag             12610  0
@@ -454,6 +462,7 @@ ip6t_rpfilter          12595  1
 	svc.fcConnector = &mockFCGobrick{}
 	svc.iscsiConnector = &mockISCSIGobrick{}
 	svc.dBusConn = &mockDbusConnection{}
+	svc.k8sUtils = k8smock.Init()
 	mockGobrickReset()
 	mockgosystemdReset()
 	disconnectVolumeRetryTime = 10 * time.Millisecond
@@ -1152,6 +1161,14 @@ func (f *feature) iInduceError(errtype string) error {
 		mock.InducedErrors.ExecuteActionError = true
 	case "GetFileSystemError":
 		mock.InducedErrors.GetFileSystemError = true
+	case "GetArrayPerfKeyError":
+		mock.InducedErrors.GetArrayPerfKeyError = true
+	case "GetVolumesMetricsError":
+		mock.InducedErrors.GetVolumesMetricsError = true
+	case "GetFileSysMetricsError":
+		mock.InducedErrors.GetFileSysMetricsError = true
+	case "GetFreshMetrics":
+		mock.InducedErrors.GetFreshMetrics = true
 	case "NoSymlinkForNodePublish":
 		cmd := exec.Command("rm", "-rf", nodePublishSymlinkDir)
 		_, err := cmd.CombinedOutput()
@@ -2567,6 +2584,7 @@ func (f *feature) iCallBeforeServe() error {
 	ctxOSEnviron := interface{}("os.Environ")
 	stringSlice := f.getTypicalEnviron()
 	stringSlice = append(stringSlice, EnvClusterPrefix+"=TST")
+	f.service.k8sUtils = k8smock.Init()
 	ctx := context.WithValue(context.Background(), ctxOSEnviron, stringSlice)
 	listener, err := net.Listen("tcp", "127.0.0.1:65000")
 	if err != nil {
@@ -2580,6 +2598,7 @@ func (f *feature) iCallBeforeServe() error {
 func (f *feature) iCallBeforeServeWithoutClusterPrefix() error {
 	ctxOSEnviron := interface{}("os.Environ")
 	stringSlice := f.getTypicalEnviron()
+	f.service.k8sUtils = k8smock.Init()
 	ctx := context.WithValue(context.Background(), ctxOSEnviron, stringSlice)
 	listener, err := net.Listen("tcp", "127.0.0.1:65000")
 	if err != nil {
@@ -2593,6 +2612,7 @@ func (f *feature) iCallBeforeServeWithoutClusterPrefix() error {
 func (f *feature) iCallBeforeServeWithAnInvalidClusterPrefix() error {
 	ctxOSEnviron := interface{}("os.Environ")
 	stringSlice := f.getTypicalEnviron()
+	f.service.k8sUtils = k8smock.Init()
 	stringSlice = append(stringSlice, EnvClusterPrefix+"=LONG")
 	ctx := context.WithValue(context.Background(), ctxOSEnviron, stringSlice)
 	listener, err := net.Listen("tcp", "127.0.0.1:65000")
@@ -2612,6 +2632,7 @@ func (f *feature) iCallBeforeServeWithTopologyConfigSetAt(path string) error {
 		stringSlice = append(stringSlice, EnvTopoConfigFilePath+"="+path)
 	}
 	stringSlice = append(stringSlice, gocsi.EnvVarMode+"=node")
+	f.service.k8sUtils = k8smock.Init()
 	ctx := context.WithValue(context.Background(), ctxOSEnviron, stringSlice)
 	listener, err := net.Listen("tcp", "127.0.0.1:65000")
 	if err != nil {
@@ -4631,6 +4652,93 @@ func (f *feature) iCallFileSystemDeleteVolume() error {
 	return nil
 }
 
+func (f *feature) validateVolumeHostConnectivityCallIsValid() error {
+	if !strings.Contains(f.validateVHCResp.Messages[0], "ValidateVolumeHostConnectivity is implemented") {
+		return errors.New("validateVolumeHostConnectivity is not implemented")
+	}
+	return nil
+}
+
+func (f *feature) iCallValidateVolumeHostConnectivity() error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := &podmon.ValidateVolumeHostConnectivityRequest{}
+	f.validateVHCResp, f.err = f.service.ValidateVolumeHostConnectivity(ctx, req)
+	if f.err != nil {
+		log.Printf("error in ValidateVolumeHostConnectivity: %s", f.err.Error())
+	}
+	return nil
+}
+
+func (f *feature) iCallValidateVolumeHostConnectivityWithAndSymID(nodeID, symID string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := &podmon.ValidateVolumeHostConnectivityRequest{NodeId: nodeID}
+	if symID == "default" {
+		req.ArrayId = f.symmetrixID
+	}
+	if symID == "fromVolID" {
+		req.VolumeIds = []string{f.volumeID}
+		if inducedErrors.invalidVolumeID {
+			req.VolumeIds = []string{"000-000"}
+		}
+	}
+	if nodeID == "no-node" {
+		req.NodeId = ""
+		req.VolumeIds = []string{f.volumeID}
+	}
+	switch nodeID {
+	case "connected-node":
+		req.NodeId = "node1-127.0.0.1"
+		req.VolumeIds = []string{f.volumeID}
+		break
+	case "connected-node-faultyVolID":
+		req.NodeId = "node1-127.0.0.1"
+		faultyVolID := strings.Replace(f.volumeID, f.symmetrixID, "000197900000", 1)
+		req.VolumeIds = []string{faultyVolID}
+		break
+	}
+	f.validateVHCResp, f.err = f.service.ValidateVolumeHostConnectivity(ctx, req)
+	if f.err != nil {
+		log.Printf("error in ValidateVolumeHostConnectivity: %s", f.err.Error())
+	}
+	return nil
+}
+
+func (f *feature) iStartNodeAPIServer() {
+	var status ArrayConnectivityStatus
+	status.LastAttempt = time.Now().Unix()
+	status.LastSuccess = time.Now().Unix()
+	input, _ := json.Marshal(status)
+
+	// responding with some dummy response that is for the case when array is connected and LastSuccess check was just finished
+	http.HandleFunc(ArrayStatus+"/"+f.symmetrixID, func(w http.ResponseWriter, _ *http.Request) {
+		w.Write(input)
+	})
+
+	f.service.opts.PodmonPort = ":9028"
+	fmt.Printf("Starting server at port %s\n", f.service.opts.PodmonPort)
+	go http.ListenAndServe(f.service.opts.PodmonPort, nil) // #nosec G114
+}
+
+func (f *feature) iCallIsIOInProgress() error {
+	symID := f.symmetrixID
+	if inducedErrors.invalidSymID {
+		symID = ""
+	}
+	_, _, devID, _, _, _ := s.parseCsiID(f.volumeID)
+	f.err = f.service.IsIOInProgress(context.Background(), devID, symID)
+	return nil
+}
+
+func (f *feature) theValidateVolumeHostMessageContains(msg string) error {
+	if !strings.Contains(f.validateVHCResp.Messages[0], msg) {
+		errMsg := fmt.Sprintf("validateVolumeHostConnectivity response is incorrect, expected: %s actual %s", msg, f.validateVHCResp.Messages[0])
+		return errors.New(errMsg)
+	}
+	return nil
+}
+
 func FeatureContext(s *godog.ScenarioContext) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -4867,4 +4975,10 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I mix the RDF personalities$`, f.iMixTheRDFPersonalities)
 	s.Step(`^I call fileSystem CreateVolume "([^"]*)"$`, f.iCallFileSystemCreateVolume)
 	s.Step(`^I call fileSystem DeleteVolume$`, f.iCallFileSystemDeleteVolume)
+	s.Step(`^ValidateVolumeHostConnectivity is valid$`, f.validateVolumeHostConnectivityCallIsValid)
+	s.Step(`^I call ValidateVolumeHostConnectivity$`, f.iCallValidateVolumeHostConnectivity)
+	s.Step(`^I call ValidateVolumeHostConnectivity with "([^"]*)" and symID "([^"]*)"$`, f.iCallValidateVolumeHostConnectivityWithAndSymID)
+	s.Step(`^the ValidateVolumeHost message contains "([^"]*)"$`, f.theValidateVolumeHostMessageContains)
+	s.Step(`^I start node API server$`, f.iStartNodeAPIServer)
+	s.Step(`^I call IsIOInProgress$`, f.iCallIsIOInProgress)
 }

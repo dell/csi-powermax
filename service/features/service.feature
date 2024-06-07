@@ -516,10 +516,10 @@ Feature: PowerMax CSI interface
       And <count> arrays are logged in
 
       Examples:
-      | induced1               | errormsg                                         | count |
-#      | "GetSymmetrixError"    | "Unable to retrieve Array List"                  | 0     |
-      | "GOISCSIDiscoveryError"| "failed to login to (some) ISCSI targets"        | 0     |
-      | "none"                 | "none"                                           | 3     |
+      | induced1               | errormsg                           | count |
+#      | "GetSymmetrixError"    | "Unable to retrieve Array List"   | 0     |
+      | "GOISCSIDiscoveryError"| "failed to login"                  | 0     |
+      | "none"                 | "none"                             | 3     |
 
 @v1.3.0
     Scenario Outline: Validate ensureLoggedIntoEveryArray with CHAP
@@ -534,11 +534,11 @@ Feature: PowerMax CSI interface
       And <count> arrays are logged in
 
       Examples:
-      | induced1               | errormsg                                         | count |
-#      | "GetSymmetrixError"    | "Unable to retrieve Array List"                  | 0     |
-      | "InduceLoginError"     | "failed to login to (some) ISCSI targets"        | 0     |
-      | "InduceSetCHAPError"   | "set CHAP induced error"                         | 0     |
-      | "none"                 | "none"                                           | 3     |
+      | induced1               | errormsg                              | count |
+#      | "GetSymmetrixError"    | "Unable to retrieve Array List"      | 0     |
+      | "InduceLoginError"     | "failed to login"                     | 0     |
+      | "InduceSetCHAPError"   | "set CHAP induced error"              | 0     |
+      | "none"                 | "none"                                | 3     |
 
 @v1.0.0
     Scenario Outline: Test GetVolumeByID function

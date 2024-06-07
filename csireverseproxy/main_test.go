@@ -441,4 +441,13 @@ func TestSAHTTPRequest(t *testing.T) {
 		return
 	}
 	fmt.Printf("RESPONSE_BODY: %s\n", resp)
+
+	// make a request for performance
+	path = utils.Prefix + "/performance/Array/keys"
+	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	fmt.Printf("RESPONSE_BODY: %s\n", resp)
 }

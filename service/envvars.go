@@ -153,4 +153,13 @@ const (
 
 	// EnvVCPassword is an env variable that has vCenter password
 	EnvVCPassword = "X_CSI_VCENTER_PWD" // #nosec G101
+
+	// EnvPodmonEnabled indicates that podmon is enabled
+	EnvPodmonEnabled = "X_CSI_PODMON_ENABLED"
+
+	// EnvPodmonArrayConnectivityAPIPORT indicates the port to be used for exposing podmon API health
+	EnvPodmonArrayConnectivityAPIPORT = "X_CSI_PODMON_API_PORT"
+
+	// EnvPodmonArrayConnectivityPollRate indicates the polling frequency to check array connectivity
+	EnvPodmonArrayConnectivityPollRate = "X_CSI_PODMON_ARRAY_CONNECTIVITY_POLL_RATE"
 )
