@@ -14,6 +14,8 @@
 # STEP 1 build executable binary
 ############################
 ARG GOIMAGE
+ARG SOURCE_REPO
+ARG SOURCE_IMAGE_TAG
 
 FROM $GOIMAGE as builder
 
@@ -46,7 +48,7 @@ RUN CGO_ENABLED=0 go build
 ############################
 # STEP 2 build a small image
 ############################
-FROM scratch
+FROM ${SOURCE_REPO}:${SOURCE_IMAGE_TAG}
 LABEL vendor="Dell Inc." \
       name="csipowermax-reverseproxy" \
       summary="CSI PowerMax Reverse Proxy" \
