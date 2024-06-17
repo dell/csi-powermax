@@ -24,6 +24,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/credentials/insecure"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cucumber/godog"
@@ -160,7 +161,7 @@ func startServer(ctx context.Context) (*grpc.ClientConn, func(), error) {
 	fmt.Printf("network %v addr %v\n", network, addr)
 
 	clientOpts := []grpc.DialOption{
-		grpc.WithInsecure(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: 10 * time.Second,
