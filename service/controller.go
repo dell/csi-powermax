@@ -668,6 +668,8 @@ func (s *service) CreateVolume(
 				matchesStorageGroup = true
 			}
 		}
+
+		// with Authorization, how do we do this check? volumeIdentifier must have tenant prefix
 		if matchesStorageGroup && vol.VolumeIdentifier == volumeIdentifier {
 			if vol.CapacityCYL != requiredCylinders {
 				log.Error("A volume with the same name exists but has a different size than required.")
@@ -708,6 +710,7 @@ func (s *service) CreateVolume(
 			}
 
 			log.WithFields(fields).Info("Idempotent volume detected, returning success")
+			// with Authorization, how do we do this check? volumeIdentifier = vol.VolumeIdentifier?
 			vol.VolumeID = fmt.Sprintf("%s-%s-%s", volumeIdentifier, symmetrixID, vol.VolumeID)
 			volResp := s.getCSIVolume(vol)
 			// Set the volume context
@@ -820,7 +823,7 @@ func (s *service) CreateVolume(
 
 	// Formulate the return response
 	volID := vol.VolumeID
-	vol.VolumeID = fmt.Sprintf("%s-%s-%s", volumeIdentifier, symmetrixID, vol.VolumeID)
+	vol.VolumeID = fmt.Sprintf("%s-%s-%s", vol.VolumeIdentifier, symmetrixID, vol.VolumeID)
 	volResp := s.getCSIVolume(vol)
 	volResp.ContentSource = contentSource
 	// Set the volume context
