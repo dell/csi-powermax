@@ -37,7 +37,7 @@ build-base-image: download-csm-common
 	@echo "Base image build: SUCCESS"
 	$(eval BASEIMAGE=csipowermax-ubimicro:latest)
 
-docker-build: build
+docker-build: build build-base-image
 	docker build -t "$(REG):$(VERSION)" --build-arg GOIMAGE="golang:1.22" .
 
 docker-push: docker-build
