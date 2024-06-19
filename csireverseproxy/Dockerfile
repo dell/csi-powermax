@@ -46,7 +46,7 @@ RUN CGO_ENABLED=0 go build
 ############################
 # STEP 2 build a small image
 ############################
-FROM localhost/csipowermax-ubimicro:latest
+FROM csipowermax-ubimicro:latest
 LABEL vendor="Dell Inc." \
       name="csipowermax-reverseproxy" \
       summary="CSI PowerMax Reverse Proxy" \
