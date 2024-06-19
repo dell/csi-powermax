@@ -713,8 +713,7 @@ func (s *service) CreateVolume(
 			}
 
 			log.WithFields(fields).Info("Idempotent volume detected, returning success")
-			// with Authorization, how do we do this check? volumeIdentifier = vol.VolumeIdentifier?
-			vol.VolumeID = fmt.Sprintf("%s-%s-%s", volumeIdentifier, symmetrixID, vol.VolumeID)
+			vol.VolumeID = fmt.Sprintf("%s-%s-%s", vol.VolumeIdentifier, symmetrixID, vol.VolumeID)
 			volResp := s.getCSIVolume(vol)
 			// Set the volume context
 			attributes := map[string]string{
