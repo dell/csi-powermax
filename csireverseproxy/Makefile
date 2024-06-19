@@ -30,6 +30,13 @@ check:
 build:	check
 	CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build
 
+build-base-image: download-csm-common
+	$(eval include csm-common.mk)
+	@echo "Building base image from $(DEFAULT_BASEIMAGE) and loading dependencies..."
+	./buildubimicro.sh $(DEFAULT_BASEIMAGE)
+	@echo "Base image build: SUCCESS"
+	$(eval BASEIMAGE=csipowermax-ubimicro:latest)
+
 docker-build: build
 	docker build -t "$(REGISTRY):$(VERSION)" .
 
@@ -38,4 +45,7 @@ docker-push: docker-build
 
 unit-test:
 	go test -v -coverprofile c.out -coverpkg $(coverpackages) ./...
+
+download-csm-common:
+	curl -O -L https://raw.githubusercontent.com/dell/csm/main/config/csm-common.mk
 
