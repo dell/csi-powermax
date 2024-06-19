@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-REGISTRY?="localhost:5000/csipowermax-reverseproxy"
+REG?="localhost:5000/csipowermax-reverseproxy"
 VERSION="latest"
 
 coverpackages= revproxy/v2,revproxy/v2/pkg/config,revproxy/v2/pkg/standaloneproxy
@@ -38,10 +38,10 @@ build-base-image: download-csm-common
 	$(eval BASEIMAGE=csipowermax-ubimicro:latest)
 
 docker-build: build
-	docker build -t "$(REGISTRY):$(VERSION)" .
+	docker build -t "$(REG):$(VERSION)" --build-arg GOIMAGE="golang:1.22" .
 
 docker-push: docker-build
-	docker push "$(REGISTRY):$(VERSION)"
+	docker push "$(REG):$(VERSION)"
 
 unit-test:
 	go test -v -coverprofile c.out -coverpkg $(coverpackages) ./...
