@@ -672,8 +672,16 @@ func (s *service) CreateVolume(
 			}
 		}
 
-		// with Authorization, how do we do this check? volumeIdentifier must have tenant prefix
-		if matchesStorageGroup && vol.VolumeIdentifier == volumeIdentifier {
+		// with Authorization, a tenant prefix is applied to the volume identifier on the array
+		// csi-CSM-pmax-69298b3d3d-namespace -> tn1-csi-CSM-pmax-69298b3d3d-namespace
+		// this prefix is stripped from the array volume identifier to compare with the locally defined volume identifier
+		var strippedTenantVolumeIdentifier string
+		if len(vol.VolumeIdentifier) >= 4 {
+			strippedTenantVolumeIdentifier = vol.VolumeIdentifier[4:]
+		}
+
+		if matchesStorageGroup && (vol.VolumeIdentifier == volumeIdentifier || strippedTenantVolumeIdentifier == volumeIdentifier) {
+			// A volume with the same name exists and has the same size
 			if vol.CapacityCYL != requiredCylinders {
 				log.Error("A volume with the same name exists but has a different size than required.")
 				alreadyExists = true
