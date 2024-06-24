@@ -8,14 +8,14 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/cucumber/godog v0.12.6
 	github.com/cucumber/messages-go/v10 v10.0.3
-	github.com/dell/dell-csi-extensions/common v1.4.1
+	github.com/dell/dell-csi-extensions/common v1.4.2-0.20240527124108-f123823ad341
 	github.com/dell/dell-csi-extensions/migration v1.4.1
 	github.com/dell/dell-csi-extensions/podmon v1.4.1
 	github.com/dell/dell-csi-extensions/replication v1.7.1
-	github.com/dell/gobrick v1.10.1
-	github.com/dell/gocsi v1.10.1
-	github.com/dell/gofsutil v1.15.0
-	github.com/dell/goiscsi v1.9.0
+	github.com/dell/gobrick v1.10.2-0.20240621113453-12722c212954
+	github.com/dell/gocsi v1.10.2-0.20240613132901-554b1fc3ec9a
+	github.com/dell/gofsutil v1.15.1-0.20240619132316-450188ec89b1
+	github.com/dell/goiscsi v1.9.1-0.20240521081708-989490f27824
 	github.com/dell/gopowermax/v2 v2.6.1-0.20240603105557-59f78ebc1075
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gorilla/mux v1.7.3
@@ -26,7 +26,7 @@ require (
 	github.com/vmware/govmomi v0.29.0
 	golang.org/x/net v0.26.0
 	google.golang.org/grpc v1.64.0
-	google.golang.org/protobuf v1.34.1
+	google.golang.org/protobuf v1.34.2
 	k8s.io/api v0.20.0
 	k8s.io/apimachinery v0.20.0
 	k8s.io/client-go v0.20.0
