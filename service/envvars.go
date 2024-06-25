@@ -51,18 +51,18 @@ const (
 	EnvAutoProbe = "X_CSI_POWERMAX_AUTOPROBE" // #nosec 101
 
 	// EnvPortGroups is the name of the environment variable that is used
-	// to specifiy a list of Port Groups that the driver can choose from
+	// to specify a list of Port Groups that the driver can choose from
 	// These Port Groups must exist and be populated
 	EnvPortGroups = "X_CSI_POWERMAX_PORTGROUPS"
 
 	// EnvClusterPrefix is the name of the environment variable that is used
-	// to specifiy a a prefix to apply to objects creaated via this CSI cluster
+	// to specify a prefix to apply to objects created via this CSI cluster
 	EnvClusterPrefix = "X_CSI_K8S_CLUSTER_PREFIX" // #nosec 101
 
-	// EnvISCSIChroot is the path to which the driver will chroot before
-	// running any iscsi commands. This value should only be set when instructed
+	// EnvNodeChroot is the path to which the driver will chroot before
+	// running any iscsi/nvme commands. This value should only be set when instructed
 	// by technical support.
-	EnvISCSIChroot = "X_CSI_ISCSI_CHROOT"
+	EnvNodeChroot = "X_CSI_NODE_CHROOT"
 
 	// EnvGrpcMaxThreads is the configuration value of the maximum number of concurrent
 	// grpc requests. This value should be an integer string.
