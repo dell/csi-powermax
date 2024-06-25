@@ -80,12 +80,14 @@ const (
 	RemotePortIdentifierKeyCount    = "REMOTE_PORT_IDENTIFIER_KEYS"
 	MaxPortIdentifierLength         = 128
 	FCSuffix                        = "-FC"
+	NVMETCPSuffix                   = "-NVMETCP"
 	PGSuffix                        = "PG"
 	notFound                        = "not found"      // error message from s.GetVolumeByID when volume not found
 	cannotBeFound                   = "Could not find" // error message from pmax when volume not found
 	failedToValidateVolumeNameAndID = "Failed to validate combination of Volume Name and Volume ID"
 	IscsiTransportProtocol          = "ISCSI"
 	FcTransportProtocol             = "FC"
+	NvmeTCPTransportProtocol        = "NVMETCP"
 	MaxSnapIdentifierLength         = 32
 	SnapDelPrefix                   = "DEL"
 	delSrcTag                       = "DS"
@@ -145,6 +147,7 @@ const (
 	BiasParam                            = "Bias"
 	FsTypeParam                          = "csi.storage.k8s.io/fstype"
 	AllowRootParam                       = "allowRoot"
+	NVMETCPHostType                      = "NVMe/TCP"
 )
 
 // Pair - structure which holds a pair
@@ -233,7 +236,7 @@ func (s *service) GetPortIdentifier(ctx context.Context, symID string, dirPortKe
 	}
 	log.Debugf("Symmetrix ID: %s, DirPortKey: %s, Port type: %s",
 		symID, dirPortKey, port.SymmetrixPort.Type)
-	if !strings.Contains(port.SymmetrixPort.Identifier, "iqn") {
+	if !strings.Contains(port.SymmetrixPort.Identifier, "iqn") && !strings.Contains(port.SymmetrixPort.Identifier, "nqn") {
 		// Add "0x" to the FC Port WWN as that is used by gofsutils to differentiate between FC and ISCSI
 		portIdentifier = "0x"
 	}
@@ -1772,7 +1775,7 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 		if sg.NumOfMaskingViews > 0 {
 			log.Error(fmt.Sprintf("DeleteVolume: Volume %s is in use by Storage Group %s which has Masking Views",
 				id, sgid))
-			return status.Errorf(codes.Internal, "Volume is in use")
+			return status.Errorf(codes.FailedPrecondition, "Volume is in use")
 		}
 	}
 
@@ -1964,7 +1967,7 @@ func (s *service) ControllerPublishVolume(
 	}
 	log.WithFields(fields).Info("Executing ControllerPublishVolume with following fields")
 	// flag createNFSExport()
-
+	isNVMETCP := false
 	isISCSI := false
 	// Check if node ID is present in cache
 	nodeInCache := false
@@ -1977,14 +1980,30 @@ func (s *service) ControllerPublishVolume(
 		if !strings.Contains(tempHostID.(string), "-FC") {
 			isISCSI = true
 		}
+		if strings.Contains(tempHostID.(string), "-NVMETCP") {
+			isISCSI = false
+			isNVMETCP = true
+		}
 	} else {
 		log.Debugf("REQ ID: %s nodeID: %s not present in node cache", reqID, nodeID)
-		isISCSI, err = s.IsNodeISCSI(ctx, symID, nodeID, pmaxClient)
+		isNVMETCP, err = s.IsNodeNVMe(ctx, symID, nodeID, pmaxClient)
 		if err != nil {
 			return nil, status.Error(codes.NotFound, err.Error())
 		}
+		if !isNVMETCP {
+			isISCSI, err = s.IsNodeISCSI(ctx, symID, nodeID, pmaxClient)
+			if err != nil {
+				return nil, status.Error(codes.NotFound, err.Error())
+			}
+		}
 	}
-	hostID, tgtStorageGroupID, tgtMaskingViewID := s.GetHostSGAndMVIDFromNodeID(nodeID, isISCSI)
+
+	hostID, tgtStorageGroupID, tgtMaskingViewID := s.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
+
+	if !isNVMETCP {
+		// Update the values, if NVME is false
+		hostID, tgtStorageGroupID, tgtMaskingViewID = s.GetHostSGAndMVIDFromNodeID(nodeID, isISCSI)
+	}
 	if !nodeInCache {
 		// Update the map
 		val, ok := nodeCache.LoadOrStore(cacheID, hostID)
@@ -2178,6 +2197,30 @@ func getMVLockKey(symID, tgtMaskingViewID string) string {
 	return symID + ":" + tgtMaskingViewID
 }
 
+// IsNodeNVMe - Takes a sym id, node id as input and based on the transport protocol setting
+// and the existence of the host on array, it returns a bool to indicate if the Host
+// on array is NVMe or not
+func (s *service) IsNodeNVMe(ctx context.Context, symID, nodeID string, pmaxClient pmax.Pmax) (bool, error) {
+	nvmeTCPHostID, _, nvmeTCPMaskingViewID := s.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
+	if s.opts.TransportProtocol == NvmeTCPTransportProtocol {
+		log.Debug("Preferred transport protocol is set to NVME/TCP")
+		// Check if NVME MV exists
+		_, nvmeMvErr := pmaxClient.GetMaskingViewByID(ctx, symID, nvmeTCPMaskingViewID)
+		if nvmeMvErr == nil {
+			return true, nil
+		}
+		// Check if NVMe Host exists
+		nvmetcpHost, nvmetcpHostErr := pmaxClient.GetHostByID(ctx, symID, nvmeTCPHostID)
+		if nvmetcpHostErr == nil {
+			if nvmetcpHost.HostType == NVMETCPHostType {
+				return true, nil
+			}
+		}
+		return false, fmt.Errorf("Failed to fetch host id from array for node: %s", nodeID)
+	}
+	return false, nil
+}
+
 // IsNodeISCSI - Takes a sym id, node id as input and based on the transport protocol setting
 // and the existence of the host on array, it returns a bool to indicate if the Host
 // on array is ISCSI or not
@@ -2217,6 +2260,7 @@ func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxCli
 				return true, nil
 			}
 		}
+
 	} else if s.opts.TransportProtocol == IscsiTransportProtocol {
 		log.Debug("Preferred transport protocol is set to ISCSI")
 		// Check if ISCSI MV exists
@@ -2224,11 +2268,7 @@ func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxCli
 		if iscsimverr == nil {
 			return true, nil
 		}
-		// Check if FC MV exists
-		_, fcmverr := pmaxClient.GetMaskingViewByID(ctx, symID, fcMaskingViewID)
-		if fcmverr == nil {
-			return false, nil
-		}
+
 		// Check if ISCSI Host exists
 		iscsiHost, iscsiHostErr := pmaxClient.GetHostByID(ctx, symID, iSCSIHostID)
 		if iscsiHostErr == nil {
@@ -2244,6 +2284,7 @@ func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxCli
 			}
 		}
 	}
+
 	return false, fmt.Errorf("Failed to fetch host id from array for node: %s", nodeID)
 }
 
@@ -2371,6 +2412,13 @@ func (s *service) GetFCHostSGAndMVIDFromNodeID(nodeID string) (string, string, s
 	return hostID + FCSuffix, storageGroupID + FCSuffix, maskingViewID + FCSuffix
 }
 
+// GetNVMETCPHostSGAndMVIDFromNodeID - Forms fibrechannel HostID, StorageGroupID, MaskingViewID
+// These are the same as iSCSI except for "_FC" is added as a suffix.
+func (s *service) GetNVMETCPHostSGAndMVIDFromNodeID(nodeID string) (string, string, string) {
+	hostID, storageGroupID, maskingViewID := s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+	return hostID + NVMETCPSuffix, storageGroupID + NVMETCPSuffix, maskingViewID + NVMETCPSuffix
+}
+
 func (s *service) ControllerUnpublishVolume(
 	ctx context.Context,
 	req *csi.ControllerUnpublishVolumeRequest) (
@@ -2477,7 +2525,9 @@ func (s *service) unpublishVolume(ctx context.Context, reqID string, vol *types.
 	// Determine if the volume is in a FC or ISCSI MV
 	_, tgtFCStorageGroupID, tgtFCMaskingViewID := s.GetFCHostSGAndMVIDFromNodeID(nodeID)
 	_, tgtISCSIStorageGroupID, tgtISCSIMaskingViewID := s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+	_, tgtNVMeTCPStorageGroupID, tgtNVMeTCPMaskingViewID := s.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
 	isISCSI := false
+	isNVMeTCP := false
 	if s.opts.IsVsphereEnabled {
 		_, tgtFCStorageGroupID, tgtFCMaskingViewID = s.GetVSphereFCHostSGAndMVIDFromNodeID()
 	}
@@ -2492,6 +2542,10 @@ func (s *service) unpublishVolume(ctx context.Context, reqID string, vol *types.
 			volumeInStorageGroup = true
 			isISCSI = true
 			break
+		} else if storageGroupID == tgtNVMeTCPStorageGroupID {
+			volumeInStorageGroup = true
+			isNVMeTCP = true
+			break
 		}
 	}
 
@@ -2503,6 +2557,9 @@ func (s *service) unpublishVolume(ctx context.Context, reqID string, vol *types.
 	if !isISCSI {
 		tgtStorageGroupID = tgtFCStorageGroupID
 		tgtMaskingViewID = tgtFCMaskingViewID
+	} else if isNVMeTCP {
+		tgtStorageGroupID = tgtNVMeTCPStorageGroupID
+		tgtMaskingViewID = tgtNVMeTCPMaskingViewID
 	} else {
 		tgtStorageGroupID = tgtISCSIStorageGroupID
 		tgtMaskingViewID = tgtISCSIMaskingViewID
