@@ -1967,7 +1967,7 @@ func (s *service) ControllerPublishVolume(
 	}
 	log.WithFields(fields).Info("Executing ControllerPublishVolume with following fields")
 	// flag createNFSExport()
-	isNVME := false
+	isNVMETCP := false
 	isISCSI := false
 	// Check if node ID is present in cache
 	nodeInCache := false
@@ -1982,15 +1982,15 @@ func (s *service) ControllerPublishVolume(
 		}
 		if strings.Contains(tempHostID.(string), "-NVMETCP") {
 			isISCSI = false
-			isNVME = true
+			isNVMETCP = true
 		}
 	} else {
 		log.Debugf("REQ ID: %s nodeID: %s not present in node cache", reqID, nodeID)
-		isNVME, err = s.IsNodeNVMe(ctx, symID, nodeID, pmaxClient)
+		isNVMETCP, err = s.IsNodeNVMe(ctx, symID, nodeID, pmaxClient)
 		if err != nil {
 			return nil, status.Error(codes.NotFound, err.Error())
 		}
-		if !isNVME {
+		if !isNVMETCP {
 			isISCSI, err = s.IsNodeISCSI(ctx, symID, nodeID, pmaxClient)
 			if err != nil {
 				return nil, status.Error(codes.NotFound, err.Error())
@@ -2000,7 +2000,7 @@ func (s *service) ControllerPublishVolume(
 
 	hostID, tgtStorageGroupID, tgtMaskingViewID := s.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
 
-	if !isNVME {
+	if !isNVMETCP {
 		// Update the values, if NVME is false
 		hostID, tgtStorageGroupID, tgtMaskingViewID = s.GetHostSGAndMVIDFromNodeID(nodeID, isISCSI)
 	}
