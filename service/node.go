@@ -1003,7 +1003,7 @@ func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
 		for _, target := range s.nvmeTargets[symID] {
 			for _, session := range sessions {
 				log.Debugf("matching %v with %v", target, session)
-				if session.Target == target && session.NVMESessionState == gonvme.NVMESessionStateLive {
+				if strings.HasPrefix(target, session.Target) && session.NVMESessionState == gonvme.NVMESessionStateLive {
 					if s.useNFS {
 						s.useNFS = false
 					}
@@ -1011,7 +1011,7 @@ func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
 				}
 			}
 		}
-		return fmt.Errorf("no active iscsi sessions")
+		return fmt.Errorf("no active nvme sessions")
 	}
 	return fmt.Errorf("no active sessions")
 }
@@ -1756,6 +1756,15 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			s.useFC = true
 		}
 
+		validNVMeTCPs, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, NQNs, hostIDNVMeTCP, pmaxClient)
+		if err != nil {
+			log.Error("Could not validate NVMeTCP initiators " + err.Error())
+		} else if len(validNVMeTCPs) > 0 && s.opts.TransportProtocol == "" || s.opts.TransportProtocol == NvmeTCPTransportProtocol {
+			// If pre-existing NVMeTCP initiators are not found, initiators/host should be created
+			s.useNVMeTCP = true
+		}
+		log.Infof("valid NVMeTCP initiators: %v", validNVMeTCPs)
+
 		validIscsis, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, IQNs, hostIDIscsi, pmaxClient)
 		if err != nil {
 			log.Error("Could not validate iSCSI initiators" + err.Error())
@@ -1763,17 +1772,10 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			// We do not have to have pre-existing initiators to use Iscsi (we can create them)
 			s.useIscsi = true
 		}
-		log.Infof("valid ISCSI initiators: %v", validIscsis)
-
-		validNVMeTCPs, err := s.verifyAndUpdateInitiatorsInADiffHost(ctx, symID, NQNs, hostIDNVMeTCP, pmaxClient)
-		if err != nil {
-			log.Error("Could not validate NVMeTCP initiators " + err.Error())
-		}
-		log.Infof("valid NVMeTCP initiators: %v", validNVMeTCPs)
-
-		if s.opts.TransportProtocol == "" || s.opts.TransportProtocol == NvmeTCPTransportProtocol {
-			// If pre-existing NVMeTCP initiators are not found, initiators/host should be created
-			s.useNVMeTCP = true
+		log.Infof("valid (existing) iSCSI initiators (must be manually created): %v", validIscsis)
+		if len(validIscsis) == 0 {
+			// IQNs are not yet part of any host on Unisphere
+			validIscsis = IQNs
 		}
 
 		if !s.useFC && !s.useIscsi && !s.useNVMeTCP {

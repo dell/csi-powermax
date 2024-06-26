@@ -121,6 +121,8 @@ github.com/dell/goiscsi v1.9.1-0.20240521081708-989490f27824 h1:HuOjkApdKKACWuwB
 github.com/dell/goiscsi v1.9.1-0.20240521081708-989490f27824/go.mod h1:NI/W/0O1UrMW2zVdMxy4z395Jn0r7utH6RQDFSZiFyQ=
 github.com/dell/gonvme v1.7.0 h1:ztJFhKQehZjfaoNv+hTbGbdhLWCAhPE44k1v7x5o2c0=
 github.com/dell/gonvme v1.7.0/go.mod h1:ajbuF+fswq+ty2tRTG5FN4ecIMJsG7aDu/bkMynTKAs=
+github.com/dell/gonvme v1.7.1-0.20240627125407-0c79a312fff0 h1:xDu8SFch3tC2kf2KVTF1o6v3nAkcNaJMEUDUXLRo7tk=
+github.com/dell/gonvme v1.7.1-0.20240627125407-0c79a312fff0/go.mod h1:ajbuF+fswq+ty2tRTG5FN4ecIMJsG7aDu/bkMynTKAs=
 github.com/dell/gopowermax/v2 v2.6.1-0.20240603105557-59f78ebc1075 h1:7GpPo1UrO2hJV2+H2EXPL6MJJ8IS37GkiJuuXAaqwa0=
 github.com/dell/gopowermax/v2 v2.6.1-0.20240603105557-59f78ebc1075/go.mod h1:Z/DqRsmKztpvgkWnMzm/aHBvdbnoTfpzYhpsSQnLX7k=
 github.com/dell/gopowermax/v2 v2.6.1-0.20240625084712-d7b15e82834e h1:JP4XrsfDjOjckZDN/3LMyoyzgEWKfVYmgRRnJwD7rrc=

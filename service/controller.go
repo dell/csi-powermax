@@ -2554,15 +2554,15 @@ func (s *service) unpublishVolume(ctx context.Context, reqID string, vol *types.
 		return nil
 	}
 	var tgtStorageGroupID, tgtMaskingViewID string
-	if !isISCSI {
-		tgtStorageGroupID = tgtFCStorageGroupID
-		tgtMaskingViewID = tgtFCMaskingViewID
+	if isISCSI {
+		tgtStorageGroupID = tgtISCSIStorageGroupID
+		tgtMaskingViewID = tgtISCSIMaskingViewID
 	} else if isNVMeTCP {
 		tgtStorageGroupID = tgtNVMeTCPStorageGroupID
 		tgtMaskingViewID = tgtNVMeTCPMaskingViewID
 	} else {
-		tgtStorageGroupID = tgtISCSIStorageGroupID
-		tgtMaskingViewID = tgtISCSIMaskingViewID
+		tgtStorageGroupID = tgtFCStorageGroupID
+		tgtMaskingViewID = tgtFCMaskingViewID
 	}
 	waitChan, lockChan, err := s.sgSvc.requestRemoveVolumeFromSGMV(ctx, tgtStorageGroupID, tgtMaskingViewID, reqID, clientSymID, symID, devID)
 	if err != nil {
