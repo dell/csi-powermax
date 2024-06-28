@@ -16,7 +16,7 @@ require (
 	github.com/dell/gocsi v1.10.2-0.20240613132901-554b1fc3ec9a
 	github.com/dell/gofsutil v1.15.1-0.20240619132316-450188ec89b1
 	github.com/dell/goiscsi v1.9.1-0.20240521081708-989490f27824
-	github.com/dell/gonvme v1.7.0
+	github.com/dell/gonvme v1.7.1-0.20240627125407-0c79a312fff0
 	github.com/dell/gopowermax/v2 v2.6.1-0.20240625084712-d7b15e82834e
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gorilla/mux v1.7.3
