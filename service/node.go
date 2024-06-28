@@ -1588,7 +1588,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 // setVMHost create client for the vCenter
 func (s *service) setVMHost() error {
 	// Create a VM host
-	host, err := NewVMHost(true, s.opts.VCenterHostURL, s.opts.VCenterHostUserName, s.opts.VCenterHostPassword)
+	host, err := NewVMHost(true, s.opts.VCenterHostURL, s.opts.VCenterHostUserName, s.opts.VCenterHostPassword, s.opts.IfaceExcludeFilter)
 	if err != nil {
 		log.Errorf("can not create VM host object: (%s)", err.Error())
 		return fmt.Errorf("Can not create VM host object: (%s)", err.Error())
