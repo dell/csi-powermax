@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,3 +29,11 @@
 # from a different namespace
 # export X_CSI_REVPROXY_WATCH_NAMESPACE = ""
 
+# EnvUser is the name of the environment variable used to set the
+# username for creating the TLS secret that is created with certificate and its associated key
+# export X_CSI_CSIREVPROXY_USERNAME="username"
+
+# EnvPassword is the name of the environment variable used to set the
+# password for creating the TLS secret that is created with certificate and its associated key
+
+# export X_CSI_CSIREVPROXY_PWD="password"
