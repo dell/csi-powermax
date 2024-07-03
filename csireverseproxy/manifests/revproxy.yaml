@@ -86,8 +86,5 @@ spec:
           configMap:
             name: powermax-reverseproxy-config
             optional: true
-        - name: tls-secret
-          secret:
-            secretName: csirevproxy-tls-secret
         - name: cert-dir
           emptyDir:
