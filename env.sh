@@ -83,6 +83,14 @@ export X_CSI_GRPC_MAX_THREADS="50"
 export X_CSI_UNISPHERE_TIMEOUT="5m"
 
 # variables for reverseproxy
+# EnvUser is the name of the environment variable used to set the
+# username for creating the TLS secret that is created with certificate and its associated key
+export X_CSI_CSIREVPROXY_USERNAME="username"
+
+# EnvPassword is the name of the environment variable used to set the
+# password for creating the TLS secret that is created with certificate and its associated key
+
+export X_CSI_CSIREVPROXY_PWD="password"
 # service name of the revproxy
 export X_CSI_POWERMAX_PROXY_SERVICE_NAME="powermax-revproxy"
 # Cluster IP of the revproxy service
