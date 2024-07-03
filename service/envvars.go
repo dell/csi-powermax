@@ -154,6 +154,12 @@ const (
 	// EnvVCPassword is an env variable that has vCenter password
 	EnvVCPassword = "X_CSI_VCENTER_PWD" // #nosec G101
 
+	//EnvRevProxyUsername is an env variable that has username for the TLS secret that is created with the certificate and its associated key
+         EnvRevProxyUsername = "X_CSI_CSIREVPROXY_USERNAME"
+	
+	//EnvRevProxyPassword is an env variable that has password for the TLS secret that is created with the certificate and its associated key
+        EnvRevProxyPassword = "X_CSI_CSIREVPROXY_PWD"
+	
 	// EnvPodmonEnabled indicates that podmon is enabled
 	EnvPodmonEnabled = "X_CSI_PODMON_ENABLED"
 
