@@ -68,7 +68,6 @@ Feature: PowerMax CSI interface
       | "none"                    | "no IOInProgress"  |
       | "InvalidSymID"            | "not found"        |
       | "GetArrayPerfKeyError"    | "getting keys"     |
-      | "GetVolumesMetricsError"  | "error"            |
       | "GetFreshMetrics"         | "none"             |
 
   @resiliency
@@ -83,4 +82,24 @@ Feature: PowerMax CSI interface
     Examples:
       | induced                   | error             |
       | "none"                    | "no IOInProgress" |
-      | "GetFileSysMetricsError"  | "error"           |
+
+  @resiliency
+  @v2.11.0
+  Scenario: call IsIOInProgress and get fileSystem metric
+    Given a PowerMax service
+    And I call fileSystem CreateVolume "volume1"
+    Then a valid CreateVolumeResponse is returned
+    And I induce error "GetVolumesMetricsError"
+    When I call IsIOInProgress
+    Then the error contains "no IOInProgress"
+
+  @resiliency
+  @v2.11.0
+  Scenario: call IsIOInProgress and get Metric error
+    Given a PowerMax service
+    And I call fileSystem CreateVolume "volume1"
+    Then a valid CreateVolumeResponse is returned
+    And I induce error "GetFileSysMetricsError"
+    And I induce error "GetVolumesMetricsError"
+    When I call IsIOInProgress
+    Then the error contains "error"      

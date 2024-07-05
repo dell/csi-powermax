@@ -156,31 +156,26 @@ func (s *service) IsIOInProgress(ctx context.Context, volID, symID string) (err 
 		}
 	}
 	startTime := endTime - OneHour
-	_, err = pmaxClient.GetFileSystemByID(ctx, symID, volID)
+	resp, err := pmaxClient.GetVolumesMetricsByID(ctx, symID, volID, metricsQuery, startTime, endTime)
 	if err != nil {
-		resp, err := pmaxClient.GetVolumesMetricsByID(ctx, symID, volID, metricsQuery, startTime, endTime)
+		// nfs volume type logic volId may be fsID
+		resp, err := pmaxClient.GetFileSystemMetricsByID(ctx, symID, volID, metricsQuery, startTime, endTime)
 		if err != nil {
-			log.Errorf("Error %v while checking IsIOInProgress for array having symID %s for volumeId %s", err.Error(), symID, volID)
+			log.Errorf("Error %v while checking IsIOInProgress for array having symID %s for volumeID/fileSystemID %s", err.Error(), symID, volID)
 			return fmt.Errorf("error %v while while checking IsIOInProgress", err.Error())
 		}
 		// check last four entries status received in the response
-		for i := len(resp.ResultList.Result[0].VolumeResult) - 1; i >= (len(resp.ResultList.Result[0].VolumeResult)-4) && i >= 0; i-- {
-			if resp.ResultList.Result[0].VolumeResult[i].IoRate > 0.0 && checkIfEntryIsLatest(resp.ResultList.Result[0].VolumeResult[i].Timestamp) {
+		fileMetrics := resp.ResultList.Result
+		for i := 0; i < len(fileMetrics); i++ {
+			if fileMetrics[i].PercentBusy > 0.0 && checkIfEntryIsLatest(fileMetrics[i].Timestamp) {
 				return nil
 			}
 		}
 		return fmt.Errorf("no IOInProgress")
 	}
-	// nfs volume type logic
-	resp, err := pmaxClient.GetFileSystemMetricsByID(ctx, symID, volID, metricsQuery, startTime, endTime)
-	if err != nil {
-		log.Errorf("Error %v while checking IsIOInProgress for array having symID %s for volumeId %s", err.Error(), symID, volID)
-		return fmt.Errorf("error %v while while checking IsIOInProgress", err.Error())
-	}
-	// check last four entries status recieved in the response
-	fileMetrics := resp.ResultList.Result
-	for i := 0; i < len(fileMetrics); i++ {
-		if fileMetrics[i].PercentBusy > 0.0 && checkIfEntryIsLatest(fileMetrics[i].Timestamp) {
+	// check last four entries status received in the response
+	for i := len(resp.ResultList.Result[0].VolumeResult) - 1; i >= (len(resp.ResultList.Result[0].VolumeResult)-4) && i >= 0; i-- {
+		if resp.ResultList.Result[0].VolumeResult[i].IoRate > 0.0 && checkIfEntryIsLatest(resp.ResultList.Result[0].VolumeResult[i].Timestamp) {
 			return nil
 		}
 	}
