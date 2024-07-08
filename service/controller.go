@@ -1695,13 +1695,11 @@ func (s *service) DeleteVolume(
 		log.Error("Failed to probe with erro: " + err.Error())
 		return nil, err
 	}
-	// Check if devID is a file system
-	_, err = pmaxClient.GetFileSystemByID(ctx, symID, devID)
+	// Check if devID is a non-fileSystem
+	_, err = pmaxClient.GetVolumeByID(ctx, symID, devID)
 	if err != nil {
-		log.Debugf("Error:(%s) fetching file system with ID %s", err.Error(), devID)
-		log.Debugf("GetfileSystem failed, continuing with GetVolumeID...")
-	} else {
-		// found file system
+		log.Debugf("Error:(%s) fetching volume with ID %s", err.Error(), devID)
+		log.Debugf("checking for fileSystem...")
 		err := s.deleteFileSystem(ctx, reqID, symID, volName, devID, id, pmaxClient)
 		if err != nil {
 			return nil, err
@@ -2467,11 +2465,10 @@ func (s *service) ControllerUnpublishVolume(
 	}
 
 	// Check if devID is a file system
-	_, err = pmaxClient.GetFileSystemByID(ctx, symID, devID)
+	_, err = pmaxClient.GetVolumeByID(ctx, symID, devID)
 	if err != nil {
-		log.Debugf("Error:(%s) fetching file system with ID %s", err.Error(), devID)
-		log.Debugf("GetfileSystem failed, continuing with GetVolumeID...")
-	} else {
+		log.Debugf("Error:(%s) fetching volume with ID %s", err.Error(), devID)
+		log.Debugf("continuing with fileSystem...")
 		// found file system
 		return file.DeleteNFSExport(ctx, reqID, symID, devID, pmaxClient)
 	}
