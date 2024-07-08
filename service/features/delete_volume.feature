@@ -89,7 +89,7 @@ Feature: PowerMax CSI interface
       | "InvalidVolumeID"      | "Could not parse"              |
       | "UpdateVolumeError"    | "Failed to rename volume"      |
       | "GetStorageGroupError" | "Unable to find storage group" |
-      | "GetVolumeError"       | "Could not retrieve volume"    |
+      | "GetVolumeError"       | "cannot be found"              |
 
   @delete
   @v1.0.0
