@@ -119,12 +119,8 @@ github.com/dell/gofsutil v1.15.1-0.20240619132316-450188ec89b1 h1:BzempSG5VqE8VZ
 github.com/dell/gofsutil v1.15.1-0.20240619132316-450188ec89b1/go.mod h1:bZ43qAOqKzGJxCRvkTVD7GCFMNkK37ur84mmMuxQshE=
 github.com/dell/goiscsi v1.9.1-0.20240521081708-989490f27824 h1:HuOjkApdKKACWuwBIz1jRVF4QjAvKaYEfowRBV1s2n8=
 github.com/dell/goiscsi v1.9.1-0.20240521081708-989490f27824/go.mod h1:NI/W/0O1UrMW2zVdMxy4z395Jn0r7utH6RQDFSZiFyQ=
-github.com/dell/gonvme v1.7.0 h1:ztJFhKQehZjfaoNv+hTbGbdhLWCAhPE44k1v7x5o2c0=
-github.com/dell/gonvme v1.7.0/go.mod h1:ajbuF+fswq+ty2tRTG5FN4ecIMJsG7aDu/bkMynTKAs=
 github.com/dell/gonvme v1.7.1-0.20240627125407-0c79a312fff0 h1:xDu8SFch3tC2kf2KVTF1o6v3nAkcNaJMEUDUXLRo7tk=
 github.com/dell/gonvme v1.7.1-0.20240627125407-0c79a312fff0/go.mod h1:ajbuF+fswq+ty2tRTG5FN4ecIMJsG7aDu/bkMynTKAs=
-github.com/dell/gopowermax/v2 v2.6.1-0.20240603105557-59f78ebc1075 h1:7GpPo1UrO2hJV2+H2EXPL6MJJ8IS37GkiJuuXAaqwa0=
-github.com/dell/gopowermax/v2 v2.6.1-0.20240603105557-59f78ebc1075/go.mod h1:Z/DqRsmKztpvgkWnMzm/aHBvdbnoTfpzYhpsSQnLX7k=
 github.com/dell/gopowermax/v2 v2.6.1-0.20240625084712-d7b15e82834e h1:JP4XrsfDjOjckZDN/3LMyoyzgEWKfVYmgRRnJwD7rrc=
 github.com/dell/gopowermax/v2 v2.6.1-0.20240625084712-d7b15e82834e/go.mod h1:Z/DqRsmKztpvgkWnMzm/aHBvdbnoTfpzYhpsSQnLX7k=
 github.com/dgrijalva/jwt-go v3.2.0+incompatible/go.mod h1:E3ru+11k8xSBh+hMPgOLZmtrrCbhqsmaPHjLKYnJCaQ=
@@ -756,8 +752,8 @@ google.golang.org/grpc v1.27.0/go.mod h1:qbnxyOmOxrQa7FizSgH+ReBfzJrCY1pSN7KXBS8
 google.golang.org/grpc v1.27.1/go.mod h1:qbnxyOmOxrQa7FizSgH+ReBfzJrCY1pSN7KXBS8abTk=
 google.golang.org/grpc v1.33.1/go.mod h1:fr5YgcSWrqhRRxogOsw7RzIpsmvOZ6IcH4kBYTpR3n0=
 google.golang.org/grpc v1.38.0/go.mod h1:NREThFqKR1f3iQ6oBuvc5LadQuXVGo9rkm5ZGrQdJfM=
-google.golang.org/grpc v1.64.0 h1:KH3VH9y/MgNQg1dE7b3XfVK0GsPSIzJwdF617gUSbvY=
-google.golang.org/grpc v1.64.0/go.mod h1:oxjF8E3FBnjp+/gVFYdWacaLDx9na1aqy9oovLpxQYg=
+google.golang.org/grpc v1.64.1 h1:LKtvyfbX3UGVPFcGqJ9ItpVWW6oN/2XqTxfAnwRRXiA=
+google.golang.org/grpc v1.64.1/go.mod h1:hiQF4LFZelK2WKaP6W0L92zGHtiQdZxk8CrSdvyjeP0=
 google.golang.org/protobuf v0.0.0-20200109180630-ec00e32a8dfd/go.mod h1:DFci5gLYBciE7Vtevhsrf46CRTquxDuWsQurQQe4oz8=
 google.golang.org/protobuf v0.0.0-20200221191635-4d8936d0db64/go.mod h1:kwYJMbMJ01Woi6D6+Kah6886xMZcty6N08ah7+eCXa0=
 google.golang.org/protobuf v0.0.0-20200228230310-ab0ca4ff8a60/go.mod h1:cfTl7dwQJ+fmap5saPgwCLgHXTUD7jkjRqWcaiX5VyM=
