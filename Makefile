@@ -53,7 +53,7 @@ tag:
 docker:
 	go generate
 	go run core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk docker
+	sh ./build.sh -i ubimicro -e -o
 
 # Pushes container to the repository
 push:	docker
