@@ -334,7 +334,8 @@ elif [ "$SOURCE_IMAGE_TYPE" = "ubim" ]; then
 elif [ "$SOURCE_IMAGE_TYPE" = "ubimicro" ]; then
    # if using ubimicro, download common CSM ubimicro image
    curl -O -L https://raw.githubusercontent.com/dell/csm/main/config/csm-common.mk
-   source csm-common.mk
+   local_path=$(pwd)
+   source $local_path/csm-common.mk
    CSM_COMMON_BASE_IMAGE=$DEFAULT_BASEIMAGE
    echo "Using CSM common image for ubimicro: ${CSM_COMMON_BASE_IMAGE}"
    IMAGE_TYPE="ubimicro"
