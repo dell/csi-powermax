@@ -36,6 +36,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	types "github.com/dell/gopowermax/v2/types/v100"
+	"github.com/gorilla/mux"
 	"revproxy/v2/pkg/cache"
 )
 
