@@ -37,6 +37,7 @@ import (
 
 	types "github.com/dell/gopowermax/v2/types/v100"
 	"revproxy/v2/pkg/cache"
+	"github.com/gorilla/mux"
 )
 
 const clientSymID = "proxyClientSymID"
