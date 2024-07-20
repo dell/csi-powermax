@@ -660,7 +660,7 @@ func (revProxy *StandAloneProxy) ServeSymmetrix(res http.ResponseWriter, req *ht
 	}
 }
 
-// ServeReplicationCapabilities - handler function for replicationcapabilities endpoint.
+// ServeReplicationCapabilities - handler function for replicationcapabilities endpoint
 func (revProxy *StandAloneProxy) ServeReplicationCapabilities(res http.ResponseWriter, req *http.Request) {
 	symIDs, err := revProxy.getAuthorisedArrays(res, req)
 	if err != nil {
@@ -699,7 +699,7 @@ func (revProxy *StandAloneProxy) ServeReplicationCapabilities(res http.ResponseW
 	}
 }
 
-// ServeVolume - handler function for volume endpoint.
+// ServeVolume - handler function for volume endpoint
 func (revProxy *StandAloneProxy) ServeVolume(res http.ResponseWriter, req *http.Request) {
 	symID, _ := revProxy.getSymID(req)
 	err := revProxy.isAuthorized(res, req, symID)
