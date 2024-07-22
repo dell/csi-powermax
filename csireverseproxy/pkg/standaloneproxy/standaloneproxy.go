@@ -106,7 +106,6 @@ func newReverseProxy(mgmtServer config.ManagementServer) common.Proxy {
 }
 
 func newTLSConfig(mgmtServer config.ManagementServer) *tls.Config {
-
 	tlsConfig := tls.Config{
 		InsecureSkipVerify: mgmtServer.SkipCertificateValidation, // #nosec G402 InsecureSkipVerify cannot be false always as expected by gosec, this needs to be configurable
 	}
