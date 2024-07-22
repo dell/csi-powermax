@@ -1779,12 +1779,26 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 		}
 
 		if !s.useFC && !s.useIscsi && !s.useNVMeTCP {
-			log.Error("No valid initiators- could not initialize FC or iSCSI")
+			log.Error("No valid initiators- could not initialize NVMeTCP or FC or iSCSI")
 			return err
 		}
 
 		nodeChroot, _ := csictx.LookupEnv(context.Background(), EnvNodeChroot)
-		if s.useFC {
+		if s.useNVMeTCP {
+			// resetOtherProtocols
+			s.useFC = false
+			s.useIscsi = false
+			// check nvme module availability on the host
+			err = s.setupArrayForNVMeTCP(ctx, symID, validNVMeTCPs, pmaxClient)
+			if err != nil {
+				log.Errorf("Failed to do the NVMe setup for the Array(%s). Error - %s", symID, err.Error())
+			}
+			s.initNVMeTCPConnector(nodeChroot)
+			s.arrayTransportProtocolMap[symID] = NvmeTCPTransportProtocol
+		} else if s.useFC {
+			// resetOtherProtocols
+			s.useNVMeTCP = false
+			s.useIscsi = false
 			formattedFCs := make([]string, 0)
 			for _, initiatorID := range validFCs {
 				elems := strings.Split(initiatorID, ":")
@@ -1798,6 +1812,9 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			s.arrayTransportProtocolMap[symID] = FcTransportProtocol
 			isSymConnFC[symID] = true
 		} else if s.useIscsi {
+			// resetOtherProtocols
+			s.useNVMeTCP = false
+			s.useNFS = false
 			err := s.ensureISCSIDaemonStarted()
 			if err != nil {
 				log.Errorf("Failed to start the ISCSI Daemon. Error - %s", err.Error())
@@ -1808,14 +1825,6 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			}
 			s.initISCSIConnector(nodeChroot)
 			s.arrayTransportProtocolMap[symID] = IscsiTransportProtocol
-		} else if s.useNVMeTCP {
-			// check nvme module availability on the host
-			err = s.setupArrayForNVMeTCP(ctx, symID, validNVMeTCPs, pmaxClient)
-			if err != nil {
-				log.Errorf("Failed to do the NVMe setup for the Array(%s). Error - %s", symID, err.Error())
-			}
-			s.initNVMeTCPConnector(nodeChroot)
-			s.arrayTransportProtocolMap[symID] = NvmeTCPTransportProtocol
 		}
 	}
 
