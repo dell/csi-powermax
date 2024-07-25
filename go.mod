@@ -34,6 +34,7 @@ require (
 )
 
 require (
+
 	github.com/akutz/gosync v0.1.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/cucumber/gherkin-go/v19 v19.0.3 // indirect
