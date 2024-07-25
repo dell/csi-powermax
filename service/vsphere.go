@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/url"
 	"reflect"
+	"regexp"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -48,7 +49,7 @@ type VMHost struct {
 
 // NewVMHost connects to a ESXi or vCenter instance and returns a *VMHost
 // This method is referenced from https://github.com/codedellemc/govmax/blob/master/api/v1/vmomi.go
-func NewVMHost(insecure bool, hostURLparam, user, pass string) (*VMHost, error) {
+func NewVMHost(insecure bool, hostURLparam, user, pass string, ifaceExcludeFilter *regexp.Regexp) (*VMHost, error) {
 	ctx, _ := context.WithCancel(context.Background())
 	hostURL, err := url.Parse("https://" + hostURLparam + "/sdk")
 	hostURL.User = url.UserPassword(user, pass)
@@ -58,7 +59,7 @@ func NewVMHost(insecure bool, hostURLparam, user, pass string) (*VMHost, error) 
 		return nil, err
 	}
 
-	mac, err := getLocalMAC()
+	mac, err := getLocalMAC(net.Interfaces, ifaceExcludeFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -90,17 +91,26 @@ func (vmh *VMHost) getMACAddressOfVM(vm *object.VirtualMachine) (string, error) 
 	return vmDeviceList.PrimaryMacAddress(), nil
 }
 
-func getLocalMAC() (string, error) {
-	ifs, err := net.Interfaces()
+func getLocalMAC(ifaceListFunc func() ([]net.Interface, error), ifaceExcludeFilter *regexp.Regexp) (string, error) {
+	ifs, err := ifaceListFunc()
 	if err != nil {
 		return "", err
 	}
 	for _, v := range ifs {
-		if v.HardwareAddr.String() != "" {
-			return v.HardwareAddr.String(), nil
+		if ifaceExcludeFilter != nil {
+			if ifaceExcludeFilter.MatchString(v.Name) {
+				continue
+			}
+			if v.HardwareAddr.String() != "" {
+				return v.HardwareAddr.String(), nil
+			}
+		} else {
+			if v.HardwareAddr.String() != "" {
+				return v.HardwareAddr.String(), nil
+			}
 		}
 	}
-	return "", errors.New("No network interface found")
+	return "", errors.New("no network interface found")
 }
 
 ///////////////////////////////////////////////////////////////////

@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -121,21 +122,22 @@ type Opts struct {
 	NonDefaultRetries          bool   // Indicates if non-default retry values to be used for deletion worker, only for unit testing
 	NodeNameTemplate           string
 	ModifyHostName             bool
-	ReplicationContextPrefix   string // Enables sidecars to read required information from volume context
-	ReplicationPrefix          string // Used as a prefix to find out if replication is enabled
-	IsHealthMonitorEnabled     bool   // used to check if health monitor for volume is enabled
-	IsTopologyControlEnabled   bool   // used to filter topology keys based on user config
-	IsVsphereEnabled           bool   // used to check if vSphere is enabled
-	VSpherePortGroup           string // port group for vsphere
-	VSphereHostName            string // host (initiator group) for vsphere
-	VCenterHostURL             string // vCenter host url
-	VCenterHostUserName        string // vCenter host username
-	VCenterHostPassword        string // vCenter password
-	MaxVolumesPerNode          int64  // to specify volume limits
-	KubeConfigPath             string // to specify k8s configuration to be used CSI driver
-	IsPodmonEnabled            bool   // used to indicate that podmon is enabled
-	PodmonPort                 string // to indicates the port to be used for exposing podmon API health
-	PodmonPollingFreq          string // indicates the polling frequency to check array connectivity
+	ReplicationContextPrefix   string         // Enables sidecars to read required information from volume context
+	ReplicationPrefix          string         // Used as a prefix to find out if replication is enabled
+	IsHealthMonitorEnabled     bool           // used to check if health monitor for volume is enabled
+	IsTopologyControlEnabled   bool           // used to filter topology keys based on user config
+	IsVsphereEnabled           bool           // used to check if vSphere is enabled
+	VSpherePortGroup           string         // port group for vsphere
+	VSphereHostName            string         // host (initiator group) for vsphere
+	VCenterHostURL             string         // vCenter host url
+	VCenterHostUserName        string         // vCenter host username
+	VCenterHostPassword        string         // vCenter password
+	MaxVolumesPerNode          int64          // to specify volume limits
+	KubeConfigPath             string         // to specify k8s configuration to be used CSI driver
+	IsPodmonEnabled            bool           // used to indicate that podmon is enabled
+	PodmonPort                 string         // to indicates the port to be used for exposing podmon API health
+	PodmonPollingFreq          string         // indicates the polling frequency to check array connectivity
+	IfaceExcludeFilter         *regexp.Regexp // regex of interface names to exclude from consideration
 }
 
 // NodeConfig defines rules for given node
@@ -417,6 +419,9 @@ func (s *service) BeforeServe(
 	}
 	if replicationPrefix, ok := csictx.LookupEnv(ctx, EnvReplicationPrefix); ok {
 		opts.ReplicationPrefix = replicationPrefix
+	}
+	if ifaceExcludeFilter, ok := csictx.LookupEnv(ctx, EnvIfaceExcludeFilter); ok {
+		opts.IfaceExcludeFilter = regexp.MustCompile(ifaceExcludeFilter)
 	}
 
 	if MaxVolumesPerNode, ok := csictx.LookupEnv(ctx, EnvMaxVolumesPerNode); ok {
