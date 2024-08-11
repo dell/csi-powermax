@@ -66,6 +66,10 @@ const (
 	CSILogFormatParam          = "CSI_LOG_FORMAT"
 	ArrayStatus                = "/array-status"
 	DefaultPodmonPollRate      = 60
+	PortGroups                 = "X_CSI_POWERMAX_PORTGROUPS"
+	Protocol                   = "X_CSI_TRANSPORT_PROTOCOL"
+	// PmaxEndPoint               = "X_CSI_POWERMAX_ENDPOINT"
+	ManagedArrays = "X_CSI_MANAGED_ARRAYS"
 )
 
 type contextKey string           // specific string type used for context keys
@@ -251,6 +255,29 @@ func updateDriverConfigParams(v *viper.Viper) {
 	setLogFormatAndLevel(formatter, level)
 	// set X_CSI_LOG_LEVEL so that gocsi doesn't overwrite the loglevel set by us
 	_ = os.Setenv(gocsi.EnvVarLogLevel, level.String())
+
+	// set additional driver configs moved from envs.
+	portgroups := v.GetString(PortGroups)
+	if portgroups != "" {
+		log.Info("Read PortGroups from config file:", portgroups)
+		_ = os.Setenv(PortGroups, portgroups)
+	}
+	protocol := v.GetString(Protocol)
+	if protocol != "" {
+		log.Info("Read protocol from config file:", protocol)
+		_ = os.Setenv(Protocol, protocol)
+	}
+	endpoint := v.GetString(EnvEndpoint)
+	if endpoint != "" {
+		log.Info("Read endpoint from config file:", protocol)
+		_ = os.Setenv(EnvEndpoint, endpoint)
+	}
+	managedArrays := v.GetString(ManagedArrays)
+	if managedArrays != "" {
+		log.Info("Managed arrays from config file:", managedArrays)
+		_ = os.Setenv(ManagedArrays, managedArrays)
+	}
+
 }
 
 func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
