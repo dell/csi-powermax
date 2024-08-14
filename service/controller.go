@@ -616,8 +616,8 @@ func (s *service) CreateVolume(
 	}
 	// Check existence of the Storage Group and create if necessary.
 	sg, err := pmaxClient.GetStorageGroup(ctx, symmetrixID, storageGroupName)
-	log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
 	if err != nil || sg == nil {
+		log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
 		hostLimitsParam := &types.SetHostIOLimitsParam{
 			HostIOLimitMBSec:    hostIOsec,
 			HostIOLimitIOSec:    hostMBsec,
@@ -705,6 +705,22 @@ func (s *service) CreateVolume(
 						err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, snapID, localProtectionGroupID, localRDFGrpNo, "false", false, pmaxClient)
 						if err != nil {
 							return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+						}
+					}
+				} else { // replication is not enabled
+					if srcSnapID != "" {
+						err = s.UnlinkTargets(ctx, symID, SrcDevID, pmaxClient)
+						if err != nil {
+							return nil, status.Errorf(codes.Internal, "Failed unlink existing target from snapshot (%s)", err.Error())
+						}
+						err = s.LinkVolumeToSnapshot(ctx, symID, srcVol.VolumeID, vol.VolumeID, snapID, reqID, false, pmaxClient)
+						if err != nil {
+							return nil, status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
+						}
+					} else if srcVolID != "" {
+						err = s.LinkVolumeToVolume(ctx, symID, srcVol, vol.VolumeID, snapID, reqID, false, pmaxClient)
+						if err != nil {
+							return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
 						}
 					}
 				}
