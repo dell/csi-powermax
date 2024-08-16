@@ -111,16 +111,16 @@ type deletionWorker struct {
 
 func (req *deletionRequest) isValid(clusterPrefix string) error {
 	if req.DeviceID == "" {
-		return fmt.Errorf("device id can't be empty")
+		return errors.New("device id can't be empty")
 	}
 	if req.SymID == "" {
-		return fmt.Errorf("sym id can't be empty")
+		return errors.New("sym id can't be empty")
 	}
 	if !strings.Contains(req.VolumeHandle, clusterPrefix) {
-		return fmt.Errorf("device id doesn't contain the cluster prefix")
+		return errors.New("device id doesn't contain the cluster prefix")
 	}
 	if !strings.Contains(req.VolumeHandle, "_DEL") {
-		return fmt.Errorf("device has not been marked for deletion")
+		return errors.New("device has not been marked for deletion")
 	}
 	return nil
 }
@@ -232,7 +232,7 @@ func unlinkTarget(tgtVol *types.Volume, snapID, srcDevID, symID string, snapGene
 			}
 		}
 		if !isDefined {
-			return fmt.Errorf("can't unlink as link state is not defined. retry after sometime")
+			return errors.New("can't unlink as link state is not defined. retry after sometime")
 		}
 		if snapID != "" && srcDevID != "" {
 			sourceList := make([]types.VolumeList, 0)
@@ -246,9 +246,9 @@ func unlinkTarget(tgtVol *types.Volume, snapID, srcDevID, symID string, snapGene
 			}
 			return nil
 		}
-		return fmt.Errorf("unable to identify snapshot name/src device id")
+		return errors.New("unable to identify snapshot name/src device id")
 	}
-	return fmt.Errorf("target volume details can't be nil")
+	return errors.New("target volume details can't be nil")
 }
 
 func unlinkTargetsAndTerminateSnapshot(srcVol *types.Volume, symID string, pmaxClient pmax.Pmax) error {
@@ -544,7 +544,7 @@ func (queue *deletionQueue) deleteVolumes(pmaxClient pmax.Pmax) bool {
 				continue
 			}
 			if len(vol.StorageGroupIDList) != 0 {
-				log.Errorf("%s: is part of some storage groups", device.print())
+				log.Error("%s: is part of some storage groups", device.print())
 				device.updateStatus(deletionStateDisAssociateSG, "")
 				continue
 			}
@@ -675,7 +675,7 @@ func (worker *deletionWorker) QueueDeviceForDeletion(devID string, volumeIdentif
 		log.Debugf("(Device ID: %s, SymID: %s): Successfully queued request", devID, symID)
 	default:
 		log.Error("Deletion request queue full. Retry after sometime")
-		return fmt.Errorf("deletion request queue full. retry after sometime")
+		return errors.New("deletion request queue full. retry after sometime")
 	}
 	return nil
 }
@@ -685,13 +685,13 @@ func (worker *deletionWorker) deletionRequestHandler() {
 	for req := range worker.DeletionRequestChan {
 		log.Infof("Received deletion request for Device ID: %s, Sym ID: %s", req.DeviceID, req.SymID)
 		if !isStringInSlice(req.SymID, worker.SymmetrixIDs) {
-			req.errChan <- fmt.Errorf("unable to process device deletion request as sym id is not managed by deletion worker")
+			req.errChan <- errors.New("unable to process device deletion request as sym id is not managed by deletion worker")
 			continue
 		}
 		pmaxClient, err := symmetrix.GetPowerMaxClient(req.SymID)
 		if err != nil {
 			log.Error(err.Error())
-			req.errChan <- fmt.Errorf("unable to process device deletion request as sym id is not managed by deletion worker")
+			req.errChan <- errors.New("unable to process device deletion request as sym id is not managed by deletion worker")
 			continue
 		}
 		vol, err := pmaxClient.GetVolumeByID(context.Background(), req.SymID, req.DeviceID)

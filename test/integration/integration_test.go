@@ -113,7 +113,7 @@ func TestMain(m *testing.M) {
 
 func TestIdentityGetPluginInfo(t *testing.T) {
 	ctx := context.Background()
-	fmt.Printf("testing GetPluginInfo\n")
+	fmt.Print("testing GetPluginInfo\n")
 	client := csi.NewIdentityClient(grpcClient)
 	info, err := client.GetPluginInfo(ctx, &csi.GetPluginInfoRequest{})
 	if err != nil {
@@ -126,7 +126,7 @@ func TestIdentityGetPluginInfo(t *testing.T) {
 
 func TestNodeGetInfo(t *testing.T) {
 	ctx := context.Background()
-	fmt.Printf("testing NodeGetInfo\n")
+	fmt.Print("testing NodeGetInfo\n")
 	client := csi.NewNodeClient(grpcClient)
 	info, err := client.NodeGetInfo(ctx, &csi.NodeGetInfoRequest{})
 	if err != nil {
@@ -149,9 +149,9 @@ func startServer(ctx context.Context) (*grpc.ClientConn, func(), error) {
 		return nil, nil, err
 	}
 	go func() {
-		fmt.Printf("starting server\n")
+		fmt.Print("starting server\n")
 		if err := sp.Serve(ctx, lis); err != nil {
-			fmt.Printf("http: Server closed")
+			fmt.Print("http: Server closed")
 		}
 	}()
 	network, addr, err := utils.GetCSIEndpoint()

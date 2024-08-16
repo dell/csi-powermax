@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -44,7 +45,7 @@ func (s *service) ValidateVolumeHostConnectivity(ctx context.Context, req *podmo
 	}
 
 	if req.GetNodeId() == "" {
-		return nil, fmt.Errorf("the NodeID is a required field")
+		return nil, errors.New("the NodeID is a required field")
 	}
 	// create the map of all the array with array's symID as key
 	symIDs := make(map[string]bool)
@@ -61,7 +62,7 @@ func (s *service) ValidateVolumeHostConnectivity(ctx context.Context, req *podmo
 		for _, volID := range req.GetVolumeIds() {
 			_, symID, _, _, _, err := s.parseCsiID(volID)
 			if err != nil || symID == "" {
-				log.Errorf("unable to retrieve array's symID after parsing volumeID")
+				log.Error("unable to retrieve array's symID after parsing volumeID")
 				for _, arr := range s.opts.ManagedArrays {
 					symIDs[arr] = true
 				}
@@ -112,7 +113,7 @@ func (s *service) checkIfNodeIsConnected(ctx context.Context, symID string, node
 	nodeIP := s.k8sUtils.GetNodeIPs(nodeID)
 	if len(nodeIP) == 0 {
 		log.Errorf("failed to parse node ID '%s'", nodeID)
-		return fmt.Errorf("failed to parse node ID")
+		return errors.New("failed to parse node ID")
 	}
 	// form url to call array on node
 	url := "http://" + nodeIP + s.opts.PodmonPort + ArrayStatus + "/" + symID
@@ -171,7 +172,7 @@ func (s *service) IsIOInProgress(ctx context.Context, volID, symID string) (err 
 				return nil
 			}
 		}
-		return fmt.Errorf("no IOInProgress")
+		return errors.New("no IOInProgress")
 	}
 	// check last four entries status received in the response
 	for i := len(resp.ResultList.Result[0].VolumeResult) - 1; i >= (len(resp.ResultList.Result[0].VolumeResult)-4) && i >= 0; i-- {
@@ -179,7 +180,7 @@ func (s *service) IsIOInProgress(ctx context.Context, volID, symID string) (err 
 			return nil
 		}
 	}
-	return fmt.Errorf("no IOInProgress")
+	return errors.New("no IOInProgress")
 }
 
 func checkIfEntryIsLatest(respTS int64) bool {

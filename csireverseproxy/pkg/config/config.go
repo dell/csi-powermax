@@ -16,6 +16,7 @@ package config
 
 import (
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -376,7 +377,7 @@ func (proxy *StandAloneProxyConfig) UpdateManagementServers(config *StandAlonePr
 		}
 	}
 	if !reflect.DeepEqual(proxy.managementServers, config.managementServers) {
-		return nil, nil, fmt.Errorf("something wrong in adding/removing servers")
+		return nil, nil, errors.New("something wrong in adding/removing servers")
 	}
 	return deletedManagementServers, updatedManagemetServers, nil
 }

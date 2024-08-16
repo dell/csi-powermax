@@ -47,7 +47,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestGoDog(t *testing.T) {
-	fmt.Printf("starting godog...\n")
+	fmt.Print("starting godog...\n")
 	runOptions := godog.Options{
 		Format: "pretty",
 		Paths:  []string{"features"},
@@ -61,7 +61,7 @@ func TestGoDog(t *testing.T) {
 		Options:             &runOptions,
 	}.Run()
 
-	fmt.Printf("godog finished\n")
+	fmt.Print("godog finished\n")
 	if testStatus != 0 {
 		t.Error("Error encountered in godog testing")
 	}

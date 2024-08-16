@@ -270,7 +270,7 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 	log.Infof("New credential/cert update event for the secret(%s)", secret.Name)
 	hasChanged := false
 	if conf.Mode != config.StandAlone {
-		log.Errorf("invalid proxy mode is give")
+		log.Error("invalid proxy mode is give")
 		return
 	}
 

@@ -49,10 +49,10 @@ func (volID volumeIDType) checkAndUpdatePendingState(ps *pendingState) error {
 	startTime := ps.pendingMap[volID]
 	if startTime.IsZero() == false || inducePendingError {
 		log.Infof("volumeID %s pending %s", volID, time.Now().Sub(startTime))
-		return status.Errorf(codes.Unavailable, "pending")
+		return status.Error(codes.Unavailable, "pending")
 	}
 	if ps.maxPending > 0 && ps.npending >= ps.maxPending || induceOverloadError {
-		return status.Errorf(codes.Unavailable, "overload")
+		return status.Error(codes.Unavailable, "overload")
 	}
 	ps.pendingMap[volID] = time.Now()
 	ps.npending++

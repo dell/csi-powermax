@@ -220,7 +220,7 @@ func checkIfNFSExportExist(ctx context.Context, symID, fsID string, nfsName stri
 		return false, nil, status.Errorf(codes.Internal, "can not fetch nfsExport for name: %s, ID: %s : %s", nfsID, nfsID, err.Error())
 	}
 	if nfsExport.Name != nfsName {
-		return false, nil, status.Errorf(codes.AlreadyExists, "A NFS export with the different name exists but has a same file system ID than required.")
+		return false, nil, status.Error(codes.AlreadyExists, "A NFS export with the different name exists but has a same file system ID than required.")
 	}
 	return true, nfsExport, nil
 }

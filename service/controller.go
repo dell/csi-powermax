@@ -208,7 +208,7 @@ func (s *service) GetPortIdentifier(ctx context.Context, symID string, dirPortKe
 	cache := getPmaxCache(symID)
 	cacheExpired := false
 	if cache == nil {
-		return "", fmt.Errorf("Internal error - cache pointer is empty")
+		return "", errors.New("Internal error - cache pointer is empty")
 	}
 	if cache.portIdentifiers != nil {
 		portTimeStamp := cache.portIdentifiers.second.(time.Time)
@@ -296,7 +296,7 @@ func (s *service) CreateVolume(
 	symmetrixID := params[SymmetrixIDParam]
 	if symmetrixID == "" {
 		log.Error("A SYMID parameter is required")
-		return nil, status.Errorf(codes.InvalidArgument, "A SYMID parameter is required")
+		return nil, status.Error(codes.InvalidArgument, "A SYMID parameter is required")
 	}
 	pmaxClient, err := s.GetPowerMaxClient(symmetrixID)
 	if err != nil {
@@ -335,7 +335,7 @@ func (s *service) CreateVolume(
 		}
 		if !found {
 			log.Error("An invalid Service Level parameter was specified")
-			return nil, status.Errorf(codes.InvalidArgument, "An invalid Service Level parameter was specified")
+			return nil, status.Error(codes.InvalidArgument, "An invalid Service Level parameter was specified")
 		}
 	}
 	storageGroupName := ""
@@ -387,7 +387,7 @@ func (s *service) CreateVolume(
 		}
 		useNFS = accTypeIsNFS(vcs)
 		if isBlock && useNFS {
-			return nil, status.Errorf(codes.InvalidArgument, "NFS with Block is not supported")
+			return nil, status.Error(codes.InvalidArgument, "NFS with Block is not supported")
 		}
 	}
 
@@ -403,10 +403,10 @@ func (s *service) CreateVolume(
 
 	if params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)] == "true" {
 		if s.opts.IsVsphereEnabled {
-			return nil, status.Errorf(codes.Unavailable, "Replication on a vSphere volume is not supported")
+			return nil, status.Error(codes.Unavailable, "Replication on a vSphere volume is not supported")
 		}
 		if useNFS {
-			return nil, status.Errorf(codes.Unavailable, "Replication on a NFS volume is not supported")
+			return nil, status.Error(codes.Unavailable, "Replication on a NFS volume is not supported")
 		}
 		replicationEnabled = params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)]
 		// remote symmetrix ID and rdf group name are mandatory params when replication is enabled
@@ -432,7 +432,7 @@ func (s *service) CreateVolume(
 				return nil, status.Errorf(codes.NotFound, "Received error get/create RDFG, err: %s", err.Error())
 			}
 			if localRDFGrpNo == "" || remoteRDFGrpNo == "" {
-				return nil, status.Errorf(codes.Unavailable, "Can not fetch RDF Group for volume creation get/create RDFG")
+				return nil, status.Error(codes.Unavailable, "Can not fetch RDF Group for volume creation get/create RDFG")
 			}
 			log.Debugf("RDF group for given array pair and RDF mode: local(%s), remote(%s)", localRDFGrpNo, remoteRDFGrpNo)
 		}
@@ -465,7 +465,7 @@ func (s *service) CreateVolume(
 	contentSource := req.GetVolumeContentSource()
 	if contentSource != nil {
 		if useNFS {
-			return nil, status.Errorf(codes.Unavailable, "Cloning on a NFS volume is not supported")
+			return nil, status.Error(codes.Unavailable, "Cloning on a NFS volume is not supported")
 		}
 		switch req.GetVolumeContentSource().GetType().(type) {
 		case *csi.VolumeContentSource_Volume:
@@ -505,7 +505,7 @@ func (s *service) CreateVolume(
 	if SrcDevID != "" && symID != "" {
 		if symID != symmetrixID {
 			log.Error("The volume content source is in different PowerMax array")
-			return nil, status.Errorf(codes.InvalidArgument, "The volume content source is in different PowerMax array")
+			return nil, status.Error(codes.InvalidArgument, "The volume content source is in different PowerMax array")
 		}
 		srcVol, err = pmaxClient.GetVolumeByID(ctx, symmetrixID, SrcDevID)
 		if err != nil {
@@ -773,7 +773,7 @@ func (s *service) CreateVolume(
 			// Remote storage group name is kept same as local storage group name
 			err := s.ProtectStorageGroup(ctx, symmetrixID, remoteSymID, localProtectionGroupID, remoteProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID, false, pmaxClient)
 			if err != nil {
-				log.Errorf("Proceeding to remove volume from protected storage group as rollback")
+				log.Error("Proceeding to remove volume from protected storage group as rollback")
 				// Remove volume from protected storage group as a rollback
 				// The device could be just a TDEV and can make RDF unmanageable due to slow u4p response
 				_, er := pmaxClient.RemoveVolumesFromStorageGroup(ctx, symmetrixID, localProtectionGroupID, true, vol.VolumeID)
@@ -928,7 +928,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	if SrcDevID != "" && symmID != "" {
 		if symmID != symID {
 			log.Error("The volume content source is in different PowerMax array")
-			return nil, status.Errorf(codes.InvalidArgument, "The volume content source is in different PowerMax array")
+			return nil, status.Error(codes.InvalidArgument, "The volume content source is in different PowerMax array")
 		}
 		srcVol, err = pmaxClient.GetVolumeByID(ctx, symID, SrcDevID)
 		if err != nil {
@@ -1222,7 +1222,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		// If valid RDF group is supplied this will create a remote SG, a RDF pair and add the vol in respective SG created
 		err := s.ProtectStorageGroup(ctx, symID, remoteSymID, localProtectionGroupID, remoteProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID, bias == "true", pmaxClient)
 		if err != nil {
-			log.Errorf("Proceeding to remove volume from protected storage group as rollback")
+			log.Error("Proceeding to remove volume from protected storage group as rollback")
 			// Remove volume from protected storage group as a rollback
 			// The device could be just a TDEV and can make RDF unmanageable due to slow u4p response
 			_, er := pmaxClient.RemoveVolumesFromStorageGroup(ctx, symID, localProtectionGroupID, true, vol.VolumeID)
@@ -1533,7 +1533,7 @@ func (s *service) validateVolSize(ctx context.Context, cr *csi.CapacityRange, sy
 // the StoragePoolCacheDuration period, after that they are rechecked.
 func (s *service) validateStoragePoolID(ctx context.Context, symmetrixID string, storagePoolID string, pmaxClient pmax.Pmax) error {
 	if storagePoolID == "" {
-		return fmt.Errorf("A valid SRP parameter is required")
+		return errors.New("A valid SRP parameter is required")
 	}
 	s.cacheMutex.Lock()
 	defer s.cacheMutex.Unlock()
@@ -1612,7 +1612,7 @@ func (s *service) parseCsiID(csiID string) (
 	volName string, arrayID string, devID string, remoteSymID, remoteVolID string, err error,
 ) {
 	if csiID == "" {
-		err = fmt.Errorf("A Volume ID is required for the request")
+		err = errors.New("A Volume ID is required for the request")
 		return
 	}
 	// get the Device ID and Array ID
@@ -1773,7 +1773,7 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 		if sg.NumOfMaskingViews > 0 {
 			log.Error(fmt.Sprintf("DeleteVolume: Volume %s is in use by Storage Group %s which has Masking Views",
 				id, sgid))
-			return status.Errorf(codes.FailedPrecondition, "Volume is in use")
+			return status.Error(codes.FailedPrecondition, "Volume is in use")
 		}
 	}
 
@@ -1795,7 +1795,7 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 		vol, err = pmaxClient.RenameVolume(ctx, symID, devID, newVolName)
 		if err != nil || vol == nil {
 			log.Error(fmt.Sprintf("DeleteVolume: Could not rename volume %s", id))
-			return status.Errorf(codes.Internal, "Failed to rename volume")
+			return status.Error(codes.Internal, "Failed to rename volume")
 		}
 		log.Infof("Soft deletion of source volume (%s) is successful", volName)
 		return nil
@@ -1943,7 +1943,7 @@ func (s *service) ControllerPublishVolume(
 		_, err := pmaxClient.GetFileSystemByID(ctx, symID, devID)
 		if err == nil {
 			// we found fs, proceed to CreateNFSExport
-			return nil, status.Errorf(codes.Unavailable, "static provisioning on a file system is not supported.")
+			return nil, status.Error(codes.Unavailable, "static provisioning on a file system is not supported.")
 		}
 	}
 
@@ -2035,7 +2035,7 @@ func (s *service) ControllerPublishVolume(
 				if !strings.Contains(err.Error(), "Too Many Requests") {
 					return nil, status.Errorf(codes.Internal, "PublishVolume: Could not refresh symmetrix: (%s)", err.Error())
 				}
-				return nil, status.Errorf(codes.Internal, "symmetrix sync in progress, waiting for cache to update")
+				return nil, status.Error(codes.Internal, "symmetrix sync in progress, waiting for cache to update")
 			}
 			// wait till the remote volume has an effective wwn
 			return nil, status.Errorf(codes.Internal, "PublishVolume: Could not publish remote volume: (%s)", "remote volume does not have effective wwn, waiting for it to SYNC")
@@ -2311,7 +2311,7 @@ func (s *service) GetVolumeByID(ctx context.Context,
 			symID, devID, err.Error())
 	}
 	if volName != vol.VolumeIdentifier {
-		return "", "", nil, status.Errorf(codes.FailedPrecondition,
+		return "", "", nil, status.Error(codes.FailedPrecondition,
 			failedToValidateVolumeNameAndID)
 	}
 	return symID, devID, vol, nil
@@ -2635,7 +2635,7 @@ func (s *service) ValidateVolumeCapabilities(
 
 	if volName != vol.VolumeIdentifier {
 		log.Error("Failed to validate combination of Volume Name and Volume ID")
-		return nil, status.Errorf(codes.NotFound,
+		return nil, status.Error(codes.NotFound,
 			"Failed to validate combination of Volume Name and Volume ID")
 	}
 
@@ -2821,12 +2821,12 @@ func (s *service) GetCapacity(
 	params := req.GetParameters()
 	if len(params) <= 0 {
 		log.Error("GetCapacity: Required StoragePool and SymID in parameters")
-		return nil, status.Errorf(codes.InvalidArgument, "GetCapacity: Required StoragePool and SymID in parameters")
+		return nil, status.Error(codes.InvalidArgument, "GetCapacity: Required StoragePool and SymID in parameters")
 	}
 	symmetrixID := params[SymmetrixIDParam]
 	if symmetrixID == "" {
 		log.Error("A SYMID parameter is required")
-		return nil, status.Errorf(codes.InvalidArgument, "A SYMID parameter is required")
+		return nil, status.Error(codes.InvalidArgument, "A SYMID parameter is required")
 	}
 	pmaxClient, err := s.GetPowerMaxClient(symmetrixID)
 	if err != nil {
@@ -3049,7 +3049,7 @@ func (s *service) requireProbe(ctx context.Context, pmaxClient pmax.Pmax) error 
 // SelectPortGroup - Selects a Port Group randomly from the list of supplied port groups
 func (s *service) SelectPortGroup() (string, error) {
 	if len(s.opts.PortGroups) == 0 {
-		return "", fmt.Errorf("No port groups have been supplied")
+		return "", errors.New("No port groups have been supplied")
 	}
 
 	// select a random port group
@@ -3200,7 +3200,7 @@ func (s *service) CreateSnapshot(
 	// Validate snapshot volume
 	volID := req.GetSourceVolumeId()
 	if volID == "" {
-		return nil, status.Errorf(codes.InvalidArgument,
+		return nil, status.Error(codes.InvalidArgument,
 			"Source volume ID is required for creating snapshot")
 	}
 	_, localSymID, localDevID, remoteSymID, remoteDevID, err := s.parseCsiID(volID)
@@ -3230,7 +3230,7 @@ func (s *service) CreateSnapshot(
 	_, err = pmaxClient.GetFileSystemByID(ctx, symID, volID)
 	if err == nil {
 		// there is a file system
-		return nil, status.Errorf(codes.Unavailable, "snapshot on a NFS volume is not supported")
+		return nil, status.Error(codes.Unavailable, "snapshot on a NFS volume is not supported")
 	}
 	// Requires probe
 	if err := s.requireProbe(ctx, pmaxClient); err != nil {
@@ -3319,7 +3319,7 @@ func (s *service) DeleteSnapshot(
 	// Validate snapshot volume
 	id := req.GetSnapshotId()
 	if id == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "Snapshot ID to be deleted is required")
+		return nil, status.Error(codes.InvalidArgument, "Snapshot ID to be deleted is required")
 	}
 	snapID, symID, devID, _, _, err := s.parseCsiID(id)
 	if err != nil {
@@ -3439,7 +3439,7 @@ func (s *service) ControllerExpandVolume(
 
 	// Check if ExpandVolume request has CapacityRange set
 	if req.CapacityRange == nil {
-		err = fmt.Errorf("Invalid argument - CapacityRange not set")
+		err = errors.New("Invalid argument - CapacityRange not set")
 		log.Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -3738,7 +3738,7 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 	err = s.validateStoragePoolID(ctx, remoteSymID, remoteSRPID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	// Validate Remote SLO
@@ -3750,7 +3750,7 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 	}
 	if !found {
 		log.Error("An invalid Remote Service Level parameter was specified")
-		return nil, status.Errorf(codes.InvalidArgument, "An invalid Remote Service Level parameter was specified")
+		return nil, status.Error(codes.InvalidArgument, "An invalid Remote Service Level parameter was specified")
 	}
 	// check if localRDFGroup is present in req, else fetch it from volume context
 	if len(localRDFGroup) < 1 {
@@ -4193,7 +4193,7 @@ func (s *service) ExecuteAction(ctx context.Context, req *csiext.ExecuteActionRe
 				return nil, err
 			}
 		default:
-			return nil, status.Errorf(codes.Unknown, "The requested action does not match with supported actions")
+			return nil, status.Error(codes.Unknown, "The requested action does not match with supported actions")
 		}
 	} else {
 		return nil, fmt.Errorf("%s is not a valid srdf mode for action execution", repMode)
@@ -4258,7 +4258,7 @@ func (s *service) getStorageProtectionGroupStatus(ctx context.Context, protectio
 	log.WithFields(fields).Info("Executing GetStorageProtectionGroupStatus with following fields")
 	_, rDFGno, repMode, err := GetRDFInfoFromSGID(protectionGroupID)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if repMode == Async || repMode == Sync {
 		psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, protectionGroupID, rDFGno)
@@ -4268,7 +4268,7 @@ func (s *service) getStorageProtectionGroupStatus(ctx context.Context, protectio
 		pgStatus := getPGStatusFromSGRDFInfo(psg)
 		return pgStatus, nil
 	}
-	return nil, status.Errorf(codes.Internal, "expected error - invalid Replication mode")
+	return nil, status.Error(codes.Internal, "expected error - invalid Replication mode")
 }
 
 func getPGStatusFromSGRDFInfo(psg *types.StorageGroupRDFG) *csiext.StorageProtectionGroupStatus {

@@ -52,7 +52,7 @@ func incrementCounter(identifier string, num int) {
 	timeToSleep := rand.Intn(1010-500) + 500 // #nosec G404
 	time.Sleep(time.Duration(timeToSleep) * time.Microsecond)
 	if debugUnitTest {
-		fmt.Printf("Sleeping for :%d microseconds\n", timeToSleep)
+		fmt.Print("Sleeping for :%d microseconds\n", timeToSleep)
 	}
 	counters[num]++
 	ReleaseLock(identifier, "", lockNumber)

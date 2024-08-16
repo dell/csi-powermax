@@ -15,6 +15,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -48,7 +49,7 @@ func (c *mockDbusConnection) Close() {
 func (c *mockDbusConnection) ListUnits() ([]dbus.UnitStatus, error) {
 	units := make([]dbus.UnitStatus, 0)
 	if mockgosystemdInducedErrors.ListUnitsError {
-		return units, fmt.Errorf("mock - failed to list the units")
+		return units, errors.New("mock - failed to list the units")
 	}
 	if mockgosystemdInducedErrors.ListUnitISCSIDNotPresentError {
 		return units, nil
@@ -66,10 +67,10 @@ func (c *mockDbusConnection) ListUnits() ([]dbus.UnitStatus, error) {
 func (c *mockDbusConnection) StartUnit(_ string, _ string, ch chan<- string) (int, error) {
 	if mockgosystemdInducedErrors.StartUnitError {
 		fmt.Println("Induced start unit error")
-		return 0, fmt.Errorf("mock - failed to start the unit")
+		return 0, errors.New("mock - failed to start the unit")
 	}
 	if mockgosystemdInducedErrors.StartUnitMaskedError {
-		return 0, fmt.Errorf("mock - unit is masked - failed to start the unit")
+		return 0, errors.New("mock - unit is masked - failed to start the unit")
 	}
 	go responseChannel(ch)
 	return 0, nil

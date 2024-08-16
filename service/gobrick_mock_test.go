@@ -17,8 +17,7 @@ package service
 
 import (
 	"context"
-	"fmt"
-
+	"errors"
 	"github.com/dell/gobrick"
 	"github.com/dell/gofsutil"
 )
@@ -42,13 +41,13 @@ func (g *mockFCGobrick) ConnectVolume(_ context.Context, info gobrick.FCVolumeIn
 		MultipathID: "mpatha",
 	}
 	if len(info.Targets) < 1 {
-		return dev, fmt.Errorf("No targets specified")
+		return dev, errors.New("No targets specified")
 	}
 	if info.Lun < 1 {
-		return dev, fmt.Errorf("Invalid LUN")
+		return dev, errors.New("Invalid LUN")
 	}
 	if mockGobrickInducedErrors.ConnectVolumeError {
-		return dev, fmt.Errorf("induced ConnectVolumeError")
+		return dev, errors.New("induced ConnectVolumeError")
 	}
 	gofsutil.GOFSMockWWNToDevice[nodePublishWWN] = nodePublishBlockDevicePath
 	return dev, nil
@@ -56,7 +55,7 @@ func (g *mockFCGobrick) ConnectVolume(_ context.Context, info gobrick.FCVolumeIn
 
 func (g *mockFCGobrick) DisconnectVolumeByDeviceName(_ context.Context, _ string) error {
 	if mockGobrickInducedErrors.DisconnectVolumeError {
-		return fmt.Errorf("induced DisconnectVolumeError")
+		return errors.New("induced DisconnectVolumeError")
 	}
 	delete(gofsutil.GOFSMockWWNToDevice, nodePublishWWN)
 
@@ -77,13 +76,13 @@ func (g *mockISCSIGobrick) ConnectVolume(ctx context.Context, info gobrick.ISCSI
 		MultipathID: "mpatha",
 	}
 	if len(info.Targets) < 1 {
-		return dev, fmt.Errorf("No targets specified")
+		return dev, errors.New("No targets specified")
 	}
 	if info.Lun < 1 {
-		return dev, fmt.Errorf("Invalid LUN")
+		return dev, errors.New("Invalid LUN")
 	}
 	if mockGobrickInducedErrors.ConnectVolumeError {
-		return dev, fmt.Errorf("induced ConnectVolumeError")
+		return dev, errors.New("induced ConnectVolumeError")
 	}
 	logger := &customLogger{}
 	logger.Debug(ctx, "Adding WWN %s to path %s", nodePublishWWN, nodePublishBlockDevicePath)
@@ -94,7 +93,7 @@ func (g *mockISCSIGobrick) ConnectVolume(ctx context.Context, info gobrick.ISCSI
 
 func (g *mockISCSIGobrick) DisconnectVolumeByDeviceName(ctx context.Context, _ string) error {
 	if mockGobrickInducedErrors.DisconnectVolumeError {
-		return fmt.Errorf("induced DisconnectVolumeError")
+		return errors.New("induced DisconnectVolumeError")
 	}
 	logger := &customLogger{}
 	logger.Error(ctx, "Removing WWN %s to path entry", nodePublishWWN)
@@ -115,13 +114,13 @@ func (g *mockFCGobrick) ConnectRDMVolume(_ context.Context, info gobrick.RDMVolu
 		MultipathID: "sdb",
 	}
 	if len(info.Targets) < 1 {
-		return dev, fmt.Errorf("No targets specified")
+		return dev, errors.New("No targets specified")
 	}
 	if info.Lun < 1 {
-		return dev, fmt.Errorf("Invalid LUN")
+		return dev, errors.New("Invalid LUN")
 	}
 	if mockGobrickInducedErrors.ConnectVolumeError {
-		return dev, fmt.Errorf("induced ConnectVolumeError")
+		return dev, errors.New("induced ConnectVolumeError")
 	}
 	gofsutil.GOFSMockWWNToDevice[nodePublishWWN] = nodePublishBlockDevicePath
 	return dev, nil

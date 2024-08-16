@@ -17,6 +17,7 @@ package service
 import (
 	"container/heap"
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -322,7 +323,7 @@ func (s *service) UnlinkSnapshot(ctx context.Context, symID string, snapSession 
 				}
 			}
 		} else {
-			return fmt.Errorf("Not all the targets are in Defined state")
+			return errors.New("Not all the targets are in Defined state")
 		}
 	}
 	return nil

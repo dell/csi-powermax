@@ -17,6 +17,7 @@ package utils
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -119,13 +120,13 @@ func WriteHTTPResponse(w http.ResponseWriter, val interface{}) {
 func IsValidResponse(resp *http.Response) error {
 	switch {
 	case resp == nil:
-		return fmt.Errorf("No response from API")
+		return errors.New("No response from API")
 	case resp.StatusCode == StatusUnAuthorized:
-		return fmt.Errorf("Not Authorised")
+		return errors.New("Not Authorised")
 	case resp.StatusCode == StatusInternalError:
-		return fmt.Errorf("Internal Server Error")
+		return errors.New("Internal Server Error")
 	case !(resp.StatusCode >= 200 && resp.StatusCode <= 299):
-		return fmt.Errorf("Invalid Response from API")
+		return errors.New("Invalid Response from API")
 	}
 	return nil
 }

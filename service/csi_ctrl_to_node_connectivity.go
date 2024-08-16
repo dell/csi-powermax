@@ -17,7 +17,7 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -61,7 +61,7 @@ func (s *service) QueryArrayStatus(ctx context.Context, url string) (bool, error
 	}
 	if resp.StatusCode != 200 {
 		log.Errorf("Found unexpected response from the server while fetching array status %d ", resp.StatusCode)
-		return false, fmt.Errorf("unexpected response from the server")
+		return false, errors.New("unexpected response from the server")
 	}
 	var statusResponse ArrayConnectivityStatus
 	err = json.Unmarshal(bodyBytes, &statusResponse)

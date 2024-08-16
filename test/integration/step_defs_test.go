@@ -125,7 +125,7 @@ func (f *feature) aPowermaxService() error {
 		var err error
 		endpoint := os.Getenv("X_CSI_POWERMAX_ENDPOINT")
 		if endpoint == "" {
-			return fmt.Errorf("Cannot read X_CSI_POWERMAX_ENDPOINT")
+			return errors.New("Cannot read X_CSI_POWERMAX_ENDPOINT")
 		}
 		f.pmaxClient, err = pmax.NewClientWithArgs(endpoint, ApplicationName, true, false)
 		if err != nil {
@@ -457,11 +457,11 @@ func (f *feature) whenICallDeleteLocalVolume() error {
 
 func (f *feature) iReceiveAValidVolume() error {
 	if f.createVolumeResponse == nil {
-		return fmt.Errorf("Expected a Volume Resonse but there was none")
+		return errors.New("Expected a Volume Resonse but there was none")
 	}
 	attributes := f.createVolumeResponse.Volume.VolumeContext
 	if attributes == nil {
-		return fmt.Errorf("Expected volume attributes but there were none")
+		return errors.New("Expected volume attributes but there were none")
 	}
 	serviceLevel := attributes["ServiceLevel"]
 	expectedServiceLevel := f.createVolumeRequest.Parameters[service.ServiceLevelParam]
@@ -651,7 +651,7 @@ func (f *feature) whenICallPublishVolume(nodeIDEnvVar string) error {
 		fmt.Printf("ControllerPublishVolume %s:\n", err.Error())
 		f.addError(err)
 	} else {
-		fmt.Printf("ControllerPublishVolume completed successfully\n")
+		fmt.Print("ControllerPublishVolume completed successfully\n")
 	}
 	time.Sleep(SleepTime)
 	return nil
@@ -965,7 +965,7 @@ func (f *feature) verifyPublishedVolumeWithVoltypeAccessFstype(voltype, _, fstyp
 	} else if voltype == "block" {
 		cmd = exec.Command("/bin/bash", "-c", "mount | grep /tmp/datafile")
 	} else {
-		return fmt.Errorf("unexpected volume type")
+		return errors.New("unexpected volume type")
 	}
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {

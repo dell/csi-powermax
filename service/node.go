@@ -878,7 +878,7 @@ func (s *service) nodeProbe(ctx context.Context) error {
 	log.Debug("Entering nodeProbe")
 	defer log.Debug("Exiting nodeProbe")
 	if s.opts.NodeName == "" {
-		return status.Errorf(codes.FailedPrecondition,
+		return status.Error(codes.FailedPrecondition,
 			"Error getting NodeName from the environment")
 	}
 
@@ -905,7 +905,7 @@ func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
 	defer log.Debugf("Exiting nodeProbe for array %s", symID)
 
 	if s.opts.NodeName == "" {
-		return status.Errorf(codes.FailedPrecondition,
+		return status.Error(codes.FailedPrecondition,
 			"Error getting NodeName from the environment")
 	}
 
@@ -956,7 +956,7 @@ func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
 				}
 			}
 		}
-		return fmt.Errorf("no active fc sessions")
+		return errors.New("no active fc sessions")
 	}
 	if s.useIscsi {
 		// Check if host is connected to iscsi
@@ -988,7 +988,7 @@ func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
 				}
 			}
 		}
-		return fmt.Errorf("no active iscsi sessions")
+		return errors.New("no active iscsi sessions")
 	} else if s.useNVMeTCP {
 		if host.NumberMaskingViews > 0 {
 			err = s.performNVMETCPLoginOnSymID(ctx, symID, host.MaskingviewIDs[0], pmaxClient)

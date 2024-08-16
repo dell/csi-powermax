@@ -16,6 +16,7 @@ package k8smock
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -76,7 +77,7 @@ func Init() *MockUtils {
 
 func (mockUtils *MockUtils) getCertFileFromSecret(certSecret *corev1.Secret) (string, error) {
 	if certSecret == nil {
-		return "", fmt.Errorf("cert secret can't be nil")
+		return "", errors.New("cert secret can't be nil")
 	}
 	timestamp := strconv.FormatInt(time.Now().UnixNano(), 10)
 	certFilePath := fmt.Sprintf("%s/%s-proxy-%s.pem", mockUtils.CertDirectory, certSecret.Name, timestamp)
@@ -90,7 +91,7 @@ func (mockUtils *MockUtils) getCertFileFromSecret(certSecret *corev1.Secret) (st
 // GetCertFileFromSecret - mock implementation for GetCertFileFromSecret
 func (mockUtils *MockUtils) GetCertFileFromSecret(secret *corev1.Secret) (string, error) {
 	if mockUtils == nil {
-		return "", fmt.Errorf("k8sutils not initialized")
+		return "", errors.New("k8sutils not initialized")
 	}
 	return mockUtils.getCertFileFromSecret(secret)
 }
@@ -98,7 +99,7 @@ func (mockUtils *MockUtils) GetCertFileFromSecret(secret *corev1.Secret) (string
 // GetCertFileFromSecretName - mock implementation for GetCertFileFromSecretName
 func (mockUtils *MockUtils) GetCertFileFromSecretName(secretName string) (string, error) {
 	if mockUtils == nil {
-		return "", fmt.Errorf("k8sutils not initialized")
+		return "", errors.New("k8sutils not initialized")
 	}
 	certSecret, err := mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Get(context.TODO(), secretName, metav1.GetOptions{})
 	if err != nil {
@@ -125,7 +126,7 @@ func (mockUtils *MockUtils) createFile(fileName string, data []byte) error {
 
 func (mockUtils *MockUtils) getCredentialFromSecret(secret *corev1.Secret) (*common.Credentials, error) {
 	if secret == nil {
-		return nil, fmt.Errorf("secret can't be nil")
+		return nil, errors.New("secret can't be nil")
 	}
 	if _, ok := secret.Data["username"]; ok {
 		return &common.Credentials{
