@@ -134,13 +134,13 @@ func (mockUtils *MockUtils) getCredentialFromSecret(secret *corev1.Secret) (*com
 			Password: string(secret.Data["password"]),
 		}, nil
 	}
-	return nil, fmt.Errorf("username not found in secret data")
+	return nil, errors.New("username not found in secret data")
 }
 
 // GetCredentialsFromSecretName - mock implementation for GetCredentialsFromSecretName
 func (mockUtils *MockUtils) GetCredentialsFromSecretName(secretName string) (*common.Credentials, error) {
 	if mockUtils == nil {
-		return nil, fmt.Errorf("k8sutils not initialized")
+		return nil, errors.New("k8sutils not initialized")
 	}
 	secret, err := mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Get(context.TODO(), secretName, metav1.GetOptions{})
 	if err != nil {

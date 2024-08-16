@@ -544,7 +544,7 @@ func (queue *deletionQueue) deleteVolumes(pmaxClient pmax.Pmax) bool {
 				continue
 			}
 			if len(vol.StorageGroupIDList) != 0 {
-				log.Error("%s: is part of some storage groups", device.print())
+				log.Errorf("%s: is part of some storage groups", device.print())
 				device.updateStatus(deletionStateDisAssociateSG, "")
 				continue
 			}

@@ -975,10 +975,10 @@ func (f *feature) verifyPublishedVolumeWithVoltypeAccessFstype(voltype, _, fstyp
 	if voltype == "mount" {
 		// output: /dev/scinia on /tmp/datadir type xfs (rw,relatime,seclabel,attr2,inode64,noquota)
 		if !strings.Contains(string(stdout), "/dev/scini") {
-			return fmt.Errorf("Mount did not contain /dev/scini for scale-io")
+			return errors.New("Mount did not contain /dev/scini for scale-io")
 		}
 		if !strings.Contains(string(stdout), "/tmp/datadir") {
-			return fmt.Errorf("Mount did not contain /tmp/datadir for type mount")
+			return errors.New("Mount did not contain /tmp/datadir for type mount")
 		}
 		if !strings.Contains(string(stdout), fmt.Sprintf("type %s", fstype)) {
 			return fmt.Errorf("Did not find expected fstype %s", fstype)
@@ -1615,7 +1615,7 @@ func (f *feature) theVolumeSizeIs(expectedVolSize string) error {
 		return nil
 	}
 	if f.createVolumeResponse == nil {
-		return fmt.Errorf("expected CreateVolume response but there was none")
+		return errors.New("expected CreateVolume response but there was none")
 	}
 	capGB := f.createVolumeResponse.GetVolume().VolumeContext["CapacityGB"]
 	if capGB != expectedVolSize {
@@ -2012,7 +2012,7 @@ func (f *feature) parseCsiID(csiID string) (
 	volName string, arrayID string, devID string, err error,
 ) {
 	if csiID == "" {
-		err = fmt.Errorf("A Volume ID is required for the request")
+		err = errors.New("A Volume ID is required for the request")
 		return
 	}
 	// get the Device ID and Array ID
@@ -2087,7 +2087,7 @@ func (f *feature) controllerExpandVolume(volID string, nCYL int64) error {
 func (f *feature) whenICallNodeExpandVolume() error {
 	nodePublishReq := f.nodePublishVolumeRequest
 	if nodePublishReq == nil {
-		err := fmt.Errorf("Volume is not stage, nodePublishVolumeRequest not found")
+		err := errors.New("Volume is not stage, nodePublishVolumeRequest not found")
 		return err
 	}
 	err := f.nodeExpandVolume(f.volID, nodePublishReq.TargetPath)

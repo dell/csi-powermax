@@ -18,6 +18,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -139,7 +140,7 @@ func (revProxy *StandAloneProxy) getHTTPClient(symID string) (*http.Client, erro
 	if envoy, ok := revProxy.envoyMap[symID]; ok {
 		return envoy.GetActiveHTTPClient(), nil
 	}
-	return nil, fmt.Errorf("no http client found for the given symid")
+	return nil, errors.New("no http client found for the given symid")
 }
 
 func (revProxy *StandAloneProxy) getProxyByURL(symmURL common.SymmURL) (common.Proxy, error) {
@@ -153,7 +154,7 @@ func (revProxy *StandAloneProxy) getProxyByURL(symmURL common.SymmURL) (common.P
 			return *envoy.GetBackup(), nil
 		}
 	}
-	return proxy, fmt.Errorf("no proxy found for this URL")
+	return proxy, errors.New("no proxy found for this URL")
 }
 
 func (revProxy *StandAloneProxy) getProxyBySymmID(storageArrayID string) (common.Proxy, error) {
@@ -165,21 +166,21 @@ func (revProxy *StandAloneProxy) getProxyBySymmID(storageArrayID string) (common
 		if envoy, ok := revProxy.envoyMap[storageArrayID]; ok {
 			return *(envoy.GetActiveProxy()), nil
 		}
-		return proxy, fmt.Errorf("failed to find reverseproxy for the array id")
+		return proxy, errors.New("failed to find reverseproxy for the array id")
 	}
-	return proxy, fmt.Errorf("failed to find array id in the configuration")
+	return proxy, errors.New("failed to find array id in the configuration")
 }
 
 func (revProxy *StandAloneProxy) getAuthorisedArrays(res http.ResponseWriter, req *http.Request) ([]string, error) {
 	username, password, ok := req.BasicAuth()
 	if !ok {
 		utils.WriteHTTPError(res, fmt.Sprintf("no authorization provided"), utils.StatusUnAuthorized)
-		return nil, fmt.Errorf("no authorization provided")
+		return nil, errors.New("no authorization provided")
 	}
 	symIDs := revProxy.config.GetAuthorizedArrays(username, password)
 	if len(symIDs) == 0 {
 		utils.WriteHTTPError(res, "No managed arrays under this user", utils.StatusUnAuthorized)
-		return nil, fmt.Errorf("no managed arrays under this user")
+		return nil, errors.New("no managed arrays under this user")
 	}
 	return symIDs, nil
 }
@@ -196,7 +197,7 @@ func (revProxy *StandAloneProxy) getIteratorByID(iterID string) (common.SymmURL,
 	if u4p, ok := revProxy.iteratorCache.Get(iterID); ok {
 		return u4p.(common.SymmURL), nil
 	}
-	return u4p, fmt.Errorf("no symm info found for this iterator")
+	return u4p, errors.New("no symm info found for this iterator")
 }
 
 func (revProxy *StandAloneProxy) setIteratorID(resp *http.Response, URL url.URL, symID string) (*types.VolumeIterator, error) {
@@ -324,7 +325,7 @@ func (revProxy *StandAloneProxy) hasServerChanged(oldServer, newServer config.Ma
 func (revProxy *StandAloneProxy) UpdateConfig(proxyConfig config.ProxyConfig) error {
 	standaloneProxyConfig := proxyConfig.StandAloneProxyConfig
 	if standaloneProxyConfig == nil {
-		return fmt.Errorf("StandaloneProxyConfig can't be nil")
+		return errors.New("StandaloneProxyConfig can't be nil")
 	}
 	if reflect.DeepEqual(revProxy.config, *standaloneProxyConfig) {
 		log.Info("No changes detected in the configuration")

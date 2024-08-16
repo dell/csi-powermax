@@ -136,8 +136,7 @@ func checkIfFileSystemExist(ctx context.Context, symID, nasServerID, fileSystemN
 
 // DeleteFileSystem deletes a file system
 func DeleteFileSystem(ctx context.Context, symID, fileSystemID string, pmaxClient pmax.Pmax) error {
-	err := pmaxClient.DeleteFileSystem(ctx, symID, fileSystemID)
-	return err
+	return pmaxClient.DeleteFileSystem(ctx, symID, fileSystemID)
 }
 
 // CreateNFSExport creates a NFS export for the given file system

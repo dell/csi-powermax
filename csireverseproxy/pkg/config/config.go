@@ -411,7 +411,7 @@ func (proxy *StandAloneProxyConfig) GetManagementServerCredentials(mgmtURL url.U
 	if mgmtServer, ok := proxy.managementServers[mgmtURL]; ok {
 		return mgmtServer.Credentials, nil
 	}
-	return common.Credentials{}, fmt.Errorf("url not configured")
+	return common.Credentials{}, errors.New("url not configured")
 }
 
 // IsUserAuthorized - Returns if a given user is authorized to access a specific storage array
@@ -421,11 +421,11 @@ func (proxy *StandAloneProxyConfig) IsUserAuthorized(username, password, storage
 			if subtle.ConstantTimeCompare([]byte(creds.ProxyCredential.Password), []byte(password)) == 1 {
 				return true, nil
 			}
-			return false, fmt.Errorf("incorrect password")
+			return false, errors.New("incorrect password")
 		}
-		return false, fmt.Errorf("unauthorized for this array")
+		return false, errors.New("unauthorized for this array")
 	}
-	return false, fmt.Errorf("unknown credentials")
+	return false, errors.New("unknown credentials")
 }
 
 // GetStorageArray - Returns a list of storage array given a storage array id
@@ -496,7 +496,7 @@ func (proxyConfig *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUt
 	if proxyMode == StandAlone {
 		config := proxyConfigMap.StandAloneConfig
 		if config == nil {
-			return fmt.Errorf("proxy mode is specified as StandAlone but unable to parse config")
+			return errors.New("proxy mode is specified as StandAlone but unable to parse config")
 		}
 		var proxy StandAloneProxyConfig
 		proxy.managedArrays = make(map[string]*StorageArray)
@@ -602,7 +602,7 @@ func (proxyConfig *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUt
 		return fmt.Errorf("unknown proxy mode: %s specified", string(proxyMode))
 	}
 	if proxyConfig.StandAloneProxyConfig == nil {
-		return fmt.Errorf("no configuration provided for the proxy")
+		return errors.New("no configuration provided for the proxy")
 	}
 	return nil
 }

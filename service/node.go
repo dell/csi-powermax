@@ -1012,9 +1012,9 @@ func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
 				}
 			}
 		}
-		return fmt.Errorf("no active nvme sessions")
+		return errors.New("no active nvme sessions")
 	}
-	return fmt.Errorf("no active sessions")
+	return errors.New("no active sessions")
 }
 
 func (s *service) NodeGetCapabilities(
@@ -1528,7 +1528,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 
 	// make sure we have a connection to Unisphere
 	if s.adminClient == nil {
-		return fmt.Errorf("There is no Unisphere connection")
+		return errors.New("There is no Unisphere connection")
 	}
 	portWWNs := make([]string, 0)
 	IQNs := make([]string, 0)

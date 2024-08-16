@@ -2969,7 +2969,7 @@ func (f *feature) aValidListSnapshotsResponseIsReturnedWithListedAndNextToken(li
 			fmt.Printf("snapshot ID %s source ID %s timestamp %s\n", id, entry.GetSnapshot().SourceVolumeId, ts)
 		}
 		if f.listedVolumeIDs[id] {
-			return fmt.Errorf("Got duplicate snapshot ID: " + id)
+			return errors.New("Got duplicate snapshot ID: " + id)
 		}
 		f.listedVolumeIDs[id] = true
 	}

@@ -87,7 +87,7 @@ func connectivityStatus(w http.ResponseWriter, _ *http.Request) {
 
 	jsonResponse, err := MarshalSyncMapToJSON(probeStatus)
 	if err != nil {
-		log.Error("error %s during marshaling to json", err)
+		log.Errorf("error %s during marshaling to json", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
 		return
@@ -137,7 +137,7 @@ func getArrayConnectivityStatus(w http.ResponseWriter, r *http.Request) {
 	// convert status struct to JSON
 	jsonResponse, err := json.Marshal(status)
 	if err != nil {
-		log.Error("error %s during marshaling to json", err)
+		log.Errorf("error %s during marshaling to json", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
 		return
