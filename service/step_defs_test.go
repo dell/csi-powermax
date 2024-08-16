@@ -2291,7 +2291,7 @@ func (f *feature) makeDevDirectories() error {
 	if err != nil {
 		err = os.MkdirAll(nodePublishSymlinkDir, 0o777)
 		if err != nil {
-			fmt.Printf("by-id: " + err.Error())
+			fmt.Print("by-id: " + err.Error())
 			return err
 		}
 	}
@@ -2300,7 +2300,7 @@ func (f *feature) makeDevDirectories() error {
 	if err != nil {
 		err = os.MkdirAll(nodePublishPathSymlinkDir, 0o777)
 		if err != nil {
-			fmt.Printf("by-path: " + err.Error())
+			fmt.Print("by-path: " + err.Error())
 			return err
 		}
 	}
@@ -2309,15 +2309,15 @@ func (f *feature) makeDevDirectories() error {
 	cmd := exec.Command("rm", "-rf", nodePublishPrivateDir)
 	_, err = cmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("error removing private staging directory")
+		fmt.Print("error removing private staging directory")
 		return err
 	}
-	fmt.Printf("removed private staging directory\n")
+	fmt.Print("removed private staging directory\n")
 
 	// Remake the private staging directory
 	err = os.MkdirAll(nodePublishPrivateDir, 0o777)
 	if err != nil {
-		fmt.Printf("error creating private staging directory: " + err.Error())
+		fmt.Print("error creating private staging directory: " + err.Error())
 		return err
 	}
 	f.service.privDir = nodePublishPrivateDir
@@ -2326,7 +2326,7 @@ func (f *feature) makeDevDirectories() error {
 
 func (f *feature) aControllerPublishedVolume() error {
 	var err error
-	fmt.Printf("setting up dev directory, block device, and symlink\n")
+	fmt.Print("setting up dev directory, block device, and symlink\n")
 
 	// Make the directories; on Windows these show up in test/dev/...
 	f.makeDevDirectories()
@@ -2353,7 +2353,7 @@ func (f *feature) aControllerPublishedVolume() error {
 		output, err := cmd.CombinedOutput()
 		fmt.Printf("symlink output: %s\n", output)
 		if err != nil {
-			fmt.Printf("link: " + err.Error())
+			fmt.Print("link: " + err.Error())
 		}
 	}
 
@@ -2415,7 +2415,7 @@ func (f *feature) aControllerPublishedMultipathVolume() error {
 		output, err := cmd.CombinedOutput()
 		fmt.Printf("symlink output: %s\n", output)
 		if err != nil {
-			fmt.Printf("link: " + err.Error())
+			fmt.Print("link: " + err.Error())
 		}
 	}
 	// Make the gofsutil entry
@@ -2538,7 +2538,7 @@ func (f *feature) iCallNodePublishVolume() error {
 		_ = f.getNodePublishVolumeRequest()
 		req = f.nodePublishVolumeRequest
 	}
-	fmt.Printf("Calling NodePublishVolume\n")
+	fmt.Print("Calling NodePublishVolume\n")
 	_, err := f.service.NodePublishVolume(ctx, req)
 	if err != nil {
 		fmt.Printf("NodePublishVolume failed: %s\n", err.Error())
@@ -2546,7 +2546,7 @@ func (f *feature) iCallNodePublishVolume() error {
 			f.err = err
 		}
 	} else {
-		fmt.Printf("NodePublishVolume completed successfully\n")
+		fmt.Print("NodePublishVolume completed successfully\n")
 	}
 	return nil
 }
@@ -2560,7 +2560,7 @@ func (f *feature) iCallNodeUnpublishVolume() error {
 	if inducedErrors.badVolumeIdentifier {
 		req.VolumeId = "bad volume identifier"
 	}
-	fmt.Printf("Calling NodeUnpublishVolume\n")
+	fmt.Print("Calling NodeUnpublishVolume\n")
 	_, err := f.service.NodeUnpublishVolume(ctx, req)
 	if err != nil {
 		fmt.Printf("NodeUnpublishVolume failed: %s\n", err.Error())
@@ -2568,7 +2568,7 @@ func (f *feature) iCallNodeUnpublishVolume() error {
 			f.err = err
 		}
 	} else {
-		fmt.Printf("NodeUnpublishVolume completed successfully\n")
+		fmt.Print("NodeUnpublishVolume completed successfully\n")
 	}
 	return nil
 }

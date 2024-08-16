@@ -320,7 +320,7 @@ func (s *service) CreateVolume(
 	err = s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	// SLO is optional
@@ -663,7 +663,7 @@ func (s *service) CreateVolume(
 		}
 		if len(vol.StorageGroupIDList) < 1 {
 			log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
-			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): "+volumeID)
+			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): ", volumeID)
 		}
 		matchesStorageGroup := false
 		for _, sgid := range vol.StorageGroupIDList {
@@ -1106,7 +1106,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		}
 		if len(vol.StorageGroupIDList) < 1 {
 			log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
-			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): "+volumeID)
+			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): ", volumeID)
 		}
 		matchesStorageGroup := false
 		for _, sgid := range vol.StorageGroupIDList {
@@ -2844,7 +2844,7 @@ func (s *service) GetCapacity(
 	err = s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	// log all parameters used in GetCapacity call
