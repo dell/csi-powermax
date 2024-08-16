@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -421,7 +422,7 @@ func mkfile(path string) (bool, error) {
 		return false, err
 	}
 	if st.IsDir() {
-		return false, fmt.Errorf("existing path is a directory")
+		return false, errors.New("existing path is a directory")
 	}
 	return false, nil
 }
@@ -446,7 +447,7 @@ func mkdir(path string) (bool, error) {
 		return false, err
 	}
 	if !st.IsDir() {
-		return false, fmt.Errorf("existing path is not a directory")
+		return false, errors.New("existing path is not a directory")
 	}
 	return false, nil
 }

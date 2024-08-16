@@ -16,6 +16,7 @@ package k8sutils
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -101,7 +102,7 @@ func (c *KubernetesClient) CreateOutOfClusterKubeClient() error {
 		kubeconfig = filepath.Join(path, ".kube", "config")
 	}
 	if kubeconfig == "" {
-		return fmt.Errorf("failed to get kube config path")
+		return errors.New("failed to get kube config path")
 	}
 	// use the current context in kubeconfig
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
@@ -155,7 +156,7 @@ func Init(namespace, certDirectory string, inCluster bool, resyncPeriod time.Dur
 
 func (utils *K8sUtils) getCertFileFromSecret(certSecret *corev1.Secret) (string, error) {
 	if certSecret == nil {
-		return "", fmt.Errorf("cert secret can't be nil")
+		return "", errors.New("cert secret can't be nil")
 	}
 	timestamp := strconv.FormatInt(time.Now().UnixNano(), 10)
 	certFile := fmt.Sprintf("%s/%s-proxy-%s.pem", k8sUtils.CertDirectory, certSecret.Name, timestamp)
@@ -183,7 +184,7 @@ func (utils *K8sUtils) GetCertFileFromSecretName(secretName string) (string, err
 
 func (utils *K8sUtils) getCredentialFromSecret(secret *corev1.Secret) (*common.Credentials, error) {
 	if secret == nil {
-		return nil, fmt.Errorf("secret can't be nil")
+		return nil, errors.New("secret can't be nil")
 	}
 	if _, ok := secret.Data["username"]; ok {
 		return &common.Credentials{
@@ -191,7 +192,7 @@ func (utils *K8sUtils) getCredentialFromSecret(secret *corev1.Secret) (*common.C
 			Password: string(secret.Data["password"]),
 		}, nil
 	}
-	return nil, fmt.Errorf("username not found in secret data")
+	return nil, errors.New("username not found in secret data")
 }
 
 // GetCredentialsFromSecretName - Given a secret name, reads the secret and returns credentials

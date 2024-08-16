@@ -84,7 +84,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 	err = s.validateStoragePoolID(ctx, symID, storagePoolID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	// SLO is optional
@@ -122,7 +122,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 
 	switch migrateType {
 	case csimgr.MigrateTypes_UNKNOWN_MIGRATE:
-		return nil, status.Errorf(codes.Unknown, "Unknown Migration Type")
+		return nil, status.Error(codes.Unknown, "Unknown Migration Type")
 	case csimgr.MigrateTypes_NON_REPL_TO_REPL:
 		migrationFunc = nonReplToRepl
 	case csimgr.MigrateTypes_REPL_TO_NON_REPL:
@@ -297,7 +297,7 @@ func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams
 		rdfInfo, err := pmaxClient.GetRDFGroupByID(ctx, symID, localRDFGrpNo)
 		if err != nil {
 			log.Error(fmt.Sprintf("Could not get remote rdfG for %s: %s:", localRDFGrpNo, err.Error()))
-			return status.Errorf(codes.Internal, fmt.Sprintf("Could not get remote rdfG for %s: %s:", localRDFGrpNo, err.Error()))
+			return status.Error(codes.Internal, fmt.Sprintf("Could not get remote rdfG for %s: %s:", localRDFGrpNo, err.Error()))
 		}
 		remoteRDFGrpNo = strconv.Itoa(rdfInfo.RemoteRdfgNumber)
 	}
@@ -328,13 +328,13 @@ func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequ
 	params := req.GetParameters()
 	if len(params) <= 0 {
 		log.Error("Invalid Arguments")
-		return nil, status.Errorf(codes.InvalidArgument, "Invalid argument")
+		return nil, status.Error(codes.InvalidArgument, "Invalid argument")
 	}
 	localSymID := params[SymmetrixIDParam]
 	remoteSymID := params[RemoteSymIDParam]
 	if localSymID == "" || remoteSymID == "" {
 		log.Error("A SYMID parameter is required")
-		return nil, status.Errorf(codes.InvalidArgument, "A SYMID parameter is required")
+		return nil, status.Error(codes.InvalidArgument, "A SYMID parameter is required")
 	}
 	action := req.GetAction()
 	fields := map[string]interface{}{
@@ -432,6 +432,6 @@ func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequ
 				Action: action,
 			},
 		}
-		return csiMgResp, status.Errorf(codes.InvalidArgument, "Invalid action")
+		return csiMgResp, status.Error(codes.InvalidArgument, "Invalid action")
 	}
 }

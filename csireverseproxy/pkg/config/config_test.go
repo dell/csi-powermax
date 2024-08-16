@@ -179,7 +179,7 @@ func TestStandAloneProxyConfig_UpdateManagedArrays(t *testing.T) {
 	}
 	newConfig := config.DeepCopy()
 	config.StandAloneProxyConfig.UpdateManagedArrays(newConfig.StandAloneProxyConfig)
-	fmt.Printf("Managed arrays updated successfully")
+	fmt.Print("Managed arrays updated successfully")
 }
 
 func TestStandAloneProxyConfig_GetAuthorizedArrays(t *testing.T) {

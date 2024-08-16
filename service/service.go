@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -440,7 +441,7 @@ func (s *service) BeforeServe(
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
 	opts.ProxyServiceHost, opts.ProxyServicePort, opts.UseProxy = s.getProxySettingsFromEnv()
 	if !opts.UseProxy && !inducedMockReverseProxy {
-		err := fmt.Errorf("CSI reverseproxy service host or port not found, CSI reverseproxy not installed properly")
+		err := errors.New("CSI reverseproxy service host or port not found, CSI reverseproxy not installed properly")
 		log.Error(err.Error())
 		return err
 	}
@@ -467,7 +468,7 @@ func (s *service) BeforeServe(
 		}
 		opts.ClusterPrefix = prefix
 	} else {
-		return fmt.Errorf("No Cluster Prefix was specified")
+		return errors.New("No Cluster Prefix was specified")
 	}
 
 	// pb parses an environment variable into a boolean value. If an error

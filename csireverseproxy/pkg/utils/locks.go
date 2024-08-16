@@ -15,6 +15,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -178,7 +179,7 @@ func (l *Lock) Lock() error {
 	lockRequestsQueue <- lockRequest
 	isLocked := <-l.WaitChannel
 	if !isLocked {
-		return fmt.Errorf("failed to obtain lock")
+		return errors.New("failed to obtain lock")
 	}
 	log.Infof("Request ID: %s - Obtained %s lock", l.RequestID, string(l.LockType))
 	return nil

@@ -539,10 +539,10 @@ func (g *storageGroupSvc) addVolumeToSGMVVolumeCheck(ctx context.Context, client
 					return false, false, nil
 				}
 				log.Error(fmt.Sprintf("ControllerPublishVolume: Masking view - %s has conflicting SG", tgtMaskingViewID))
-				return false, false, status.Errorf(codes.FailedPrecondition, "Volume in conflicting masking view")
+				return false, false, status.Error(codes.FailedPrecondition, "Volume in conflicting masking view")
 			}
 			log.Error(fmt.Sprintf("ControllerPublishVolume: Volume present in a different masking view - %s", maskingViewIDs[0]))
-			return false, false, status.Errorf(codes.FailedPrecondition, "volume already present in a different masking view")
+			return false, false, status.Error(codes.FailedPrecondition, "volume already present in a different masking view")
 		}
 	}
 	return !volumeAlreadyInTargetSG, !volumeInTargetMaskingView, nil

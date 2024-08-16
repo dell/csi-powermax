@@ -21,6 +21,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -75,7 +76,7 @@ func connectivityStatus(w http.ResponseWriter, _ *http.Request) {
 	log.Infof("connectivityStatus called, status is %v \n", probeStatus)
 	// w.Header().Set("Content-Type", "application/json")
 	if probeStatus == nil {
-		log.Errorf("error probeStatus map in cache is empty")
+		log.Error("error probeStatus map in cache is empty")
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
 		return
@@ -109,13 +110,13 @@ func MarshalSyncMapToJSON(m *sync.Map) ([]byte, error) {
 			tmpMap[k.(string)] = value.(ArrayConnectivityStatus)
 			return true
 		default:
-			log.Errorf("invalid data is stored in cache")
+			log.Error("invalid data is stored in cache")
 			return false
 		}
 	})
 	log.Debugf("map value is %+v", tmpMap)
 	if len(tmpMap) == 0 {
-		return nil, fmt.Errorf("invalid data is stored in cache")
+		return nil, errors.New("invalid data is stored in cache")
 	}
 	return json.Marshal(tmpMap)
 }

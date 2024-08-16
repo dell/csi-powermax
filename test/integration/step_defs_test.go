@@ -125,7 +125,7 @@ func (f *feature) aPowermaxService() error {
 		var err error
 		endpoint := os.Getenv("X_CSI_POWERMAX_ENDPOINT")
 		if endpoint == "" {
-			return fmt.Errorf("Cannot read X_CSI_POWERMAX_ENDPOINT")
+			return errors.New("Cannot read X_CSI_POWERMAX_ENDPOINT")
 		}
 		f.pmaxClient, err = pmax.NewClientWithArgs(endpoint, ApplicationName, true, false)
 		if err != nil {
@@ -254,13 +254,13 @@ func (f *feature) iCallCreateStorageProtectionGroup(replicationMode string) erro
 		fmt.Printf("CreateStorageProtectionGroup error %s:\n", err.Error())
 		f.addError(err)
 	}
-	fmt.Printf("CreateStorageProtectionGroup succeeded \n")
+	fmt.Print("CreateStorageProtectionGroup succeeded \n")
 	if resp.LocalProtectionGroupAttributes[path.Join(f.replicationContextPrefix, f.symmetrixIDParam)] != f.symID {
-		fmt.Printf("CreateStorageProtectionGroup validation failed")
+		fmt.Print("CreateStorageProtectionGroup validation failed")
 		err := errors.New("validation failed for CreateStorageProtectionGroup, context prefix is missing")
 		f.addError(err)
 	}
-	fmt.Printf("CreateStorageProtectionGroup validation succeeded \n")
+	fmt.Print("CreateStorageProtectionGroup validation succeeded \n")
 	f.localProtectedStorageGroup = resp.LocalProtectionGroupId
 	f.remoteProtectedStorageGroup = resp.RemoteProtectionGroupId
 	return nil
@@ -290,11 +290,11 @@ func (f *feature) iCallCreateRemoteVolume(replicationMode string) error {
 	remoteVolume := f.createRemoteVolumeResponse.RemoteVolume.GetVolumeId()
 	fmt.Printf("Remote Volume retrieved %s:\n", remoteVolume)
 	if f.createRemoteVolumeResponse.RemoteVolume.VolumeContext[path.Join(f.replicationContextPrefix, f.symmetrixIDParam)] != f.remotesymID {
-		fmt.Printf("CreateRemoteVolume validation failed \n")
+		fmt.Print("CreateRemoteVolume validation failed \n")
 		err := errors.New("validation failed for CreateRemoteVolume, context prefix is missing")
 		f.addError(err)
 	}
-	fmt.Printf("CreateRemoteVolume validation succeeded\n")
+	fmt.Print("CreateRemoteVolume validation succeeded\n")
 	f.volIDList = append(f.volIDList, remoteVolume)
 	return nil
 }
@@ -384,7 +384,7 @@ func (f *feature) iCallGetStorageProtectionGroupStatus(expectedStatus string) er
 	currentStatus := resp.GetStatus().State.String()
 	if currentStatus != expectedStatus {
 		errmsg := fmt.Sprintf("GetStorageProtectionGroupStatus error, Expected %s != %s Current", expectedStatus, currentStatus)
-		fmt.Printf(errmsg)
+		fmt.Print(errmsg)
 		f.addError(errors.New(errmsg))
 	}
 	return nil
@@ -457,11 +457,11 @@ func (f *feature) whenICallDeleteLocalVolume() error {
 
 func (f *feature) iReceiveAValidVolume() error {
 	if f.createVolumeResponse == nil {
-		return fmt.Errorf("Expected a Volume Resonse but there was none")
+		return errors.New("Expected a Volume Resonse but there was none")
 	}
 	attributes := f.createVolumeResponse.Volume.VolumeContext
 	if attributes == nil {
-		return fmt.Errorf("Expected volume attributes but there were none")
+		return errors.New("Expected volume attributes but there were none")
 	}
 	serviceLevel := attributes["ServiceLevel"]
 	expectedServiceLevel := f.createVolumeRequest.Parameters[service.ServiceLevelParam]
@@ -651,7 +651,7 @@ func (f *feature) whenICallPublishVolume(nodeIDEnvVar string) error {
 		fmt.Printf("ControllerPublishVolume %s:\n", err.Error())
 		f.addError(err)
 	} else {
-		fmt.Printf("ControllerPublishVolume completed successfully\n")
+		fmt.Print("ControllerPublishVolume completed successfully\n")
 	}
 	time.Sleep(SleepTime)
 	return nil
@@ -687,7 +687,7 @@ func (f *feature) whenICallUnpublishVolume(nodeIDEnvVar string) error {
 		fmt.Printf("ControllerUnpublishVolume failed: %s\n", err.Error())
 		f.addError(err)
 	} else {
-		fmt.Printf("ControllerUnpublishVolume completed successfully\n")
+		fmt.Print("ControllerUnpublishVolume completed successfully\n")
 	}
 	time.Sleep(SleepTime)
 	return nil
@@ -852,7 +852,7 @@ func (f *feature) whenICallNodePublishVolume(_ string) error {
 		fmt.Printf("NodePublishVolume failed: %s\n", err.Error())
 		f.addError(err)
 	} else {
-		fmt.Printf("NodePublishVolume completed successfully\n")
+		fmt.Print("NodePublishVolume completed successfully\n")
 	}
 	time.Sleep(ShortSleepTime)
 	time.Sleep(30 * time.Second)
@@ -931,7 +931,7 @@ func (f *feature) whenICallNodeUnpublishVolume(_ string) error {
 		fmt.Printf("NodeUnpublishVolume failed: %s\n", err.Error())
 		f.addError(err)
 	} else {
-		fmt.Printf("NodeUnpublishVolume completed successfully\n")
+		fmt.Print("NodeUnpublishVolume completed successfully\n")
 	}
 	time.Sleep(ShortSleepTime)
 	return nil
@@ -956,7 +956,7 @@ func (f *feature) nodeUnpublishVolume(id string, path string) error {
 
 func (f *feature) verifyPublishedVolumeWithVoltypeAccessFstype(voltype, _, fstype string) error {
 	if len(f.errs) > 0 {
-		fmt.Printf("Not verifying published volume because of previous error")
+		fmt.Print("Not verifying published volume because of previous error")
 		return nil
 	}
 	var cmd *exec.Cmd
@@ -965,7 +965,7 @@ func (f *feature) verifyPublishedVolumeWithVoltypeAccessFstype(voltype, _, fstyp
 	} else if voltype == "block" {
 		cmd = exec.Command("/bin/bash", "-c", "mount | grep /tmp/datafile")
 	} else {
-		return fmt.Errorf("unexpected volume type")
+		return errors.New("unexpected volume type")
 	}
 	stdout, err := cmd.CombinedOutput()
 	if err != nil {
@@ -975,10 +975,10 @@ func (f *feature) verifyPublishedVolumeWithVoltypeAccessFstype(voltype, _, fstyp
 	if voltype == "mount" {
 		// output: /dev/scinia on /tmp/datadir type xfs (rw,relatime,seclabel,attr2,inode64,noquota)
 		if !strings.Contains(string(stdout), "/dev/scini") {
-			return fmt.Errorf("Mount did not contain /dev/scini for scale-io")
+			return errors.New("Mount did not contain /dev/scini for scale-io")
 		}
 		if !strings.Contains(string(stdout), "/tmp/datadir") {
-			return fmt.Errorf("Mount did not contain /tmp/datadir for type mount")
+			return errors.New("Mount did not contain /tmp/datadir for type mount")
 		}
 		if !strings.Contains(string(stdout), fmt.Sprintf("type %s", fstype)) {
 			return fmt.Errorf("Did not find expected fstype %s", fstype)
@@ -1086,7 +1086,7 @@ func (f *feature) iCallLinkVolumeToSnapshot() error {
 	source := &csi.VolumeContentSource_SnapshotSource{SnapshotId: f.snapshotID}
 	req.VolumeContentSource = new(csi.VolumeContentSource)
 	req.VolumeContentSource.Type = &csi.VolumeContentSource_Snapshot{Snapshot: source}
-	fmt.Printf("Calling CreateVolume with snapshot source")
+	fmt.Print("Calling CreateVolume with snapshot source")
 
 	_ = f.createAVolume(req, "single CreateVolume from Snap")
 	time.Sleep(SleepTime)
@@ -1099,7 +1099,7 @@ func (f *feature) iCallLinkVolumeToVolume() error {
 	source := &csi.VolumeContentSource_VolumeSource{VolumeId: f.volID}
 	req.VolumeContentSource = new(csi.VolumeContentSource)
 	req.VolumeContentSource.Type = &csi.VolumeContentSource_Volume{Volume: source}
-	fmt.Printf("Calling CreateVolume with volume source")
+	fmt.Print("Calling CreateVolume with volume source")
 
 	_ = f.createAVolume(req, "single CreateVolume from Volume")
 	time.Sleep(SleepTime)
@@ -1128,7 +1128,7 @@ func (f *feature) iCallCreateManyVolumesFromSnapshot() error {
 		source := &csi.VolumeContentSource_SnapshotSource{SnapshotId: f.snapshotID}
 		req.VolumeContentSource = new(csi.VolumeContentSource)
 		req.VolumeContentSource.Type = &csi.VolumeContentSource_Snapshot{Snapshot: source}
-		fmt.Printf("Calling CreateVolume with snapshot source")
+		fmt.Print("Calling CreateVolume with snapshot source")
 		err := f.createAVolume(req, "single CreateVolume from Snap")
 		if err != nil {
 			fmt.Printf("Error on the %d th volume: %s\n", i, err.Error())
@@ -1615,7 +1615,7 @@ func (f *feature) theVolumeSizeIs(expectedVolSize string) error {
 		return nil
 	}
 	if f.createVolumeResponse == nil {
-		return fmt.Errorf("expected CreateVolume response but there was none")
+		return errors.New("expected CreateVolume response but there was none")
 	}
 	capGB := f.createVolumeResponse.GetVolume().VolumeContext["CapacityGB"]
 	if capGB != expectedVolSize {
@@ -1842,7 +1842,7 @@ func (f *feature) iCallCreateVolumeFromNewVolume() error {
 	source := &csi.VolumeContentSource_VolumeSource{VolumeId: f.volIDList[len(f.volIDList)-1]}
 	req.VolumeContentSource = new(csi.VolumeContentSource)
 	req.VolumeContentSource.Type = &csi.VolumeContentSource_Volume{Volume: source}
-	fmt.Printf("Calling CreateVolume with new volume source")
+	fmt.Print("Calling CreateVolume with new volume source")
 	_ = f.createAVolume(req, "single CreateVolume from new Volume")
 	time.Sleep(SleepTime)
 	return nil
@@ -2012,7 +2012,7 @@ func (f *feature) parseCsiID(csiID string) (
 	volName string, arrayID string, devID string, err error,
 ) {
 	if csiID == "" {
-		err = fmt.Errorf("A Volume ID is required for the request")
+		err = errors.New("A Volume ID is required for the request")
 		return
 	}
 	// get the Device ID and Array ID
@@ -2048,7 +2048,7 @@ func (f *feature) whenICallExpandVolumeToCylinders(nCYL int64) error {
 		fmt.Printf("ControllerExpandVolume %s:\n", err.Error())
 		f.addError(err)
 	} else {
-		fmt.Printf("ControllerExpandVolume completed successfully\n")
+		fmt.Print("ControllerExpandVolume completed successfully\n")
 	}
 	time.Sleep(SleepTime)
 	return nil
@@ -2087,7 +2087,7 @@ func (f *feature) controllerExpandVolume(volID string, nCYL int64) error {
 func (f *feature) whenICallNodeExpandVolume() error {
 	nodePublishReq := f.nodePublishVolumeRequest
 	if nodePublishReq == nil {
-		err := fmt.Errorf("Volume is not stage, nodePublishVolumeRequest not found")
+		err := errors.New("Volume is not stage, nodePublishVolumeRequest not found")
 		return err
 	}
 	err := f.nodeExpandVolume(f.volID, nodePublishReq.TargetPath)
@@ -2095,7 +2095,7 @@ func (f *feature) whenICallNodeExpandVolume() error {
 		fmt.Printf("NodeExpandVolume %s:\n", err.Error())
 		f.addError(err)
 	} else {
-		fmt.Printf("NodeExpandVolume completed successfully\n")
+		fmt.Print("NodeExpandVolume completed successfully\n")
 	}
 	time.Sleep(SleepTime)
 	return nil
@@ -2126,7 +2126,7 @@ func (f *feature) nodeExpandVolume(volID, volPath string) error {
 func (f *feature) iCallNodeGetVolumeStats() error {
 	nodePublishReq := f.nodePublishVolumeRequest
 	if nodePublishReq == nil {
-		err := fmt.Errorf("Volume is not stage, nodePublishVolumeRequest not found")
+		err := errors.New("Volume is not stage, nodePublishVolumeRequest not found")
 		return err
 	}
 	err := f.nodeGetVolumeStats(f.volID, nodePublishReq.TargetPath)
@@ -2134,7 +2134,7 @@ func (f *feature) iCallNodeGetVolumeStats() error {
 		fmt.Printf("NodeGetVolumeStats %s:\n", err.Error())
 		f.addError(err)
 	} else {
-		fmt.Printf("NodeGetVolumeStats completed successfully\n")
+		fmt.Print("NodeGetVolumeStats completed successfully\n")
 	}
 	time.Sleep(SleepTime)
 	return nil
