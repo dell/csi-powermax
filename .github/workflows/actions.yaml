@@ -37,7 +37,8 @@ jobs:
       - name: Run gosec to check for security vulnerabilities
         uses: securego/gosec@master
         with:
-          args: -exclude-dir=csireverseproxy ./...
+          directories: "./..."
+          exclude-dir: "csireverseproxy"
   malware_security_scan:
     name: Malware Scanner
     runs-on: ubuntu-latest
