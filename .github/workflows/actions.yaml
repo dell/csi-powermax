@@ -10,11 +10,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Run the formatter, linter, and vetter
         uses: dell/common-github-actions/go-code-formatter-linter-vetter@main
         with:
           directories: ./...
+  test:
+    name: Run Go unit tests and check package coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout csi-powermax
+        uses: actions/checkout@v4
+      - name: Run unit tests and check package coverage
+        uses: dell/common-github-actions/go-code-tester@main
+        with:
+          threshold: 1
+          test-folder: "./service"
+          race-detector: "true"
+          skip-test: "TestGoDog"
   go_security_scan:
     name: Run gosec
     runs-on: ubuntu-latest
@@ -31,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Run malware scan
         uses: dell/common-github-actions/malware-scanner@main
         with:

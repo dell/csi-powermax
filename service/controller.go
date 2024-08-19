@@ -320,7 +320,7 @@ func (s *service) CreateVolume(
 	err = s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
 	}
 
 	// SLO is optional
@@ -662,8 +662,8 @@ func (s *service) CreateVolume(
 			return nil, status.Errorf(codes.Internal, "Error fetching volume for idempotence check: %s", err.Error())
 		}
 		if len(vol.StorageGroupIDList) < 1 {
-			log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
-			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): "+volumeID)
+			log.Error("Idempotence check: StorageGroupIDList is empty for volume ", volumeID)
+			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): ", volumeID)
 		}
 		matchesStorageGroup := false
 		for _, sgid := range vol.StorageGroupIDList {
@@ -1105,8 +1105,8 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 			return nil, status.Errorf(codes.Internal, "Error fetching volume for idempotence check: %s", err.Error())
 		}
 		if len(vol.StorageGroupIDList) < 1 {
-			log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
-			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): "+volumeID)
+			log.Error("Idempotence check: StorageGroupIDList is empty for volume ", volumeID)
+			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): ", volumeID)
 		}
 		matchesStorageGroup := false
 		for _, sgid := range vol.StorageGroupIDList {
@@ -2844,7 +2844,7 @@ func (s *service) GetCapacity(
 	err = s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
 	}
 
 	// log all parameters used in GetCapacity call
@@ -3738,7 +3738,7 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 	err = s.validateStoragePoolID(ctx, remoteSymID, remoteSRPID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
 	}
 
 	// Validate Remote SLO
@@ -4258,7 +4258,7 @@ func (s *service) getStorageProtectionGroupStatus(ctx context.Context, protectio
 	log.WithFields(fields).Info("Executing GetStorageProtectionGroupStatus with following fields")
 	_, rDFGno, repMode, err := GetRDFInfoFromSGID(protectionGroupID)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
 	}
 	if repMode == Async || repMode == Sync {
 		psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, protectionGroupID, rDFGno)

@@ -1685,7 +1685,7 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 		}
 	}
 	if 0 < len(errormsg) {
-		return validInitiators, fmt.Errorf(errormsg)
+		return validInitiators, fmt.Errorf("%s", errormsg)
 	}
 
 	if len(validInitiators) == 0 && strings.Contains(hostID, NvmeTCPTransportProtocol) {
@@ -1915,7 +1915,7 @@ func (s *service) updateNQNWithHostID(ctx context.Context, symID string, NQNs []
 				} else {
 					hostID := initiator.HostID
 					nqn = nqn + ":" + hostID
-					log.Infof("updated host nqn is:" + nqn)
+					log.Infof("updated host nqn is: %s", nqn)
 				}
 				updatesHostNQNs = append(updatesHostNQNs, nqn)
 			}
@@ -1940,7 +1940,7 @@ func (s *service) getAndConfigureMaskingViewTargets(ctx context.Context, array, 
 	// this will also update the cache
 	targets, err := s.getIscsiTargetsForMaskingView(ctx, array, view, pmaxClient)
 	if err != nil {
-		log.Debugf(err.Error())
+		log.Debugf("%s", err.Error())
 		return goISCSITargets, err
 	}
 	for _, tgt := range targets {
@@ -1976,7 +1976,7 @@ func (s *service) getAndConfigureMaskingViewTargetsNVMeTCP(ctx context.Context, 
 	// this will also update the cache
 	targets, err := s.getNVMeTCPTargetsForMaskingView(ctx, array, view, pmaxClient)
 	if err != nil {
-		log.Debugf(err.Error())
+		log.Debugf("%s", err.Error())
 		return goNVMeTargets, err
 	}
 	for _, tgt := range targets {
@@ -2108,8 +2108,8 @@ func (s *service) setCHAPCredentials(array string, targets []maskingViewTargetIn
 		if len(IQNs) > 0 {
 			if s.opts.CHAPUserName != "" {
 				errorMsg := "multiple IQNs found on host and CHAP username is not set. invalid configuration"
-				log.Debugf(errorMsg)
-				return fmt.Errorf(errorMsg)
+				log.Debugf("%s", errorMsg)
+				return fmt.Errorf("%s", errorMsg)
 			}
 		}
 		chapUserName := s.opts.CHAPUserName
@@ -2166,7 +2166,7 @@ func (s *service) ensureISCSIDaemonStarted() error {
 		// Failed to get the status of ISCSI Daemon
 		errMsg := fmt.Sprintf("failed to find %s. Going to panic", target)
 		log.Error(errMsg)
-		panic(fmt.Errorf(errMsg))
+		panic(fmt.Errorf("%s", errMsg))
 	} else if unit.ActiveState != "active" {
 		log.Infof("%s is not active. Current state - %s", target, unit.ActiveState)
 	} else {
@@ -2190,9 +2190,9 @@ func (s *service) ensureISCSIDaemonStarted() error {
 	job := <-responsechan
 	if job != "done" {
 		// Job didn't succeed
-		errMsg := fmt.Sprintf("Failed to get a successful response from the job to start ISCSI daemon")
+		errMsg := "Failed to get a successful response from the job to start ISCSI daemon"
 		log.Error(errMsg)
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 	log.Info("Successfully started ISCSI daemon")
 	return nil
@@ -2432,7 +2432,7 @@ func (s *service) createOrUpdateFCHost(ctx context.Context, array string, nodeNa
 	log.Debug(fmt.Sprintf("GetHostById returned: %v, %v", host, err))
 	if err != nil {
 		// host does not exist, create it
-		log.Infof(fmt.Sprintf("Array %s FC Host %s does not exist. Creating it.", array, nodeName))
+		log.Infof("Array %s FC Host %s does not exist. Creating it.", array, nodeName)
 		host, err = s.retryableCreateHost(ctx, array, nodeName, hostInitiators, nil, pmaxClient)
 		if err != nil {
 			return host, err
@@ -2466,11 +2466,11 @@ func (s *service) createOrUpdateIscsiHost(ctx context.Context, array string, nod
 	}
 
 	host, err := pmaxClient.GetHostByID(ctx, array, nodeName)
-	log.Infof(fmt.Sprintf("GetHostById returned: %v, %v", host, err))
+	log.Infof("GetHostById returned: %v, %v", host, err)
 
 	if err != nil {
 		// host does not exist, create it
-		log.Infof(fmt.Sprintf("ISCSI Host %s does not exist. Creating it.", nodeName))
+		log.Infof("ISCSI Host %s does not exist. Creating it.", nodeName)
 		host, err = s.retryableCreateHost(ctx, array, nodeName, IQNs, nil, pmaxClient)
 		if err != nil {
 			return &types.Host{}, fmt.Errorf("Unable to create Host: %v", err)
@@ -2503,11 +2503,11 @@ func (s *service) createOrUpdateNVMeTCPHost(ctx context.Context, array string, n
 
 	// process the NQNs
 	host, err := pmaxClient.GetHostByID(ctx, array, nodeName)
-	log.Infof(fmt.Sprintf("GetHostById returned: %v, %v", host, err))
+	log.Infof("GetHostById returned: %v, %v", host, err)
 
 	if err != nil {
 		// host does not exist, create it
-		log.Infof(fmt.Sprintf("NVMe Host %s does not exist. Creating it.", nodeName))
+		log.Infof("NVMe Host %s does not exist. Creating it.", nodeName)
 		host, err = s.retryableCreateHost(ctx, array, nodeName, NQNs, nil, pmaxClient)
 		if err != nil {
 			return &types.Host{}, fmt.Errorf("Unable to create Host: %v", err)

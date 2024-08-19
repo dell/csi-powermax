@@ -121,7 +121,7 @@ func (s *service) checkIfNodeIsConnected(ctx context.Context, symID string, node
 		message = fmt.Sprintf("connectivity unknown for array %s to node %s due to %s", symID, nodeID, err)
 		log.Error(message)
 		rep.Messages = append(rep.Messages, message)
-		log.Errorf(err.Error())
+		log.Errorf("%s", err.Error())
 	}
 
 	if connected {
