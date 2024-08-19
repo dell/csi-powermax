@@ -662,8 +662,8 @@ func (s *service) CreateVolume(
 			return nil, status.Errorf(codes.Internal, "Error fetching volume for idempotence check: %s", err.Error())
 		}
 		if len(vol.StorageGroupIDList) < 1 {
-			log.Error("Idempotence check: StorageGroupIDList is empty for volume ", volumeID)
-			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): ", volumeID)
+			log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
+			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s)", volumeID)
 		}
 		matchesStorageGroup := false
 		for _, sgid := range vol.StorageGroupIDList {
@@ -1110,8 +1110,8 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 			return nil, status.Errorf(codes.Internal, "Error fetching volume for idempotence check: %s", err.Error())
 		}
 		if len(vol.StorageGroupIDList) < 1 {
-			log.Error("Idempotence check: StorageGroupIDList is empty for volume ", volumeID)
-			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): ", volumeID)
+			log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
+			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s)", volumeID)
 		}
 		matchesStorageGroup := false
 		for _, sgid := range vol.StorageGroupIDList {
