@@ -827,8 +827,8 @@ func (s *service) CreateVolume(
 	}
 
 	// Formulate the return response
-	volID := vol.VolumeID
 	vol.VolumeID = fmt.Sprintf("%s-%s-%s", vol.VolumeIdentifier, symmetrixID, vol.VolumeID)
+	volID := vol.VolumeID
 	volResp := s.getCSIVolume(vol)
 	volResp.ContentSource = contentSource
 	// Set the volume context
