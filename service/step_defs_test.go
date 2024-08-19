@@ -2291,7 +2291,7 @@ func (f *feature) makeDevDirectories() error {
 	if err != nil {
 		err = os.MkdirAll(nodePublishSymlinkDir, 0o777)
 		if err != nil {
-			fmt.Printf("by-id: " + err.Error())
+			fmt.Printf("by-id: %s", err.Error())
 			return err
 		}
 	}
@@ -2300,7 +2300,7 @@ func (f *feature) makeDevDirectories() error {
 	if err != nil {
 		err = os.MkdirAll(nodePublishPathSymlinkDir, 0o777)
 		if err != nil {
-			fmt.Printf("by-path: " + err.Error())
+			fmt.Printf("by-path: %s", err.Error())
 			return err
 		}
 	}
@@ -2317,7 +2317,7 @@ func (f *feature) makeDevDirectories() error {
 	// Remake the private staging directory
 	err = os.MkdirAll(nodePublishPrivateDir, 0o777)
 	if err != nil {
-		fmt.Printf("error creating private staging directory: " + err.Error())
+		fmt.Printf("error creating private staging directory: %s", err.Error())
 		return err
 	}
 	f.service.privDir = nodePublishPrivateDir
@@ -2353,7 +2353,7 @@ func (f *feature) aControllerPublishedVolume() error {
 		output, err := cmd.CombinedOutput()
 		fmt.Printf("symlink output: %s\n", output)
 		if err != nil {
-			fmt.Printf("link: " + err.Error())
+			fmt.Printf("link: %s", err.Error())
 		}
 	}
 
@@ -2415,7 +2415,7 @@ func (f *feature) aControllerPublishedMultipathVolume() error {
 		output, err := cmd.CombinedOutput()
 		fmt.Printf("symlink output: %s\n", output)
 		if err != nil {
-			fmt.Printf("link: " + err.Error())
+			fmt.Printf("link: %s", err.Error())
 		}
 	}
 	// Make the gofsutil entry
@@ -2969,7 +2969,7 @@ func (f *feature) aValidListSnapshotsResponseIsReturnedWithListedAndNextToken(li
 			fmt.Printf("snapshot ID %s source ID %s timestamp %s\n", id, entry.GetSnapshot().SourceVolumeId, ts)
 		}
 		if f.listedVolumeIDs[id] {
-			return fmt.Errorf("Got duplicate snapshot ID: " + id)
+			return fmt.Errorf("Got duplicate snapshot ID: %s", id)
 		}
 		f.listedVolumeIDs[id] = true
 	}
