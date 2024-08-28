@@ -29,6 +29,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"revproxy/v2/pkg/cache"
 	"revproxy/v2/pkg/common"
 	"revproxy/v2/pkg/config"
 	"revproxy/v2/pkg/utils"
@@ -37,7 +38,6 @@ import (
 
 	types "github.com/dell/gopowermax/v2/types/v100"
 	"github.com/gorilla/mux"
-	"revproxy/v2/pkg/cache"
 )
 
 const clientSymID = "proxyClientSymID"
@@ -382,6 +382,7 @@ func (revProxy *StandAloneProxy) GetRouter() http.Handler {
 	router.PathPrefix(utils.Prefix + "/{version}/system/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 	router.PathPrefix(utils.Prefix + "/{version}/sloprovisioning/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 	router.PathPrefix(utils.PrivatePrefix + "/{version}/replication/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
+	router.PathPrefix(utils.PrivatePrefix + "/{version}/sloprovisioning/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 	router.PathPrefix(utils.Prefix + "/{version}/replication/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 
 	// endpoints without symmetrix id
