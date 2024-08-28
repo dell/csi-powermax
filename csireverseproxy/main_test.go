@@ -450,4 +450,13 @@ func TestSAHTTPRequest(t *testing.T) {
 		return
 	}
 	fmt.Printf("RESPONSE_BODY: %s\n", resp)
+
+	path = utils.PrivatePrefix + "/91/sloprovisioning/symmetrix/" + storageArrayID
+	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	log.Info("test info is there")
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	fmt.Printf("RESPONSE_BODY: %s\n", resp)
 }
