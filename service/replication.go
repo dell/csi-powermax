@@ -369,20 +369,20 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
 		log.Error(errorMsg)
-		return false, nil, status.Errorf(codes.Internal, errorMsg)
+		return false, nil, status.Errorf(codes.Internal, "%s", errorMsg)
 	}
 	state, isR1, mixedPersonalities, mixedStates := getStateAndSRDFPersonality(psg)
 	if mixedPersonalities {
 		errorMsg := fmt.Sprintf("SG Name: %s, state: %s - mixed SRDF personalities. can't perform SRDF operations at SG level",
 			sgName, state)
 		log.Error(errorMsg)
-		return false, nil, status.Errorf(codes.FailedPrecondition, errorMsg)
+		return false, nil, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 	}
 	if mixedStates && !unplanned {
 		errorMsg := fmt.Sprintf("SG Name: %s, states: %v - mixed SRDF states. can't perform planned SRDF operations at SG level",
 			sgName, psg.States)
 		log.Error(errorMsg)
-		return false, nil, status.Errorf(codes.FailedPrecondition, errorMsg)
+		return false, nil, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 	}
 	if !unplanned {
 		if withoutSwap {
@@ -422,7 +422,7 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 				// We should fail because target site is already R1 & we can't failover to it
 				errorMsg := "Can't perform planned failover without Swap to the target site as it is already R1"
 				log.Error(errorMsg)
-				return false, nil, status.Errorf(codes.FailedPrecondition, errorMsg)
+				return false, nil, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 			}
 		} else {
 			if (toLocal && isR1) || (!toLocal && !isR1) {
@@ -447,7 +447,7 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 				errorMsg := fmt.Sprintf("SG name: %s,state: %s. driver unable to determine next SRDF action",
 					sgName, state)
 				log.Error(errorMsg)
-				return false, nil, status.Errorf(codes.Internal, errorMsg)
+				return false, nil, status.Errorf(codes.Internal, "%s", errorMsg)
 			}
 			if (toLocal && !isR1) || (!toLocal && isR1) {
 				skipFailover := false
@@ -461,7 +461,7 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 						if err != nil {
 							errorMsg := fmt.Sprintf("Fail over: Failed to modify SG (%s) - Error (%s)", sgName, err.Error())
 							log.Error(errorMsg)
-							return false, nil, status.Errorf(codes.Internal, errorMsg)
+							return false, nil, status.Errorf(codes.Internal, "%s", errorMsg)
 						}
 					} else {
 						// return error
@@ -469,16 +469,16 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 							sgName, state)
 						log.Error(errorMsg)
 						if state == Suspended || state == Invalid {
-							return false, nil, status.Errorf(codes.Aborted, errorMsg)
+							return false, nil, status.Errorf(codes.Aborted, "%s", errorMsg)
 						}
-						return false, nil, status.Errorf(codes.FailedPrecondition, errorMsg)
+						return false, nil, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 					}
 				}
 				err := pmaxClient.ExecuteReplicationActionOnSG(ctx, symID, Swap, sgName, rdfGrpNo, unplanned, true, false)
 				if err != nil {
 					errorMsg := fmt.Sprintf("Fail over: Failed to modify SG (%s) - Error (%s)", sgName, err.Error())
 					log.Error(errorMsg)
-					return false, nil, status.Errorf(codes.Internal, errorMsg)
+					return false, nil, status.Errorf(codes.Internal, "%s", errorMsg)
 				}
 				log.Infof("Action (%s) with Swap set to (%v), Unplanned (%v), successful on SG(%s)",
 					FailOver, !withoutSwap, unplanned, sgName)
@@ -511,20 +511,20 @@ func (s *service) Failback(ctx context.Context, symID, sgName, rdfGrpNo string, 
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
 		log.Error(errorMsg)
-		return false, nil, status.Errorf(codes.Internal, errorMsg)
+		return false, nil, status.Errorf(codes.Internal, "%s", errorMsg)
 	}
 	state, isR1, mixedPersonalities, mixedStates := getStateAndSRDFPersonality(psg)
 	if mixedPersonalities {
 		errorMsg := fmt.Sprintf("SG Name: %s, state: %s - mixed SRDF personalities. can't perform SRDF operations at SG level",
 			sgName, state)
 		log.Error(errorMsg)
-		return false, nil, status.Errorf(codes.FailedPrecondition, errorMsg)
+		return false, nil, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 	}
 	if mixedStates {
 		errorMsg := fmt.Sprintf("SG Name: %s, states: %v - mixed SRDF states. can't perform planned SRDF operations at SG level",
 			sgName, psg.States)
 		log.Error(errorMsg)
-		return false, nil, status.Errorf(codes.FailedPrecondition, errorMsg)
+		return false, nil, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 	}
 	if (toLocal && isR1) || (!toLocal && !isR1) {
 		// We are trying to do
@@ -559,7 +559,7 @@ func (s *service) Failback(ctx context.Context, symID, sgName, rdfGrpNo string, 
 		// Both these scenarios are invalid as failback can only be done to R1
 		errorMsg := "Can't perform planned failback to the target site as it is R2"
 		log.Error(errorMsg)
-		return true, psg, status.Errorf(codes.FailedPrecondition, errorMsg)
+		return true, psg, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 	}
 	return false, nil, nil
 }
@@ -571,20 +571,20 @@ func (s *service) Reprotect(ctx context.Context, symID, sgName, rdfGrpNo string,
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
 		log.Error(errorMsg)
-		return false, nil, status.Errorf(codes.Internal, errorMsg)
+		return false, nil, status.Errorf(codes.Internal, "%s", errorMsg)
 	}
 	state, isR1, mixedPersonalities, mixedStates := getStateAndSRDFPersonality(psg)
 	if mixedPersonalities {
 		errorMsg := fmt.Sprintf("SG Name: %s, state: %s - mixed SRDF personalities. can't perform SRDF operations at SG level",
 			sgName, state)
 		log.Error(errorMsg)
-		return true, psg, status.Errorf(codes.FailedPrecondition, errorMsg)
+		return true, psg, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 	}
 	if mixedStates {
 		errorMsg := fmt.Sprintf("SG Name: %s, states: %v - mixed SRDF states. can't perform planned SRDF operations at SG level",
 			sgName, psg.States)
 		log.Error(errorMsg)
-		return false, nil, status.Errorf(codes.FailedPrecondition, errorMsg)
+		return false, nil, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 	}
 	if (toLocal && isR1) || (!toLocal && !isR1) {
 		// We want to reprotect at
@@ -621,7 +621,7 @@ func (s *service) Reprotect(ctx context.Context, symID, sgName, rdfGrpNo string,
 			errorMsg := fmt.Sprintf("SG Name: %s, state: %s - Can't reprotect volumes at site which is R2",
 				sgName, state)
 			log.Error(errorMsg)
-			return true, psg, status.Errorf(codes.FailedPrecondition, errorMsg)
+			return true, psg, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 		}
 	}
 	return false, nil, nil
@@ -634,26 +634,26 @@ func (s *service) Swap(ctx context.Context, symID, sgName, rdfGrpNo string, pmax
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
 		log.Error(errorMsg)
-		return false, nil, status.Errorf(codes.Internal, errorMsg)
+		return false, nil, status.Errorf(codes.Internal, "%s", errorMsg)
 	}
 	state, isR1, mixedPersonalities, mixedStates := getStateAndSRDFPersonality(psg)
 	if mixedPersonalities {
 		errorMsg := fmt.Sprintf("SG Name: %s, state: %s - mixed SRDF personalities. can't perform SRDF operations at SG level",
 			sgName, state)
 		log.Error(errorMsg)
-		return false, nil, status.Errorf(codes.FailedPrecondition, errorMsg)
+		return false, nil, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 	}
 	if mixedStates {
 		errorMsg := fmt.Sprintf("SG Name: %s, states: %v - mixed SRDF states. can't perform planned SRDF operations at SG level",
 			sgName, psg.States)
 		log.Error(errorMsg)
-		return false, nil, status.Errorf(codes.FailedPrecondition, errorMsg)
+		return false, nil, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 	}
 	if state == Consistent || state == Synchronized {
 		errorMsg := fmt.Sprintf("SG Name: %s, states: %v - Incorrect SRDF state to perform a Swap",
 			sgName, psg.States)
 		log.Error(errorMsg)
-		return false, nil, status.Errorf(codes.FailedPrecondition, errorMsg)
+		return false, nil, status.Errorf(codes.FailedPrecondition, "%s", errorMsg)
 	}
 	if (toLocal && !isR1) || (!toLocal && isR1) {
 		// 1. Swap if the local site is R2
@@ -676,7 +676,7 @@ func (s *service) Swap(ctx context.Context, symID, sgName, rdfGrpNo string, pmax
 			errorMsg := fmt.Sprintf("SG name: %s,state: %s. driver unable to determine next SRDF action",
 				sgName, state)
 			log.Error(errorMsg)
-			return false, nil, status.Errorf(codes.Internal, errorMsg)
+			return false, nil, status.Errorf(codes.Internal, "%s", errorMsg)
 		}
 	}
 	return false, nil, nil

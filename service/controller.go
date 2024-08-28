@@ -320,7 +320,7 @@ func (s *service) CreateVolume(
 	err = s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
 	}
 
 	// SLO is optional
@@ -663,7 +663,7 @@ func (s *service) CreateVolume(
 		}
 		if len(vol.StorageGroupIDList) < 1 {
 			log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
-			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): "+volumeID)
+			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s)", volumeID)
 		}
 		matchesStorageGroup := false
 		for _, sgid := range vol.StorageGroupIDList {
@@ -671,7 +671,12 @@ func (s *service) CreateVolume(
 				matchesStorageGroup = true
 			}
 		}
-		if matchesStorageGroup && vol.VolumeIdentifier == volumeIdentifier {
+
+		// with Authorization, a tenant prefix is applied to the volume identifier on the array
+		// csi-CSM-pmax-69298b3d3d-namespace -> tn1-csi-CSM-pmax-69298b3d3d-namespace
+		// since we don't know the tenant prefix, the volume identifier on the array is checked to contain the standard volume identifier
+		if matchesStorageGroup && (vol.VolumeIdentifier == volumeIdentifier || strings.Contains(vol.VolumeIdentifier, volumeIdentifier)) {
+			// A volume with the same name exists and has the same size
 			if vol.CapacityCYL != requiredCylinders {
 				log.Error("A volume with the same name exists but has a different size than required.")
 				alreadyExists = true
@@ -728,7 +733,7 @@ func (s *service) CreateVolume(
 			}
 
 			log.WithFields(fields).Info("Idempotent volume detected, returning success")
-			vol.VolumeID = fmt.Sprintf("%s-%s-%s", volumeIdentifier, symmetrixID, vol.VolumeID)
+			vol.VolumeID = fmt.Sprintf("%s-%s-%s", vol.VolumeIdentifier, symmetrixID, vol.VolumeID)
 			volResp := s.getCSIVolume(vol)
 			// Set the volume context
 			attributes := map[string]string{
@@ -840,7 +845,7 @@ func (s *service) CreateVolume(
 
 	// Formulate the return response
 	volID := vol.VolumeID
-	vol.VolumeID = fmt.Sprintf("%s-%s-%s", volumeIdentifier, symmetrixID, vol.VolumeID)
+	vol.VolumeID = fmt.Sprintf("%s-%s-%s", vol.VolumeIdentifier, symmetrixID, vol.VolumeID)
 	volResp := s.getCSIVolume(vol)
 	volResp.ContentSource = contentSource
 	// Set the volume context
@@ -1123,7 +1128,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 		}
 		if len(vol.StorageGroupIDList) < 1 {
 			log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
-			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s): "+volumeID)
+			return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s)", volumeID)
 		}
 		matchesStorageGroup := false
 		for _, sgid := range vol.StorageGroupIDList {
@@ -2861,7 +2866,7 @@ func (s *service) GetCapacity(
 	err = s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
 	}
 
 	// log all parameters used in GetCapacity call
@@ -3755,7 +3760,7 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 	err = s.validateStoragePoolID(ctx, remoteSymID, remoteSRPID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
 	}
 
 	// Validate Remote SLO
@@ -4275,7 +4280,7 @@ func (s *service) getStorageProtectionGroupStatus(ctx context.Context, protectio
 	log.WithFields(fields).Info("Executing GetStorageProtectionGroupStatus with following fields")
 	_, rDFGno, repMode, err := GetRDFInfoFromSGID(protectionGroupID)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
 	}
 	if repMode == Async || repMode == Sync {
 		psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, protectionGroupID, rDFGno)

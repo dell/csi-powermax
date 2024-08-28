@@ -32,7 +32,7 @@ func New() gocsi.StoragePluginProvider {
 	if maxThreads, found := os.LookupEnv(service.EnvGrpcMaxThreads); found {
 		tempConcurrentStreams, err := strconv.Atoi(maxThreads)
 		if err == nil {
-			maxConcurrentStreams = uint32(tempConcurrentStreams)
+			maxConcurrentStreams = uint32(tempConcurrentStreams) // #nosec:G115 false positive
 		}
 	}
 	maxStreams := grpc.MaxConcurrentStreams(maxConcurrentStreams)

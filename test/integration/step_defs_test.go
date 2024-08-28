@@ -384,7 +384,7 @@ func (f *feature) iCallGetStorageProtectionGroupStatus(expectedStatus string) er
 	currentStatus := resp.GetStatus().State.String()
 	if currentStatus != expectedStatus {
 		errmsg := fmt.Sprintf("GetStorageProtectionGroupStatus error, Expected %s != %s Current", expectedStatus, currentStatus)
-		fmt.Printf(errmsg)
+		fmt.Printf("%s", errmsg)
 		f.addError(errors.New(errmsg))
 	}
 	return nil
