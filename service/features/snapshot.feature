@@ -649,7 +649,7 @@ Feature: PowerMax CSI Interface
             | induced               | numberOfSeconds | errormsg   |
             | "InduceOverloadError" | 5               | "overload" |
             | "InducePendingError"  | 5               | "pending"  |
-@v2.12
+@v2.12.0
     Scenario: Create a volume from another volume
         Given a PowerMax service
         And I call CreateVolume "volume1"
@@ -658,7 +658,7 @@ Feature: PowerMax CSI Interface
         Then a valid CreateVolumeResponse is returned
         When I call Create Volume from Volume
         Then a valid CreateVolumeResponse is returned
-@v2.12
+@v2.12.0
     Scenario: Create a volume from another volume and catch error message
         Given a PowerMax service
         And I call CreateVolume "volume1"
@@ -668,7 +668,7 @@ Feature: PowerMax CSI Interface
         And I induce error "MaxSnapSessionError"
         When I call Create Volume from Volume
         Then the error contains "Failed to create volume from volume"
-@v2.12
+@v2.12.0
     Scenario: Create a volume from another snapshot
         Given a PowerMax service
         And I call CreateVolume "volume1"
@@ -679,7 +679,7 @@ Feature: PowerMax CSI Interface
         Then a valid CreateVolumeResponse is returned
         When I call Create Volume from Snapshot
         Then a valid CreateVolumeResponse is returned
-@v2.12
+@v2.12.0
     Scenario: Create a volume from another snapshot and catch unlink target error
         Given a PowerMax service
         And I call CreateVolume "volume1"
@@ -691,7 +691,7 @@ Feature: PowerMax CSI Interface
         And I induce error "LinkSnapshotError"
         When I call Create Volume from Snapshot
         Then the error contains "Failed unlink existing target from snapshot"
-@v2.12
+@v2.12.0
     Scenario: Create a volume from another volume and catch linking error
         Given a PowerMax service
         And I call CreateVolume "volume1"
