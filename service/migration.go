@@ -84,7 +84,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 	err = s.validateStoragePoolID(ctx, symID, storagePoolID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
 	}
 
 	// SLO is optional
@@ -296,8 +296,9 @@ func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams
 		localRDFGrpNo = strconv.Itoa(vol.RDFGroupIDList[0].RDFGroupNumber)
 		rdfInfo, err := pmaxClient.GetRDFGroupByID(ctx, symID, localRDFGrpNo)
 		if err != nil {
-			log.Error(fmt.Sprintf("Could not get remote rdfG for %s: %s:", localRDFGrpNo, err.Error()))
-			return status.Errorf(codes.Internal, fmt.Sprintf("Could not get remote rdfG for %s: %s:", localRDFGrpNo, err.Error()))
+			msg := fmt.Sprintf("Could not get local rdfG for %s: %s:", localRDFGrpNo, err.Error())
+			log.Error(msg)
+			return status.Errorf(codes.Internal, "%s", msg)
 		}
 		remoteRDFGrpNo = strconv.Itoa(rdfInfo.RemoteRdfgNumber)
 	}
