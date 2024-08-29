@@ -993,3 +993,31 @@ Feature: Powermax OS CSI interface
     And there are no errors
     And I call Delete RemoteStorageProtectionGroup
     And there are no errors
+
+  @2.12.0
+  Scenario: Creating a Volume from newly created Volume from Volume
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    Then I call LinkVolumeToVolume
+    And there are no errors
+    Then I call LinkVolumeToVolumeAgain
+    And there are no errors
+    And when I call DeleteAllVolumes
+    And there are no errors
+
+  @2.12.0
+  Scenario: Creating a Volume from newly created Spanshot
+    Given a Powermax service
+    And a basic block volume request "integration1" "50"
+    When I call CreateVolume
+    And there are no errors
+    And I call CreateSnapshot
+    And there are no errors
+    Then I call LinkVolumeToSnapshot
+    And there are no errors
+    Then I call LinkVolumeToSnapshotAgain
+    And there are no errors
+    And when I call DeleteAllVolumes
+    And there are no errors  
