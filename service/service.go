@@ -890,7 +890,7 @@ func setArrayConfigEnvs(ctx context.Context) error {
 	if !ok {
 		return errors.New("unable to read X_CSI_POWERMAX_ARRAY_CONFIG_PATH from env")
 	}
-	// configFilePath := "/powermax-array-config"
+
 	paramsViper := viper.New()
 	paramsViper.SetConfigFile(configFilePath)
 	paramsViper.SetConfigType("yaml")

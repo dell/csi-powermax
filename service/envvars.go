@@ -124,7 +124,7 @@ const (
 	// EnvConfigFilePath is an env variable which contains the full path for the config file
 	EnvConfigFilePath = "X_CSI_POWERMAX_CONFIG_PATH"
 
-	// EnvConfigFilePath is an env variable which contains the full path for the config file
+	// EnvArrayConfigPath is an env variable which contains the full path for the config file
 	EnvArrayConfigPath = "X_CSI_POWERMAX_ARRAY_CONFIG_PATH"
 
 	// EnvMaxVolumesPerNode specifies maximum number of volumes that controller can publish to the node.
