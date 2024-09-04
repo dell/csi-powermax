@@ -32,12 +32,13 @@ import (
 
 // The follow constants are for internal use within the pmax library.
 const (
-	TempSnap       = "CSI_TEMP_SNAP"
-	Defined        = "Defined"
-	Link           = "Link"
-	Unlink         = "Unlink"
-	Rename         = "Rename"
-	MaxUnlinkCount = 5
+	TempSnap        = "CSI_TEMP_SNAP"
+	Defined         = "Defined"
+	Link            = "Link"
+	Unlink          = "Unlink"
+	Rename          = "Rename"
+	MaxUnlinkCount  = 5
+	errDesiredState = "already in the desired state or mode"
 )
 
 var (
@@ -470,7 +471,11 @@ func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *typ
 	// Link the Target to the created snapshot
 	err = s.LinkVolumeToSnapshot(ctx, symID, vol.VolumeID, tgtDevID, snapID, reqID, isCopy, pmaxClient)
 	if err != nil {
-		return err
+		if strings.Contains(err.Error(), errDesiredState) {
+			log.Infof("Link of %s on %s is in desired state", vol.VolumeID, tgtDevID)
+		} else {
+			return err
+		}
 	}
 	// Push the temporary snapshot created for cleanup
 	var cleanReq snapCleanupRequest

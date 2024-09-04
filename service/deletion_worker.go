@@ -184,7 +184,7 @@ func (queue *deletionQueue) QueueDeviceForDeletion(device csiDevice) error {
 		if dev.equals(device) {
 			msg := fmt.Sprintf("%s: found existing entry in deletion queue with volume handle: %s, added at: %v",
 				dev.print(), dev.VolumeIdentifier, dev.Status.AdditionTime)
-			return fmt.Errorf(msg)
+			return fmt.Errorf("%s", msg)
 		}
 	}
 	queue.DeviceList = append(queue.DeviceList, &device)
@@ -799,7 +799,7 @@ func (worker *deletionWorker) populateDeletionQueue() {
 	for _, symID := range worker.SymmetrixIDs {
 		log.Infof("Processing symmetrix %s for volumes to be deleted with cluster prefix: %s", symID, worker.ClusterPrefix)
 		volDeletePrefix := DeletionPrefix + CSIPrefix + "-" + worker.ClusterPrefix
-		log.Infof("Deletion Prefix: " + volDeletePrefix)
+		log.Infof("Deletion Prefix: %s", volDeletePrefix)
 		pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
 		if err != nil {
 			log.Error(err.Error())

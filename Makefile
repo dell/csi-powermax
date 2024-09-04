@@ -1,4 +1,4 @@
-# Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2020-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -59,9 +59,13 @@ docker:
 push:	docker
 	make -f docker.mk push
 
-# Windows or Linux; requires no hardware
+# Run unit tests and skip the BDD tests
 unit-test: golint check
-	( cd service; go clean -cache; CGO_ENABLED=0 GO111MODULE=on go test -v -coverprofile=c.out ./... )
+	( cd service; go clean -cache; CGO_ENABLED=0 GO111MODULE=on go test -skip TestGoDog -v -coverprofile=c.out ./... )
+
+# Run BDD tests. Need to be root to run as tests require some system access, need to fix
+bdd-test: golint check
+	( cd service; go clean -cache; CGO_ENABLED=0 GO111MODULE=on go test -run TestGoDog -v -coverprofile=c.out ./... )
 
 # Linux only; populate env.sh with the hardware parameters
 integration-test:

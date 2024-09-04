@@ -384,7 +384,7 @@ func (f *feature) iCallGetStorageProtectionGroupStatus(expectedStatus string) er
 	currentStatus := resp.GetStatus().State.String()
 	if currentStatus != expectedStatus {
 		errmsg := fmt.Sprintf("GetStorageProtectionGroupStatus error, Expected %s != %s Current", expectedStatus, currentStatus)
-		fmt.Printf(errmsg)
+		fmt.Printf("%s", errmsg)
 		f.addError(errors.New(errmsg))
 	}
 	return nil
@@ -1093,9 +1093,33 @@ func (f *feature) iCallLinkVolumeToSnapshot() error {
 	return nil
 }
 
+func (f *feature) iCallLinkVolumeToSnapshotAgain() error {
+	req := f.createVolumeRequest
+	source := &csi.VolumeContentSource_SnapshotSource{SnapshotId: f.snapshotID}
+	req.VolumeContentSource = new(csi.VolumeContentSource)
+	req.VolumeContentSource.Type = &csi.VolumeContentSource_Snapshot{Snapshot: source}
+	fmt.Printf("Calling CreateVolume with snapshot source")
+
+	_ = f.createAVolume(req, "single CreateVolume from Snap")
+	time.Sleep(SleepTime)
+	return nil
+}
+
 func (f *feature) iCallLinkVolumeToVolume() error {
 	req := f.createVolumeRequest
 	req.Name = "volFromVol-" + req.Name
+	source := &csi.VolumeContentSource_VolumeSource{VolumeId: f.volID}
+	req.VolumeContentSource = new(csi.VolumeContentSource)
+	req.VolumeContentSource.Type = &csi.VolumeContentSource_Volume{Volume: source}
+	fmt.Printf("Calling CreateVolume with volume source")
+
+	_ = f.createAVolume(req, "single CreateVolume from Volume")
+	time.Sleep(SleepTime)
+	return nil
+}
+
+func (f *feature) iCallLinkVolumeToVolumeAgain() error {
+	req := f.createVolumeRequest
 	source := &csi.VolumeContentSource_VolumeSource{VolumeId: f.volID}
 	req.VolumeContentSource = new(csi.VolumeContentSource)
 	req.VolumeContentSource.Type = &csi.VolumeContentSource_Volume{Volume: source}
@@ -2213,6 +2237,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^when I call DeleteAllVolumes$`, f.whenICallDeleteAllVolumes)
 	s.Step(`^I call DeleteSnapshot$`, f.iCallDeleteSnapshot)
 	s.Step(`^I call LinkVolumeToSnapshot$`, f.iCallLinkVolumeToSnapshot)
+	s.Step(`^I call LinkVolumeToSnapshotAgain$`, f.iCallLinkVolumeToSnapshotAgain)
 	s.Step(`^I call CreateManyVolumesFromSnapshot$`, f.iCallCreateManyVolumesFromSnapshot)
 	s.Step(`^I call ListVolume$`, f.iCallListVolume)
 	s.Step(`^a valid ListVolumeResponse is returned$`, f.aValidListVolumeResponseIsReturned)
@@ -2242,6 +2267,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I node unstage (\d+) volumes in parallel$`, f.iNodeUnstageVolumesInParallel)
 	s.Step(`^the volume size is "([^"]*)"$`, f.theVolumeSizeIs)
 	s.Step(`^I call LinkVolumeToVolume$`, f.iCallLinkVolumeToVolume)
+	s.Step(`^I call LinkVolumeToVolumeAgain$`, f.iCallLinkVolumeToVolumeAgain)
 	s.Step(`^I create (\d+) snapshots in parallel$`, f.iCreateSnapshotsInParallel)
 	s.Step(`^I create (\d+) volumes from snapshot in parallel$`, f.iCreateVolumesFromSnapshotInParallel)
 	s.Step(`^I create (\d+) volumes from volume in parallel$`, f.iCreateVolumesFromVolumeInParallel)
