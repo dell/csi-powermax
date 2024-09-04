@@ -256,7 +256,6 @@ func updateDriverConfigParams(v *viper.Viper) {
 	setLogFormatAndLevel(formatter, level)
 	// set X_CSI_LOG_LEVEL so that gocsi doesn't overwrite the loglevel set by us
 	_ = os.Setenv(gocsi.EnvVarLogLevel, level.String())
-
 }
 
 func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
