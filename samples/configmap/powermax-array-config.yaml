@@ -17,7 +17,7 @@ metadata:
   namespace: powermax
 data:
   powermax-array-config.yaml: |
-    X_CSI_POWERMAX_PORTGROUPS: "pg1"
-    X_CSI_TRANSPORT_PROTOCOL: "ISCSI" # Defaults to auto
-    X_CSI_POWERMAX_ENDPOINT: "https://10.0.0.0:8443"
+    X_CSI_POWERMAX_PORTGROUPS: "" # required for ISCSI 
+    X_CSI_TRANSPORT_PROTOCOL: "" # Defaults to auto
+    X_CSI_POWERMAX_ENDPOINT: "https://10.0.0.0:1234"
     X_CSI_MANAGED_ARRAYS: "000000000000,000000000000,"
