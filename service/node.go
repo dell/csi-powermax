@@ -2542,6 +2542,7 @@ func (s *service) retryableCreateHost(ctx context.Context, array string, nodeNam
 				}
 			}
 			log.Debug(fmt.Sprintf("failed to create Host; retrying..."))
+			// #nosec G115
 			time.Sleep(time.Second << uint(tries)) // incremental back-off
 			continue
 		}
@@ -2563,6 +2564,7 @@ func (s *service) retryableUpdateHostInitiators(ctx context.Context, array strin
 		if err != nil {
 			// Retry on this error
 			log.Debug(fmt.Sprintf("failed to update Host; retrying..."))
+			// #nosec G115
 			time.Sleep(time.Second << uint(tries)) // incremental back-off
 			continue
 		}
