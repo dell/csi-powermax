@@ -55,6 +55,12 @@ docker:
 	go run core/semver/semver.go -f mk >semver.mk
 	sh ./build.sh -i ubimicro -e -o
 
+# Generates the docker container without cache (but does not push)
+docker-no-cache:
+	go generate
+	go run core/semver/semver.go -f mk >semver.mk
+	sh ./build.sh -i ubimicro -e -o -n
+
 # Pushes container to the repository
 push:	docker
 	make -f docker.mk push

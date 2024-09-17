@@ -27,6 +27,7 @@ PUSH_IMAGE=false
 BUILD_REVPROXY=false
 OVERWRITE_IMAGE=false
 EXTRA_TAGS=false
+NOCACHE=
 
 function print_usage {
    echo
@@ -38,6 +39,7 @@ function print_usage {
    echo "    -i      - Set the image type. Accepted values are ubim, ubimicro, ubi, centos and rhel"
    echo "    -r      - Build the CSI PowerMax ReverseProxy image along with driver image"
    echo "    -c      - Delete the local image after a successful build"
+   echo "    -n      - Build csi-powermax image with no cache option"
    echo
    echo "Default values are specified via the .build.config file. They can be overridden by creating a .build.config.user file"
 }
@@ -156,7 +158,7 @@ function build_image {
       exit 1
    fi
    if [ "$EXTRA_TAGS" = true ]; then
-      echo $BUILDCMD build -t $IMAGE_VERSION_TAG\
+      echo $BUILDCMD build $NOCACHE -t $IMAGE_VERSION_TAG\
                 -t $IMAGE_LATEST_TAG\
                 -t $IMAGE_VERSION_WITH_PATCH_TAG\
                 -f csi-powermax/Dockerfile.build .\
@@ -168,7 +170,7 @@ function build_image {
                 --build-arg IMAGE_TYPE=$IMAGE_TYPE\
                 $DOCKEROPT
       (cd .. &&
-       $BUILDCMD build -t "$IMAGE_VERSION_TAG"\
+       $BUILDCMD build $NOCACHE -t "$IMAGE_VERSION_TAG"\
                 -t "$IMAGE_LATEST_TAG"\
                 -t "$IMAGE_VERSION_WITH_PATCH_TAG"\
                 -f csi-powermax/Dockerfile.build .\
@@ -184,7 +186,7 @@ function build_image {
          (cd csireverseproxy && $BUILDCMD build -t "$REVPROXY_IMAGE_VERSION_TAG" --build-arg GOIMAGE="$DEFAULT_GOIMAGE" . )
        fi
    else
-      echo $BUILDCMD build -t $IMAGE_VERSION_TAG\
+      echo $BUILDCMD build $NOCACHE -t $IMAGE_VERSION_TAG\
                 -f csi-powermax/Dockerfile.build .\
                 --build-arg BUILD_NUMBER=$BUILD_NUMBER\
                 --build-arg BUILD_TYPE=$BUILD_TYPE\
@@ -194,7 +196,7 @@ function build_image {
                 --build-arg IMAGE_TYPE="$IMAGE_TYPE"\
                 $DOCKEROPT
       (cd .. &&
-       $BUILDCMD build -t "$IMAGE_VERSION_TAG"\
+       $BUILDCMD build $NOCACHE -t "$IMAGE_VERSION_TAG"\
                 -f csi-powermax/Dockerfile.build .\
                 --build-arg BUILD_NUMBER="$BUILD_NUMBER"\
                 --build-arg BUILD_TYPE="$BUILD_TYPE"\
@@ -250,10 +252,11 @@ function set_image_type {
 }
 IMAGE_TYPE_SET=false
 # Read options
-while getopts 'cpyheori:' flag; do
+while getopts 'cpnyheori:' flag; do
   case "${flag}" in
     c) DELETE_IMAGE='true' ;;
     p) PUSH_IMAGE='true' ;;
+    n) NOCACHE='--no-cache' ;;
     y) NOPROMPT='true' ;;
     e) EXTRA_TAGS='true' ;;
     o) OVERWRITE_IMAGE='true' ;;
