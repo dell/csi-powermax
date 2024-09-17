@@ -39,6 +39,7 @@ function print_usage {
    echo "    -i      - Set the image type. Accepted values are ubim, ubimicro, ubi, centos and rhel"
    echo "    -r      - Build the CSI PowerMax ReverseProxy image along with driver image"
    echo "    -c      - Delete the local image after a successful build"
+   echo "    -n      - Build csi-powermax image with no cache option"
    echo
    echo "Default values are specified via the .build.config file. They can be overridden by creating a .build.config.user file"
 }
@@ -251,7 +252,7 @@ function set_image_type {
 }
 IMAGE_TYPE_SET=false
 # Read options
-while getopts 'cpyheori:' flag; do
+while getopts 'cpnyheori:' flag; do
   case "${flag}" in
     c) DELETE_IMAGE='true' ;;
     p) PUSH_IMAGE='true' ;;
