@@ -12,7 +12,7 @@ require (
 	github.com/dell/dell-csi-extensions/migration v1.5.0
 	github.com/dell/dell-csi-extensions/podmon v1.5.0
 	github.com/dell/dell-csi-extensions/replication v1.8.0
-	github.com/dell/gobrick v1.11.2
+	github.com/dell/gobrick v1.11.3-0.20240919095217-08217598cbb4
 	github.com/dell/gocsi v1.11.0
 	github.com/dell/gofsutil v1.16.1
 	github.com/dell/goiscsi v1.9.0
