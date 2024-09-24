@@ -38,7 +38,10 @@ build-base-image: download-csm-common
 	$(eval BASEIMAGE=csipowermax-ubimicro:latest)
 
 docker-build: build build-base-image
-	docker build -t "$(REG):$(VERSION)" --build-arg GOIMAGE="golang:1.22" .
+	docker build $(NOCACHE) -t "$(REG):$(VERSION)" --build-arg GOIMAGE="golang:1.22" .
+
+docker-build-no-cache:
+	@make docker-build NOCACHE=--no-cache
 
 docker-push: docker-build
 	docker push "$(REG):$(VERSION)"
