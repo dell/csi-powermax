@@ -316,7 +316,9 @@ func (s *service) BeforeServe(
 		log.WithFields(fields).Infof("configured %s", s.getDriverName())
 	}()
 	// setting array related data to envs. by reading it from config-map - Needs refactoring
-	setArrayConfigEnvs(ctx)
+	if err := setArrayConfigEnvs(ctx); err != nil {
+		log.Errorf("Failed to set array config envs: %v", err)
+	}
 
 	configFilePath, ok := csictx.LookupEnv(ctx, EnvConfigFilePath)
 	if !ok {
