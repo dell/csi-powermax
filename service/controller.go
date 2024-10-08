@@ -3320,7 +3320,7 @@ func (s *service) CreateSnapshot(
 	}
 	resp := &csi.CreateSnapshotResponse{Snapshot: snapshot}
 
-	log.Debugf("Created snapshot: SnapshotId %s SourceVolumeId %s CreationTime %s SizeBytes %s",
+	log.Debugf("Created snapshot: SnapshotId %s SourceVolumeId %s CreationTime %s SizeBytes %d",
 		snapshot.SnapshotId, snapshot.SourceVolumeId, snapshot.CreationTime.AsTime().Format(time.RFC3339Nano), snapshot.SizeBytes)
 	return resp, nil
 }
