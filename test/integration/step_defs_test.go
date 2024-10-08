@@ -1546,7 +1546,7 @@ func (f *feature) allVolumesAreDeletedSuccessfully() error {
 		for i := 0; i < max; i++ {
 			vol, err := f.pmaxClient.GetVolumeByID(context.Background(), symID, symVolumeID)
 			if vol == nil {
-				deleted = strings.Contains(err.Error(), "cannot be found")
+				deleted = strings.Contains(err.Error(), "Could not find")
 				fmt.Printf("volume deleted?: %s\n", err)
 				break
 			}
@@ -2253,7 +2253,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I receive a valid volume$`, f.iReceiveAValidVolume)
 	s.Step(`^all volumes are deleted successfully$`, f.allVolumesAreDeletedSuccessfully)
 	s.Step(`^I use thick provisioning$`, f.iUseThickProvisioning)
-	s.Step(`^I munge the CSI VolumeId$`, f.iMungeTheCSIVolumeID)
+	sf.allVolumesAreDeletedSuccessfully.Step(`^I munge the CSI VolumeId$`, f.iMungeTheCSIVolumeID)
 	s.Step(`^I unmunge the CSI VolumeId$`, f.iUnmungeTheCSIVolumeID)
 	s.Step(`^the volume is not deleted$`, f.theVolumeIsNotDeleted)
 	s.Step(`^a get capacity request "([^"]*)"$`, f.aGetCapacityRequest)
