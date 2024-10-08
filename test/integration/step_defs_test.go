@@ -2253,7 +2253,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I receive a valid volume$`, f.iReceiveAValidVolume)
 	s.Step(`^all volumes are deleted successfully$`, f.allVolumesAreDeletedSuccessfully)
 	s.Step(`^I use thick provisioning$`, f.iUseThickProvisioning)
-	sf.allVolumesAreDeletedSuccessfully.Step(`^I munge the CSI VolumeId$`, f.iMungeTheCSIVolumeID)
+	s.Step(`^I munge the CSI VolumeId$`, f.iMungeTheCSIVolumeID)
 	s.Step(`^I unmunge the CSI VolumeId$`, f.iUnmungeTheCSIVolumeID)
 	s.Step(`^the volume is not deleted$`, f.theVolumeIsNotDeleted)
 	s.Step(`^a get capacity request "([^"]*)"$`, f.aGetCapacityRequest)
