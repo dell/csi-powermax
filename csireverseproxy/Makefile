@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-REG?="localhost:5000/csipowermax-reverseproxy"
-VERSION="latest"
+include overrides.mk
 
 coverpackages= revproxy/v2,revproxy/v2/pkg/config,revproxy/v2/pkg/standaloneproxy
 
@@ -37,14 +36,15 @@ build-base-image: download-csm-common
 	@echo "Base image build: SUCCESS"
 	$(eval BASEIMAGE=csipowermax-ubimicro:latest)
 
-docker-build: build build-base-image
-	docker build $(NOCACHE) -t "$(REG):$(VERSION)" --build-arg GOIMAGE="golang:1.22" .
+docker: build build-base-image
+	go run ../core/semver/semver.go -f mk >semver.mk
+	make -f docker.mk build-base-image docker
 
-docker-build-no-cache:
-	@make docker-build NOCACHE=--no-cache
+docker-no-cache:
+	make -f docker.mk docker-no-cache
 
-docker-push: docker-build
-	docker push "$(REG):$(VERSION)"
+docker-push: docker
+	make -f docker.mk push
 
 unit-test:
 	go test -v -coverprofile c.out -coverpkg $(coverpackages) ./...
