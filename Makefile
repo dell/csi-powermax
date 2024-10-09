@@ -57,7 +57,7 @@ docker:
 	go run core/semver/semver.go -f mk >semver.mk
 	make -f docker.mk build-base-image docker
 	# build the reverseproxy container as part of this target
-	( cd csireverseproxy; make docker-build )
+	( cd csireverseproxy; make docker )
 
 
 # Generates the docker container without cache (but does not push)
