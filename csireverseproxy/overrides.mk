@@ -32,14 +32,14 @@ ifeq ($(REGISTRY),)
 export REGISTRY="$(DEFAULT_REGISTRY)"
 endif
 
-# set the IMAGENAME if needed
-ifeq ($(IMAGENAME),)
-export IMAGENAME="$(DEFAULT_IMAGENAME)"
+# set the PROXY_IMAGENAME if needed
+ifeq ($(PROXY_IMAGENAME),)
+export PROXY_IMAGENAME="$(DEFAULT_IMAGENAME)"
 endif
 
-#set the IMAGETAG if needed
+#set the PROXY_IMAGETAG if needed
 ifneq ($(DEFAULT_IMAGETAG), "") 
-export IMAGETAG="$(DEFAULT_IMAGETAG)"
+export PROXY_IMAGETAG="$(DEFAULT_IMAGETAG)"
 endif
 
 # set the BUILDSTAGE if needed
@@ -63,10 +63,10 @@ overrides-help:
 	@echo "              Current setting is: $(GOIMAGE)"
 	@echo "REGISTRY    - The registry to push images to, default is: $(DEFAULT_REGISTRY)"
 	@echo "              Current setting is: $(REGISTRY)"
-	@echo "IMAGENAME   - The image name to be built, defaut is: $(DEFAULT_IMAGENAME)"
-	@echo "              Current setting is: $(IMAGENAME)"
-	@echo "IMAGETAG    - The image tag to be built, default is an empty string which will determine the tag by examining annotated tags in the repo."
-	@echo "              Current setting is: $(IMAGETAG)"
+	@echo "PROXY_IMAGENAME   - The image name to be built, defaut is: $(DEFAULT_IMAGENAME)"
+	@echo "              Current setting is: $(PROXY_IMAGENAME)"
+	@echo "PROXY_IMAGETAG    - The image tag to be built, default is an empty string which will determine the tag by examining annotated tags in the repo."
+	@echo "              Current setting is: $(PROXY_IMAGETAG)"
 	@echo "BUILDSTAGE  - The Dockerfile build stage to execute, default is: $(DEFAULT_BUILDSTAGE)"
 	@echo "              Stages can be found by looking at the Dockerfile"
 	@echo "              Current setting is: $(BUILDSTAGE)"
