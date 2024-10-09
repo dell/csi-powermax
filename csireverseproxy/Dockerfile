@@ -14,6 +14,7 @@
 # STEP 1 build executable binary
 ############################
 ARG GOIMAGE
+ARG BASEIMAGE
 
 FROM $GOIMAGE as builder
 
