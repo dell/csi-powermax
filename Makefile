@@ -55,15 +55,18 @@ tag:
 docker:
 	go generate
 	go run core/semver/semver.go -f mk >semver.mk
-	# sh ./build.sh -i ubimicro -e -o
 	make -f docker.mk build-base-image docker
+	# build the reverseproxy container as part of this target
+	( cd csireverseproxy; make docker-build )
 
 
 # Generates the docker container without cache (but does not push)
 docker-no-cache:
 	go generate
 	go run core/semver/semver.go -f mk >semver.mk
-	sh ./build.sh -i ubimicro -e -o -n
+	make -f docker.mk build-base-image docker-no-cache
+	# build the reverseproxy container as part of this target
+	( cd csireverseproxy; make docker-no-cache )
 
 # Pushes container to the repository
 push:	docker
