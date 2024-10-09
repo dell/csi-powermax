@@ -1,33 +1,39 @@
-# Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+# docker makefile, included from Makefile, will build/push images with docker or podman
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#      http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
+
 # Includes the following generated file to get semantic version information
 include semver.mk
+
 ifdef NOTES
 	RELNOTE="-$(NOTES)"
 else
 	RELNOTE=
 endif
 
-VERSION="v$(MAJOR).$(MINOR).$(PATCH).$(BUILD)$(TYPE)"
-# Set it to your own docker registry
-REGISTRY="localhost:5000/csi-powermax"
+ifeq ($(IMAGETAG),)
+IMAGETAG="v$(MAJOR).$(MINOR).$(PATCH)$(RELNOTE)"
+endif
+
 
 docker:
-	docker build -t "$(REGISTRY):$(VERSION)" .
+	@echo "Base Images is set to: $(BASEIMAGE)"
+	@echo "Building: $(REGISTRY)/$(IMAGENAME):$(IMAGETAG)"
+	$(BUILDER) build $(NOCACHE) -t "$(REGISTRY)/$(IMAGENAME):$(IMAGETAG)" --target $(BUILDSTAGE) --build-arg GOPROXY --build-arg BASEIMAGE=$(BASEIMAGE) --build-arg GOIMAGE=$(DEFAULT_GOIMAGE)  .
 
-push:   
-	docker push "$(REGISTRY):$(VERSION)"
+docker-no-cache:
+	@echo "Building with --no-cache ..."
+	@make docker NOCACHE=--no-cache
 
-version:
-	@echo "MAJOR $(MAJOR) MINOR $(MINOR) PATCH $(PATCH) BUILD ${BUILD} TYPE ${TYPE} RELNOTE $(RELNOTE) SEMVER $(SEMVER)"
-	@echo "Target Version: $(VERSION)"
+push:
+	@echo "Pushing: $(REGISTRY)/$(IMAGENAME):$(IMAGETAG)"
+	$(BUILDER) push "$(REGISTRY)/$(IMAGENAME):$(IMAGETAG)"
+
+build-base-image: download-csm-common
+	$(eval include csm-common.mk)
+	@echo "Building base image from $(DEFAULT_BASEIMAGE) and loading dependencies..."
+	./buildubimicro.sh $(DEFAULT_BASEIMAGE)
+	@echo "Base image build: SUCCESS"
+	$(eval BASEIMAGE=localhost/csipowermax-ubimicro:latest)
+
+download-csm-common:
+	curl -O -L https://raw.githubusercontent.com/dell/csm/main/config/csm-common.mk

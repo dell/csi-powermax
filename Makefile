@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+include overrides.mk
+
 all: clean build
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -53,7 +55,9 @@ tag:
 docker:
 	go generate
 	go run core/semver/semver.go -f mk >semver.mk
-	sh ./build.sh -i ubimicro -e -o
+	# sh ./build.sh -i ubimicro -e -o
+	make -f docker.mk build-base-image docker
+
 
 # Generates the docker container without cache (but does not push)
 docker-no-cache:
