@@ -95,8 +95,8 @@ do
     up=`kubectl get pods -n $NAMESPACE | grep '1/1 *Running' | wc -l`
 done
 kubectl describe pods -n $NAMESPACE
-kubectl exec -n $NAMESPACE powermaxtest-0 -it df | grep data
-kubectl exec -n $NAMESPACE powermaxtest-0 -it mount | grep data
+kubectl exec -n $NAMESPACE powermaxtest-0 -- df | grep data
+kubectl exec -n $NAMESPACE powermaxtest-0 -- mount | grep data
 echo "updating container finished"
 echo "marking volume"
 kubectl exec -n $NAMESPACE powermaxtest-0 -- touch /data2/new
