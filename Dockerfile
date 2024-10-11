@@ -10,28 +10,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Dockerfile to build PowerMax CSI Driver
-FROM rockylinux:9
+ARG GOPROXY
+ARG GOIMAGE
+ARG BASEIMAGE
+ARG DIGEST
 
-# dependencies, following by cleaning the cache
-RUN yum install -y \
-    e2fsprogs \
-    which \
-    xfsprogs \
-    nfs-utils \
-    nfs4-acl-tools \
-    device-mapper-multipath \
-    libxcrypt-compat \
-    libblockdev \
-    && \
-    yum clean all \
-    && \
-    rm -rf /var/cache/run
+# Stage to build the driver
+FROM $GOIMAGE as builder
+ARG GOPROXY
+RUN mkdir -p /go/src
+COPY ./ /go/src/
+WORKDIR /go/src/
+RUN CGO_ENABLED=0 \
+    make build
 
-# validate some cli utilities are found
-RUN which mkfs.ext4
-RUN which mkfs.xfs
-
-COPY "csi-powermax" .
+# Stage to build the driver image
+FROM $BASEIMAGE AS final
+COPY --from=builder /go/src/csi-powermax .
 COPY "csi-powermax.sh" .
 ENTRYPOINT ["/csi-powermax.sh"]
+RUN chmod +x /csi-powermax.sh
+LABEL vendor="Dell Inc." \
+    name="csi-powermax" \
+    summary="CSI Driver for Dell EMC PowerMax" \
+    description="CSI Driver for provisioning persistent storage from Dell EMC PowerMax" \
+    version="2.11.0" \
+    license="Apache-2.0"
+COPY ./licenses /licenses
