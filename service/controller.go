@@ -3311,10 +3311,6 @@ func (s *service) CreateSnapshot(
 
 	snapID = fmt.Sprintf("%s-%s-%s", snap.SnapshotName, symID, devID)
 	// populate response structure
-	// log.Debugf("vol.FloatCapacityMB = %f, int64(vol.FloatCapacityMB) = %d, MiBSizeInBytes = %d, int64(vol.FloatCapacityMB) * MiBSizeInBytes = %d", 
-	//	   vol.FloatCapacityMB, int64(vol.FloatCapacityMB), MiBSizeInBytes, int64(vol.FloatCapacityMB) * MiBSizeInBytes)
-	log.Debugf("cylinderSizeInBytes = %d, vol.CapacityCYL = %d, int64(cylinderSizeInBytes * vol.CapacityCYL) = %d", 
-		   cylinderSizeInBytes, vol.CapacityCYL, int64(cylinderSizeInBytes * vol.CapacityCYL))
 	snapshot := &csi.Snapshot{
 		SizeBytes:      int64(cylinderSizeInBytes * vol.CapacityCYL),
 		SnapshotId:     snapID,
