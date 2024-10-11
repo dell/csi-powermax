@@ -1546,7 +1546,7 @@ func (f *feature) allVolumesAreDeletedSuccessfully() error {
 		for i := 0; i < max; i++ {
 			vol, err := f.pmaxClient.GetVolumeByID(context.Background(), symID, symVolumeID)
 			if vol == nil {
-				deleted = strings.Contains(err.Error(), "cannot be found")
+				deleted = strings.Contains(err.Error(), "Could not find")
 				fmt.Printf("volume deleted?: %s\n", err)
 				break
 			}
@@ -1586,7 +1586,7 @@ func (f *feature) theVolumeIsNotDeleted() error {
 		return err
 	}
 	volumePrefix := os.Getenv(service.EnvClusterPrefix)
-	expectedName := service.CsiVolumePrefix + volumePrefix + "-" + f.createVolumeRequest.Name
+	expectedName := service.CsiVolumePrefix + volumePrefix + "-" + f.createVolumeRequest.Name + "-" + f.createVolumeRequest.Parameters[service.ApplicationPrefixParam]
 	if vol.VolumeIdentifier != expectedName {
 		return fmt.Errorf("Expected VolumeIdentifier %s to match original requested name %s indicating volume was not deleted, but they differ",
 			vol.VolumeIdentifier, expectedName)
