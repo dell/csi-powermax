@@ -202,7 +202,7 @@ Feature: Powermax OS CSI interface
     And max retries 1
     And a basic block volume request "integration4" "48"
     When I call CreateVolume
-    Then the error message should contain "OutOfRange desc = bad capacity"
+    Then the error message should contain"OutOfRange desc = bad capacity"
 
   @v1.0.0
   Scenario: Call GetCapacity
