@@ -1586,7 +1586,7 @@ func (f *feature) theVolumeIsNotDeleted() error {
 		return err
 	}
 	volumePrefix := os.Getenv(service.EnvClusterPrefix)
-	expectedName := service.CsiVolumePrefix + volumePrefix + "-" + f.createVolumeRequest.Name
+	expectedName := service.CsiVolumePrefix + volumePrefix + "-" + f.createVolumeRequest.Name + "-" + f.createVolumeRequest.Parameters[service.ApplicationPrefixParam]
 	if vol.VolumeIdentifier != expectedName {
 		return fmt.Errorf("Expected VolumeIdentifier %s to match original requested name %s indicating volume was not deleted, but they differ",
 			vol.VolumeIdentifier, expectedName)
