@@ -445,6 +445,9 @@ func (f *feature) whenICallDeleteVolume() error {
 }
 
 func (f *feature) whenICallDeleteLocalVolume() error {
+	if f.createRemoteVolumeResponse == nil {
+		return nil
+	}
 	err := f.deleteLocalVolume(f.createRemoteVolumeResponse.RemoteVolume.VolumeId)
 	if err != nil {
 		fmt.Printf("DeleteLocalVolume %s:\n", err.Error())
