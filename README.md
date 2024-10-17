@@ -37,7 +37,7 @@ The dependencies for this project are in the go.mod file.
 
 To build the source, execute `make clean build`.
 
-To run unit tests, execute `make unit-test`.
+To run unit tests, execute `make unit-test`. Ensure that all dependent libraries and repositories are cloned locally before running unit tests. For example, this includes `gopowermax`, `gocsi`, `gobrick`, `gofsutil`, and others.
 
 To build an image, execute `make docker`.
 

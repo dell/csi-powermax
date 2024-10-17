@@ -21,13 +21,19 @@ jobs:
     steps:
       - name: Checkout csi-powermax
         uses: actions/checkout@v4
+        with:
+          path: "csi-powermax"
+      - name: Checkout dependent module gopowermax
+        uses: actions/checkout@v4
+        with:
+          repository: dell/gopowermax
+          path: 'gopowermax'
       - name: Run unit tests and check package coverage
         uses: dell/common-github-actions/go-code-tester@main
         with:
           threshold: 1
-          test-folder: "./service"
+          test-folder: "csi-powermax/service"
           race-detector: "true"
-          skip-test: "TestGoDog"
   go_security_scan:
     name: Run gosec
     runs-on: ubuntu-latest
