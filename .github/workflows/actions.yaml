@@ -33,6 +33,7 @@ jobs:
         with:
           threshold: 1
           test-folder: "csi-powermax/service"
+          race-detector: "true"
   go_security_scan:
     name: Run gosec
     runs-on: ubuntu-latest
