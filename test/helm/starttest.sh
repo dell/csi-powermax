@@ -125,5 +125,5 @@ sleep 60
 kubectl describe pods -n "${NAMESPACE}"
 waitOnRunning 1
 kubectl describe pods -n "${NAMESPACE}"
-kubectl exec -n "${NAMESPACE}" powermaxtest-0 -it df | grep data
-kubectl exec -n "${NAMESPACE}" powermaxtest-0 -it mount | grep data
+kubectl exec -n "${NAMESPACE}" powermaxtest-0 -- df | grep data
+kubectl exec -n "${NAMESPACE}" powermaxtest-0 -- mount | grep data
