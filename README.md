@@ -39,7 +39,7 @@ To build the source, execute `make clean build`.
 
 To run unit tests, execute `make unit-test`.
 
-To build an image, execute `make docker`.
+To build an image, copy all dependent repos (see Dockerfile.sh) into the same folder with csi-powermax, then `cd` into `csi-powermax` and execute `make docker`.
 
 You can run an integration test on a Linux system by populating the file `env.sh` with values for your Dell PowerMax systems and then run "`make integration-test`".
 

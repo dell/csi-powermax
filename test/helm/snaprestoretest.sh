@@ -85,7 +85,7 @@ sleep 10
 kubectl get volumesnapshot -n $NAMESPACE
 echo "updating container to add a volume sourced from snapshot"
 helm upgrade -n $NAMESPACE 2vols 2vols+restore --set sc=$STORAGE_CLASS --set scxfs=$STORAGE_CLASS_XFS
-echo "waiting for container to upgrade/stabalize"
+echo "waiting for container to upgrade/stabilize"
 sleep 20
 up=0
 while [ $up -lt 1 ];
@@ -95,8 +95,8 @@ do
     up=`kubectl get pods -n $NAMESPACE | grep '1/1 *Running' | wc -l`
 done
 kubectl describe pods -n $NAMESPACE
-kubectl exec -n $NAMESPACE powermaxtest-0 -it df | grep data
-kubectl exec -n $NAMESPACE powermaxtest-0 -it mount | grep data
+kubectl exec -n $NAMESPACE powermaxtest-0 -- df | grep data
+kubectl exec -n $NAMESPACE powermaxtest-0 -- mount | grep data
 echo "updating container finished"
 echo "marking volume"
 kubectl exec -n $NAMESPACE powermaxtest-0 -- touch /data2/new
