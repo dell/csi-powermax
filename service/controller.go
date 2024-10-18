@@ -3327,7 +3327,6 @@ func (s *service) CreateSnapshot(
 	log.Debugf("Created snapshot: SnapshotId %s SourceVolumeId %s CreationTime %s SizeBytes %d",
 		snapshot.SnapshotId, snapshot.SourceVolumeId, snapshot.CreationTime.AsTime().Format(time.RFC3339Nano), snapshot.SizeBytes)
 	return resp, nil
-
 }
 
 // DeleteSnapshot deletes a snapshot
