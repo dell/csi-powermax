@@ -3309,24 +3309,24 @@ func (s *service) CreateSnapshot(
 		return nil, status.Errorf(codes.Internal, "Failed to create snapshot: %s", err.Error())
 	}
 
-        snapID = fmt.Sprintf("%s-%s-%s", snap.SnapshotName, symID, devID)
-        // populate response structure
-        // log.Debugf("vol.FloatCapacityMB = %f, int64(vol.FloatCapacityMB) = %d, MiBSizeInBytes = %d, int64(vol.FloatCapacityMB) * MiBSizeInBytes = %d",
-        //         vol.FloatCapacityMB, int64(vol.FloatCapacityMB), MiBSizeInBytes, int64(vol.FloatCapacityMB) * MiBSizeInBytes)
-        log.Debugf("cylinderSizeInBytes = %d, vol.CapacityCYL = %d, int64(cylinderSizeInBytes * vol.CapacityCYL) = %d",
-                cylinderSizeInBytes, vol.CapacityCYL, int64(cylinderSizeInBytes*vol.CapacityCYL))
-        snapshot := &csi.Snapshot{
-                SizeBytes:      int64(cylinderSizeInBytes * vol.CapacityCYL),
-                SnapshotId:     snapID,
-                SourceVolumeId: volID,
-                ReadyToUse:     true,
-                CreationTime:   timestamppb.Now(),
-        }
-        resp := &csi.CreateSnapshotResponse{Snapshot: snapshot}
+	snapID = fmt.Sprintf("%s-%s-%s", snap.SnapshotName, symID, devID)
+	// populate response structure
+	// log.Debugf("vol.FloatCapacityMB = %f, int64(vol.FloatCapacityMB) = %d, MiBSizeInBytes = %d, int64(vol.FloatCapacityMB) * MiBSizeInBytes = %d",
+	//         vol.FloatCapacityMB, int64(vol.FloatCapacityMB), MiBSizeInBytes, int64(vol.FloatCapacityMB) * MiBSizeInBytes)
+	log.Debugf("cylinderSizeInBytes = %d, vol.CapacityCYL = %d, int64(cylinderSizeInBytes * vol.CapacityCYL) = %d",
+		cylinderSizeInBytes, vol.CapacityCYL, int64(cylinderSizeInBytes*vol.CapacityCYL))
+	snapshot := &csi.Snapshot{
+		SizeBytes:      int64(cylinderSizeInBytes * vol.CapacityCYL),
+		SnapshotId:     snapID,
+		SourceVolumeId: volID,
+		ReadyToUse:     true,
+		CreationTime:   timestamppb.Now(),
+	}
+	resp := &csi.CreateSnapshotResponse{Snapshot: snapshot}
 
-        log.Debugf("Created snapshot: SnapshotId %s SourceVolumeId %s CreationTime %s SizeBytes %d",
-                snapshot.SnapshotId, snapshot.SourceVolumeId, snapshot.CreationTime.AsTime().Format(time.RFC3339Nano), snapshot.SizeBytes)
-        return resp, nil
+	log.Debugf("Created snapshot: SnapshotId %s SourceVolumeId %s CreationTime %s SizeBytes %d",
+		snapshot.SnapshotId, snapshot.SourceVolumeId, snapshot.CreationTime.AsTime().Format(time.RFC3339Nano), snapshot.SizeBytes)
+	return resp, nil
 
 }
 
