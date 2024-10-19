@@ -636,7 +636,7 @@ Feature: Powermax OS CSI interface
     And there are no errors
     Then I call LinkVolumeToSnapshot
     And there are no errors
-    And I call DeleteLocalVolume
+    And when I call DeleteLocalVolume
     And there are no errors
     Then I call DeleteSnapshot
     And there are no errors
