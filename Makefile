@@ -74,7 +74,7 @@ push:	docker
 
 # Run unit tests and skip the BDD tests
 unit-test: golint check
-	( cd service; go clean -cache; CGO_ENABLED=0 GO111MODULE=on go test -skip TestGoDog -v -coverprofile=c.out ./... )
+	( cd service; go clean -cache; CGO_ENABLED=0 GO111MODULE=on go test -v -coverprofile=c.out ./... )
 
 # Run BDD tests. Need to be root to run as tests require some system access, need to fix
 bdd-test: golint check
