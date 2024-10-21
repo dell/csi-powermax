@@ -445,6 +445,9 @@ func (f *feature) whenICallDeleteVolume() error {
 }
 
 func (f *feature) whenICallDeleteLocalVolume() error {
+	if f.createRemoteVolumeResponse == nil {
+		return nil
+	}
 	err := f.deleteLocalVolume(f.createRemoteVolumeResponse.RemoteVolume.VolumeId)
 	if err != nil {
 		fmt.Printf("DeleteLocalVolume %s:\n", err.Error())
@@ -1586,7 +1589,7 @@ func (f *feature) theVolumeIsNotDeleted() error {
 		return err
 	}
 	volumePrefix := os.Getenv(service.EnvClusterPrefix)
-	expectedName := service.CsiVolumePrefix + volumePrefix + "-" + f.createVolumeRequest.Name
+	expectedName := service.CsiVolumePrefix + volumePrefix + "-" + f.createVolumeRequest.Name + "-" + f.createVolumeRequest.Parameters[service.ApplicationPrefixParam]
 	if vol.VolumeIdentifier != expectedName {
 		return fmt.Errorf("Expected VolumeIdentifier %s to match original requested name %s indicating volume was not deleted, but they differ",
 			vol.VolumeIdentifier, expectedName)

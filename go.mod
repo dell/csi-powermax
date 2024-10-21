@@ -1,6 +1,6 @@
 module github.com/dell/csi-powermax/v2
 
-go 1.22.0
+go 1.23
 
 require (
 	github.com/akutz/goof v0.1.2
