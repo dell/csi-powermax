@@ -22,23 +22,23 @@ else
 	RELNOTE=
 endif
 
-ifeq ($(IMAGETAG),)
-IMAGETAG="v$(MAJOR).$(MINOR).$(PATCH)$(RELNOTE)"
+ifeq ($(PROXY_IMAGETAG),)
+PROXY_IMAGETAG="v$(MAJOR).$(MINOR).$(PATCH)$(RELNOTE)"
 endif
 
 
 docker:
 	@echo "Base Images is set to: $(BASEIMAGE)"
-	@echo "Building: $(REGISTRY)/$(IMAGENAME):$(IMAGETAG)"
-	$(BUILDER) build $(NOCACHE) -t "$(REGISTRY)/$(IMAGENAME):$(IMAGETAG)" --target $(BUILDSTAGE) --build-arg GOPROXY --build-arg BASEIMAGE=$(BASEIMAGE) --build-arg GOIMAGE=$(DEFAULT_GOIMAGE)  .
+	@echo "Building: $(REGISTRY)/$(PROXY_IMAGENAME):$(PROXY_IMAGETAG)"
+	$(BUILDER) build $(NOCACHE) -t "$(REGISTRY)/$(PROXY_IMAGENAME):$(PROXY_IMAGETAG)" --target $(BUILDSTAGE) --build-arg GOPROXY --build-arg BASEIMAGE=$(BASEIMAGE) --build-arg GOIMAGE=$(DEFAULT_GOIMAGE)  .
 
 docker-no-cache:
 	@echo "Building with --no-cache ..."
 	@make docker NOCACHE=--no-cache
 
 push:
-	@echo "Pushing: $(REGISTRY)/$(IMAGENAME):$(IMAGETAG)"
-	$(BUILDER) push "$(REGISTRY)/$(IMAGENAME):$(IMAGETAG)"
+	@echo "Pushing: $(REGISTRY)/$(PROXY_IMAGENAME):$(PROXY_IMAGETAG)"
+	$(BUILDER) push "$(REGISTRY)/$(PROXY_IMAGENAME):$(PROXY_IMAGETAG)"
 
 build-base-image: download-csm-common
 	$(eval include csm-common.mk)
