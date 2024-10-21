@@ -3312,6 +3312,7 @@ func (s *service) CreateSnapshot(
 	snapID = fmt.Sprintf("%s-%s-%s", snap.SnapshotName, symID, devID)
 	// populate response structure
 	snapshot := &csi.Snapshot{
+		SizeBytes:      int64(cylinderSizeInBytes * vol.CapacityCYL),
 		SnapshotId:     snapID,
 		SourceVolumeId: volID,
 		ReadyToUse:     true,
@@ -3319,8 +3320,8 @@ func (s *service) CreateSnapshot(
 	}
 	resp := &csi.CreateSnapshotResponse{Snapshot: snapshot}
 
-	log.Debugf("Created snapshot: SnapshotId %s SourceVolumeId %s CreationTime %s",
-		snapshot.SnapshotId, snapshot.SourceVolumeId, snapshot.CreationTime.AsTime().Format(time.RFC3339Nano))
+	log.Debugf("Created snapshot: SnapshotId %s SourceVolumeId %s CreationTime %s SizeBytes %d",
+		snapshot.SnapshotId, snapshot.SourceVolumeId, snapshot.CreationTime.AsTime().Format(time.RFC3339Nano), snapshot.SizeBytes)
 	return resp, nil
 }
 

@@ -202,7 +202,10 @@ Feature: Powermax OS CSI interface
     And max retries 1
     And a basic block volume request "integration4" "48"
     When I call CreateVolume
-    Then the error message should contain "OutOfRange desc = bad capacity"
+    And I receive a valid volume
+    And when I call DeleteVolume
+    Then there are no errors
+    And all volumes are deleted successfully
 
   @v1.0.0
   Scenario: Call GetCapacity
@@ -633,7 +636,7 @@ Feature: Powermax OS CSI interface
     And there are no errors
     Then I call LinkVolumeToSnapshot
     And there are no errors
-    And I call DeleteLocalVolume
+    And when I call DeleteLocalVolume
     And there are no errors
     Then I call DeleteSnapshot
     And there are no errors
