@@ -66,6 +66,7 @@ var (
 	disconnectVolumeRetryTime   = 1 * time.Second
 	nodePendingState            pendingState
 	sysBlock                    = "/sys/block" // changed for unit testing
+	dev                         = "/dev/"
 )
 
 type maskingViewTargetInfo struct {
@@ -2671,12 +2672,29 @@ func (s *service) NodeExpandVolume(
 		deviceNames, _ := gofsutil.GetSysBlockDevicesForVolumeWWN(context.Background(), volumeWWN)
 		if len(deviceNames) > 0 {
 			for _, deviceName := range deviceNames {
-				devicePath := sysBlock + "/" + deviceName
-				log.Infof("Rescanning unmounted (raw block) device %s to expand size", deviceName)
-				err = gofsutil.DeviceRescan(context.Background(), devicePath)
-				if err != nil {
-					log.Errorf("Failed to rescan device (%s) with error (%s)", devicePath, err.Error())
-					return nil, status.Error(codes.Internal, err.Error())
+				if strings.HasPrefix(deviceName, "nvme") {
+					nvmeControllerDevice, err := gofsutil.GetNVMeController(deviceName)
+					if err != nil {
+						log.Errorf("Failed to rescan device (%s) with error (%s)", deviceName, err.Error())
+						return nil, status.Error(codes.Internal, err.Error())
+					}
+					if nvmeControllerDevice != "" {
+						devicePath := dev + nvmeControllerDevice
+						log.Infof("Rescanning unmounted (raw block) device %s to expand size", devicePath)
+						err = s.nvmetcpClient.DeviceRescan(devicePath)
+						if err != nil {
+							log.Errorf("Failed to rescan device (%s) with error (%s)", devicePath, err.Error())
+							return nil, status.Error(codes.Internal, err.Error())
+						}
+					}
+				} else {
+					devicePath := sysBlock + "/" + deviceName
+					log.Infof("Rescanning unmounted (raw block) device %s to expand size", deviceName)
+					err = gofsutil.DeviceRescan(context.Background(), devicePath)
+					if err != nil {
+						log.Errorf("Failed to rescan device (%s) with error (%s)", devicePath, err.Error())
+						return nil, status.Error(codes.Internal, err.Error())
+					}
 				}
 				devName = deviceName
 			}

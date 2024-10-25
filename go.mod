@@ -2,6 +2,8 @@ module github.com/dell/csi-powermax/v2
 
 go 1.23
 
+toolchain go1.23.2
+
 require (
 	github.com/akutz/goof v0.1.2
 	github.com/container-storage-interface/spec v1.6.0
@@ -14,9 +16,9 @@ require (
 	github.com/dell/dell-csi-extensions/replication v1.8.0
 	github.com/dell/gobrick v1.11.5-0.20241014113235-06cfe9928229
 	github.com/dell/gocsi v1.11.0
-	github.com/dell/gofsutil v1.16.1
+	github.com/dell/gofsutil v1.16.2-0.20241025084148-087a7378a075
 	github.com/dell/goiscsi v1.9.0
-	github.com/dell/gonvme v1.8.1
+	github.com/dell/gonvme v1.8.2-0.20241025082321-e7b104b7df7c
 	github.com/dell/gopowermax/v2 v2.7.0
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gorilla/mux v1.7.3
