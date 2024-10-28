@@ -52,7 +52,7 @@ LABEL vendor="Dell Inc." \
       name="csipowermax-reverseproxy" \
       summary="CSI PowerMax Reverse Proxy" \
       description="CSI PowerMax Reverse Proxy which helps manage connections with Unisphere for PowerMax" \
-      version="2.10.0" \
+      version="2.11.0" \
       license="Apache-2.0"
 COPY licenses /licenses
 # Import from builder.

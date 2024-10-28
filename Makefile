@@ -21,13 +21,6 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-# Tag parameters
-MAJOR=1
-MINOR=0
-PATCH=0
-NOTES=-beta
-TAGMSG="CSI Spec 1.6"
-
 check:
 	GOLINT=$(GOLINT) bash check.sh --all
 
@@ -45,11 +38,6 @@ build: golint check
 install:
 	go generate
 	GOOS=linux CGO_ENABLED=0 go install
-
-# Tags the release with the Tag parameters set above
-tag:
-	-git tag -d v$(MAJOR).$(MINOR).$(PATCH)$(NOTES)
-	git tag -a -m $(TAGMSG) v$(MAJOR).$(MINOR).$(PATCH)$(NOTES)
 
 # Generates the docker container (but does not push)
 docker:
