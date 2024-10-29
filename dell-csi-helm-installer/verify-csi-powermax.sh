@@ -15,7 +15,7 @@
 
 # verify-csi-powermax method
 function verify-csi-powermax() {
-  verify_k8s_versions "1.28" "1.31"
+  verify_k8s_versions "1.29" "1.31"
   verify_openshift_versions "4.16" "4.17"  
   verify_helm_values_version "${DRIVER_VERSION}"
   verify_namespace "${NS}"
