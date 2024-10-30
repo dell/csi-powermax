@@ -73,7 +73,7 @@ Feature: PowerMax CSI interface
      | "none"                              | "none"                                             |
      | "GetStoragePoolListError"           | "Error retrieving StoragePools"                    |
      | "GetVolumeIteratorError"            | "Error looking up volume for idempotence check"    |
-     | "GetVolumeError"                    | "Failed to find newly created volume"              |
+     | "GetVolumeError"                    | "failed to find newly created volume"              |
 #      | "GetJobError"                       | "Could not create volume"                          |
 #      | "UpdateStorageGroupError"           | "A job was not returned from UpdateStorageGroup"   |
      | "InvalidSymID"                      | "A SYMID parameter is required"                    |
