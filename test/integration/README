@@ -1,8 +1,0 @@
-## Integration Test
-
-### Steps to run integration test
-1. Update _env.sh_ with values based on the configuration of DELL Powermax system.
-2. run _make integration-test_ from the root directory of the project
-3. If you want to run selective test:
-   1. Add a `tag` on the tests
-   2. Update the `Tags` section in file _integration_test.go_ with the same tag

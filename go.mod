@@ -2,22 +2,24 @@ module github.com/dell/csi-powermax/v2
 
 go 1.23
 
+toolchain go1.23.2
+
 require (
 	github.com/akutz/goof v0.1.2
 	github.com/container-storage-interface/spec v1.6.0
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/cucumber/godog v0.12.6
 	github.com/cucumber/messages-go/v10 v10.0.3
-	github.com/dell/dell-csi-extensions/common v1.5.0
-	github.com/dell/dell-csi-extensions/migration v1.5.0
-	github.com/dell/dell-csi-extensions/podmon v1.5.0
-	github.com/dell/dell-csi-extensions/replication v1.8.0
-	github.com/dell/gobrick v1.11.5-0.20241014113235-06cfe9928229
-	github.com/dell/gocsi v1.11.0
-	github.com/dell/gofsutil v1.16.1
-	github.com/dell/goiscsi v1.9.0
-	github.com/dell/gonvme v1.8.1
-	github.com/dell/gopowermax/v2 v2.7.0
+	github.com/dell/dell-csi-extensions/common v1.6.0
+	github.com/dell/dell-csi-extensions/migration v1.6.0
+	github.com/dell/dell-csi-extensions/podmon v1.6.0
+	github.com/dell/dell-csi-extensions/replication v1.9.0
+	github.com/dell/gobrick v1.12.0
+	github.com/dell/gocsi v1.12.0
+	github.com/dell/gofsutil v1.17.0
+	github.com/dell/goiscsi v1.10.0
+	github.com/dell/gonvme v1.9.0
+	github.com/dell/gopowermax/v2 v2.8.0
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gorilla/mux v1.7.3
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
@@ -25,8 +27,8 @@ require (
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.9.0
 	github.com/vmware/govmomi v0.29.0
-	golang.org/x/net v0.27.0
-	google.golang.org/grpc v1.65.0
+	golang.org/x/net v0.28.0
+	google.golang.org/grpc v1.67.1
 	google.golang.org/protobuf v1.34.2
 	k8s.io/api v0.20.0
 	k8s.io/apimachinery v0.20.0
@@ -74,15 +76,15 @@ require (
 	go.etcd.io/etcd/client/v3 v3.5.14 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/crypto v0.25.0 // indirect
-	golang.org/x/oauth2 v0.20.0 // indirect
-	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.22.0 // indirect
-	golang.org/x/term v0.22.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/crypto v0.26.0 // indirect
+	golang.org/x/oauth2 v0.22.0 // indirect
+	golang.org/x/sync v0.8.0 // indirect
+	golang.org/x/sys v0.24.0 // indirect
+	golang.org/x/term v0.23.0 // indirect
+	golang.org/x/text v0.17.0 // indirect
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240711142825-46eb208f015d // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240711142825-46eb208f015d // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240814211410-ddb44dafa142 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240814211410-ddb44dafa142 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.51.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
