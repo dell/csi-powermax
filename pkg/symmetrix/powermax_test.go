@@ -71,7 +71,7 @@ func TestGet(t *testing.T) {
 
         _, err = rep.Get(ctx, client, "0001")
         if err != nil {
-                t.Errorf("Faied to create client with only primary managed array specified", err)
+                t.Errorf("Get call failed with error %+v", err)
         }
 }
 
