@@ -58,19 +58,19 @@ func TestGetPowerMaxClient(t *testing.T) {
 // ctx context.Context, client pmax.Pmax, symID string
 func TestUpdate(t *testing.T) {
 	symmetrixCapability := types.SymmetrixCapability{
-		SymmetrixID: "fakeSymmetrix",
+		SymmetrixID:   "fakeSymmetrix",
 		SnapVxCapable: true,
-		RdfCapable: true,
+		RdfCapable:    true,
 	}
 	rep := ReplicationCapabilitiesCache{}
-        rep.update(&symmetrixCapability)
-        if rep.cap.SymmetrixID != "fakeSymmetrix" {
-                t.Errorf("update call failed -- SymmetrixID not set properly in capability: cap.SymmetrixID: %+v", rep.cap.SymmetrixID)
+	rep.update(&symmetrixCapability)
+	if rep.cap.SymmetrixID != "fakeSymmetrix" {
+		t.Errorf("update call failed -- SymmetrixID not set properly in capability: cap.SymmetrixID: %+v", rep.cap.SymmetrixID)
 		if !rep.cap.SnapVxCapable {
 			t.Errorf("update call failed -- SnapVxCapable not set properly in capability: cap.SnapVxCapable: %+v", rep.cap.SnapVxCapable)
 			if !rep.cap.RdfCapable {
 				t.Errorf("update call failed -- RdfCapable not set properly in capability: cap.RdfCapable: %+v", rep.cap.RdfCapable)
 			}
 		}
-        }
+	}
 }
