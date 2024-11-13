@@ -57,13 +57,13 @@ func TestGetPowerMaxClient(t *testing.T) {
 
 // ctx context.Context, client pmax.Pmax, symID string
 func TestUpdate(t *testing.T) {
-	symmetrixCapability := &types.SymmetrixCapability{
+	symmetrixCapability := types.SymmetrixCapability{
 		SymmetrixID: "fakeSymmetrix",
 		SnapVxCapable: true,
 		RdfCapable: true,
 	}
 	rep := ReplicationCapabilitiesCache{}
-        rep.update(symmetrixCapability)
+        rep.update(&symmetrixCapability)
         if rep.cap.SymmetrixID == "fakeSymmetrix" && rep.cap.SnapVxCapable && rep.cap.RdfCapable {
                 t.Errorf("update call failed -- capability not set")
         }
