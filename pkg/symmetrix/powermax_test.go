@@ -63,6 +63,7 @@ func TestUpdate(t *testing.T) {
 		SnapVxCapable: true,
 		RdfCapable: true,
 	}
+	rep := ReplicationCapabilitiesCache{}
         _, err = rep.update(symmetrixCapability)
         if err != nil {
                 t.Errorf("update call failed with error %+v", err)
