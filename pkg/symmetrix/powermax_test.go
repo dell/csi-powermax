@@ -57,21 +57,15 @@ func TestGetPowerMaxClient(t *testing.T) {
 }
 
 // ctx context.Context, client pmax.Pmax, symID string
-func TestGet(t *testing.T) {
-        client, err := pmax.NewClientWithArgs("/", "test", true, true)
+func TestUpdate(t *testing.T) {
+	symmetrixCapability = SymmetrixCapability{
+		SymmetrixID: "fakeSymmetrix",
+		SnapVxCapable: true,
+		RdfCapable: true,
+	}
+        _, err = rep.update(symmetrixCapability)
         if err != nil {
-                t.Fatalf("Faild to create a pmax client: %s", err.Error())
-        }
-	Initialize([]string{"0001", "0002"}, client)
-
-	header := metadata.New(map[string]string{"csi.requestid": "1"})
-	ctx := metadata.NewIncomingContext(context.Background(), header)
-
-	rep := ReplicationCapabilitiesCache{}
-
-        _, err = rep.Get(ctx, client, "0001")
-        if err != nil {
-                t.Errorf("Get call failed with error %+v", err)
+                t.Errorf("update call failed with error %+v", err)
         }
 }
 
