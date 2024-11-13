@@ -68,7 +68,6 @@ func TestGet(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 
 	rep := ReplicationCapabilitiesCache{}
-	rep.CacheTime = 0
 
         _, err = rep.Get(ctx, client, "0001")
         if err != nil {
