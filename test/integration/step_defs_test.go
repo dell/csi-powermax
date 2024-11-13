@@ -1542,11 +1542,11 @@ func (f *feature) allVolumesAreDeletedSuccessfully() error {
 		symVolumeID := idComponents[len(idComponents)-1]
 		symID := idComponents[len(idComponents)-2]
 		fmt.Printf("Waiting for volume %s %s to be deleted\n", id, symVolumeID)
-		max := 40 * nVols
-		if 300 > max {
-			max = 300
+		maxVols := 40 * nVols
+		if 300 > maxVols {
+			maxVols = 300
 		}
-		for i := 0; i < max; i++ {
+		for i := 0; i < maxVols; i++ {
 			vol, err := f.pmaxClient.GetVolumeByID(context.Background(), symID, symVolumeID)
 			if vol == nil {
 				deleted = strings.Contains(err.Error(), "Could not find")

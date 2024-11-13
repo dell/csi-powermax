@@ -6,24 +6,24 @@ standAloneConfig:
       primaryURL: https://primary-1.unisphe.re:8443
       backupURL: https://backup-1.unisphe.re:8443
       proxyCredentialSecrets:
-        - proxy-secret-11
-        - proxy-secret-12
+        - primary-unisphere-secret-1
+        - backup-unisphere-secret-1
     - storageArrayId: "000000000002"
       primaryURL: https://primary-2.unisphe.re:8443
       backupURL: https://backup-2.unisphe.re:8443
       proxyCredentialSecrets:
-        - proxy-secret-21
-        - proxy-secret-22
+        - primary-unisphere-secret-2
+        - backup-unisphere-secret-2
   managementServers:
     - url: https://primary-1.unisphe.re:8443
-      arrayCredentialSecret: primary-1-secret
+      arrayCredentialSecret: primary-unisphere-secret-1
       skipCertificateValidation: true
     - url: https://backup-1.unisphe.re:8443
-      arrayCredentialSecret: backup-1-secret
+      arrayCredentialSecret: backup-unisphere-secret-1
       skipCertificateValidation: false
     - url: https://primary-2.unisphe.re:8443
-      arrayCredentialSecret: primary-2-secret
+      arrayCredentialSecret: primary-unisphere-secret-2
       skipCertificateValidation: true
     - url: https://backup-2.unisphe.re:8443
-      arrayCredentialSecret: backup-2-secret
+      arrayCredentialSecret: backup-unisphere-secret-2
       skipCertificateValidation: false
