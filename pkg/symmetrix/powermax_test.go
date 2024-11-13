@@ -66,7 +66,7 @@ func TestGet(t *testing.T) {
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 
-        _, err = Get(ctx, c, "0001")
+        _, err = ReplicationCapabilitiesCache.Get(ctx, c, "0001")
         if err != nil {
                 t.Errorf("Faied to create client with only primary managed array specified")
         }
