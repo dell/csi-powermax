@@ -58,17 +58,19 @@ func TestGetPowerMaxClient(t *testing.T) {
 
 // ctx context.Context, client pmax.Pmax, symID string
 func TestGet(t *testing.T) {
-        c, err := pmax.NewClientWithArgs("/", "test", true, true)
+        client, err := pmax.NewClientWithArgs("/", "test", true, true)
         if err != nil {
                 t.Fatalf("Faild to create a pmax client: %s", err.Error())
         }
+	Initialize([]string{"0001", "0002"}, client)
 
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 
-	var rep *ReplicationCapabilitiesCache
+	rep := ReplicationCapabilitiesCache{}
+	rep.CacheTime = 0
 
-        _, err = rep.Get(ctx, c, "0001")
+        _, err = rep.Get(ctx, client, "0001")
         if err != nil {
                 t.Errorf("Faied to create client with only primary managed array specified")
         }
