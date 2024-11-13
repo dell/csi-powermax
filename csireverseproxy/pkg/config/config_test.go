@@ -85,7 +85,6 @@ func getStandAloneProxyConfig(t *testing.T) (*ProxyConfig, error) {
 			return nil, err
 		}
 	}
-	configMap.Mode = "StandAlone"
 	config, err := NewProxyConfig(configMap, k8sUtils)
 	if err != nil {
 		t.Errorf("Failed to create new standalone proxy config. (%s)", err.Error())

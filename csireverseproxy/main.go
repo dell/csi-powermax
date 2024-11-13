@@ -94,7 +94,6 @@ func getServerOpts() ServerOpts {
 // Server represents the proxy server
 type Server struct {
 	HTTPServer      *http.Server
-	Mode            config.ProxyMode
 	Port            string
 	CertFile        string
 	KeyFile         string
@@ -136,13 +135,11 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 	s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
 	s.KeyFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.KeyFile)
 	s.Port = proxyConfig.Port
-	if proxyConfig.Mode == config.StandAlone {
-		standAloneProxy, err := standaloneproxy.NewStandAloneProxy(*proxyConfig.StandAloneProxyConfig)
-		if err != nil {
-			return err
-		}
-		s.StandAloneProxy = standAloneProxy
+	standAloneProxy, err := standaloneproxy.NewStandAloneProxy(*proxyConfig.StandAloneProxyConfig)
+	if err != nil {
+		return err
 	}
+	s.StandAloneProxy = standAloneProxy
 	s.SetConfig(proxyConfig)
 	s.SigChan = make(chan os.Signal, 1)
 	return nil
@@ -269,10 +266,6 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 	conf := s.Config().DeepCopy()
 	log.Infof("New credential/cert update event for the secret(%s)", secret.Name)
 	hasChanged := false
-	if conf.Mode != config.StandAlone {
-		log.Errorf("invalid proxy mode is give")
-		return
-	}
 
 	found := conf.StandAloneProxyConfig.IsSecretConfiguredForCerts(secret.Name)
 	if found {

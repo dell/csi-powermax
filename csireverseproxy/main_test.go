@@ -236,8 +236,7 @@ func createTempConfig(mode string) error {
 		log.Fatalf("Failed to read sample config file. (%s)", err.Error())
 		return err
 	}
-	// set proxy mode for respective server
-	proxyConfigMap.Mode = config.ProxyMode(mode)
+
 	filename := tmpSAConfigFile
 	proxyConfigMap.Port = "8080"
 	// Create a ManagementServerConfig
