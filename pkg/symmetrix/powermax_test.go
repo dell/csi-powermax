@@ -57,7 +57,7 @@ func TestGetPowerMaxClient(t *testing.T) {
 
 // ctx context.Context, client pmax.Pmax, symID string
 func TestUpdate(t *testing.T) {
-	symmetrixCapability := types.SymmetrixCapability{
+	symmetrixCapability := &types.SymmetrixCapability{
 		SymmetrixID: "fakeSymmetrix",
 		SnapVxCapable: true,
 		RdfCapable: true,
