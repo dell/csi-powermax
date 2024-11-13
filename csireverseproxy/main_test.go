@@ -90,7 +90,7 @@ func startTestServer() error {
 	serverOpts.ConfigDir = common.TempConfigDir
 	// Create test standAlone proxy config and start the standAlone server
 	serverOpts.ConfigFileName = tmpSAConfigFile
-	err := createTempConfig("StandAlone")
+	err := createTempConfig()
 	if err != nil {
 		return err
 	}
@@ -230,7 +230,7 @@ func writeYAMLConfig(val interface{}, fileName, fileDir string) error {
 	return ioutil.WriteFile(filepath, file, 0o777)
 }
 
-func createTempConfig(mode string) error {
+func createTempConfig() error {
 	proxyConfigMap, err := readYAMLConfig(common.TestConfigFileName, common.TestConfigDir)
 	if err != nil {
 		log.Fatalf("Failed to read sample config file. (%s)", err.Error())
