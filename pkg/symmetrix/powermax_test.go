@@ -19,9 +19,6 @@ import (
 
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
-
-	"golang.org/x/net/context"
-	"google.golang.org/grpc/metadata"
 )
 
 func TestGetPowerMaxClient(t *testing.T) {
@@ -60,7 +57,7 @@ func TestGetPowerMaxClient(t *testing.T) {
 
 // ctx context.Context, client pmax.Pmax, symID string
 func TestUpdate(t *testing.T) {
-	symmetrixCapability = types.SymmetrixCapability{
+	symmetrixCapability := types.SymmetrixCapability{
 		SymmetrixID: "fakeSymmetrix",
 		SnapVxCapable: true,
 		RdfCapable: true,
