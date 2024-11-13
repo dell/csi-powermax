@@ -18,6 +18,8 @@ import (
 	"testing"
 
 	pmax "github.com/dell/gopowermax/v2"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestGetPowerMaxClient(t *testing.T) {
@@ -53,3 +55,20 @@ func TestGetPowerMaxClient(t *testing.T) {
 		t.Errorf("Should have failed with none of the arrays managed")
 	}
 }
+
+// ctx context.Context, client pmax.Pmax, symID string
+func TestGet(t *testing.T) {
+        c, err := pmax.NewClientWithArgs("/", "test", true, true)
+        if err != nil {
+                t.Fatalf("Faild to create a pmax client: %s", err.Error())
+        }
+
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+
+        _, err = Get(ctx, c, "0001")
+        if err != nil {
+                t.Errorf("Faied to create client with only primary managed array specified")
+        }
+}
+
