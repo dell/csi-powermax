@@ -64,7 +64,7 @@ func TestUpdate(t *testing.T) {
 	}
 	rep := ReplicationCapabilitiesCache{}
         rep.update(symmetrixCapability)
-        if rep.cap.SymmetrixID == "fakeSymmetrix" and rep.cap.SnapVxCapable and rep.cap.RdfCapable {
+        if rep.cap.SymmetrixID == "fakeSymmetrix" && rep.cap.SnapVxCapable && rep.cap.RdfCapable {
                 t.Errorf("update call failed -- capability not set")
         }
 }
