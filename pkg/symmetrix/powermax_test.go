@@ -64,9 +64,9 @@ func TestUpdate(t *testing.T) {
 		RdfCapable: true,
 	}
 	rep := ReplicationCapabilitiesCache{}
-        _, err = rep.update(symmetrixCapability)
-        if err != nil {
-                t.Errorf("update call failed with error %+v", err)
+        rep.update(symmetrixCapability)
+        if rep.cap != symmetrixCapability {
+                t.Errorf("update call failed -- capability not set")
         }
 }
 
