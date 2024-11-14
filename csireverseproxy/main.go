@@ -28,7 +28,7 @@ import (
 	"revproxy/v2/pkg/common"
 	"revproxy/v2/pkg/config"
 	"revproxy/v2/pkg/k8sutils"
-	"revproxy/v2/pkg/standaloneproxy"
+	"revproxy/v2/pkg/proxy"
 	"revproxy/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
@@ -98,7 +98,7 @@ type Server struct {
 	CertFile        string
 	KeyFile         string
 	config          *config.ProxyConfig
-	StandAloneProxy *standaloneproxy.StandAloneProxy
+	StandAloneProxy *proxy.Proxy
 	SigChan         chan os.Signal
 	WaitGroup       sync.WaitGroup
 	Mutex           sync.Mutex
@@ -135,7 +135,7 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 	s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
 	s.KeyFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.KeyFile)
 	s.Port = proxyConfig.Port
-	standAloneProxy, err := standaloneproxy.NewStandAloneProxy(*proxyConfig.StandAloneProxyConfig)
+	standAloneProxy, err := proxy.NewProxy(*proxyConfig.StandAloneProxyConfig)
 	if err != nil {
 		return err
 	}
