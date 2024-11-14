@@ -92,7 +92,7 @@ build_image_manifest() {
     fi
   done
 
-  # Forming this only for drivers supporting standalone helm charts
+  # Forming this only for drivers supporting helm charts
   if [ ! -z ${DRIVERREPO} ]; then 
    echo "${DRIVERREPO}/${DRIVERNAME}\:${DRIVERVERSIONVALUESYAML}"
    echo "${DRIVERREPO}/${DRIVERNAME}:${DRIVERVERSIONVALUESYAML}" >> "${IMAGEMANIFEST}.tmp"

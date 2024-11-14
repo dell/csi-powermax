@@ -57,7 +57,7 @@ func newProxyConfig(configMap *ProxyConfigMap, utils k8sutils.UtilsInterface) (*
 	return NewProxyConfig(configMap, utils)
 }
 
-func getStandAloneProxyConfig(t *testing.T) (*ProxyConfig, error) {
+func getProxyConfig(t *testing.T) (*ProxyConfig, error) {
 	k8sUtils := k8smock.Init()
 	configMap, err := readConfig()
 	if err != nil {
@@ -87,14 +87,14 @@ func getStandAloneProxyConfig(t *testing.T) (*ProxyConfig, error) {
 	}
 	config, err := NewProxyConfig(configMap, k8sUtils)
 	if err != nil {
-		t.Errorf("Failed to create new standalone proxy config. (%s)", err.Error())
+		t.Errorf("Failed to create new config. (%s)", err.Error())
 		return nil, err
 	}
 	return config, nil
 }
 
-func TestNewStandAloneProxyConfig(t *testing.T) {
-	config, err := getStandAloneProxyConfig(t)
+func TestNewProxyConfig(t *testing.T) {
+	config, err := getProxyConfig(t)
 	if err != nil {
 		return
 	}
@@ -104,11 +104,11 @@ func TestNewStandAloneProxyConfig(t *testing.T) {
 	}
 	fmt.Printf("Management servers: %+v\n", config.GetManagementServers())
 	config.Log()
-	fmt.Println("StandAlone proxy config created successfully")
+	fmt.Println("Proxy config created successfully")
 }
 
-func TestStandAloneProxyConfig_UpdateCerts(t *testing.T) {
-	config, err := getStandAloneProxyConfig(t)
+func TestProxyConfig_UpdateCerts(t *testing.T) {
+	config, err := getProxyConfig(t)
 	if err != nil {
 		return
 	}
@@ -121,8 +121,8 @@ func TestStandAloneProxyConfig_UpdateCerts(t *testing.T) {
 	fmt.Println("Cert secrets updated successfully.")
 }
 
-func TestStandAloneProxyConfig_UpdateCreds(t *testing.T) {
-	config, err := getStandAloneProxyConfig(t)
+func TestProxyConfig_UpdateCreds(t *testing.T) {
+	config, err := getProxyConfig(t)
 	if err != nil {
 		return
 	}
@@ -140,8 +140,8 @@ func TestStandAloneProxyConfig_UpdateCreds(t *testing.T) {
 	fmt.Println("Credentials updated successfully")
 }
 
-func TestStandAloneProxyConfig_UpdateCertsAndCredentials(t *testing.T) {
-	config, err := getStandAloneProxyConfig(t)
+func TestProxyConfig_UpdateCertsAndCredentials(t *testing.T) {
+	config, err := getProxyConfig(t)
 	if err != nil {
 		return
 	}
@@ -157,8 +157,8 @@ func TestStandAloneProxyConfig_UpdateCertsAndCredentials(t *testing.T) {
 	fmt.Println("Certs and Secrets updated successfully")
 }
 
-func TestStandAloneProxyConfig_UpdateManagementServers(t *testing.T) {
-	config, err := getStandAloneProxyConfig(t)
+func TestProxyConfig_UpdateManagementServers(t *testing.T) {
+	config, err := getProxyConfig(t)
 	if err != nil {
 		return
 	}
@@ -171,8 +171,8 @@ func TestStandAloneProxyConfig_UpdateManagementServers(t *testing.T) {
 	fmt.Println("Management servers updated successfully")
 }
 
-func TestStandAloneProxyConfig_UpdateManagedArrays(t *testing.T) {
-	config, err := getStandAloneProxyConfig(t)
+func TestProxyConfig_UpdateManagedArrays(t *testing.T) {
+	config, err := getProxyConfig(t)
 	if err != nil {
 		return
 	}
@@ -181,16 +181,16 @@ func TestStandAloneProxyConfig_UpdateManagedArrays(t *testing.T) {
 	fmt.Printf("Managed arrays updated successfully")
 }
 
-func TestStandAloneProxyConfig_GetAuthorizedArrays(t *testing.T) {
-	config, err := getStandAloneProxyConfig(t)
+func TestProxyConfig_GetAuthorizedArrays(t *testing.T) {
+	config, err := getProxyConfig(t)
 	if err != nil {
 		return
 	}
 	fmt.Printf("Authorized arrays: %+v\n", config.GetAuthorizedArrays("test-username", "test-password"))
 }
 
-func TestStandAloneProxyConfig_GetStorageArray(t *testing.T) {
-	config, err := getStandAloneProxyConfig(t)
+func TestProxyConfig_GetStorageArray(t *testing.T) {
+	config, err := getProxyConfig(t)
 	if err != nil {
 		return
 	}

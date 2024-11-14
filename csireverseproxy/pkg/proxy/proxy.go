@@ -51,7 +51,7 @@ type Proxy struct {
 	mutex         sync.Mutex
 }
 
-// NewProxy - Given a proxy config, returns a stand alone proxy
+// NewProxy - Given a proxy config, returns a proxy
 func NewProxy(proxyConfig config.ProxyConfig) (*Proxy, error) {
 	envoyMap := make(map[string]common.Envoy)
 	for arrayID, serverArray := range proxyConfig.GetManagedArraysAndServers() {
@@ -320,7 +320,7 @@ func (revProxy *Proxy) hasServerChanged(oldServer, newServer config.ManagementSe
 		oldServer.SkipCertificateValidation != newServer.SkipCertificateValidation
 }
 
-// UpdateConfig - Given a new proxy config, updates the Stand Alone Proxy
+// UpdateConfig - Given a new proxy config, updates the Proxy
 func (revProxy *Proxy) UpdateConfig(proxyConfig config.ProxyConfig) error {
 	if reflect.DeepEqual(revProxy.config, proxyConfig) {
 		log.Info("No changes detected in the configuration")

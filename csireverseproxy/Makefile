@@ -12,7 +12,7 @@
 #
 include overrides.mk
 
-coverpackages= revproxy/v2,revproxy/v2/pkg/config,revproxy/v2/pkg/standaloneproxy
+coverpackages= revproxy/v2,revproxy/v2/pkg/config,revproxy/v2/pkg/proxy
 
 run:
 	@./run.sh

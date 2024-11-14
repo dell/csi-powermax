@@ -1,5 +1,5 @@
 port: 2222
-standAloneConfig:
+config:
   storageArrays:
     - storageArrayId: "000000000001"
       primaryURL: https://primary-1.unisphe.re:8443

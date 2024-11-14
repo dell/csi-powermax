@@ -125,7 +125,7 @@ type ProxyConfig struct {
 	proxyCredentials  map[string]*ProxyUser
 }
 
-// DeepCopy is used to create a deep copy of StandAloneProxyConfig
+// DeepCopy is used to create a deep copy of ProxyConfig
 func (pc *ProxyConfig) DeepCopy() *ProxyConfig {
 	if pc == nil {
 		return nil
@@ -149,7 +149,7 @@ func (pc *ProxyConfig) DeepCopy() *ProxyConfig {
 	return cloned
 }
 
-// Log - logs the StandAloneProxy Config
+// Log - logs the Proxy Config
 func (pc *ProxyConfig) Log() {
 	fmt.Println("---------------------")
 	fmt.Printf("port ::: %+s\n", pc.Port)
@@ -189,7 +189,7 @@ func (pc *ProxyConfig) updateProxyCredentials(creds common.Credentials, storageA
 	}
 }
 
-// GetManagementServers - Returns the list of management servers present in StandAloneProxyConfig
+// GetManagementServers - Returns the list of management servers present in ProxyConfig
 func (pc *ProxyConfig) GetManagementServers() []ManagementServer {
 	mgmtServers := make([]ManagementServer, 0)
 	for _, v := range pc.managementServers {
@@ -463,7 +463,7 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 	fmt.Printf("ConfigMap: %v\n", proxyConfigMap)
 	config := proxyConfigMap.Config
 	if config == nil {
-		return fmt.Errorf("proxy mode is specified as StandAlone but unable to parse config")
+		return fmt.Errorf("config is empty")
 	}
 	pc.managedArrays = make(map[string]*StorageArray)
 	pc.managementServers = make(map[url.URL]*ManagementServer)

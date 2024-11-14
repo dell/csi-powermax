@@ -76,19 +76,19 @@ const (
 )
 
 var (
-	standAloneServer                    *Server
+	server                              *Server
 	primaryMockServer, backupMockServer *mockServer
 	httpClient                          *http.Client
 )
 
 func startTestServer() error {
-	if standAloneServer != nil {
+	if server != nil {
 		return nil
 	}
 	k8sUtils := k8smock.Init()
 	serverOpts := getServerOpts()
 	serverOpts.ConfigDir = common.TempConfigDir
-	// Create test standAlone proxy config and start the standAlone server
+	// Create test proxy config and start the server
 	serverOpts.ConfigFileName = tmpSAConfigFile
 	err := createTempConfig()
 	if err != nil {
@@ -106,7 +106,7 @@ func startTestServer() error {
 	if err != nil {
 		return err
 	}
-	standAloneServer, err = startServer(k8sUtils, serverOpts)
+	server, err = startServer(k8sUtils, serverOpts)
 	return err
 }
 
@@ -202,8 +202,8 @@ func stopServers() {
 	if backupMockServer != nil {
 		backupMockServer.server.Close()
 	}
-	if standAloneServer != nil {
-		standAloneServer.SigChan <- syscall.SIGHUP
+	if server != nil {
+		server.SigChan <- syscall.SIGHUP
 	}
 }
 
@@ -346,7 +346,7 @@ func TestServer_EventHandler(t *testing.T) {
 
 func TestServer_SAEventHandler(t *testing.T) {
 	k8sUtils := k8smock.Init()
-	oldProxySecret := standAloneServer.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	oldProxySecret := server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      proxySecretName,
@@ -358,8 +358,8 @@ func TestServer_SAEventHandler(t *testing.T) {
 		},
 		Type: "Generic",
 	}
-	standAloneServer.EventHandler(k8sUtils, newSecret)
-	newProxySecret := standAloneServer.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	server.EventHandler(k8sUtils, newSecret)
+	newProxySecret := server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	if reflect.DeepEqual(oldProxySecret, newProxySecret) {
 		t.Errorf("cert file should change after update")
 	} else {
@@ -376,8 +376,8 @@ func TestServer_SAEventHandler(t *testing.T) {
 		},
 		Type: "Generic",
 	}
-	standAloneServer.EventHandler(k8sUtils, newSecret)
-	oldProxySecret = standAloneServer.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	server.EventHandler(k8sUtils, newSecret)
+	oldProxySecret = server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	if reflect.DeepEqual(oldProxySecret, newProxySecret) {
 		t.Errorf("cert file should change after update")
 	} else {
@@ -388,7 +388,7 @@ func TestServer_SAEventHandler(t *testing.T) {
 func TestSAHTTPRequest(t *testing.T) {
 	// make a request for version
 	path := utils.Prefix + "/version"
-	resp, err := doHTTPRequest(standAloneServer.Port, path)
+	resp, err := doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -397,7 +397,7 @@ func TestSAHTTPRequest(t *testing.T) {
 
 	// make a request for symmterix
 	path = utils.Prefix + "/91/system/symmetrix"
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -406,7 +406,7 @@ func TestSAHTTPRequest(t *testing.T) {
 
 	// make a request for capabilities
 	path = utils.Prefix + "/91/replication/capabilities/symmetrix"
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -415,7 +415,7 @@ func TestSAHTTPRequest(t *testing.T) {
 
 	// make a request to endpoint for ServeReverseProxy
 	path = utils.Prefix + "/91/sloprovisioning/symmetrix/" + storageArrayID
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -424,7 +424,7 @@ func TestSAHTTPRequest(t *testing.T) {
 
 	// make a request to ServeVolume
 	path = utils.Prefix + "/91/sloprovisioning/symmetrix/" + storageArrayID + "/volume"
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -434,7 +434,7 @@ func TestSAHTTPRequest(t *testing.T) {
 	// make a request to ServeIterator
 	id := "00000000-1111-2abc-def3-44gh55ij66kl_0"
 	path = utils.Prefix + "/common/Iterator/" + id + "/page"
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -443,7 +443,7 @@ func TestSAHTTPRequest(t *testing.T) {
 
 	// make a request for performance
 	path = utils.Prefix + "/performance/Array/keys"
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -451,7 +451,7 @@ func TestSAHTTPRequest(t *testing.T) {
 	fmt.Printf("RESPONSE_BODY: %s\n", resp)
 
 	path = utils.PrivatePrefix + "/91/sloprovisioning/symmetrix/" + storageArrayID
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	log.Info("test info is there")
 	if err != nil {
 		t.Error(err.Error())
