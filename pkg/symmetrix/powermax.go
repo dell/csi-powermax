@@ -73,8 +73,8 @@ type ReplicationCapabilitiesCache struct {
 	time CacheTime
 }
 
-func (rep *ReplicationCapabilitiesCache) update(cap *types.SymmetrixCapability) {
-	rep.cap = cap
+func (rep *ReplicationCapabilitiesCache) update(capability *types.SymmetrixCapability) {
+	rep.cap = capability
 	rep.time.Set(SnapLicenseCacheValidity)
 }
 
