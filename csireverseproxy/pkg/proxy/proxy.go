@@ -44,7 +44,7 @@ const clientSymID = "proxyClientSymID"
 
 // Proxy - represents a  Proxy
 type Proxy struct {
-	config        config.StandAloneProxyConfig
+	config        config.ProxyConfig
 	requestID     uint64
 	envoyMap      map[string]common.Envoy
 	iteratorCache cache.Cache
@@ -52,7 +52,7 @@ type Proxy struct {
 }
 
 // NewProxy - Given a proxy config, returns a stand alone proxy
-func NewProxy(proxyConfig config.StandAloneProxyConfig) (*Proxy, error) {
+func NewProxy(proxyConfig config.ProxyConfig) (*Proxy, error) {
 	envoyMap := make(map[string]common.Envoy)
 	for arrayID, serverArray := range proxyConfig.GetManagedArraysAndServers() {
 		envoy := newEnvoyClient(serverArray)
@@ -322,17 +322,13 @@ func (revProxy *Proxy) hasServerChanged(oldServer, newServer config.ManagementSe
 
 // UpdateConfig - Given a new proxy config, updates the Stand Alone Proxy
 func (revProxy *Proxy) UpdateConfig(proxyConfig config.ProxyConfig) error {
-	standaloneProxyConfig := proxyConfig.StandAloneProxyConfig
-	if standaloneProxyConfig == nil {
-		return fmt.Errorf("StandaloneProxyConfig can't be nil")
-	}
-	if reflect.DeepEqual(revProxy.config, *standaloneProxyConfig) {
+	if reflect.DeepEqual(revProxy.config, proxyConfig) {
 		log.Info("No changes detected in the configuration")
 		return nil
 	}
 
 	oldServerArrayMap := revProxy.config.GetManagedArraysAndServers()
-	serverArrayMap := standaloneProxyConfig.GetManagedArraysAndServers()
+	serverArrayMap := proxyConfig.GetManagedArraysAndServers()
 
 	// Update/Add envoy clients
 	for arrayID, serverArray := range serverArrayMap {
@@ -360,14 +356,14 @@ func (revProxy *Proxy) UpdateConfig(proxyConfig config.ProxyConfig) error {
 		}
 	}
 
-	revProxy.updateConfig(*standaloneProxyConfig)
-	if reflect.DeepEqual(revProxy.config, *standaloneProxyConfig) {
+	revProxy.updateConfig(proxyConfig)
+	if reflect.DeepEqual(revProxy.config, proxyConfig) {
 		log.Info("Changes applied successfully")
 	}
 	return nil
 }
 
-func (revProxy *Proxy) updateConfig(proxyConfig config.StandAloneProxyConfig) {
+func (revProxy *Proxy) updateConfig(proxyConfig config.ProxyConfig) {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
 	revProxy.config = proxyConfig

@@ -64,7 +64,7 @@ func getStandAloneProxyConfig(t *testing.T) (*ProxyConfig, error) {
 		t.Errorf("Failed to read config. (%s)", err.Error())
 		return nil, err
 	}
-	for _, storageArray := range configMap.StandAloneConfig.StorageArrayConfig {
+	for _, storageArray := range configMap.Config.StorageArrayConfig {
 		for _, secretName := range storageArray.ProxyCredentialSecrets {
 			_, err := k8sUtils.CreateNewCredentialSecret(secretName)
 			if err != nil {
@@ -73,7 +73,7 @@ func getStandAloneProxyConfig(t *testing.T) (*ProxyConfig, error) {
 			}
 		}
 	}
-	for _, managementServer := range configMap.StandAloneConfig.ManagementServerConfig {
+	for _, managementServer := range configMap.Config.ManagementServerConfig {
 		_, err := k8sUtils.CreateNewCredentialSecret(managementServer.ArrayCredentialSecret)
 		if err != nil {
 			t.Errorf("Failed to create server credential secret. (%s)", err.Error())
@@ -98,12 +98,12 @@ func TestNewStandAloneProxyConfig(t *testing.T) {
 	if err != nil {
 		return
 	}
-	if config.StandAloneProxyConfig == nil {
+	if config == nil {
 		t.Error("Config not created properly")
 		return
 	}
-	fmt.Printf("Management servers: %+v\n", config.StandAloneProxyConfig.GetManagementServers())
-	config.StandAloneProxyConfig.Log()
+	fmt.Printf("Management servers: %+v\n", config.GetManagementServers())
+	config.Log()
 	fmt.Println("StandAlone proxy config created successfully")
 }
 
@@ -114,8 +114,8 @@ func TestStandAloneProxyConfig_UpdateCerts(t *testing.T) {
 	}
 	testSecrets := []string{"secret-cert", "invalid-secret-cert"}
 	for _, secret := range testSecrets {
-		if config.StandAloneProxyConfig.IsSecretConfiguredForCerts(secret) {
-			config.StandAloneProxyConfig.UpdateCerts(secret, "/path/to/new/dummy/cert/file.pem")
+		if config.IsSecretConfiguredForCerts(secret) {
+			config.UpdateCerts(secret, "/path/to/new/dummy/cert/file.pem")
 		}
 	}
 	fmt.Println("Cert secrets updated successfully.")
@@ -132,11 +132,11 @@ func TestStandAloneProxyConfig_UpdateCreds(t *testing.T) {
 		Password: "new-test-password",
 	}
 	for _, secret := range testSecrets {
-		if config.StandAloneProxyConfig.IsSecretConfiguredForArrays(secret) {
-			config.StandAloneProxyConfig.UpdateCreds(secret, newCredentials)
+		if config.IsSecretConfiguredForArrays(secret) {
+			config.UpdateCreds(secret, newCredentials)
 		}
 	}
-	config.StandAloneProxyConfig.UpdateCreds("powermax-secret", newCredentials)
+	config.UpdateCreds("powermax-secret", newCredentials)
 	fmt.Println("Credentials updated successfully")
 }
 
@@ -151,9 +151,9 @@ func TestStandAloneProxyConfig_UpdateCertsAndCredentials(t *testing.T) {
 	serverSecret.Data["username"] = []byte("new-username")
 	proxySecret.Data["username"] = []byte("new-username")
 	certSecret, _ := k8sUtils.CreateNewCertSecret("secret-cert")
-	config.StandAloneProxyConfig.UpdateCertsAndCredentials(k8sUtils, serverSecret)
-	config.StandAloneProxyConfig.UpdateCertsAndCredentials(k8sUtils, proxySecret)
-	config.StandAloneProxyConfig.UpdateCertsAndCredentials(k8sUtils, certSecret)
+	config.UpdateCertsAndCredentials(k8sUtils, serverSecret)
+	config.UpdateCertsAndCredentials(k8sUtils, proxySecret)
+	config.UpdateCertsAndCredentials(k8sUtils, certSecret)
 	fmt.Println("Certs and Secrets updated successfully")
 }
 
@@ -163,7 +163,7 @@ func TestStandAloneProxyConfig_UpdateManagementServers(t *testing.T) {
 		return
 	}
 	newConfig := config.DeepCopy()
-	_, _, err = config.StandAloneProxyConfig.UpdateManagementServers(newConfig.StandAloneProxyConfig)
+	_, _, err = config.UpdateManagementServers(newConfig)
 	if err != nil {
 		t.Errorf("failed to update management servers. (%s)", err.Error())
 		return
@@ -177,7 +177,7 @@ func TestStandAloneProxyConfig_UpdateManagedArrays(t *testing.T) {
 		return
 	}
 	newConfig := config.DeepCopy()
-	config.StandAloneProxyConfig.UpdateManagedArrays(newConfig.StandAloneProxyConfig)
+	config.UpdateManagedArrays(newConfig)
 	fmt.Printf("Managed arrays updated successfully")
 }
 
@@ -186,7 +186,7 @@ func TestStandAloneProxyConfig_GetAuthorizedArrays(t *testing.T) {
 	if err != nil {
 		return
 	}
-	fmt.Printf("Authorized arrays: %+v\n", config.StandAloneProxyConfig.GetAuthorizedArrays("test-username", "test-password"))
+	fmt.Printf("Authorized arrays: %+v\n", config.GetAuthorizedArrays("test-username", "test-password"))
 }
 
 func TestStandAloneProxyConfig_GetStorageArray(t *testing.T) {
@@ -194,5 +194,5 @@ func TestStandAloneProxyConfig_GetStorageArray(t *testing.T) {
 	if err != nil {
 		return
 	}
-	fmt.Printf("Storage arrays: %+v\n", config.StandAloneProxyConfig.GetStorageArray("000197900045"))
+	fmt.Printf("Storage arrays: %+v\n", config.GetStorageArray("000197900045"))
 }

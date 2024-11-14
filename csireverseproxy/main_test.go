@@ -241,10 +241,10 @@ func createTempConfig() error {
 	proxyConfigMap.Port = "8080"
 	// Create a ManagementServerConfig
 	tempMgmtServerConfig := createTempManagementServers()
-	proxyConfigMap.StandAloneConfig.ManagementServerConfig = tempMgmtServerConfig
+	proxyConfigMap.Config.ManagementServerConfig = tempMgmtServerConfig
 	// Create a StorageArrayConfig
 	tempStorageArrayConfig := createTempStorageArrays()
-	proxyConfigMap.StandAloneConfig.StorageArrayConfig = tempStorageArrayConfig
+	proxyConfigMap.Config.StorageArrayConfig = tempStorageArrayConfig
 	err = writeYAMLConfig(proxyConfigMap, filename, common.TempConfigDir)
 	if err != nil {
 		log.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
@@ -346,7 +346,7 @@ func TestServer_EventHandler(t *testing.T) {
 
 func TestServer_SAEventHandler(t *testing.T) {
 	k8sUtils := k8smock.Init()
-	oldProxySecret := standAloneServer.config.StandAloneProxyConfig.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	oldProxySecret := standAloneServer.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      proxySecretName,
@@ -359,7 +359,7 @@ func TestServer_SAEventHandler(t *testing.T) {
 		Type: "Generic",
 	}
 	standAloneServer.EventHandler(k8sUtils, newSecret)
-	newProxySecret := standAloneServer.config.StandAloneProxyConfig.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	newProxySecret := standAloneServer.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	if reflect.DeepEqual(oldProxySecret, newProxySecret) {
 		t.Errorf("cert file should change after update")
 	} else {
@@ -377,7 +377,7 @@ func TestServer_SAEventHandler(t *testing.T) {
 		Type: "Generic",
 	}
 	standAloneServer.EventHandler(k8sUtils, newSecret)
-	oldProxySecret = standAloneServer.config.StandAloneProxyConfig.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	oldProxySecret = standAloneServer.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	if reflect.DeepEqual(oldProxySecret, newProxySecret) {
 		t.Errorf("cert file should change after update")
 	} else {
