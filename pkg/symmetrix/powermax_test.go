@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	pmax "github.com/dell/gopowermax/v2"
+	types "github.com/dell/gopowermax/v2/types/v100"
 )
 
 func TestGetPowerMaxClient(t *testing.T) {
@@ -51,5 +52,25 @@ func TestGetPowerMaxClient(t *testing.T) {
 	_, err = GetPowerMaxClient("0003", "0004")
 	if err == nil {
 		t.Errorf("Should have failed with none of the arrays managed")
+	}
+}
+
+// ctx context.Context, client pmax.Pmax, symID string
+func TestUpdate(t *testing.T) {
+	symmetrixCapability := types.SymmetrixCapability{
+		SymmetrixID:   "fakeSymmetrix",
+		SnapVxCapable: true,
+		RdfCapable:    true,
+	}
+	rep := ReplicationCapabilitiesCache{}
+	rep.update(&symmetrixCapability)
+	if rep.cap.SymmetrixID != "fakeSymmetrix" {
+		t.Errorf("update call failed -- SymmetrixID not set properly in capability: cap.SymmetrixID: %+v", rep.cap.SymmetrixID)
+		if !rep.cap.SnapVxCapable {
+			t.Errorf("update call failed -- SnapVxCapable not set properly in capability: cap.SnapVxCapable: %+v", rep.cap.SnapVxCapable)
+			if !rep.cap.RdfCapable {
+				t.Errorf("update call failed -- RdfCapable not set properly in capability: cap.RdfCapable: %+v", rep.cap.RdfCapable)
+			}
+		}
 	}
 }
