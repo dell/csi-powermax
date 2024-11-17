@@ -3018,10 +3018,10 @@ func (s *service) controllerProbe(ctx context.Context) error {
 	log.Debug("Entering controllerProbe")
 	defer log.Debug("Exiting controllerProbe")
 	// Check that we have the details needed to login to the Gateway
-	if !s.opts.UseProxy && s.opts.Endpoint == "" {
+	/*if !s.opts.UseProxy && s.opts.Endpoint == "" {
 		return status.Error(codes.FailedPrecondition,
 			"missing Unisphere endpoint")
-	}
+	}*/
 	if s.opts.User == "" {
 		return status.Error(codes.FailedPrecondition,
 			"missing Unisphere user")

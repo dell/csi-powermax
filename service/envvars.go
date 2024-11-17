@@ -20,7 +20,7 @@ const (
 	EnvDriverName = "X_CSI_POWERMAX_DRIVER_NAME"
 	// EnvEndpoint is the name of the enviroment variable used to set the
 	// HTTP endpoint of Unisphere
-	EnvEndpoint = "X_CSI_POWERMAX_ENDPOINT"
+	//EnvEndpoint = "X_CSI_POWERMAX_ENDPOINT"
 
 	// EnvUser is the name of the enviroment variable used to set the
 	// username when authenticating to Unisphere

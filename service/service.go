@@ -97,7 +97,7 @@ type Service interface {
 
 // Opts defines service configuration options.
 type Opts struct {
-	Endpoint                   string
+	//Endpoint                   string
 	UseProxy                   bool
 	ProxyServiceHost           string
 	ProxyServicePort           string
@@ -269,7 +269,7 @@ func (s *service) BeforeServe(
 ) error {
 	defer func() {
 		fields := map[string]interface{}{
-			"endpoint":                 s.opts.Endpoint,
+			//"endpoint":                 s.opts.Endpoint,
 			"useProxy":                 s.opts.UseProxy,
 			"ProxyServiceHost":         s.opts.ProxyServiceHost,
 			"ProxyServicePort":         s.opts.ProxyServicePort,
@@ -375,9 +375,9 @@ func (s *service) BeforeServe(
 	if ep, ok := csictx.LookupEnv(ctx, EnvDriverName); ok {
 		opts.DriverName = ep
 	}
-	if ep, ok := csictx.LookupEnv(ctx, EnvEndpoint); ok {
+	/*if ep, ok := csictx.LookupEnv(ctx, EnvEndpoint); ok {
 		opts.Endpoint = ep
-	}
+	}*/
 	if user, ok := csictx.LookupEnv(ctx, EnvUser); ok {
 		opts.User = user
 	}
@@ -768,11 +768,7 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	endPoint := ""
-	if s.opts.UseProxy {
-		endPoint = fmt.Sprintf("https://%s:%s", s.opts.ProxyServiceHost, s.opts.ProxyServicePort)
-	} else {
-		endPoint = s.opts.Endpoint
-	}
+	endPoint = fmt.Sprintf("https://%s:%s", s.opts.ProxyServiceHost, s.opts.ProxyServicePort)
 
 	// Create our PowerMax API client, if needed
 	if s.adminClient == nil {
@@ -915,11 +911,11 @@ func setArrayConfigEnvs(ctx context.Context) error {
 		log.Info("Read protocol from config file:", protocol)
 		_ = os.Setenv(Protocol, protocol)
 	}
-	endpoint := paramsViper.GetString(EnvEndpoint)
+	/*endpoint := paramsViper.GetString(EnvEndpoint)
 	if endpoint != "" {
 		log.Info("Read endpoint from config file:", endpoint)
 		_ = os.Setenv(EnvEndpoint, endpoint)
-	}
+	}*/
 	managedArrays := paramsViper.GetString(ManagedArrays)
 	if managedArrays != "" {
 		log.Info("Managed arrays from config file:", managedArrays)
