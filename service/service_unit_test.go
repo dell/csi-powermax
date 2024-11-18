@@ -561,3 +561,29 @@ func TestSetArrayConfigEnvs(t *testing.T) {
 	assert.Equal(t, "X_CSI_MANAGED_ARRAYS", paramsViper.GetStringFunc(ManagedArrays))
 
 }
+type MockParamsViper struct {
+	GetStringFunc func(key string) string
+	GetStringKeys []string
+}
+
+func (v *MockParamsViper) GetString(key string) string {
+	v.GetStringKeys = append(v.GetStringKeys, key)
+	return v.GetStringFunc(key)
+}
+
+// MockLogger is a mock implementation of the Logger interface
+type MockLogger struct {
+	Messages []string
+}
+
+func (l *MockLogger) Info(message string) {
+	l.Messages = append(l.Messages, message)
+}
+
+func (l *MockLogger) Error(message string) {
+	l.Messages = append(l.Messages, message)
+}
+
+func (l *MockLogger) Debug(message string) {
+	l.Messages = append(l.Messages, message)
+}
