@@ -526,3 +526,38 @@ func TestEsnureISCSIDaemonIsStarted(t *testing.T) {
 	errMsg = fmt.Sprintf("mock - unit is masked - failed to start the unit")
 	assert.PanicsWithError(t, errMsg, func() { s.ensureISCSIDaemonStarted() })
 }
+func TestSetArrayConfigEnvs(t *testing.T) {
+	// Create a mock context
+	ctx := context.Background()
+
+	paramsViper := &MockParamsViper{
+		GetStringFunc: func(key string) string {
+			switch key {
+			case PortGroups:
+				return "X_CSI_POWERMAX_PORTGROUPS"
+			case Protocol:
+				return "X_CSI_TRANSPORT_PROTOCOL"
+			case EnvEndpoint:
+				return "X_CSI_POWERMAX_ENDPOINT"
+			case ManagedArrays:
+				return "X_CSI_MANAGED_ARRAYS"
+			default:
+				return ""
+			}
+		},
+	}
+
+
+
+	// Call the function
+	err := setArrayConfigEnvs(ctx)
+
+	assert.Error(t, err)
+
+	// Assert that the GetString method was called with the correct keys
+	assert.Equal(t, "X_CSI_POWERMAX_PORTGROUPS", paramsViper.GetStringFunc(PortGroups))
+	assert.Equal(t, "X_CSI_TRANSPORT_PROTOCOL", paramsViper.GetStringFunc(Protocol))
+	assert.Equal(t, "X_CSI_POWERMAX_ENDPOINT", paramsViper.GetStringFunc(EnvEndpoint))
+	assert.Equal(t, "X_CSI_MANAGED_ARRAYS", paramsViper.GetStringFunc(ManagedArrays))
+
+}
