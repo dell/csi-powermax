@@ -1,0 +1,59 @@
+{
+  "maskingViewConnection": [
+    {
+      "volumeId": "__VOLUME_ID__",
+      "host_lun_address": "0001",
+      "cap_gb": "0.1",
+      "initiatorId": "iqn.1993-08.org.debian:01:8f21cc8ad2a7",
+      "dir_port": "SE-1E:000",
+      "logged_in": false,
+      "on_fabric": true
+    },
+    {
+      "volumeId": "__VOLUME_ID__",
+      "host_lun_address": "0001",
+      "cap_gb": "0.1",
+      "initiatorId": "iqn.1993-08.org.debian:01:8f21cc8ad2a7",
+      "dir_port": "SE-2E:000",
+      "logged_in": false,
+      "on_fabric": true
+    },
+    {
+      "volumeId": "22222",
+      "host_lun_address": "0002",
+      "cap_gb": "0.1",
+      "initiatorId": "iqn.1993-08.org.debian:01:8f21cc8ad2a7",
+      "dir_port": "SE-2E:000",
+      "logged_in": false,
+      "on_fabric": true
+    },
+    {
+      "volumeId": "__VOLUME_ID__",
+      "host_lun_address": "0001",
+      "cap_gb": "0.1",
+      "initiatorId": "iqn.1993-08.org.debian:01:8f21cc8ad2a7",
+      "dir_port": "SE-1E:000",
+      "logged_in": false,
+      "on_fabric": true
+    },
+    {
+      "volumeId": "__VOLUME_ID__",
+      "host_lun_address": "0001",
+      "cap_gb": "0.1",
+      "initiatorId": "iqn.1993-08.org.debian:01:8f21cc8ad2a7",
+      "dir_port": "ED-1B:000",
+      "logged_in": false,
+      "on_fabric": true
+    },
+    {
+      "volumeId": "__VOLUME_ID__",
+      "host_lun_address": "0001",
+      "cap_gb": "0.1",
+      "initiatorId": "iqn.1993-08.org.debian:01:8f21cc8ad2a7",
+      "dir_port": "DF-1C:000",
+      "logged_in": false,
+      "on_fabric": true
+    }
+  ]
+}
+

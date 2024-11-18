@@ -1,0 +1,24 @@
+{
+  "portGroupId": "__PORT_GROUP_ID__",
+  "symmetrixPortKey": [
+    {
+      "directorId": "SE-2E",
+      "portId": "SE-2E:000"
+    },
+    {
+      "directorId": "SE-1E",
+      "portId": "SE-1E:000"
+    }
+  ],
+  "num_of_ports": 2,
+  "num_of_masking_views": 6,
+  "type": "iSCSI",
+  "maskingview": [
+    "csi-mv-lqam9031",
+    "csi-mv-lqam9030",
+    "csi-mv-KPC-lqam9025",
+    "csi-mv-XYZ-Node1",
+    "csi-mv-ERY-lqam9024-10-243-149-24",
+    "csi-mv-TW-lqam9032"
+  ]
+}
