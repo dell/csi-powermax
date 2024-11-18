@@ -12,8 +12,8 @@ jobs:
     uses: dell/common-github-actions/.github/workflows/go-static-analysis.yaml@main
     name: Golang Validation
 
-  common:
-    name: Common github actions
+  test:
+    name: code checkout
     runs-on: ubuntu-latest
     steps:
       - name: Checkout dependent module gopowermax
@@ -21,5 +21,9 @@ jobs:
         with:
           repository: dell/gopowermax
           path: 'gopowermax'
+      
+  common:
+    runs-on: ubuntu-latest
+    steps:
       - name: Quality Checks
         uses: dell/common-github-actions/.github/workflows/go-common.yml@main
