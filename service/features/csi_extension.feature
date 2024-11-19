@@ -41,6 +41,7 @@ Feature: PowerMax CSI interface
 
 
   @resiliency
+  @v2.11.0
   Scenario: Call ValidateVolumeHostConnectivity with a connected node
     Given a PowerMax service
     And I call CreateVolume "volume1"
