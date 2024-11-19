@@ -54,6 +54,12 @@ Feature: PowerMax CSI interface
     Then I call ValidateVolumeHostConnectivity with "connected-node-faultyVolID" and symID "default"
     Then the error contains "invalid symID"
 
+  @resiliency
+  @v2.11.0
+  Scenario: Call ValidateVolumeHostConnectivity with a connected node
+    Given a PowerMax service
+    And I call QueryArrayStatus "/array-status/symmetrixID1"
+    Then no error was received
 
   @resiliency
   @v2.11.0

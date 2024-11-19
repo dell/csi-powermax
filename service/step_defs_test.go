@@ -4751,6 +4751,24 @@ func (f *feature) iStartNodeAPIServer() {
 	go http.ListenAndServe(f.service.opts.PodmonPort, nil) // #nosec G114
 }
 
+func (f *feature) iCallQueryArrayStatus(url string) {
+	var status ArrayConnectivityStatus
+	status.LastAttempt = time.Now().Add(-time.Hour).Unix()
+	status.LastSuccess = time.Now().Add(-time.Hour).Unix()
+	input, _ := json.Marshal(status)
+
+	// responding with some dummy response that is for the case when array is connected and LastSuccess check was just finished
+	http.HandleFunc(url, func(w http.ResponseWriter, _ *http.Request) {
+		w.Write(input)
+	})
+
+	f.service.opts.PodmonPort = ":9028"
+	fmt.Printf("Starting server at port %s\n", f.service.opts.PodmonPort)
+	go http.ListenAndServe(f.service.opts.PodmonPort, nil) // #nosec G114
+
+	_, f.err = f.service.QueryArrayStatus(context.TODO(), "http://localhost"+f.service.opts.PodmonPort+url)
+}
+
 func (f *feature) iCallIsIOInProgress() error {
 	symID := f.symmetrixID
 	if inducedErrors.invalidSymID {
@@ -5011,4 +5029,5 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^the ValidateVolumeHost message contains "([^"]*)"$`, f.theValidateVolumeHostMessageContains)
 	s.Step(`^I start node API server$`, f.iStartNodeAPIServer)
 	s.Step(`^I call IsIOInProgress$`, f.iCallIsIOInProgress)
+	s.Step(`^I call QueryArrayStatus "([^"]*)"$`, f.iCallQueryArrayStatus)
 }
