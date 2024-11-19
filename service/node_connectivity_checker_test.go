@@ -21,6 +21,7 @@ package service
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -217,3 +218,54 @@ func TestQASWithDiffErr(t *testing.T) {
 	}
 	server.Shutdown(context.Background())
 }*/
+
+func TestConnectivityStatus(t *testing.T) {
+	// Initialize the probeStatus variable
+	probeStatus = new(sync.Map)
+
+	// Create a valid ArrayConnectivityStatus instance
+	status := ArrayConnectivityStatus{
+		LastSuccess: time.Now().Unix(),
+		LastAttempt: time.Now().Unix(),
+	}
+
+	// Store valid data in probeStatus
+	probeStatus.Store("SymID", status)
+
+	// Test cases
+	tests := []struct {
+		name         string
+		probeStatus  *sync.Map
+		expectedCode int
+	}{
+		{
+			name:         "Empty probeStatus",
+			probeStatus:  nil,
+			expectedCode: http.StatusInternalServerError,
+		},
+		{
+			name:         "Valid probeStatus",
+			probeStatus:  probeStatus,
+			expectedCode: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set the global probeStatus for the test
+			probeStatus = tt.probeStatus
+
+			// Create a response recorder
+			recorder := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", "/connectivityStatus", nil)
+
+			// Call the function
+			connectivityStatus(recorder, req)
+
+			// Check the response code
+			if recorder.Code != tt.expectedCode {
+				t.Errorf("expected %d, got %d", tt.expectedCode, recorder.Code)
+			}
+		})
+	}
+}
