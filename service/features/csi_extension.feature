@@ -61,11 +61,11 @@ Feature: PowerMax CSI interface
     And I call QueryArrayStatus with <url> and <statusType>
     Then the error contains <error>
     Examples:
-      | url                          | statusType | error                                 |
-      | "/array-status/symmetrixID1" | "new"      | "none"                                |
-      | "/array-status/symmetrixID2" | "old"      | "none"                                |
-      | "/array-status/symmetrixID3" | "invalid"  | "unexpected end of JSON input"                                |
-      | ""                           | "none"     | "unexpected response from the server" |
+      | url                          | statusType | error                          |
+      | "/array-status/symmetrixID1" | "new"      | "none"                         |
+      | "/array-status/symmetrixID2" | "old"      | "none"                         |
+      | "/array-status/symmetrixID3" | "invalid"  | "unexpected end of JSON input" |
+      | ""                           | "none"     | "connection refused"           |
 
   @resiliency
   @v2.11.0
