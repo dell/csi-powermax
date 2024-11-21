@@ -137,3 +137,24 @@ func TestCaseGetDeviceRanges(t *testing.T) {
 	var devicerang=getDeviceRanges([]symDeviceID{{DeviceID: "1234",IntVal: 1},{DeviceID: "2345",IntVal: 2}})
 	assert.Equal(t, dummy_devicerange, devicerang)
 }
+func TestCaseQueueDeviceForDeletion(t *testing.T) {
+
+	sdID1:=symDeviceID{
+		DeviceID: "1234",
+		IntVal: 2,
+	}
+	csiDev := csiDevice{
+		SymDeviceID    :  sdID1,
+		SymID      :      "123",
+		VolumeIdentifier : "123",
+	}
+	Device_List := []*csiDevice{&csiDev, &csiDev}
+	deletion_Queue := deletionQueue{
+		DeviceList:   Device_List,
+		SymID:        "123",
+	}
+	var err= deletion_Queue.QueueDeviceForDeletion(csiDev)
+	expected_error := fmt.Errorf("%s", fmt.Sprintf("%s: found existing entry in deletion queue with volume handle: %s, added at: %v",
+	csiDev.print(), csiDev.VolumeIdentifier, csiDev.Status.AdditionTime))
+	assert.Equal(t, expected_error, err)
+}
