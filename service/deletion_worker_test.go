@@ -128,14 +128,14 @@ func TestCaseGetDeviceRanges(t *testing.T) {
 		DeviceID: "2345",
 		IntVal: 2,
 	}
-	dummy_devicerange := []deviceRange{
+	expectedOutput := []deviceRange{
 		{
 		Start: sdID1,
 		End: sdID2,
 		},
 	}
 	var devicerang=getDeviceRanges([]symDeviceID{{DeviceID: "1234",IntVal: 1},{DeviceID: "2345",IntVal: 2}})
-	assert.Equal(t, dummy_devicerange, devicerang)
+	assert.Equal(t, expectedOutput, devicerang)
 }
 func TestCaseQueueDeviceForDeletion(t *testing.T) {
 
