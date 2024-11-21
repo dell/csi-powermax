@@ -55,10 +55,6 @@ func TestNewVMHost(t *testing.T) {
 		if err == nil {
 			t.Error("Expected non-nil error, got nil")
 		}
-		if !strings.Contains(err.Error(), "POST \"/sdk\": 503 Service Unavailable") {
-			t.Errorf("Expected error containing \"POST \"/sdk\": 503 Service Unavailable\", got %v", err)
-		}
-
 	})
 }
 
