@@ -148,13 +148,13 @@ func TestCaseQueueDeviceForDeletion(t *testing.T) {
 		SymID      :      "123",
 		VolumeIdentifier : "123",
 	}
-	Device_List := []*csiDevice{&csiDev, &csiDev}
-	deletion_Queue := deletionQueue{
-		DeviceList:   Device_List,
+	DeviceList1 := []*csiDevice{&csiDev, &csiDev}
+	deletionQueuevalue := deletionQueue{
+		DeviceList:   DeviceList1,
 		SymID:        "123",
 	}
-	var err= deletion_Queue.QueueDeviceForDeletion(csiDev)
-	expected_error := fmt.Errorf("%s", fmt.Sprintf("%s: found existing entry in deletion queue with volume handle: %s, added at: %v",
+	var err= deletionQueuevalue.QueueDeviceForDeletion(csiDev)
+	expectederror := fmt.Errorf("%s", fmt.Sprintf("%s: found existing entry in deletion queue with volume handle: %s, added at: %v",
 	csiDev.print(), csiDev.VolumeIdentifier, csiDev.Status.AdditionTime))
-	assert.Equal(t, expected_error, err)
+	assert.Equal(t, expectederror, err)
 }
