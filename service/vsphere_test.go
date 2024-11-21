@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25"
@@ -48,4 +49,48 @@ func TestGetSCSILuns(t *testing.T) {
 			}
 		})
 	})
+}
+
+func TestAttachRDM(t *testing.T) {
+	// Test case: Device is not found in the list of available devices
+	t.Run("Device is not found in the list of available devices", func(t *testing.T) {
+		simulator.Test(func(ctx context.Context, c *vim25.Client) {
+			// Create a mock VMHost
+			err, client := createGovmomiClient(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mockVMHost := &VMHost{
+				client: client,
+				Ctx:    context.Background(),
+				VM:     object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+			}
+			deviceNAA := "deviceNAA"
+
+			err = mockVMHost.AttachRDM(mockVMHost.VM, deviceNAA)
+			if err == nil {
+				t.Errorf("Expected error, got nil")
+			}
+		})
+	})
+}
+
+func createGovmomiClient(ctx context.Context) (error, *govmomi.Client) {
+	m := simulator.ESX()
+	defer m.Remove()
+
+	err := m.Create()
+	if err != nil {
+		return err, nil
+	}
+
+	s := m.Service.NewServer()
+	defer s.Close()
+
+	client, err := govmomi.NewClient(ctx, s.URL, true)
+	if err != nil {
+		return err, nil
+	}
+
+	return err, client
 }
