@@ -163,6 +163,32 @@ func TestDetachRDM(t *testing.T) {
 	})
 }
 
+func TestRescanAllHba(t *testing.T) {
+	// Test case: Device is not found in the list of available devices
+	t.Run("Device is not found in the list of available devices", func(t *testing.T) {
+		simulator.Test(func(ctx context.Context, c *vim25.Client) {
+			// Create a mock VMHost
+			mockVMHost := &VMHost{
+				client: &govmomi.Client{
+					Client: c,
+				},
+				Ctx: context.Background(),
+				VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+			}
+
+			host, err := mockVMHost.VM.HostSystem(ctx)
+			if err != nil {
+				t.Errorf("Expected no error, got %v", err)
+			}
+
+			err = mockVMHost.RescanAllHba(host)
+			if err != nil {
+				t.Errorf("Expected no error, got %v", err)
+			}
+		})
+	})
+}
+
 func createGovmomiClient(ctx context.Context) (error, *govmomi.Client) {
 	m := simulator.ESX()
 	defer m.Remove()
