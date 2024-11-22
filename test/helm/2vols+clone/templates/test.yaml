@@ -18,9 +18,9 @@ spec:
         metadata:
           labels:
             app: powermaxtest
-      spec:
-        serviceAccount: powermaxtest
-        containers:
+        spec:
+          serviceAccount: powermaxtest
+          containers:
             - name: test
             image: docker.io/centos:latest
             command: [ "/bin/sleep", "3600" ]
@@ -31,7 +31,7 @@ spec:
                 name: pvol1
                 - mountPath: "/data2"
                 name: pvol2
-        volumes:
+          volumes:
             - name: pvol0
             persistentVolumeClaim:
                 claimName: pvol0

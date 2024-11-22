@@ -18,7 +18,7 @@ spec:
         metadata:
           labels:
             app: powermaxtest
-      spec:
+        spec:
           serviceAccount: powermaxtest
           containers:
             - name: test
@@ -29,7 +29,7 @@ spec:
                 name: pvol0
                 - mountPath: "/data1"
                 name: pvol1
-        volumes:
+          volumes:
             - name: pvol0
             persistentVolumeClaim:
                 claimName: pvol0

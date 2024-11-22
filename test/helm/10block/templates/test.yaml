@@ -18,9 +18,9 @@ spec:
         metadata:
           labels:
             app: powermaxtest
-      spec:
+        spec:
           serviceAccount: powermaxtest
-        containers:
+          containers:
             - name: test
               image: docker.io/centos:latest
               command: [ "/bin/sleep", "3600" ]

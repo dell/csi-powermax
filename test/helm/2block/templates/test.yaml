@@ -18,7 +18,7 @@ spec:
         metadata:
           labels:
             app: powermaxtest
-      spec:
+        spec:
           serviceAccount: powermaxtest
         containers:
             - name: test
@@ -32,7 +32,7 @@ spec:
     volumeClaimTemplates:
         - metadata:
           name: pvol0
-      spec:
+        spec:
           accessModes:
             - ReadWriteOnce
         volumeMode: Block

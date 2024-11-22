@@ -18,7 +18,7 @@ spec:
         metadata:
           labels:
             app: rep-powermaxtest
-      spec:
+        spec:
           serviceAccount: rep-powermaxtest
           containers:
             - name: test
