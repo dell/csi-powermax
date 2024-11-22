@@ -53,6 +53,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/metadata"
+
+	csimgr "github.com/dell/dell-csi-extensions/migration"
 )
 
 const (
@@ -188,6 +190,7 @@ type feature struct {
 	nodeGetVolumeStatsResponse           *csi.NodeGetVolumeStatsResponse
 	setIOLimits                          bool
 	validateVHCResp                      *podmon.ValidateVolumeHostConnectivityResponse
+	arrayMigrateResponse                 *csimgr.ArrayMigrateResponse
 }
 
 var inducedErrors struct {
@@ -4797,6 +4800,31 @@ func (f *feature) theValidateVolumeHostMessageContains(msg string) error {
 	return nil
 }
 
+type ArrayMigrateRequest struct {
+	Parameters map[string]string
+	Action     *ArrayMigrateAction
+}
+
+type ArrayMigrateAction struct {
+	ActionTypes csimgr.ActionTypes
+}
+
+func (f *feature) iCallArrayMigrate() error {
+	header := metadata.New(map[string]string{"csi.requestid": "2"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	req := &csimgr.ArrayMigrateRequest{
+		Parameters: map[string]string{
+			SymmetrixIDParam: mock.DefaultSymmetrixID,
+			RemoteSymIDParam: mock.DefaultRemoteSymID,
+		},
+		// Action: &csimgr.ArrayMigrateRequest_Action{
+		// ActionTypes: csimgr.ActionTypes_MG_MIGRATE,
+		// },
+	}
+	f.arrayMigrateResponse, f.err = f.service.ArrayMigrate(ctx, req)
+	return nil
+}
+
 func FeatureContext(s *godog.ScenarioContext) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -5040,4 +5068,5 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I start node API server$`, f.iStartNodeAPIServer)
 	s.Step(`^I call IsIOInProgress$`, f.iCallIsIOInProgress)
 	s.Step(`^I call QueryArrayStatus with "([^"]*)" and "([^"]*)"$`, f.iCallQueryArrayStatus)
+	s.Step(`^I call ArrayMigrate$`, f.iCallArrayMigrate)
 }

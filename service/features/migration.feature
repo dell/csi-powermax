@@ -75,3 +75,12 @@ Feature: PowerMax CSI Interface
       | "csi-TST-volume1-000197900046-531379167" | "Could not find volume"   |
       | "volume1"                                | "Invalid volume id"       |
 
+  @migration
+    @v1.0.0
+  Scenario Outline: ArrayMigrate
+    Given a PowerMax service
+    And I call ArrayMigrate
+    And the error contains <errormsg>
+    Examples:
+      | errormsg                  |
+      | "none"                    |
