@@ -12,32 +12,32 @@ metadata:
 spec:
     selector:
         matchLabels:
-          app: powermaxclonetest
+            app: powermaxclonetest
     serviceName: test1clonevol
     template:
-      metadata:
-        labels:
-          app: powermaxclonetest
+        metadata:
+          labels:
+            app: powermaxclonetest
       spec:
-        affinity:
-          podAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector:
-                  matchExpressions:
-                  - key: app
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchExpressions:
+                    - key: app
                     operator: In
                     values:
-                    - "powermaxtest"
+                      - "powermaxtest"
                 topologyKey: kubernetes.io/hostname
         serviceAccount: powermaxclonetest
         containers:
-          - name: test
+            - name: test
             image: docker.io/centos:latest
             command: [ "/bin/sleep", "3600" ]
             volumeMounts:
-              - mountPath: "/data0"
+                - mountPath: "/data0"
                 name: restorepvol
         volumes:
-          - name: restorepvol
+            - name: restorepvol
             persistentVolumeClaim:
-              claimName: restorepvc
+                claimName: restorepvc

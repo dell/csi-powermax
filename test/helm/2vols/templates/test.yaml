@@ -12,27 +12,27 @@ metadata:
 spec:
     selector:
         matchLabels:
-          app: powermaxtest
+            app: powermaxtest
     serviceName: test2vols
     template:
-      metadata:
-        labels:
-          app: powermaxtest
+        metadata:
+          labels:
+            app: powermaxtest
       spec:
-        serviceAccount: powermaxtest
-        containers:
-          - name: test
+          serviceAccount: powermaxtest
+          containers:
+            - name: test
             image: docker.io/centos:latest
             command: [ "/bin/sleep", "3600" ]
             volumeMounts:
-              - mountPath: "/data0"
+                - mountPath: "/data0"
                 name: pvol0
-              - mountPath: "/data1"
+                - mountPath: "/data1"
                 name: pvol1
         volumes:
-          - name: pvol0
+            - name: pvol0
             persistentVolumeClaim:
-              claimName: pvol0
-          - name: pvol1
+                claimName: pvol0
+            - name: pvol1
             persistentVolumeClaim:
-              claimName: pvol1
+                claimName: pvol1
