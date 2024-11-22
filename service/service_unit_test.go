@@ -29,6 +29,7 @@ import (
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -525,6 +526,14 @@ func TestEsnureISCSIDaemonIsStarted(t *testing.T) {
 	mockgosystemdInducedErrors.StartUnitMaskedError = true
 	errMsg = fmt.Sprintf("mock - unit is masked - failed to start the unit")
 	assert.PanicsWithError(t, errMsg, func() { s.ensureISCSIDaemonStarted() })
+}
+
+func TestUpdateDriverConfigParams(t *testing.T) {
+	paramsViper := viper.New()
+	paramsViper.SetConfigFile("configFilePath")
+	paramsViper.SetConfigType("yaml")
+	paramsViper.Set(CSILogLevelParam,"debug")
+	updateDriverConfigParams(paramsViper)
 }
 func TestSetArrayConfigEnvs(t *testing.T) {
 	// Create a mock context
