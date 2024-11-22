@@ -164,8 +164,8 @@ func TestDetachRDM(t *testing.T) {
 }
 
 func TestRescanAllHba(t *testing.T) {
-	// Test case: Device is not found in the list of available devices
-	t.Run("Device is not found in the list of available devices", func(t *testing.T) {
+	// Test case: Successful rescan
+	t.Run("Successful rescan", func(t *testing.T) {
 		simulator.Test(func(ctx context.Context, c *vim25.Client) {
 			// Create a mock VMHost
 			mockVMHost := &VMHost{
