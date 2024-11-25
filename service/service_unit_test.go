@@ -535,6 +535,31 @@ func TestUpdateDriverConfigParams(_ *testing.T) {
 	paramsViper.Set(CSILogLevelParam,"debug")
 	updateDriverConfigParams(paramsViper)
 }
+func TestGetProxySettingsFromEnv(t *testing.T) {
+	s := service{
+		useIscsi: true,
+	}
+	_ = os.Setenv(EnvSidecarProxyPort, "8080")	
+	ProxyServiceHost, _, _ := s.getProxySettingsFromEnv()
+	assert.Equal(t, "0.0.0.0", ProxyServiceHost)
+
+	os. Unsetenv(EnvSidecarProxyPort)
+	_ = os.Setenv(EnvUnisphereProxyServiceName, "Service")	
+	_ = os.Setenv("SERVICE_SERVICE_HOST", "")	
+	_ = os.Setenv("SERVICE_SERVICE_PORT", "")	
+	ProxyServiceHost, ProxyServicePort, _ := s.getProxySettingsFromEnv()
+	assert.Equal(t, "", ProxyServiceHost)
+	assert.Equal(t, "", ProxyServicePort)
+	
+	os. Unsetenv("SERVICE_SERVICE_HOST")
+	os. Unsetenv("SERVICE_SERVICE_PORT")
+	_ = os.Setenv("SERVICE_SERVICE_HOST", "SERVICE_SERVICE_HOST")	
+	_ = os.Setenv("SERVICE_SERVICE_PORT", "1234")
+	ProxyServiceHost, ProxyServicePort, _ = s.getProxySettingsFromEnv()
+	assert.Equal(t, "SERVICE_SERVICE_HOST", ProxyServiceHost)
+	assert.Equal(t, "1234", ProxyServicePort)	
+}
+
 func TestSetArrayConfigEnvs(t *testing.T) {
 
 	ctx := context.Background()
