@@ -481,6 +481,7 @@ ip6t_rpfilter          12595  1
 	svc.nvmetcpClient = &gonvme.MockNVMe{}
 	svc.dBusConn = &mockDbusConnection{}
 	svc.k8sUtils = k8smock.Init()
+	svc.nvmeTCPConnector = &mockNVMeTCPConnector{}
 	mockGobrickReset()
 	mockgosystemdReset()
 	disconnectVolumeRetryTime = 10 * time.Millisecond
@@ -3567,6 +3568,10 @@ func (f *feature) iSetTransportProtocolTo(protocol string) error {
 		f.service.useNVMeTCP = false
 		f.service.useFC = false
 		f.service.useIscsi = true
+	case "NVME":
+		f.service.useNVMeTCP = true
+		f.service.useFC = false
+		f.service.useIscsi = false
 	}
 	f.service.opts.TransportProtocol = protocol
 	return nil

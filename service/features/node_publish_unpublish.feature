@@ -31,6 +31,13 @@ Feature: PowerMax CSI interface
     | "FC"       | "mount"      | "single-node-multi-writer"     | "none"     | "none"                                       |
     | "ISCSI"    | "mount"      | "single-node-single-writer"    | "none"     | "none"                                       |
     | "ISCSI"    | "mount"      | "single-node-multi-writer"     | "none"     | "none"                                       |
+    | "NVME"     | "mount"      | "single-writer"                | "xfs"      | "none"                                       |
+    | "NVME"     | "mount"      | "single-writer"                | "ext4"     | "none"                                       |
+    | "NVME"     | "mount"      | "multiple-writer"              | "ext4"     | "Mount volumes do not support AccessMode"    |
+    | "NVME"     | "block"      | "single-writer"                | "none"     | "none"                                       |
+    | "NVME"     | "block"      | "multiple-writer"              | "none"     | "none"                                       |
+    | "NVME"     | "mount"      | "single-node-single-writer"    | "none"     | "none"                                       |
+    | "NVME"     | "mount"      | "single-node-multi-writer"     | "none"     | "none"                                       |
 
 @nodePublish
 @v1.0.0
@@ -58,6 +65,11 @@ Feature: PowerMax CSI interface
     | "ISCSI"   | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"                     |
     | "ISCSI"   | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
     | "ISCSI"   | "GobrickConnectError"                   | "induced ConnectVolumeError"                                      |
+    | "NVME"    | "TargetNotCreatedForNodePublish"        | "none"                                                            |
+    | "NVME"    | "BadVolumeIdentifier"                   | "bad volume identifier"                                           |
+    | "NVME"    | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"                     |
+    | "NVME"    | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
+    | "NVME"    | "GobrickConnectError"                   | "induced ConnectVolumeError"                                      |
 
 
 @nodePublish
