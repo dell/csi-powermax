@@ -533,6 +533,10 @@ func TestUpdateDriverConfigParams(_ *testing.T) {
 	paramsViper.SetConfigFile("configFilePath")
 	paramsViper.SetConfigType("yaml")
 	paramsViper.Set(CSILogLevelParam,"debug")
+	paramsViper.Set(CSILogFormatParam,"JSON")
+	updateDriverConfigParams(paramsViper)
+
+	paramsViper.Set(CSILogFormatParam,"TEXT")
 	updateDriverConfigParams(paramsViper)
 }
 func TestGetProxySettingsFromEnv(t *testing.T) {
