@@ -528,7 +528,7 @@ func TestEsnureISCSIDaemonIsStarted(t *testing.T) {
 	assert.PanicsWithError(t, errMsg, func() { s.ensureISCSIDaemonStarted() })
 }
 
-func TestUpdateDriverConfigParams(t *testing.T) {
+func TestUpdateDriverConfigParams(_ *testing.T) {
 	paramsViper := viper.New()
 	paramsViper.SetConfigFile("configFilePath")
 	paramsViper.SetConfigType("yaml")
@@ -536,63 +536,14 @@ func TestUpdateDriverConfigParams(t *testing.T) {
 	updateDriverConfigParams(paramsViper)
 }
 func TestSetArrayConfigEnvs(t *testing.T) {
-	// Create a mock context
+
 	ctx := context.Background()
-
-	paramsViper := &MockParamsViper{
-		GetStringFunc: func(key string) string {
-			switch key {
-			case PortGroups:
-				return "X_CSI_POWERMAX_PORTGROUPS"
-			case Protocol:
-				return "X_CSI_TRANSPORT_PROTOCOL"
-			case EnvEndpoint:
-				return "X_CSI_POWERMAX_ENDPOINT"
-			case ManagedArrays:
-				return "X_CSI_MANAGED_ARRAYS"
-			default:
-				return ""
-			}
-		},
-	}
-
-
-
-	// Call the function
+	_ = os.Setenv(EnvArrayConfigPath, "value")
+	paramsViper := viper.New()
+	paramsViper.Set(Protocol,"ICSCI")
+	paramsViper.Set(EnvEndpoint,"endpoint")
+	paramsViper.Set(PortGroups,"pg1, pg2, pg3")
+	paramsViper.Set(ManagedArrays, "000000000001,000000000002")
 	err := setArrayConfigEnvs(ctx)
-
-	assert.Error(t, err)
-
-	// Assert that the GetString method was called with the correct keys
-	assert.Equal(t, "X_CSI_POWERMAX_PORTGROUPS", paramsViper.GetStringFunc(PortGroups))
-	assert.Equal(t, "X_CSI_TRANSPORT_PROTOCOL", paramsViper.GetStringFunc(Protocol))
-	assert.Equal(t, "X_CSI_POWERMAX_ENDPOINT", paramsViper.GetStringFunc(EnvEndpoint))
-	assert.Equal(t, "X_CSI_MANAGED_ARRAYS", paramsViper.GetStringFunc(ManagedArrays))
-
-}
-type MockParamsViper struct {
-	GetStringFunc func(key string) string
-	GetStringKeys []string
-}
-
-func (v *MockParamsViper) GetString(key string) string {
-	v.GetStringKeys = append(v.GetStringKeys, key)
-	return v.GetStringFunc(key)
-}
-
-// MockLogger is a mock implementation of the Logger interface
-type MockLogger struct {
-	Messages []string
-}
-
-func (l *MockLogger) Info(message string) {
-	l.Messages = append(l.Messages, message)
-}
-
-func (l *MockLogger) Error(message string) {
-	l.Messages = append(l.Messages, message)
-}
-
-func (l *MockLogger) Debug(message string) {
-	l.Messages = append(l.Messages, message)
+	assert.Equal(t, nil, err)
 }
