@@ -584,6 +584,30 @@ func TestGetTransportProtocolFromEnv(t *testing.T) {
 	assert.Equal(t, "", output)
 }
 
+func TestSetPollingFrequency(t *testing.T) {
+	s := service{
+		useIscsi: true,
+	}
+	var expectedFreq int64 = 5
+	ctx := context.Background()
+	_ = os.Setenv(EnvPodmonArrayConnectivityPollRate, "5")		
+	pollingFreq := s.SetPollingFrequency(ctx)
+	assert.Equal(t, expectedFreq, pollingFreq)
+
+}
+
+func TestGetDriverName(t *testing.T) {
+	o := Opts{
+		DriverName: "powermax",
+	}
+	s := service{
+		opts: o,
+	}
+	
+	driverName := s.getDriverName() 
+	assert.Equal(t, "powermax", driverName)
+}
+
 func TestSetArrayConfigEnvs(t *testing.T) {
 
 	ctx := context.Background()
