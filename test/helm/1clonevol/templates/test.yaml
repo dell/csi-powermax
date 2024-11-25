@@ -16,28 +16,28 @@ spec:
     serviceName: test1clonevol
     template:
         metadata:
-          labels:
-            app: powermaxclonetest
+            labels:
+                app: powermaxclonetest
         spec:
-          affinity:
-            podAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                - labelSelector:
-                    matchExpressions:
-                    - key: app
-                    operator: In
-                    values:
-                      - "powermaxtest"
-                topologyKey: kubernetes.io/hostname
-        serviceAccount: powermaxclonetest
-        containers:
-            - name: test
-            image: docker.io/centos:latest
-            command: [ "/bin/sleep", "3600" ]
-            volumeMounts:
-                - mountPath: "/data0"
-                name: restorepvol
-        volumes:
-            - name: restorepvol
-            persistentVolumeClaim:
-                claimName: restorepvc
+            affinity:
+                podAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                        - labelSelector:
+                              matchExpressions:
+                                  - key: app
+                                    operator: In
+                                    values:
+                                        - "powermaxtest"
+                          topologyKey: kubernetes.io/hostname
+            serviceAccount: powermaxclonetest
+            containers:
+                - name: test
+                  image: docker.io/centos:latest
+                  command: [ "/bin/sleep", "3600" ]
+                  volumeMounts:
+                      - mountPath: "/data0"
+                        name: restorepvol
+            volumes:
+                - name: restorepvol
+                  persistentVolumeClaim:
+                      claimName: restorepvc

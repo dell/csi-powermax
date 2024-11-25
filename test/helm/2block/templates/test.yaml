@@ -16,37 +16,37 @@ spec:
     serviceName: test2vols
     template:
         metadata:
-          labels:
-            app: powermaxtest
+            labels:
+                app: powermaxtest
         spec:
-          serviceAccount: powermaxtest
-        containers:
-            - name: test
-            image: docker.io/centos:latest
-            command: [ "/bin/sleep", "3600" ]
-            volumeDevices:
-                - devicePath: "/dev/data0"
-                name: pvol0
-              - devicePath: "/dev/data1"
-                name: pvol1
-    volumeClaimTemplates:
-        - metadata:
-          name: pvol0
-        spec:
-          accessModes:
-            - ReadWriteOnce
-        volumeMode: Block
-        storageClassName: {{ .Values.sc }}
-          resources:
-            requests:
-              storage: 1Gi
-    - metadata:
-          name: pvol1
-      spec:
-          accessModes:
-            - ReadWriteOnce
-        volumeMode: Block
-        storageClassName: {{ .Values.sc }}
-        resources:
-            requests:
-              storage: 1Gi
+            serviceAccount: powermaxtest
+            containers:
+                - name: test
+                  image: docker.io/centos:latest
+                  command: [ "/bin/sleep", "3600" ]
+                  volumeDevices:
+                      - devicePath: "/dev/data0"
+                        name: pvol0
+                      - devicePath: "/dev/data1"
+                        name: pvol1
+        volumeClaimTemplates:
+            - metadata:
+                  name: pvol0
+              spec:
+                  accessModes:
+                      - ReadWriteOnce
+                  volumeMode: Block
+                  storageClassName: {{ .Values.sc }}
+                  resources:
+                      requests:
+                          storage: 1Gi
+            - metadata:
+                  name: pvol1
+              spec:
+                  accessModes:
+                      - ReadWriteOnce
+                  volumeMode: Block
+                  storageClassName: {{ .Values.sc }}
+                  resources:
+                      requests:
+                          storage: 1Gi

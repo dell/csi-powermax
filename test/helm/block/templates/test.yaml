@@ -16,25 +16,25 @@ spec:
     serviceName: test2vols
     template:
         metadata:
-          labels:
-            app: powermaxtest
-      spec:
-          serviceAccount: powermaxtest
-        containers:
-            - name: test
-            image: docker.io/centos:latest
-            command: [ "/bin/sleep", "3600" ]
-            volumeDevices:
-                - devicePath: "/dev/data0"
-                name: pvol0
+            labels:
+                app: powermaxtest
+        spec:
+            serviceAccount: powermaxtest
+            containers:
+                - name: test
+                  image: docker.io/centos:latest
+                  command: [ "/bin/sleep", "3600" ]
+                  volumeDevices:
+                      - devicePath: "/dev/data0"
+                        name: pvol0
     volumeClaimTemplates:
-      - metadata:
-          name: pvol0
-      spec:
-          accessModes:
-            - ReadWriteOnce
-        volumeMode: Block
-        storageClassName: {{ .Values.sc }}
-        resources:
-            requests:
-              storage: 8Gi
+        - metadata:
+              name: pvol0
+          spec:
+              accessModes:
+                  - ReadWriteOnce
+              volumeMode: Block
+              storageClassName: {{ .Values.sc }}
+              resources:
+                  requests:
+                      storage: 8Gi
