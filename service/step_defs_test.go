@@ -479,6 +479,7 @@ ip6t_rpfilter          12595  1
 	svc.fcConnector = &mockFCGobrick{}
 	svc.iscsiConnector = &mockISCSIGobrick{}
 	svc.nvmetcpClient = &gonvme.MockNVMe{}
+	svc.nvmeTCPConnector = &mockNVMeTCPConnector{}
 	svc.dBusConn = &mockDbusConnection{}
 	svc.k8sUtils = k8smock.Init()
 	mockGobrickReset()
@@ -3567,6 +3568,10 @@ func (f *feature) iSetTransportProtocolTo(protocol string) error {
 		f.service.useNVMeTCP = false
 		f.service.useFC = false
 		f.service.useIscsi = true
+	case "NVME":
+		f.service.useNVMeTCP = true
+		f.service.useFC = false
+		f.service.useIscsi = false
 	}
 	f.service.opts.TransportProtocol = protocol
 	return nil
@@ -4827,7 +4832,10 @@ func (f *feature) iCallArrayMigrate(actionvalue string) error {
 			SymmetrixIDParam: mock.DefaultSymmetrixID,
 			RemoteSymIDParam: mock.DefaultRemoteSymID,
 		},
-		ActionTypes: iActionValue(actionvalue),
+	}
+	action := iActionValue(actionvalue)
+	if action != nil {
+		req.ActionTypes = action
 	}
 
 	f.arrayMigrateResponse, f.err = f.service.ArrayMigrate(ctx, req)

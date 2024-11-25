@@ -82,7 +82,8 @@ Feature: PowerMax CSI Interface
     And I call ArrayMigrate with <actionvalue>
     And the error contains <errormsg>
     Examples:
-      | actionvalue                            | errormsg                  |
-      | "csimgr.ActionTypes_MG_MIGRATE"        | "none"                    |
-      | "csimgr.ActionTypes_MG_COMMIT"         | "none"                    |
-      | ""                                     | "none"                    |
+      | actionvalue                            | errormsg                                                        |
+      | "csimgr.ActionTypes_MG_MIGRATE"        | "failed to create array migration environment for target array" |
+      | "csimgr.ActionTypes_MG_COMMIT"         | "Not Found"                                                     |
+      | ""                                     | "Invalid action"                                                |
+
