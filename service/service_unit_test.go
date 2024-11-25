@@ -611,7 +611,17 @@ func TestGetDriverName(t *testing.T) {
 	driverName := s.getDriverName() 
 	assert.Equal(t, "powermax", driverName)
 }
+func TestRegisterAdditionalServers(t *testing.T) {
+	o := Opts{
+		DriverName: "powermax",
+	}
+	s := service{
+		opts: o,
+	}
+	server:= grpc.NewServer()
+	s.RegisterAdditionalServers(server) 
 
+}
 func TestSetArrayConfigEnvs(t *testing.T) {
 
 	ctx := context.Background()
