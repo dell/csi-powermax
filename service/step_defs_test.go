@@ -481,7 +481,6 @@ ip6t_rpfilter          12595  1
 	svc.nvmetcpClient = &gonvme.MockNVMe{}
 	svc.dBusConn = &mockDbusConnection{}
 	svc.k8sUtils = k8smock.Init()
-	svc.nvmeTCPConnector = &mockNVMeTCPConnector{}
 	mockGobrickReset()
 	mockgosystemdReset()
 	disconnectVolumeRetryTime = 10 * time.Millisecond
@@ -3568,10 +3567,6 @@ func (f *feature) iSetTransportProtocolTo(protocol string) error {
 		f.service.useNVMeTCP = false
 		f.service.useFC = false
 		f.service.useIscsi = true
-	case "NVME":
-		f.service.useNVMeTCP = true
-		f.service.useFC = false
-		f.service.useIscsi = false
 	}
 	f.service.opts.TransportProtocol = protocol
 	return nil
@@ -4805,27 +4800,36 @@ func (f *feature) theValidateVolumeHostMessageContains(msg string) error {
 	return nil
 }
 
-type ArrayMigrateRequest struct {
-	Parameters map[string]string
-	Action     *ArrayMigrateAction
+func iActionValue(actionvalue string) *csimgr.ArrayMigrateRequest_Action {
+	if actionvalue == "csimgr.ActionTypes_MG_MIGRATE" {
+		return &csimgr.ArrayMigrateRequest_Action{
+			Action: &csimgr.Action{
+				ActionTypes: csimgr.ActionTypes_MG_MIGRATE,
+			},
+		}
+	} else if actionvalue == "csimgr.ActionTypes_MG_COMMIT" {
+		return &csimgr.ArrayMigrateRequest_Action{
+			Action: &csimgr.Action{
+				ActionTypes: csimgr.ActionTypes_MG_COMMIT,
+			},
+		}
+	} else {
+		return nil
+	}
 }
 
-type ArrayMigrateAction struct {
-	ActionTypes csimgr.ActionTypes
-}
-
-func (f *feature) iCallArrayMigrate() error {
+func (f *feature) iCallArrayMigrate(actionvalue string) error {
 	header := metadata.New(map[string]string{"csi.requestid": "2"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
+
 	req := &csimgr.ArrayMigrateRequest{
 		Parameters: map[string]string{
 			SymmetrixIDParam: mock.DefaultSymmetrixID,
 			RemoteSymIDParam: mock.DefaultRemoteSymID,
 		},
-		// Action: &csimgr.ArrayMigrateRequest_Action{
-		// ActionTypes: csimgr.ActionTypes_MG_MIGRATE,
-		// },
+		ActionTypes: iActionValue(actionvalue),
 	}
+
 	f.arrayMigrateResponse, f.err = f.service.ArrayMigrate(ctx, req)
 	return nil
 }
@@ -5073,5 +5077,5 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I start node API server$`, f.iStartNodeAPIServer)
 	s.Step(`^I call IsIOInProgress$`, f.iCallIsIOInProgress)
 	s.Step(`^I call QueryArrayStatus with "([^"]*)" and "([^"]*)"$`, f.iCallQueryArrayStatus)
-	s.Step(`^I call ArrayMigrate$`, f.iCallArrayMigrate)
+	s.Step(`^I call ArrayMigrate with "([^"]*)"$`, f.iCallArrayMigrate)
 }
