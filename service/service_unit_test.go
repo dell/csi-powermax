@@ -30,6 +30,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/spf13/viper"
+	"google.golang.org/grpc"
 )
 
 const (
