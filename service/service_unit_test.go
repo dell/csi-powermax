@@ -611,7 +611,7 @@ func TestGetDriverName(t *testing.T) {
 	driverName := s.getDriverName() 
 	assert.Equal(t, "powermax", driverName)
 }
-func TestRegisterAdditionalServers(t *testing.T) {
+func TestRegisterAdditionalServers(_ *testing.T) {
 	o := Opts{
 		DriverName: "powermax",
 	}
