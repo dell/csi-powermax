@@ -560,6 +560,30 @@ func TestGetProxySettingsFromEnv(t *testing.T) {
 	assert.Equal(t, "1234", ProxyServicePort)	
 }
 
+func TestGetTransportProtocolFromEnv(t *testing.T) {
+	s := service{
+		useIscsi: true,
+	}
+	_ = os.Setenv(EnvPreferredTransportProtocol, "FIBRE")		
+	output := s.getTransportProtocolFromEnv()
+	assert.Equal(t, "FC", output)
+
+	os. Unsetenv(EnvPreferredTransportProtocol)
+	_ = os.Setenv(EnvPreferredTransportProtocol, "NVMETCP")		
+	output = s.getTransportProtocolFromEnv()
+	assert.Equal(t, "NVMETCP", output)
+
+	os. Unsetenv(EnvPreferredTransportProtocol)
+	_ = os.Setenv(EnvPreferredTransportProtocol, "")		
+	output = s.getTransportProtocolFromEnv()
+	assert.Equal(t, "", output)
+
+	os. Unsetenv(EnvPreferredTransportProtocol)
+	_ = os.Setenv(EnvPreferredTransportProtocol, "invalid")		
+	output = s.getTransportProtocolFromEnv()
+	assert.Equal(t, "", output)
+}
+
 func TestSetArrayConfigEnvs(t *testing.T) {
 
 	ctx := context.Background()
