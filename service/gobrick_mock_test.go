@@ -127,8 +127,7 @@ func (g *mockFCGobrick) ConnectRDMVolume(_ context.Context, info gobrick.RDMVolu
 	return dev, nil
 }
 
-type mockNVMeTCPConnector struct {
-}
+type mockNVMeTCPConnector struct{}
 
 func (m *mockNVMeTCPConnector) ConnectVolume(_ context.Context, _ gobrick.NVMeVolumeInfo, _ bool) (gobrick.Device, error) {
 	if mockGobrickInducedErrors.ConnectVolumeError {
