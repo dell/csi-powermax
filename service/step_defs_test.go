@@ -195,6 +195,7 @@ type feature struct {
 	setIOLimits                          bool
 	validateVHCResp                      *podmon.ValidateVolumeHostConnectivityResponse
 	arrayMigrateResponse                 *csimgr.ArrayMigrateResponse
+	maskingViewNVMeTargetInfo	     []maskingViewNVMeTargetInfo
 }
 
 var inducedErrors struct {
@@ -4902,6 +4903,13 @@ func (f *feature) iCallArrayMigrate(actionvalue string) error {
 	return nil
 }
 
+func (f *feature) iCallgetNVMeTCPTargetsForMaskingView() error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	f.maskingViewNVMeTargetInfo, f.err = f.service.getNVMeTCPTargetsForMaskingView(ctx, "array", &types.MaskingView{}, f.adminClient)
+	return nil
+}
+
 func FeatureContext(s *godog.ScenarioContext) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -5148,4 +5156,5 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call IsIOInProgress$`, f.iCallIsIOInProgress)
 	s.Step(`^I call QueryArrayStatus with "([^"]*)" and "([^"]*)"$`, f.iCallQueryArrayStatus)
 	s.Step(`^I call ArrayMigrate with "([^"]*)"$`, f.iCallArrayMigrate)
+	s.Step(`^I call getNVMeTCPTargetsForMaskingView$`, f.iCallgetNVMeTCPTargetsForMaskingView)
 }
