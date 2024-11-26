@@ -704,6 +704,30 @@ Feature: PowerMax CSI interface
       When I call getAndConfigureArrayISCSITargets
       Then 2 targets are returned
 
+@v1.3.0
+    Scenario: Test getAndConfigureArrayNVMeTCPTargets
+      Given a PowerMax service
+      And I set transport protocol to "NVME"
+      And I have a Node "node1" with MaskingView
+      When I call getAndConfigureArrayNVMeTCPTargets
+      Then 2 nvmetcp targets are returned
+
+@v1.3.0
+    Scenario: Test getAndConfigureArrayNVMeTCPTargets after cache was populated
+      Given a PowerMax service
+      And I set transport protocol to "NVME"
+      And I have a Node "node1" with MaskingView
+      When I call getAndConfigureArrayNVMeTCPTargets
+      Then 2 nvmetcp targets are returned
+
+@v1.3.0
+    Scenario: Test getAndConfigureArrayNVMeTCPTargets without masking view
+      Given a PowerMax service
+      And I set transport protocol to "NVME"
+      And I invalidate symToMaskingViewTarget cache
+      When I call getAndConfigureArrayNVMeTCPTargets
+      Then 0 nvmetcp targets are returned
+
 @v1.4.0
     Scenario: Validate nodeHostSetup with temporary failure
       Given a PowerMax service

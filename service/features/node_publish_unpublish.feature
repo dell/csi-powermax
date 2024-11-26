@@ -84,7 +84,9 @@ Feature: PowerMax CSI interface
 
     Examples:
     | transport | errormsg               |
+    | "FC"      | "could not attach RDM" |
     | "NVME"    | "could not attach RDM" |
+    | "ISCSI"   | "could not attach RDM" |
 
 @nodePublish
 @v1.0.0
@@ -101,7 +103,9 @@ Feature: PowerMax CSI interface
 
     Examples:
     | transport | errormsg               |
+    | "FC"      | "none"                 |
     | "NVME"    | "none"                 |
+    | "ISCSI"   | "none"                 |
 
 @nodePublish
 @v1.0.0

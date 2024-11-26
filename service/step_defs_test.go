@@ -94,6 +94,7 @@ const (
 	altSnapID                  = "555-555"
 	defaultStorageGroup        = "DefaultStorageGroup"
 	defaultIscsiInitiator      = "iqn.1993-08.org.debian:01:5ae293b352a2"
+	defaultNvmeInitiator       = "nqn.2019-08.org.emc:sn.0x10000090fa6603b7"
 	defaultFcInitiator         = "0x10000090fa6603b7"
 	defaultArrayTargetIQN      = "iqn.1992-04.com.emc:600009700bcbb70e3287017400000001"
 	defaultFcInitiatorWWN      = "10000090fa6603b7"
@@ -103,6 +104,7 @@ const (
 	defaultFCDirPort           = "FA-1D:4"
 	defaultISCSIDirPort1       = "SE1-E:6"
 	defaultISCSIDirPort2       = "SE2-E:4"
+	defaultNVMEDirPort         = "N:2"
 	MaxRetries                 = 10
 	Namespace                  = "namespace-test"
 	kubeconfig                 = "/etc/kubernetes/admin.conf"
@@ -186,6 +188,7 @@ type feature struct {
 	removeVolumeFromSGMVResponse2        chan removeVolumeFromSGMVResponse
 	lockChan                             chan bool
 	iscsiTargetInfo                      []ISCSITargetInfo
+	nvmetcpTargetInfo                    []NVMeTCPTargetInfo
 	maxRetryCount                        int
 	failedSnaps                          map[string]failedSnap
 	doneChan                             chan bool
@@ -449,6 +452,8 @@ func (f *feature) getService() *service {
 	mock.Data.JSONDir = "mock-data"
 	svc.loggedInArrays = map[string]bool{}
 	svc.iscsiTargets = map[string][]string{}
+	svc.nvmeTargets = map[string][]string{}
+	svc.loggedInNVMeArrays = map[string]bool{}
 	var opts Opts
 	opts.User = "username"
 	opts.Password = "password"
@@ -1557,6 +1562,22 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 			portGroupID = "fc_ports"
 		}
 		mock.AddPortGroup(portGroupID, "Fibre", []string{defaultFCDirPort})
+		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
+	} else if transportProtocol == "NVME" {
+		f.hostID, f.sgID, f.mvID = f.service.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
+		initiator := defaultNvmeInitiator
+		initiators := []string{initiator}
+		initID := defaultISCSIDirPort1 + ":" + initiator
+		mock.AddInitiator(initID, initiator, "GigE", []string{defaultNVMEDirPort}, "")
+		mock.AddHost(f.hostID, "iSCSI", initiators)
+		mock.AddStorageGroup(f.sgID, "", "")
+		portGroupID := ""
+		if f.selectedPortGroup != "" {
+			portGroupID = f.selectedPortGroup
+		} else {
+			portGroupID = "iscsi_ports"
+		}
+		mock.AddPortGroup(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	} else {
 		f.hostID, f.sgID, f.mvID = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
@@ -4143,9 +4164,24 @@ func (f *feature) iCallGetAndConfigureArrayISCSITargets() error {
 	return nil
 }
 
+func (f *feature) iCallGetAndConfigureArrayNVMeTCPTargets() error {
+	arrayTargets := make([]string, 0)
+	arrayTargets = append(arrayTargets, defaultArrayTargetIQN)
+	f.nvmetcpTargetInfo = f.service.getAndConfigureArrayNVMeTCPTargets(context.Background(), arrayTargets, mock.DefaultRemoteSymID, f.service.adminClient)
+	fmt.Println(f.iscsiTargetInfo)
+	return nil
+}
+
 func (f *feature) targetsAreReturned(count int) error {
 	if len(f.iscsiTargetInfo) != count {
 		return fmt.Errorf("expected %d iscsi targets but found %d", count, len(f.iscsiTargetInfo))
+	}
+	return nil
+}
+
+func (f *feature) nvmetcptargetsAreReturned(count int) error {
+	if len(f.nvmetcpTargetInfo) != count {
+		return fmt.Errorf("expected %d nvmetcp targets but found %d", count, len(f.nvmetcpTargetInfo))
 	}
 	return nil
 }
@@ -5099,7 +5135,9 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I enable ISCSI CHAP$`, f.iEnableISCSICHAP)
 	s.Step(`^I wait for the execution to complete$`, f.iWaitForTheExecutionToComplete)
 	s.Step(`^I call getAndConfigureArrayISCSITargets$`, f.iCallGetAndConfigureArrayISCSITargets)
+	s.Step(`^I call getAndConfigureArrayNVMeTCPTargets$`, f.iCallGetAndConfigureArrayNVMeTCPTargets)
 	s.Step(`^(\d+) targets are returned$`, f.targetsAreReturned)
+	s.Step(`^(\d+) nvmetcp targets are returned$`, f.nvmetcptargetsAreReturned)
 	s.Step(`^I invalidate symToMaskingViewTarget cache$`, f.iInvalidateSymToMaskingViewTargetCache)
 	s.Step(`^I retry on failed snapshot to succeed$`, f.iRetryOnFailedSnapshotToSucceed)
 	s.Step(`^I ensure the error is cleared$`, f.iEnsureTheErrorIsCleared)
