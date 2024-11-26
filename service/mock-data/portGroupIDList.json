@@ -1,0 +1,20 @@
+{
+    "portGroupId": [
+        "CSI-FC-PG",
+        "IS_lqam9024_2E_PG",
+        "IS_lqam9024_PG",
+        "IS_lqam9025_PG",
+        "IS_OWC2_PG",
+        "l2se0042_iscsi_pg",
+        "l2se0042_pg",
+        "l2se0046_iscsi_pg",
+        "l2se0046_pg",
+        "l2se0049_pg",
+        "l2se0132_PG",
+        "l2se0133_PG",
+        "l2se0221_PG",
+        "l2se0226_Port",
+        "LQTF0116_PG",
+        "lqtf0118_pg"
+    ]
+}

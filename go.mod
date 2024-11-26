@@ -19,7 +19,7 @@ require (
 	github.com/dell/gofsutil v1.17.0
 	github.com/dell/goiscsi v1.10.0
 	github.com/dell/gonvme v1.9.0
-	github.com/dell/gopowermax/v2 v2.8.0
+	github.com/dell/gopowermax/v2 v2.8.1-0.20241125093918-928d66cb1027
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gorilla/mux v1.7.3
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
@@ -50,6 +50,7 @@ require (
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/gnostic v0.4.1 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-memdb v1.3.4 // indirect

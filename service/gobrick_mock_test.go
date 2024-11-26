@@ -126,3 +126,21 @@ func (g *mockFCGobrick) ConnectRDMVolume(_ context.Context, info gobrick.RDMVolu
 	gofsutil.GOFSMockWWNToDevice[nodePublishWWN] = nodePublishBlockDevicePath
 	return dev, nil
 }
+
+type mockNVMeTCPConnector struct{}
+
+func (m *mockNVMeTCPConnector) ConnectVolume(_ context.Context, _ gobrick.NVMeVolumeInfo, _ bool) (gobrick.Device, error) {
+	if mockGobrickInducedErrors.ConnectVolumeError {
+		return gobrick.Device{}, fmt.Errorf("induced ConnectVolumeError")
+	}
+	return gobrick.Device{}, nil
+}
+
+func (m *mockNVMeTCPConnector) DisconnectVolumeByDeviceName(_ context.Context, _ string) error {
+	return nil
+}
+
+func (m *mockNVMeTCPConnector) GetInitiatorName(_ context.Context) ([]string, error) {
+	result := make([]string, 0)
+	return result, nil
+}
