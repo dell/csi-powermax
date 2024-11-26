@@ -31,6 +31,10 @@ import (
 	"time"
 
 	"github.com/dell/gonvme"
+	"github.com/vmware/govmomi"
+	"github.com/vmware/govmomi/object"
+	"github.com/vmware/govmomi/simulator"
+	"github.com/vmware/govmomi/vim25"
 
 	"github.com/dell/csi-powermax/v2/k8smock"
 
@@ -2679,6 +2683,34 @@ func (f *feature) iCallNodeStageVolume() error {
 	return nil
 }
 
+func (f *feature) iCallNodeStageVolumeWithSimulator() error {
+	simulator.Test(func(ctx context.Context, c *vim25.Client) {
+		mockVMHost := &VMHost{
+			client: &govmomi.Client{
+				Client: c,
+			},
+			Ctx: context.Background(),
+			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+		}
+		vmHost = mockVMHost
+		_ = f.getNodePublishVolumeRequest()
+		header := metadata.New(map[string]string{"csi.requestid": "1"})
+		ctx = metadata.NewIncomingContext(ctx, header)
+		req := new(csi.NodeStageVolumeRequest)
+		req.VolumeId = f.nodePublishVolumeRequest.VolumeId
+		req.PublishContext = f.nodePublishVolumeRequest.PublishContext
+		req.StagingTargetPath = f.nodePublishVolumeRequest.StagingTargetPath
+		req.VolumeCapability = f.nodePublishVolumeRequest.VolumeCapability
+		req.VolumeContext = f.nodePublishVolumeRequest.VolumeContext
+		if inducedErrors.badVolumeIdentifier {
+			req.VolumeId = "bad volume identifier"
+		}
+		fmt.Printf("calling NodeStageVolume %#v\n", req)
+		_, f.err = f.service.NodeStageVolume(ctx, req)
+	})
+	return nil
+}
+
 func (f *feature) iCallControllerExpandVolume(nCYL int64) error {
 	var req *csi.ControllerExpandVolumeRequest
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
@@ -2730,6 +2762,30 @@ func (f *feature) iCallNodeUnstageVolume() error {
 	req.StagingTargetPath = f.nodePublishVolumeRequest.StagingTargetPath
 	log.Printf("iCallNodeUnstageVolume %s %s", req.VolumeId, req.StagingTargetPath)
 	_, f.err = f.service.NodeUnstageVolume(ctx, req)
+	return nil
+}
+
+func (f *feature) iCallNodeUnstageVolumeWithSimulator() error {
+	simulator.Test(func(ctx context.Context, c *vim25.Client) {
+		mockVMHost := &VMHost{
+			client: &govmomi.Client{
+				Client: c,
+			},
+			Ctx: context.Background(),
+			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+		}
+		vmHost = mockVMHost
+		header := metadata.New(map[string]string{"csi.requestid": "1"})
+		ctx = metadata.NewIncomingContext(ctx, header)
+		req := new(csi.NodeUnstageVolumeRequest)
+		req.VolumeId = f.nodePublishVolumeRequest.VolumeId
+		if inducedErrors.invalidVolumeID {
+			req.VolumeId = "badVolumeID"
+		}
+		req.StagingTargetPath = f.nodePublishVolumeRequest.StagingTargetPath
+		log.Printf("iCallNodeUnstageVolume %s %s", req.VolumeId, req.StagingTargetPath)
+		_, f.err = f.service.NodeUnstageVolume(ctx, req)
+	})
 	return nil
 }
 
@@ -4920,6 +4976,8 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call BeforeServe with an invalid ClusterPrefix$`, f.iCallBeforeServeWithAnInvalidClusterPrefix)
 	s.Step(`^I call NodeStageVolume$`, f.iCallNodeStageVolume)
 	s.Step(`^I call NodeUnstageVolume$`, f.iCallNodeUnstageVolume)
+	s.Step(`^I call NodeStageVolume with simulator$`, f.iCallNodeStageVolumeWithSimulator)
+	s.Step(`^I call NodeUnstageVolume with simulator$`, f.iCallNodeUnstageVolumeWithSimulator)
 	s.Step(`^I call NodeGetCapabilities$`, f.iCallNodeGetCapabilities)
 	s.Step(`^a valid NodeGetCapabilitiesResponse is returned$`, f.aValidNodeGetCapabilitiesResponseIsReturned)
 	s.Step(`^I call CreateSnapshot$`, f.iCallCreateSnapshot)

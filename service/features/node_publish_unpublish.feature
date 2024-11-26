@@ -71,6 +71,37 @@ Feature: PowerMax CSI interface
     | "NVME"    | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
     | "NVME"    | "GobrickConnectError"                   | "induced ConnectVolumeError"                                      |
 
+@nodePublish
+@v1.0.0
+  Scenario Outline: Node stage volume with vSphere enabled
+    Given a PowerMax service
+    And I call set attribute IsVsphereEnabled "true"
+    And I set transport protocol to <transport>
+    And I have a Node "node1" with MaskingView
+    And a controller published volume
+    When I call NodeStageVolume with simulator
+    Then the error contains <errormsg>
+
+    Examples:
+    | transport | errormsg               |
+    | "NVME"    | "could not attach RDM" |
+
+@nodePublish
+@v1.0.0
+  Scenario Outline: Node unstage volume with vSphere enabled
+    Given a PowerMax service
+    And I call set attribute IsVsphereEnabled "true"
+    And I set transport protocol to <transport>
+    And I have a Node "node1" with MaskingView
+    And a controller published volume
+    When I call NodeStageVolume with simulator
+    And I call NodeUnstageVolume with simulator
+    And there are no remaining mounts
+    Then the error contains <errormsg>
+
+    Examples:
+    | transport | errormsg               |
+    | "NVME"    | "none"                 |
 
 @nodePublish
 @v1.0.0
