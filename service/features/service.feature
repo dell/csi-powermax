@@ -826,3 +826,9 @@ Scenario: Create a fileSystem volume with error
   And I call fileSystem CreateVolume "volume1"
   Then the error contains "induced error"
 
+@v2.9.0
+Scenario: getNVMeTCPTargetsForMaskingView function call
+  Given a PowerMax service
+  When I call getNVMeTCPTargetsForMaskingView
+  Then a valid iCallgetNVMeTCPTargetsForMaskingView is returned
+
