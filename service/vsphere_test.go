@@ -15,7 +15,7 @@ import (
 
 func TestNewVMHost(t *testing.T) {
 	t.Run("Could not find VM with specified MAC Address", func(t *testing.T) {
-		useHttp = true
+		useHTTP = true
 		// Create the necessary objects
 		m := simulator.ESX()
 		defer m.Remove()
@@ -54,7 +54,7 @@ func TestGetLocalMAC(t *testing.T) {
 }
 
 func TestGetSCSILuns(t *testing.T) {
-	simulator.Test(func(ctx context.Context, c *vim25.Client) {
+	simulator.Test(func(_ context.Context, c *vim25.Client) {
 		mockVMHost := &VMHost{
 			client: &govmomi.Client{
 				Client: c,
@@ -114,7 +114,7 @@ func TestAttachRDM(t *testing.T) {
 }
 
 func TestDetachRDM(t *testing.T) {
-	simulator.Test(func(ctx context.Context, c *vim25.Client) {
+	simulator.Test(func(_ context.Context, c *vim25.Client) {
 		mockVMHost := &VMHost{
 			client: &govmomi.Client{
 				Client: c,
@@ -152,7 +152,7 @@ func TestRescanAllHba(t *testing.T) {
 }
 
 func TestGetAvailableSCSIController(t *testing.T) {
-	simulator.Test(func(ctx context.Context, c *vim25.Client) {
+	simulator.Test(func(_ context.Context, c *vim25.Client) {
 		mockVMHost := &VMHost{
 			client: &govmomi.Client{
 				Client: c,
@@ -168,7 +168,7 @@ func TestGetAvailableSCSIController(t *testing.T) {
 }
 
 func TestCreateController(t *testing.T) {
-	simulator.Test(func(ctx context.Context, c *vim25.Client) {
+	simulator.Test(func(_ context.Context, c *vim25.Client) {
 		mockVMHost := &VMHost{
 			client: &govmomi.Client{
 				Client: c,

@@ -38,8 +38,8 @@ import (
 	"golang.org/x/net/context"
 )
 
-// useHttp - This variable should remain false by default. It was added specifically for unit testing purposes, as unit tests require HTTP instead of HTTPS.
-var useHttp = false
+// useHTTP - This variable should remain false by default. It was added specifically for unit testing purposes, as unit tests require HTTP instead of HTTPS.
+var useHTTP = false
 
 // VMHost - structure to hold the VM host
 type VMHost struct {
@@ -54,7 +54,7 @@ type VMHost struct {
 func NewVMHost(insecure bool, hostURLparam, user, pass string) (*VMHost, error) {
 	ctx, _ := context.WithCancel(context.Background())
 	protocol := "https://"
-	if useHttp {
+	if useHTTP {
 		protocol = "http://"
 	}
 	hostURL, err := url.Parse(protocol + hostURLparam + "/sdk")

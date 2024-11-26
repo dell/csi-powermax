@@ -130,18 +130,18 @@ func (g *mockFCGobrick) ConnectRDMVolume(_ context.Context, info gobrick.RDMVolu
 type mockNVMeTCPConnector struct {
 }
 
-func (m *mockNVMeTCPConnector) ConnectVolume(ctx context.Context, info gobrick.NVMeVolumeInfo, useFC bool) (gobrick.Device, error) {
+func (m *mockNVMeTCPConnector) ConnectVolume(_ context.Context, _ gobrick.NVMeVolumeInfo, _ bool) (gobrick.Device, error) {
 	if mockGobrickInducedErrors.ConnectVolumeError {
 		return gobrick.Device{}, fmt.Errorf("induced ConnectVolumeError")
 	}
 	return gobrick.Device{}, nil
 }
 
-func (m *mockNVMeTCPConnector) DisconnectVolumeByDeviceName(ctx context.Context, name string) error {
+func (m *mockNVMeTCPConnector) DisconnectVolumeByDeviceName(_ context.Context, _ string) error {
 	return nil
 }
 
-func (m *mockNVMeTCPConnector) GetInitiatorName(ctx context.Context) ([]string, error) {
+func (m *mockNVMeTCPConnector) GetInitiatorName(_ context.Context) ([]string, error) {
 	result := make([]string, 0)
 	return result, nil
 }

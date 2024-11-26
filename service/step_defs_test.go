@@ -1374,35 +1374,35 @@ func (f *feature) iInduceError(errtype string) error {
 	case "GetRDFInfoFromSGIDError":
 		inducedErrors.getRDFInfoFromSGIDError = true
 	case "StorageGroupMigrationNoError":
-		migration.StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, clusterPrefix string, pmaxClient pmax.Pmax) (bool, error) {
+		migration.StorageGroupMigration = func(_ context.Context, _, _, _ string, _ pmax.Pmax) (bool, error) {
 			return true, nil
 		}
 	case "StorageGroupMigrationError":
-		migration.StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, clusterPrefix string, pmaxClient pmax.Pmax) (bool, error) {
+		migration.StorageGroupMigration = func(_ context.Context, _, _, _ string, _ pmax.Pmax) (bool, error) {
 			return false, errors.New("failed to create array migration environment for target array")
 		}
 	case "GetOrCreateMigrationEnvironmentNoError":
-		migration.GetOrCreateMigrationEnvironment = func(ctx context.Context, localSymID, remoteSymID string, pmaxClient pmax.Pmax) (*types.MigrationEnv, error) {
+		migration.GetOrCreateMigrationEnvironment = func(_ context.Context, _, _ string, _ pmax.Pmax) (*types.MigrationEnv, error) {
 			return nil, nil
 		}
 	case "GetOrCreateMigrationEnvironmentError":
-		migration.GetOrCreateMigrationEnvironment = func(ctx context.Context, localSymID, remoteSymID string, pmaxClient pmax.Pmax) (*types.MigrationEnv, error) {
+		migration.GetOrCreateMigrationEnvironment = func(_ context.Context, _, _ string, _ pmax.Pmax) (*types.MigrationEnv, error) {
 			return nil, errors.New("GetOrCreateMigrationEnvironmentError")
 		}
 	case "StorageGroupCommitNoError":
-		migration.StorageGroupCommit = func(ctx context.Context, symID, action string, pmaxClient pmax.Pmax) (bool, error) {
+		migration.StorageGroupCommit = func(_ context.Context, _, _ string, _ pmax.Pmax) (bool, error) {
 			return true, nil
 		}
 	case "StorageGroupCommitError":
-		migration.StorageGroupCommit = func(ctx context.Context, symID, action string, pmaxClient pmax.Pmax) (bool, error) {
+		migration.StorageGroupCommit = func(_ context.Context, _, _ string, _ pmax.Pmax) (bool, error) {
 			return false, errors.New("StorageGroupCommitError")
 		}
 	case "AddVolumesToRemoteSGError":
-		migration.AddVolumesToRemoteSG = func(ctx context.Context, remoteSymID string, pmaxClient pmax.Pmax) (bool, error) {
+		migration.AddVolumesToRemoteSG = func(_ context.Context, _ string, _ pmax.Pmax) (bool, error) {
 			return false, errors.New("Not Found")
 		}
 	case "AddVolumesToRemoteSGNoError":
-		migration.AddVolumesToRemoteSG = func(ctx context.Context, remoteSymID string, pmaxClient pmax.Pmax) (bool, error) {
+		migration.AddVolumesToRemoteSG = func(_ context.Context, _ string, _ pmax.Pmax) (bool, error) {
 			return true, nil
 		}
 	case "none":
@@ -4943,12 +4943,11 @@ func iActionValue(actionvalue string) *csimgr.ArrayMigrateRequest_Action {
 				ActionTypes: csimgr.ActionTypes_MG_COMMIT,
 			},
 		}
-	} else {
-		return &csimgr.ArrayMigrateRequest_Action{
-			Action: &csimgr.Action{
-				ActionTypes: csimgr.ActionTypes_UNKNOWN_ACTION,
-			},
-		}
+	}
+	return &csimgr.ArrayMigrateRequest_Action{
+		Action: &csimgr.Action{
+			ActionTypes: csimgr.ActionTypes_UNKNOWN_ACTION,
+		},
 	}
 }
 
