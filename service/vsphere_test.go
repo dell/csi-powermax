@@ -47,7 +47,7 @@ func TestNewVMHost(t *testing.T) {
 }
 
 func TestGetLocalMAC(t *testing.T) {
-	var mac, err = getLocalMAC()
+	mac, err := getLocalMAC()
 	if mac != "" {
 		assert.NoError(t, err)
 	}
@@ -123,7 +123,6 @@ func TestDetachRDM(t *testing.T) {
 			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
 		}
 		t.Run("Device is not found in the list of available devices", func(t *testing.T) {
-
 			deviceNAA := "mpx.vmhba0:C0:T0:L0"
 			err := mockVMHost.DetachRDM(mockVMHost.VM, deviceNAA)
 			assert.NoError(t, err)
@@ -141,7 +140,6 @@ func TestRescanAllHba(t *testing.T) {
 			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
 		}
 		t.Run("Successful rescan", func(t *testing.T) {
-
 			host, err := mockVMHost.VM.HostSystem(ctx)
 			assert.NoError(t, err)
 

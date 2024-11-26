@@ -15,12 +15,12 @@
 package service
 
 import (
-	"github.com/stretchr/testify/assert"
+	"fmt"
 	"testing"
+
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	"fmt"
-
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCaseUnlinkTarget(t *testing.T) {
@@ -44,45 +44,44 @@ func TestCaseUnlinkTarget(t *testing.T) {
 		NumberOfStorageGroups: 3,
 		NumberOfFrontEndPaths: 4,
 		StorageGroupIDList:    []string{"sg-001", "sg-002", "sg-003"},
-		RDFGroupIDList:        []types.RDFGroupID{{RDFGroupNumber: 42, Label:"label", }, {RDFGroupNumber: 42, Label:"label", }},
+		RDFGroupIDList:        []types.RDFGroupID{{RDFGroupNumber: 42, Label: "label"}, {RDFGroupNumber: 42, Label: "label"}},
 		// SymmetrixPortKey:      []SymmetrixPortKeyType{{Key: "port-1"}, {Key: "port-2"}},
-		SnapSource:            true,
-		SnapTarget:            false,
-		CUImageBaseAddress:    "0x1000",
-		HasEffectiveWWN:       true,
-		EffectiveWWN:          "abcdef1234567890",
-		EncapsulatedWWN:       "encapsulated-wwn",
-		OracleInstanceName:    "oracle-instance-01",
-		MobilityIDEnabled:     true,
-		StorageGroups:         []types.StorageGroupName{{StorageGroupName: "group1",ParentStorageGroupName: "group2"}, {StorageGroupName: "group1",ParentStorageGroupName: "group2"}},
-		UnreducibleDataGB:     200.5,
-		NGUID:                 "nguid-1234",
+		SnapSource:         true,
+		SnapTarget:         false,
+		CUImageBaseAddress: "0x1000",
+		HasEffectiveWWN:    true,
+		EffectiveWWN:       "abcdef1234567890",
+		EncapsulatedWWN:    "encapsulated-wwn",
+		OracleInstanceName: "oracle-instance-01",
+		MobilityIDEnabled:  true,
+		StorageGroups:      []types.StorageGroupName{{StorageGroupName: "group1", ParentStorageGroupName: "group2"}, {StorageGroupName: "group1", ParentStorageGroupName: "group2"}},
+		UnreducibleDataGB:  200.5,
+		NGUID:              "nguid-1234",
 	}
 
-		var err = unlinkTarget(symVol, "123", "456", "a", 0, pmaxClient)
-		expectederr := fmt.Errorf("can't unlink as link state is not defined. retry after sometime")
-		if err != nil {
-			assert.Equal(t, expectederr, err)
-		}
+	err := unlinkTarget(symVol, "123", "456", "a", 0, pmaxClient)
+	expectederr := fmt.Errorf("can't unlink as link state is not defined. retry after sometime")
+	if err != nil {
+		assert.Equal(t, expectederr, err)
+	}
 }
 
 func TestIsValid(t *testing.T) {
-
 	dr := deletionRequest{
-		DeviceID : "",
-		VolumeHandle : "456",
-		SymID   : "788",
+		DeviceID:     "",
+		VolumeHandle: "456",
+		SymID:        "788",
 	}
-	var err = dr.isValid("")
+	err := dr.isValid("")
 	expectederr := fmt.Errorf("device id can't be empty")
 	if err != nil {
 		assert.Equal(t, expectederr, err)
 	}
 
 	dr1 := deletionRequest{
-		DeviceID : "123",
-		VolumeHandle : "456",
-		SymID   : "",
+		DeviceID:     "123",
+		VolumeHandle: "456",
+		SymID:        "",
 	}
 	err = dr1.isValid("")
 	expectederr = fmt.Errorf("sym id can't be empty")
@@ -91,9 +90,9 @@ func TestIsValid(t *testing.T) {
 	}
 
 	dr2 := deletionRequest{
-		DeviceID : "123",
-		VolumeHandle : "456",
-		SymID   : "124",
+		DeviceID:     "123",
+		VolumeHandle: "456",
+		SymID:        "124",
 	}
 	err = dr2.isValid("_DEL")
 	expectederr = fmt.Errorf("device id doesn't contain the cluster prefix")
@@ -102,9 +101,9 @@ func TestIsValid(t *testing.T) {
 	}
 
 	dr3 := deletionRequest{
-		DeviceID : "123",
-		VolumeHandle : "_DEL",
-		SymID   : "124",
+		DeviceID:     "123",
+		VolumeHandle: "_DEL",
+		SymID:        "124",
 	}
 	err = dr3.isValid("_DEL")
 	expectederr = fmt.Errorf("device has not been marked for deletion")
@@ -114,47 +113,48 @@ func TestIsValid(t *testing.T) {
 }
 
 func TestCaseGetDevice(t *testing.T) {
-	var csidev=getDevice("1234", []*csiDevice{{}, {}} )
-	var expectedoutput *csiDevice 
-	expectedoutput = nil 
+	csidev := getDevice("1234", []*csiDevice{{}, {}})
+	var expectedoutput *csiDevice
+	expectedoutput = nil
 	assert.Equal(t, expectedoutput, csidev)
 }
+
 func TestCaseGetDeviceRanges(t *testing.T) {
-	sdID1:=symDeviceID{
+	sdID1 := symDeviceID{
 		DeviceID: "1234",
-		IntVal: 1,
+		IntVal:   1,
 	}
-	sdID2:=symDeviceID{
+	sdID2 := symDeviceID{
 		DeviceID: "2345",
-		IntVal: 2,
+		IntVal:   2,
 	}
 	expectedOutput := []deviceRange{
 		{
-		Start: sdID1,
-		End: sdID2,
+			Start: sdID1,
+			End:   sdID2,
 		},
 	}
-	var devicerang=getDeviceRanges([]symDeviceID{{DeviceID: "1234",IntVal: 1},{DeviceID: "2345",IntVal: 2}})
+	devicerang := getDeviceRanges([]symDeviceID{{DeviceID: "1234", IntVal: 1}, {DeviceID: "2345", IntVal: 2}})
 	assert.Equal(t, expectedOutput, devicerang)
 }
-func TestCaseQueueDeviceForDeletion(t *testing.T) {
 
-	sdID1:=symDeviceID{
+func TestCaseQueueDeviceForDeletion(t *testing.T) {
+	sdID1 := symDeviceID{
 		DeviceID: "1234",
-		IntVal: 2,
+		IntVal:   2,
 	}
 	csiDev := csiDevice{
-		SymDeviceID    :  sdID1,
-		SymID      :      "123",
-		VolumeIdentifier : "123",
+		SymDeviceID:      sdID1,
+		SymID:            "123",
+		VolumeIdentifier: "123",
 	}
 	DeviceList1 := []*csiDevice{&csiDev, &csiDev}
 	deletionQueuevalue := deletionQueue{
-		DeviceList:   DeviceList1,
-		SymID:        "123",
+		DeviceList: DeviceList1,
+		SymID:      "123",
 	}
-	var err= deletionQueuevalue.QueueDeviceForDeletion(csiDev)
+	err := deletionQueuevalue.QueueDeviceForDeletion(csiDev)
 	expectederror := fmt.Errorf("%s", fmt.Sprintf("%s: found existing entry in deletion queue with volume handle: %s, added at: %v",
-	csiDev.print(), csiDev.VolumeIdentifier, csiDev.Status.AdditionTime))
+		csiDev.print(), csiDev.VolumeIdentifier, csiDev.Status.AdditionTime))
 	assert.Equal(t, expectederror, err)
 }

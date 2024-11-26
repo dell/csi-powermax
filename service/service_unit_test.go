@@ -28,8 +28,8 @@ import (
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	log "github.com/sirupsen/logrus"
-	"github.com/stretchr/testify/assert"
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 )
 
@@ -533,58 +533,59 @@ func TestUpdateDriverConfigParams(_ *testing.T) {
 	paramsViper := viper.New()
 	paramsViper.SetConfigFile("configFilePath")
 	paramsViper.SetConfigType("yaml")
-	paramsViper.Set(CSILogLevelParam,"debug")
-	paramsViper.Set(CSILogFormatParam,"JSON")
+	paramsViper.Set(CSILogLevelParam, "debug")
+	paramsViper.Set(CSILogFormatParam, "JSON")
 	updateDriverConfigParams(paramsViper)
 
-	paramsViper.Set(CSILogFormatParam,"TEXT")
+	paramsViper.Set(CSILogFormatParam, "TEXT")
 	updateDriverConfigParams(paramsViper)
 }
+
 func TestGetProxySettingsFromEnv(t *testing.T) {
 	s := service{
 		useIscsi: true,
 	}
-	_ = os.Setenv(EnvSidecarProxyPort, "8080")	
+	_ = os.Setenv(EnvSidecarProxyPort, "8080")
 	ProxyServiceHost, _, _ := s.getProxySettingsFromEnv()
 	assert.Equal(t, "0.0.0.0", ProxyServiceHost)
 
-	os. Unsetenv(EnvSidecarProxyPort)
-	_ = os.Setenv(EnvUnisphereProxyServiceName, "Service")	
-	_ = os.Setenv("SERVICE_SERVICE_HOST", "")	
-	_ = os.Setenv("SERVICE_SERVICE_PORT", "")	
+	os.Unsetenv(EnvSidecarProxyPort)
+	_ = os.Setenv(EnvUnisphereProxyServiceName, "Service")
+	_ = os.Setenv("SERVICE_SERVICE_HOST", "")
+	_ = os.Setenv("SERVICE_SERVICE_PORT", "")
 	ProxyServiceHost, ProxyServicePort, _ := s.getProxySettingsFromEnv()
 	assert.Equal(t, "", ProxyServiceHost)
 	assert.Equal(t, "", ProxyServicePort)
-	
-	os. Unsetenv("SERVICE_SERVICE_HOST")
-	os. Unsetenv("SERVICE_SERVICE_PORT")
-	_ = os.Setenv("SERVICE_SERVICE_HOST", "SERVICE_SERVICE_HOST")	
+
+	os.Unsetenv("SERVICE_SERVICE_HOST")
+	os.Unsetenv("SERVICE_SERVICE_PORT")
+	_ = os.Setenv("SERVICE_SERVICE_HOST", "SERVICE_SERVICE_HOST")
 	_ = os.Setenv("SERVICE_SERVICE_PORT", "1234")
 	ProxyServiceHost, ProxyServicePort, _ = s.getProxySettingsFromEnv()
 	assert.Equal(t, "SERVICE_SERVICE_HOST", ProxyServiceHost)
-	assert.Equal(t, "1234", ProxyServicePort)	
+	assert.Equal(t, "1234", ProxyServicePort)
 }
 
 func TestGetTransportProtocolFromEnv(t *testing.T) {
 	s := service{
 		useIscsi: true,
 	}
-	_ = os.Setenv(EnvPreferredTransportProtocol, "FIBRE")		
+	_ = os.Setenv(EnvPreferredTransportProtocol, "FIBRE")
 	output := s.getTransportProtocolFromEnv()
 	assert.Equal(t, "FC", output)
 
-	os. Unsetenv(EnvPreferredTransportProtocol)
-	_ = os.Setenv(EnvPreferredTransportProtocol, "NVMETCP")		
+	os.Unsetenv(EnvPreferredTransportProtocol)
+	_ = os.Setenv(EnvPreferredTransportProtocol, "NVMETCP")
 	output = s.getTransportProtocolFromEnv()
 	assert.Equal(t, "NVMETCP", output)
 
-	os. Unsetenv(EnvPreferredTransportProtocol)
-	_ = os.Setenv(EnvPreferredTransportProtocol, "")		
+	os.Unsetenv(EnvPreferredTransportProtocol)
+	_ = os.Setenv(EnvPreferredTransportProtocol, "")
 	output = s.getTransportProtocolFromEnv()
 	assert.Equal(t, "", output)
 
-	os. Unsetenv(EnvPreferredTransportProtocol)
-	_ = os.Setenv(EnvPreferredTransportProtocol, "invalid")		
+	os.Unsetenv(EnvPreferredTransportProtocol)
+	_ = os.Setenv(EnvPreferredTransportProtocol, "invalid")
 	output = s.getTransportProtocolFromEnv()
 	assert.Equal(t, "", output)
 }
@@ -595,10 +596,9 @@ func TestSetPollingFrequency(t *testing.T) {
 	}
 	var expectedFreq int64 = 5
 	ctx := context.Background()
-	_ = os.Setenv(EnvPodmonArrayConnectivityPollRate, "5")		
+	_ = os.Setenv(EnvPodmonArrayConnectivityPollRate, "5")
 	pollingFreq := s.SetPollingFrequency(ctx)
 	assert.Equal(t, expectedFreq, pollingFreq)
-
 }
 
 func TestGetDriverName(t *testing.T) {
@@ -608,10 +608,11 @@ func TestGetDriverName(t *testing.T) {
 	s := service{
 		opts: o,
 	}
-	
-	driverName := s.getDriverName() 
+
+	driverName := s.getDriverName()
 	assert.Equal(t, "powermax", driverName)
 }
+
 func TestRegisterAdditionalServers(_ *testing.T) {
 	o := Opts{
 		DriverName: "powermax",
@@ -619,18 +620,17 @@ func TestRegisterAdditionalServers(_ *testing.T) {
 	s := service{
 		opts: o,
 	}
-	server:= grpc.NewServer()
-	s.RegisterAdditionalServers(server) 
-
+	server := grpc.NewServer()
+	s.RegisterAdditionalServers(server)
 }
-func TestSetArrayConfigEnvs(t *testing.T) {
 
+func TestSetArrayConfigEnvs(t *testing.T) {
 	ctx := context.Background()
 	_ = os.Setenv(EnvArrayConfigPath, "value")
 	paramsViper := viper.New()
-	paramsViper.Set(Protocol,"ICSCI")
-	paramsViper.Set(EnvEndpoint,"endpoint")
-	paramsViper.Set(PortGroups,"pg1, pg2, pg3")
+	paramsViper.Set(Protocol, "ICSCI")
+	paramsViper.Set(EnvEndpoint, "endpoint")
+	paramsViper.Set(PortGroups, "pg1, pg2, pg3")
 	paramsViper.Set(ManagedArrays, "000000000001,000000000002")
 	err := setArrayConfigEnvs(ctx)
 	assert.Equal(t, nil, err)
