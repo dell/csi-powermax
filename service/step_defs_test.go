@@ -31,12 +31,9 @@ import (
 	"time"
 
 	"github.com/dell/gonvme"
-	"github.com/vmware/govmomi"
-	"github.com/vmware/govmomi/object"
-	"github.com/vmware/govmomi/simulator"
-	"github.com/vmware/govmomi/vim25"
 
 	"github.com/dell/csi-powermax/v2/k8smock"
+	"github.com/dell/csi-powermax/v2/pkg/migration"
 
 	"github.com/dell/dell-csi-extensions/common"
 
@@ -94,7 +91,6 @@ const (
 	altSnapID                  = "555-555"
 	defaultStorageGroup        = "DefaultStorageGroup"
 	defaultIscsiInitiator      = "iqn.1993-08.org.debian:01:5ae293b352a2"
-	defaultNvmeInitiator       = "nqn.2019-08.org.emc:sn.0x10000090fa6603b7"
 	defaultFcInitiator         = "0x10000090fa6603b7"
 	defaultArrayTargetIQN      = "iqn.1992-04.com.emc:600009700bcbb70e3287017400000001"
 	defaultFcInitiatorWWN      = "10000090fa6603b7"
@@ -104,7 +100,6 @@ const (
 	defaultFCDirPort           = "FA-1D:4"
 	defaultISCSIDirPort1       = "SE1-E:6"
 	defaultISCSIDirPort2       = "SE2-E:4"
-	defaultNVMEDirPort         = "N:2"
 	MaxRetries                 = 10
 	Namespace                  = "namespace-test"
 	kubeconfig                 = "/etc/kubernetes/admin.conf"
@@ -188,7 +183,6 @@ type feature struct {
 	removeVolumeFromSGMVResponse2        chan removeVolumeFromSGMVResponse
 	lockChan                             chan bool
 	iscsiTargetInfo                      []ISCSITargetInfo
-	nvmetcpTargetInfo                    []NVMeTCPTargetInfo
 	maxRetryCount                        int
 	failedSnaps                          map[string]failedSnap
 	doneChan                             chan bool
@@ -198,7 +192,6 @@ type feature struct {
 	setIOLimits                          bool
 	validateVHCResp                      *podmon.ValidateVolumeHostConnectivityResponse
 	arrayMigrateResponse                 *csimgr.ArrayMigrateResponse
-	maskingViewNVMeTargetInfo	     []maskingViewNVMeTargetInfo
 }
 
 var inducedErrors struct {
@@ -452,8 +445,6 @@ func (f *feature) getService() *service {
 	mock.Data.JSONDir = "mock-data"
 	svc.loggedInArrays = map[string]bool{}
 	svc.iscsiTargets = map[string][]string{}
-	svc.nvmeTargets = map[string][]string{}
-	svc.loggedInNVMeArrays = map[string]bool{}
 	var opts Opts
 	opts.User = "username"
 	opts.Password = "password"
@@ -1373,6 +1364,38 @@ func (f *feature) iInduceError(errtype string) error {
 		inducedErrors.invalidTopologyPathEnv = true
 	case "GetRDFInfoFromSGIDError":
 		inducedErrors.getRDFInfoFromSGIDError = true
+	case "StorageGroupMigrationNoError":
+		migration.StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, clusterPrefix string, pmaxClient pmax.Pmax) (bool, error) {
+			return true, nil
+		}
+	case "StorageGroupMigrationError":
+		migration.StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, clusterPrefix string, pmaxClient pmax.Pmax) (bool, error) {
+			return false, errors.New("StorageGroupMigrationError")
+		}
+	case "GetOrCreateMigrationEnvironmentNoError":
+		migration.GetOrCreateMigrationEnvironment = func(ctx context.Context, localSymID, remoteSymID string, pmaxClient pmax.Pmax) (*types.MigrationEnv, error) {
+			return nil, nil
+		}
+	case "GetOrCreateMigrationEnvironmentError":
+		migration.GetOrCreateMigrationEnvironment = func(ctx context.Context, localSymID, remoteSymID string, pmaxClient pmax.Pmax) (*types.MigrationEnv, error) {
+			return nil, errors.New("GetOrCreateMigrationEnvironmentError")
+		}
+	case "StorageGroupCommitNoError":
+		migration.StorageGroupCommit = func(ctx context.Context, symID, action string, pmaxClient pmax.Pmax) (bool, error) {
+			return true, nil
+		}
+	case "StorageGroupCommitError":
+		migration.StorageGroupCommit = func(ctx context.Context, symID, action string, pmaxClient pmax.Pmax) (bool, error) {
+			return false, errors.New("StorageGroupCommitError")
+		}
+	case "AddVolumesToRemoteSGError":
+		migration.AddVolumesToRemoteSG = func(ctx context.Context, remoteSymID string, pmaxClient pmax.Pmax) (bool, error) {
+			return false, errors.New("AddVolumesToRemoteSGError")
+		}
+	case "AddVolumesToRemoteSGNoError":
+		migration.AddVolumesToRemoteSG = func(ctx context.Context, remoteSymID string, pmaxClient pmax.Pmax) (bool, error) {
+			return true, nil
+		}
 	case "none":
 		return nil
 	default:
@@ -1562,22 +1585,6 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 			portGroupID = "fc_ports"
 		}
 		mock.AddPortGroup(portGroupID, "Fibre", []string{defaultFCDirPort})
-		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
-	} else if transportProtocol == "NVME" {
-		f.hostID, f.sgID, f.mvID = f.service.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
-		initiator := defaultNvmeInitiator
-		initiators := []string{initiator}
-		initID := defaultISCSIDirPort1 + ":" + initiator
-		mock.AddInitiator(initID, initiator, "GigE", []string{defaultNVMEDirPort}, "")
-		mock.AddHost(f.hostID, "iSCSI", initiators)
-		mock.AddStorageGroup(f.sgID, "", "")
-		portGroupID := ""
-		if f.selectedPortGroup != "" {
-			portGroupID = f.selectedPortGroup
-		} else {
-			portGroupID = "iscsi_ports"
-		}
-		mock.AddPortGroup(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	} else {
 		f.hostID, f.sgID, f.mvID = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
@@ -2705,34 +2712,6 @@ func (f *feature) iCallNodeStageVolume() error {
 	return nil
 }
 
-func (f *feature) iCallNodeStageVolumeWithSimulator() error {
-	simulator.Test(func(ctx context.Context, c *vim25.Client) {
-		mockVMHost := &VMHost{
-			client: &govmomi.Client{
-				Client: c,
-			},
-			Ctx: context.Background(),
-			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
-		}
-		vmHost = mockVMHost
-		_ = f.getNodePublishVolumeRequest()
-		header := metadata.New(map[string]string{"csi.requestid": "1"})
-		ctx = metadata.NewIncomingContext(ctx, header)
-		req := new(csi.NodeStageVolumeRequest)
-		req.VolumeId = f.nodePublishVolumeRequest.VolumeId
-		req.PublishContext = f.nodePublishVolumeRequest.PublishContext
-		req.StagingTargetPath = f.nodePublishVolumeRequest.StagingTargetPath
-		req.VolumeCapability = f.nodePublishVolumeRequest.VolumeCapability
-		req.VolumeContext = f.nodePublishVolumeRequest.VolumeContext
-		if inducedErrors.badVolumeIdentifier {
-			req.VolumeId = "bad volume identifier"
-		}
-		fmt.Printf("calling NodeStageVolume %#v\n", req)
-		_, f.err = f.service.NodeStageVolume(ctx, req)
-	})
-	return nil
-}
-
 func (f *feature) iCallControllerExpandVolume(nCYL int64) error {
 	var req *csi.ControllerExpandVolumeRequest
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
@@ -2784,30 +2763,6 @@ func (f *feature) iCallNodeUnstageVolume() error {
 	req.StagingTargetPath = f.nodePublishVolumeRequest.StagingTargetPath
 	log.Printf("iCallNodeUnstageVolume %s %s", req.VolumeId, req.StagingTargetPath)
 	_, f.err = f.service.NodeUnstageVolume(ctx, req)
-	return nil
-}
-
-func (f *feature) iCallNodeUnstageVolumeWithSimulator() error {
-	simulator.Test(func(ctx context.Context, c *vim25.Client) {
-		mockVMHost := &VMHost{
-			client: &govmomi.Client{
-				Client: c,
-			},
-			Ctx: context.Background(),
-			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
-		}
-		vmHost = mockVMHost
-		header := metadata.New(map[string]string{"csi.requestid": "1"})
-		ctx = metadata.NewIncomingContext(ctx, header)
-		req := new(csi.NodeUnstageVolumeRequest)
-		req.VolumeId = f.nodePublishVolumeRequest.VolumeId
-		if inducedErrors.invalidVolumeID {
-			req.VolumeId = "badVolumeID"
-		}
-		req.StagingTargetPath = f.nodePublishVolumeRequest.StagingTargetPath
-		log.Printf("iCallNodeUnstageVolume %s %s", req.VolumeId, req.StagingTargetPath)
-		_, f.err = f.service.NodeUnstageVolume(ctx, req)
-	})
 	return nil
 }
 
@@ -4164,24 +4119,9 @@ func (f *feature) iCallGetAndConfigureArrayISCSITargets() error {
 	return nil
 }
 
-func (f *feature) iCallGetAndConfigureArrayNVMeTCPTargets() error {
-	arrayTargets := make([]string, 0)
-	arrayTargets = append(arrayTargets, defaultArrayTargetIQN)
-	f.nvmetcpTargetInfo = f.service.getAndConfigureArrayNVMeTCPTargets(context.Background(), arrayTargets, mock.DefaultRemoteSymID, f.service.adminClient)
-	fmt.Println(f.iscsiTargetInfo)
-	return nil
-}
-
 func (f *feature) targetsAreReturned(count int) error {
 	if len(f.iscsiTargetInfo) != count {
 		return fmt.Errorf("expected %d iscsi targets but found %d", count, len(f.iscsiTargetInfo))
-	}
-	return nil
-}
-
-func (f *feature) nvmetcptargetsAreReturned(count int) error {
-	if len(f.nvmetcpTargetInfo) != count {
-		return fmt.Errorf("expected %d nvmetcp targets but found %d", count, len(f.nvmetcpTargetInfo))
 	}
 	return nil
 }
@@ -4939,13 +4879,6 @@ func (f *feature) iCallArrayMigrate(actionvalue string) error {
 	return nil
 }
 
-func (f *feature) iCallgetNVMeTCPTargetsForMaskingView() error {
-	header := metadata.New(map[string]string{"csi.requestid": "1"})
-	ctx := metadata.NewIncomingContext(context.Background(), header)
-	f.maskingViewNVMeTargetInfo, f.err = f.service.getNVMeTCPTargetsForMaskingView(ctx, "array", &types.MaskingView{}, f.adminClient)
-	return nil
-}
-
 func FeatureContext(s *godog.ScenarioContext) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -5024,8 +4957,6 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call BeforeServe with an invalid ClusterPrefix$`, f.iCallBeforeServeWithAnInvalidClusterPrefix)
 	s.Step(`^I call NodeStageVolume$`, f.iCallNodeStageVolume)
 	s.Step(`^I call NodeUnstageVolume$`, f.iCallNodeUnstageVolume)
-	s.Step(`^I call NodeStageVolume with simulator$`, f.iCallNodeStageVolumeWithSimulator)
-	s.Step(`^I call NodeUnstageVolume with simulator$`, f.iCallNodeUnstageVolumeWithSimulator)
 	s.Step(`^I call NodeGetCapabilities$`, f.iCallNodeGetCapabilities)
 	s.Step(`^a valid NodeGetCapabilitiesResponse is returned$`, f.aValidNodeGetCapabilitiesResponseIsReturned)
 	s.Step(`^I call CreateSnapshot$`, f.iCallCreateSnapshot)
@@ -5135,9 +5066,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I enable ISCSI CHAP$`, f.iEnableISCSICHAP)
 	s.Step(`^I wait for the execution to complete$`, f.iWaitForTheExecutionToComplete)
 	s.Step(`^I call getAndConfigureArrayISCSITargets$`, f.iCallGetAndConfigureArrayISCSITargets)
-	s.Step(`^I call getAndConfigureArrayNVMeTCPTargets$`, f.iCallGetAndConfigureArrayNVMeTCPTargets)
 	s.Step(`^(\d+) targets are returned$`, f.targetsAreReturned)
-	s.Step(`^(\d+) nvmetcp targets are returned$`, f.nvmetcptargetsAreReturned)
 	s.Step(`^I invalidate symToMaskingViewTarget cache$`, f.iInvalidateSymToMaskingViewTargetCache)
 	s.Step(`^I retry on failed snapshot to succeed$`, f.iRetryOnFailedSnapshotToSucceed)
 	s.Step(`^I ensure the error is cleared$`, f.iEnsureTheErrorIsCleared)
@@ -5194,5 +5123,4 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call IsIOInProgress$`, f.iCallIsIOInProgress)
 	s.Step(`^I call QueryArrayStatus with "([^"]*)" and "([^"]*)"$`, f.iCallQueryArrayStatus)
 	s.Step(`^I call ArrayMigrate with "([^"]*)"$`, f.iCallArrayMigrate)
-	s.Step(`^I call getNVMeTCPTargetsForMaskingView$`, f.iCallgetNVMeTCPTargetsForMaskingView)
 }

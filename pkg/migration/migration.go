@@ -78,7 +78,7 @@ func getOrCreateSGMigration(ctx context.Context, symID, remoteSymID, storageGrou
 // 1. Remove volumes from default SRP SG
 // 2. Create migration session for no-srp SG
 // 3. Create default SRP storage group on remote array, and maintain a list of volumes to be added.
-func StorageGroupMigration(ctx context.Context, symID, remoteSymID, clusterPrefix string, pmaxClient pmax.Pmax) (bool, error) {
+var StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, clusterPrefix string, pmaxClient pmax.Pmax) (bool, error) {
 	// Before running no-srp-sg migrate call, remove the volumes from srp SG
 	// for all the SG for this cluster on local sym ID
 	localSgList, err := pmaxClient.GetStorageGroupIDList(ctx, symID, CsiVolumePrefix+clusterPrefix, true)
@@ -178,7 +178,7 @@ func StorageGroupMigration(ctx context.Context, symID, remoteSymID, clusterPrefi
 
 // StorageGroupCommit does a "commit" on all the migration session SG
 // Returns true if not sessions found, all migration completed
-func StorageGroupCommit(ctx context.Context, symID, action string, pmaxClient pmax.Pmax) (bool, error) {
+var StorageGroupCommit = func(ctx context.Context, symID, action string, pmaxClient pmax.Pmax) (bool, error) {
 	// for all the SG in saved local SG
 	mgSGList, err := pmaxClient.GetStorageGroupMigration(ctx, symID)
 	if err != nil {
@@ -206,7 +206,7 @@ func StorageGroupCommit(ctx context.Context, symID, action string, pmaxClient pm
 }
 
 // AddVolumesToRemoteSG adds remote volumes to default SRP SG on remote array
-func AddVolumesToRemoteSG(ctx context.Context, remoteSymID string, pmaxClient pmax.Pmax) (bool, error) {
+var AddVolumesToRemoteSG = func(ctx context.Context, remoteSymID string, pmaxClient pmax.Pmax) (bool, error) {
 	// add all the volumes in SGtoRemoteVols
 	log.Debugf("SGToRemoteVols: %v", SGToRemoteVols)
 	if len(SGToRemoteVols) == 0 {
@@ -227,7 +227,7 @@ func AddVolumesToRemoteSG(ctx context.Context, remoteSymID string, pmaxClient pm
 }
 
 // GetOrCreateMigrationEnvironment creates migration environment between array pair
-func GetOrCreateMigrationEnvironment(ctx context.Context, localSymID, remoteSymID string, pmaxClient pmax.Pmax) (*types.MigrationEnv, error) {
+var GetOrCreateMigrationEnvironment = func(ctx context.Context, localSymID, remoteSymID string, pmaxClient pmax.Pmax) (*types.MigrationEnv, error) {
 	var migrationEnv *types.MigrationEnv
 	migrationEnv, err := pmaxClient.GetMigrationEnvironment(ctx, localSymID, remoteSymID)
 	if err != nil || migrationEnv == nil {

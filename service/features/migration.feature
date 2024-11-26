@@ -87,3 +87,19 @@ Feature: PowerMax CSI Interface
       | "csimgr.ActionTypes_MG_COMMIT"         | "Not Found"                                                     |
       | ""                                     | "Invalid action"                                                |
 
+  @migration
+    @v1.0.0
+  Scenario Outline: ArrayMigrate
+    Given a PowerMax service
+    And I call ArrayMigrate with <actionvalue>
+    Then I induce error <induced1>
+    Then I induce error <induced2>
+    And the error contains <errormsg>
+    Examples:
+      | induced1                                           | induced2                                             | actionvalue                            | errormsg                                                        |
+      | "GetOrCreateMigrationEnvironmentNoError"           | "StorageGroupMigrationError"                         | "csimgr.ActionTypes_MG_MIGRATE"        | "failed to create array migration environment for target array" |
+      | "GetOrCreateMigrationEnvironmentError"             | "none"                                               | "csimgr.ActionTypes_MG_MIGRATE"        | "failed to create array migration environment for target array" |
+      | ""                                                 | ""                                                   | ""                                     | "Invalid action"                                                |
+      | "StorageGroupCommitNoError"                        | "AddVolumesToRemoteSGNoError"                        | "csimgr.ActionTypes_MG_COMMIT"         | "Not Found"                                                     |
+      | "StorageGroupCommitNoError"                        | "AddVolumesToRemoteSGError"                          | "csimgr.ActionTypes_MG_COMMIT"         | "Not Found"                                                     |
+      | "StorageGroupCommitError"                          | "none"                                               | "csimgr.ActionTypes_MG_COMMIT"         | "Not Found"                                                     |
