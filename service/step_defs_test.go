@@ -4875,7 +4875,11 @@ func iActionValue(actionvalue string) *csimgr.ArrayMigrateRequest_Action {
 			},
 		}
 	} else {
-		return nil
+		return &csimgr.ArrayMigrateRequest_Action{
+			Action: &csimgr.Action{
+				ActionTypes: csimgr.ActionTypes_UNKNOWN_ACTION,
+			},
+		}
 	}
 }
 
