@@ -1370,7 +1370,7 @@ func (f *feature) iInduceError(errtype string) error {
 		}
 	case "StorageGroupMigrationError":
 		migration.StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, clusterPrefix string, pmaxClient pmax.Pmax) (bool, error) {
-			return false, errors.New("StorageGroupMigrationError")
+			return false, errors.New("failed to create array migration environment for target array")
 		}
 	case "GetOrCreateMigrationEnvironmentNoError":
 		migration.GetOrCreateMigrationEnvironment = func(ctx context.Context, localSymID, remoteSymID string, pmaxClient pmax.Pmax) (*types.MigrationEnv, error) {
@@ -1390,7 +1390,7 @@ func (f *feature) iInduceError(errtype string) error {
 		}
 	case "AddVolumesToRemoteSGError":
 		migration.AddVolumesToRemoteSG = func(ctx context.Context, remoteSymID string, pmaxClient pmax.Pmax) (bool, error) {
-			return false, errors.New("AddVolumesToRemoteSGError")
+			return false, errors.New("Not Found")
 		}
 	case "AddVolumesToRemoteSGNoError":
 		migration.AddVolumesToRemoteSG = func(ctx context.Context, remoteSymID string, pmaxClient pmax.Pmax) (bool, error) {
