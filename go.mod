@@ -6,7 +6,7 @@ toolchain go1.23.2
 
 require (
 	github.com/akutz/goof v0.1.2
-	github.com/container-storage-interface/spec v1.11.0
+	github.com/container-storage-interface/spec v1.6.0
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/cucumber/godog v0.15.0
 	github.com/cucumber/messages-go/v10 v10.0.3
@@ -22,7 +22,7 @@ require (
 	github.com/dell/gopowermax/v2 v2.8.0
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/gorilla/mux v1.8.1
-	github.com/kubernetes-csi/csi-lib-utils v0.19.0
+	github.com/kubernetes-csi/csi-lib-utils v0.11.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
