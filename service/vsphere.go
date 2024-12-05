@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -38,6 +38,9 @@ import (
 	"golang.org/x/net/context"
 )
 
+// useHTTP - This variable should remain false by default. It was added specifically for unit testing purposes, as unit tests require HTTP instead of HTTPS.
+var useHTTP = false
+
 // VMHost - structure to hold the VM host
 type VMHost struct {
 	client *govmomi.Client
@@ -50,7 +53,11 @@ type VMHost struct {
 // This method is referenced from https://github.com/codedellemc/govmax/blob/master/api/v1/vmomi.go
 func NewVMHost(insecure bool, hostURLparam, user, pass string) (*VMHost, error) {
 	ctx, _ := context.WithCancel(context.Background())
-	hostURL, err := url.Parse("https://" + hostURLparam + "/sdk")
+	protocol := "https://"
+	if useHTTP {
+		protocol = "http://"
+	}
+	hostURL, err := url.Parse(protocol + hostURLparam + "/sdk")
 	hostURL.User = url.UserPassword(user, pass)
 
 	cli, err := govmomi.NewClient(ctx, hostURL, insecure)

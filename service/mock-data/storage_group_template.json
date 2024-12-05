@@ -1,0 +1,23 @@
+{
+  "storageGroupId": "__STORAGE_GROUP_ID__",
+  "slo": "Optimized",
+  "base_slo_name": "Optimized",
+  "service_level": "Optimized",
+  "srp": "__SRP_ID__",
+  "slo_compliance": "STABLE",
+  "num_of_vols": __NUMBER_OF_VOLUMES__,
+  "num_of_child_sgs": 0,
+  "num_of_parent_sgs": 0,
+  "num_of_masking_views": __NUM_OF_MASKING_VIEWS__,
+  "num_of_snapshots": 0,
+  "cap_gb": 534.04,
+  "device_emulation": "FBA",
+  "type": "Standalone",
+  "unprotected": true,
+  "compression": true,
+  "VPSaved": "100.0%",
+  "vp_saved_percent": 100,
+  "maskingview": [
+    "csi-mv-node1"
+  ]
+}

@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import (
 	"revproxy/v2/pkg/common"
 	"revproxy/v2/pkg/config"
 	"revproxy/v2/pkg/k8sutils"
-	"revproxy/v2/pkg/standaloneproxy"
+	"revproxy/v2/pkg/proxy"
 	"revproxy/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
@@ -93,17 +93,16 @@ func getServerOpts() ServerOpts {
 
 // Server represents the proxy server
 type Server struct {
-	HTTPServer      *http.Server
-	Mode            config.ProxyMode
-	Port            string
-	CertFile        string
-	KeyFile         string
-	config          *config.ProxyConfig
-	StandAloneProxy *standaloneproxy.StandAloneProxy
-	SigChan         chan os.Signal
-	WaitGroup       sync.WaitGroup
-	Mutex           sync.Mutex
-	Opts            ServerOpts
+	HTTPServer *http.Server
+	Port       string
+	CertFile   string
+	KeyFile    string
+	config     *config.ProxyConfig
+	Proxy      *proxy.Proxy
+	SigChan    chan os.Signal
+	WaitGroup  sync.WaitGroup
+	Mutex      sync.Mutex
+	Opts       ServerOpts
 }
 
 // SetConfig - sets config for the server
@@ -136,13 +135,11 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 	s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
 	s.KeyFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.KeyFile)
 	s.Port = proxyConfig.Port
-	if proxyConfig.Mode == config.StandAlone {
-		standAloneProxy, err := standaloneproxy.NewStandAloneProxy(*proxyConfig.StandAloneProxyConfig)
-		if err != nil {
-			return err
-		}
-		s.StandAloneProxy = standAloneProxy
+	proxy, err := proxy.NewProxy(*proxyConfig)
+	if err != nil {
+		return err
 	}
+	s.Proxy = proxy
 	s.SetConfig(proxyConfig)
 	s.SigChan = make(chan os.Signal, 1)
 	return nil
@@ -150,7 +147,7 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 
 // GetRevProxy - returns the current active proxy for the server
 func (s *Server) GetRevProxy() RevProxy {
-	return s.StandAloneProxy
+	return s.Proxy
 }
 
 // Start - starts the HTTPS server
@@ -269,31 +266,27 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 	conf := s.Config().DeepCopy()
 	log.Infof("New credential/cert update event for the secret(%s)", secret.Name)
 	hasChanged := false
-	if conf.Mode != config.StandAlone {
-		log.Errorf("invalid proxy mode is give")
-		return
-	}
 
-	found := conf.StandAloneProxyConfig.IsSecretConfiguredForCerts(secret.Name)
+	found := conf.IsSecretConfiguredForCerts(secret.Name)
 	if found {
 		certFileName, err := k8sUtils.GetCertFileFromSecret(secret)
 		if err != nil {
 			log.Errorf("failed to get cert file from secret (error: %s). ignoring the config change event", err.Error())
 			return
 		}
-		isUpdated := conf.StandAloneProxyConfig.UpdateCerts(secret.Name, certFileName)
+		isUpdated := conf.UpdateCerts(secret.Name, certFileName)
 		if isUpdated {
 			hasChanged = true
 		}
 	}
-	found = conf.StandAloneProxyConfig.IsSecretConfiguredForArrays(secret.Name)
+	found = conf.IsSecretConfiguredForArrays(secret.Name)
 	if found {
 		creds, err := k8sUtils.GetCredentialsFromSecret(secret)
 		if err != nil {
 			log.Errorf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
 			return
 		}
-		isUpdated := conf.StandAloneProxyConfig.UpdateCreds(secret.Name, creds)
+		isUpdated := conf.UpdateCreds(secret.Name, creds)
 		if isUpdated {
 			hasChanged = true
 		}

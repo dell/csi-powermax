@@ -1,0 +1,19 @@
+{
+    "initiatorId": "__INITIATOR_ID__",
+    "symmetrixPortKey": [
+        {
+            "directorId": "FA-1D",
+            "portId": "6"
+        }
+    ],
+    "type": "GigE",
+    "host": "__INITIATOR_HOST__",
+    "ip_address": "192.168.1.175",
+    "logged_in": true,
+    "on_fabric": true,
+    "flags_in_effect": "Common_Serial_Number(C), SCSI_3(SC3), SPC2_Protocol_Version(SPC2)",
+    "num_of_vols": 0,
+    "num_of_host_groups": 0,
+    "num_of_masking_views": 0,
+    "num_of_powerpath_hosts": 0
+}
