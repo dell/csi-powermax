@@ -1,0 +1,12 @@
+{
+    "symmetrixPortKey": [
+        {
+            "directorId": "__DIRECTOR_ID__",
+            "portId": "0"
+        },
+        {
+            "directorId": "__DIRECTOR_ID__",
+            "portId": "1"
+        }
+    ]
+}

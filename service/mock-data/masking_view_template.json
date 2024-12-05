@@ -1,0 +1,7 @@
+{
+    "maskingViewId": "__MASKING_VIEW_ID__",
+    "hostId": "__HOST_ID__",
+    "hostGroupId": "__HOST_GROUP_ID__",
+    "portGroupId": "__PORT_GROUP_ID__",
+    "storageGroupId": "__STORAGE_GROUP_ID__"
+}

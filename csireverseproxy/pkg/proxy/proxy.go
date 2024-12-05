@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021 - 2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
  limitations under the License.
 */
 
-package standaloneproxy
+package proxy
 
 import (
 	"crypto/tls"
@@ -42,23 +42,23 @@ import (
 
 const clientSymID = "proxyClientSymID"
 
-// StandAloneProxy - represents a StandAlone Proxy
-type StandAloneProxy struct {
-	config        config.StandAloneProxyConfig
+// Proxy - represents a  Proxy
+type Proxy struct {
+	config        config.ProxyConfig
 	requestID     uint64
 	envoyMap      map[string]common.Envoy
 	iteratorCache cache.Cache
 	mutex         sync.Mutex
 }
 
-// NewStandAloneProxy - Given a proxy config, returns a stand alone proxy
-func NewStandAloneProxy(proxyConfig config.StandAloneProxyConfig) (*StandAloneProxy, error) {
+// NewProxy - Given a proxy config, returns a proxy
+func NewProxy(proxyConfig config.ProxyConfig) (*Proxy, error) {
 	envoyMap := make(map[string]common.Envoy)
 	for arrayID, serverArray := range proxyConfig.GetManagedArraysAndServers() {
 		envoy := newEnvoyClient(serverArray)
 		envoyMap[arrayID] = envoy
 	}
-	return &StandAloneProxy{
+	return &Proxy{
 		config:        proxyConfig,
 		envoyMap:      envoyMap,
 		iteratorCache: cache.New("volume-iterators", 5*time.Minute),
@@ -121,19 +121,19 @@ func newTLSConfig(mgmtServer config.ManagementServer) *tls.Config {
 	return &tlsConfig
 }
 
-func (revProxy *StandAloneProxy) setEnvoy(arrayID string, envoy common.Envoy) {
+func (revProxy *Proxy) setEnvoy(arrayID string, envoy common.Envoy) {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
 	revProxy.envoyMap[arrayID] = envoy
 }
 
-func (revProxy *StandAloneProxy) removeEnvoy(arrayID string) {
+func (revProxy *Proxy) removeEnvoy(arrayID string) {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
 	delete(revProxy.envoyMap, arrayID)
 }
 
-func (revProxy *StandAloneProxy) getHTTPClient(symID string) (*http.Client, error) {
+func (revProxy *Proxy) getHTTPClient(symID string) (*http.Client, error) {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
 	if envoy, ok := revProxy.envoyMap[symID]; ok {
@@ -142,7 +142,7 @@ func (revProxy *StandAloneProxy) getHTTPClient(symID string) (*http.Client, erro
 	return nil, fmt.Errorf("no http client found for the given symid")
 }
 
-func (revProxy *StandAloneProxy) getProxyByURL(symmURL common.SymmURL) (common.Proxy, error) {
+func (revProxy *Proxy) getProxyByURL(symmURL common.SymmURL) (common.Proxy, error) {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
 	proxy := common.Proxy{}
@@ -156,7 +156,7 @@ func (revProxy *StandAloneProxy) getProxyByURL(symmURL common.SymmURL) (common.P
 	return proxy, fmt.Errorf("no proxy found for this URL")
 }
 
-func (revProxy *StandAloneProxy) getProxyBySymmID(storageArrayID string) (common.Proxy, error) {
+func (revProxy *Proxy) getProxyBySymmID(storageArrayID string) (common.Proxy, error) {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
 	proxy := common.Proxy{}
@@ -170,7 +170,7 @@ func (revProxy *StandAloneProxy) getProxyBySymmID(storageArrayID string) (common
 	return proxy, fmt.Errorf("failed to find array id in the configuration")
 }
 
-func (revProxy *StandAloneProxy) getAuthorisedArrays(res http.ResponseWriter, req *http.Request) ([]string, error) {
+func (revProxy *Proxy) getAuthorisedArrays(res http.ResponseWriter, req *http.Request) ([]string, error) {
 	username, password, ok := req.BasicAuth()
 	if !ok {
 		utils.WriteHTTPError(res, fmt.Sprintf("no authorization provided"), utils.StatusUnAuthorized)
@@ -184,14 +184,14 @@ func (revProxy *StandAloneProxy) getAuthorisedArrays(res http.ResponseWriter, re
 	return symIDs, nil
 }
 
-func (revProxy *StandAloneProxy) getRequestID() string {
+func (revProxy *Proxy) getRequestID() string {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
 	requestID := fmt.Sprintf("%d", atomic.AddUint64(&revProxy.requestID, 1))
 	return requestID
 }
 
-func (revProxy *StandAloneProxy) getIteratorByID(iterID string) (common.SymmURL, error) {
+func (revProxy *Proxy) getIteratorByID(iterID string) (common.SymmURL, error) {
 	u4p := common.SymmURL{}
 	if u4p, ok := revProxy.iteratorCache.Get(iterID); ok {
 		return u4p.(common.SymmURL), nil
@@ -199,7 +199,7 @@ func (revProxy *StandAloneProxy) getIteratorByID(iterID string) (common.SymmURL,
 	return u4p, fmt.Errorf("no symm info found for this iterator")
 }
 
-func (revProxy *StandAloneProxy) setIteratorID(resp *http.Response, URL url.URL, symID string) (*types.VolumeIterator, error) {
+func (revProxy *Proxy) setIteratorID(resp *http.Response, URL url.URL, symID string) (*types.VolumeIterator, error) {
 	volumeIterator := &types.VolumeIterator{}
 	decoder := json.NewDecoder(resp.Body)
 	if err := decoder.Decode(volumeIterator); err != nil {
@@ -213,7 +213,7 @@ func (revProxy *StandAloneProxy) setIteratorID(resp *http.Response, URL url.URL,
 	return volumeIterator, nil
 }
 
-func (revProxy *StandAloneProxy) loggingMiddleware(next http.Handler) http.Handler {
+func (revProxy *Proxy) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqID := revProxy.getRequestID()
 		r.URL.Path = strings.TrimSuffix(r.URL.Path, "/")
@@ -224,7 +224,7 @@ func (revProxy *StandAloneProxy) loggingMiddleware(next http.Handler) http.Handl
 	})
 }
 
-func (revProxy *StandAloneProxy) getResponseIfAuthorised(res http.ResponseWriter, req *http.Request, symID string) (*http.Response, error) {
+func (revProxy *Proxy) getResponseIfAuthorised(res http.ResponseWriter, req *http.Request, symID string) (*http.Response, error) {
 	proxy, err := revProxy.getProxyBySymmID(symID)
 	if err != nil {
 		http.Error(res, err.Error(), 500)
@@ -267,7 +267,7 @@ func (revProxy *StandAloneProxy) getResponseIfAuthorised(res http.ResponseWriter
 	return client.Do(req)
 }
 
-func (revProxy *StandAloneProxy) modifyHTTPRequest(res http.ResponseWriter, req *http.Request, targetURL url.URL) {
+func (revProxy *Proxy) modifyHTTPRequest(res http.ResponseWriter, req *http.Request, targetURL url.URL) {
 	req.Header.Set("X-Forwarded-Host", req.Header.Get("Host"))
 	creds, err := revProxy.config.GetManagementServerCredentials(targetURL)
 	if err != nil {
@@ -277,7 +277,7 @@ func (revProxy *StandAloneProxy) modifyHTTPRequest(res http.ResponseWriter, req 
 	req.Host = targetURL.Host
 }
 
-func (revProxy *StandAloneProxy) updateEnvoy(arrayID, proxyType string, server config.ManagementServer) {
+func (revProxy *Proxy) updateEnvoy(arrayID, proxyType string, server config.ManagementServer) {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
 	if envoy, ok := revProxy.envoyMap[arrayID]; ok {
@@ -293,7 +293,7 @@ func (revProxy *StandAloneProxy) updateEnvoy(arrayID, proxyType string, server c
 	}
 }
 
-func (revProxy *StandAloneProxy) setBackupEnvoy(arrayID string, server config.ManagementServer) {
+func (revProxy *Proxy) setBackupEnvoy(arrayID string, server config.ManagementServer) {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
 	if envoy, ok := revProxy.envoyMap[arrayID]; ok {
@@ -303,7 +303,7 @@ func (revProxy *StandAloneProxy) setBackupEnvoy(arrayID string, server config.Ma
 	}
 }
 
-func (revProxy *StandAloneProxy) removeBackupEnvoy(arrayID string) {
+func (revProxy *Proxy) removeBackupEnvoy(arrayID string) {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
 	if envoy, ok := revProxy.envoyMap[arrayID]; ok {
@@ -312,7 +312,7 @@ func (revProxy *StandAloneProxy) removeBackupEnvoy(arrayID string) {
 	}
 }
 
-func (revProxy *StandAloneProxy) hasServerChanged(oldServer, newServer config.ManagementServer) bool {
+func (revProxy *Proxy) hasServerChanged(oldServer, newServer config.ManagementServer) bool {
 	return oldServer.URL != newServer.URL ||
 		oldServer.CertFile != newServer.CertFile ||
 		oldServer.CredentialSecret != newServer.CredentialSecret ||
@@ -320,19 +320,15 @@ func (revProxy *StandAloneProxy) hasServerChanged(oldServer, newServer config.Ma
 		oldServer.SkipCertificateValidation != newServer.SkipCertificateValidation
 }
 
-// UpdateConfig - Given a new proxy config, updates the Stand Alone Proxy
-func (revProxy *StandAloneProxy) UpdateConfig(proxyConfig config.ProxyConfig) error {
-	standaloneProxyConfig := proxyConfig.StandAloneProxyConfig
-	if standaloneProxyConfig == nil {
-		return fmt.Errorf("StandaloneProxyConfig can't be nil")
-	}
-	if reflect.DeepEqual(revProxy.config, *standaloneProxyConfig) {
+// UpdateConfig - Given a new proxy config, updates the Proxy
+func (revProxy *Proxy) UpdateConfig(proxyConfig config.ProxyConfig) error {
+	if reflect.DeepEqual(revProxy.config, proxyConfig) {
 		log.Info("No changes detected in the configuration")
 		return nil
 	}
 
 	oldServerArrayMap := revProxy.config.GetManagedArraysAndServers()
-	serverArrayMap := standaloneProxyConfig.GetManagedArraysAndServers()
+	serverArrayMap := proxyConfig.GetManagedArraysAndServers()
 
 	// Update/Add envoy clients
 	for arrayID, serverArray := range serverArrayMap {
@@ -360,21 +356,21 @@ func (revProxy *StandAloneProxy) UpdateConfig(proxyConfig config.ProxyConfig) er
 		}
 	}
 
-	revProxy.updateConfig(*standaloneProxyConfig)
-	if reflect.DeepEqual(revProxy.config, *standaloneProxyConfig) {
+	revProxy.updateConfig(proxyConfig)
+	if reflect.DeepEqual(revProxy.config, proxyConfig) {
 		log.Info("Changes applied successfully")
 	}
 	return nil
 }
 
-func (revProxy *StandAloneProxy) updateConfig(proxyConfig config.StandAloneProxyConfig) {
+func (revProxy *Proxy) updateConfig(proxyConfig config.ProxyConfig) {
 	revProxy.mutex.Lock()
 	defer revProxy.mutex.Unlock()
 	revProxy.config = proxyConfig
 }
 
 // GetRouter - setups the http handlers and returns a http handler
-func (revProxy *StandAloneProxy) GetRouter() http.Handler {
+func (revProxy *Proxy) GetRouter() http.Handler {
 	router := mux.NewRouter()
 	router.Use(revProxy.symIDMiddleware)
 	router.Path(utils.Prefix + "/{version}/sloprovisioning/symmetrix/{symid}/volume").HandlerFunc(revProxy.ServeVolume)
@@ -409,7 +405,7 @@ func (revProxy *StandAloneProxy) GetRouter() http.Handler {
 	return revProxy.loggingMiddleware(router)
 }
 
-func (revProxy *StandAloneProxy) ifNoSymIDInvoke(customHandler http.HandlerFunc) http.HandlerFunc {
+func (revProxy *Proxy) ifNoSymIDInvoke(customHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if symid, ok := revProxy.getSymID(r); ok {
 			log.Debugf("Invoking revproxy client for %s.", symid)
@@ -421,7 +417,7 @@ func (revProxy *StandAloneProxy) ifNoSymIDInvoke(customHandler http.HandlerFunc)
 	}
 }
 
-func (revProxy *StandAloneProxy) symIDMiddleware(next http.Handler) http.Handler {
+func (revProxy *Proxy) symIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		if symid := r.Header.Get("symid"); symid != "" {
@@ -432,7 +428,7 @@ func (revProxy *StandAloneProxy) symIDMiddleware(next http.Handler) http.Handler
 	})
 }
 
-func (revProxy *StandAloneProxy) isAuthorized(res http.ResponseWriter, req *http.Request, storageArrayID string) error {
+func (revProxy *Proxy) isAuthorized(res http.ResponseWriter, req *http.Request, storageArrayID string) error {
 	username, password, ok := req.BasicAuth()
 	if !ok {
 		utils.WriteHTTPError(res, fmt.Sprintf("no authorization provided"), utils.StatusUnAuthorized)
@@ -444,7 +440,7 @@ func (revProxy *StandAloneProxy) isAuthorized(res http.ResponseWriter, req *http
 	return err
 }
 
-func (revProxy *StandAloneProxy) modifyRequest(res http.ResponseWriter, req *http.Request, targetURL url.URL) {
+func (revProxy *Proxy) modifyRequest(res http.ResponseWriter, req *http.Request, targetURL url.URL) {
 	// Update the headers to allow for SSL redirection
 	req.URL.Host = targetURL.Host
 	req.URL.Scheme = targetURL.Scheme
@@ -458,7 +454,7 @@ func (revProxy *StandAloneProxy) modifyRequest(res http.ResponseWriter, req *htt
 	req.Host = targetURL.Host
 }
 
-func (revProxy *StandAloneProxy) getSymID(req *http.Request) (string, bool) {
+func (revProxy *Proxy) getSymID(req *http.Request) (string, bool) {
 	vars := mux.Vars(req)
 	if symID, ok := vars[clientSymID]; ok {
 		return symID, ok
@@ -468,7 +464,7 @@ func (revProxy *StandAloneProxy) getSymID(req *http.Request) (string, bool) {
 }
 
 // ServeReverseProxy - serves a reverse proxy request
-func (revProxy *StandAloneProxy) ServeReverseProxy(res http.ResponseWriter, req *http.Request) {
+func (revProxy *Proxy) ServeReverseProxy(res http.ResponseWriter, req *http.Request) {
 	symID, ok := revProxy.getSymID(req)
 	if !ok {
 		http.Error(res, "symmetrix id missing", 400)
@@ -506,7 +502,7 @@ func (revProxy *StandAloneProxy) ServeReverseProxy(res http.ResponseWriter, req 
 }
 
 // ServeVersions - handler function for the version endpoint
-func (revProxy *StandAloneProxy) ServeVersions(res http.ResponseWriter, req *http.Request) {
+func (revProxy *Proxy) ServeVersions(res http.ResponseWriter, req *http.Request) {
 	symIDs, err := revProxy.getAuthorisedArrays(res, req)
 	if err != nil {
 		return
@@ -520,7 +516,7 @@ func (revProxy *StandAloneProxy) ServeVersions(res http.ResponseWriter, req *htt
 }
 
 // ServePerformance - handler function for the performance endpoint
-func (revProxy *StandAloneProxy) ServePerformance(res http.ResponseWriter, req *http.Request) {
+func (revProxy *Proxy) ServePerformance(res http.ResponseWriter, req *http.Request) {
 	symIDs, err := revProxy.getAuthorisedArrays(res, req)
 	if err != nil {
 		return
@@ -534,7 +530,7 @@ func (revProxy *StandAloneProxy) ServePerformance(res http.ResponseWriter, req *
 }
 
 // ServeVolumePerformance - handler function for the performance endpoint
-func (revProxy *StandAloneProxy) ServeVolumePerformance(res http.ResponseWriter, req *http.Request) {
+func (revProxy *Proxy) ServeVolumePerformance(res http.ResponseWriter, req *http.Request) {
 	reqParam := new(types.VolumeMetricsParam)
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(reqParam); err != nil {
@@ -559,7 +555,7 @@ func (revProxy *StandAloneProxy) ServeVolumePerformance(res http.ResponseWriter,
 }
 
 // ServeFSPerformance - handler function for the performance endpoint
-func (revProxy *StandAloneProxy) ServeFSPerformance(res http.ResponseWriter, req *http.Request) {
+func (revProxy *Proxy) ServeFSPerformance(res http.ResponseWriter, req *http.Request) {
 	reqParam := new(types.FileSystemMetricsParam)
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(reqParam); err != nil {
@@ -584,7 +580,7 @@ func (revProxy *StandAloneProxy) ServeFSPerformance(res http.ResponseWriter, req
 }
 
 // ServeIterator - handler function for volume iterator endpoint
-func (revProxy *StandAloneProxy) ServeIterator(res http.ResponseWriter, req *http.Request) {
+func (revProxy *Proxy) ServeIterator(res http.ResponseWriter, req *http.Request) {
 	vars := mux.Vars(req)
 	iterID := vars["iterId"]
 	u4p, err := revProxy.getIteratorByID(iterID)
@@ -623,7 +619,7 @@ func (revProxy *StandAloneProxy) ServeIterator(res http.ResponseWriter, req *htt
 }
 
 // ServeSymmetrix - handler function for symmetrix list endpoint
-func (revProxy *StandAloneProxy) ServeSymmetrix(res http.ResponseWriter, req *http.Request) {
+func (revProxy *Proxy) ServeSymmetrix(res http.ResponseWriter, req *http.Request) {
 	symIDs, err := revProxy.getAuthorisedArrays(res, req)
 	if err != nil {
 		return
@@ -661,7 +657,7 @@ func (revProxy *StandAloneProxy) ServeSymmetrix(res http.ResponseWriter, req *ht
 }
 
 // ServeReplicationCapabilities - handler function for replicationcapabilities endpoint
-func (revProxy *StandAloneProxy) ServeReplicationCapabilities(res http.ResponseWriter, req *http.Request) {
+func (revProxy *Proxy) ServeReplicationCapabilities(res http.ResponseWriter, req *http.Request) {
 	symIDs, err := revProxy.getAuthorisedArrays(res, req)
 	if err != nil {
 		return
@@ -700,7 +696,7 @@ func (revProxy *StandAloneProxy) ServeReplicationCapabilities(res http.ResponseW
 }
 
 // ServeVolume - handler function for volume endpoint
-func (revProxy *StandAloneProxy) ServeVolume(res http.ResponseWriter, req *http.Request) {
+func (revProxy *Proxy) ServeVolume(res http.ResponseWriter, req *http.Request) {
 	symID, _ := revProxy.getSymID(req)
 	err := revProxy.isAuthorized(res, req, symID)
 	if err != nil {

@@ -41,6 +41,7 @@ Feature: PowerMax CSI interface
 
 
   @resiliency
+  @v2.11.0
   Scenario: Call ValidateVolumeHostConnectivity with a connected node
     Given a PowerMax service
     And I call CreateVolume "volume1"
@@ -53,6 +54,18 @@ Feature: PowerMax CSI interface
     Then I call ValidateVolumeHostConnectivity with "connected-node-faultyVolID" and symID "default"
     Then the error contains "invalid symID"
 
+  @resiliency
+  @v2.11.0
+  Scenario: Call QueryArrayStatus
+    Given a PowerMax service
+    And I call QueryArrayStatus with <url> and <statusType>
+    Then the error contains <error>
+    Examples:
+      | url                          | statusType | error                          |
+      | "/array-status/symmetrixID1" | "new"      | "none"                         |
+      | "/array-status/symmetrixID2" | "old"      | "none"                         |
+      | "/array-status/symmetrixID3" | "invalid"  | "unexpected end of JSON input" |
+      | ""                           | "none"     | "connection refused"           |
 
   @resiliency
   @v2.11.0

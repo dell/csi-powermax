@@ -31,6 +31,13 @@ Feature: PowerMax CSI interface
     | "FC"       | "mount"      | "single-node-multi-writer"     | "none"     | "none"                                       |
     | "ISCSI"    | "mount"      | "single-node-single-writer"    | "none"     | "none"                                       |
     | "ISCSI"    | "mount"      | "single-node-multi-writer"     | "none"     | "none"                                       |
+    | "NVME"     | "mount"      | "single-writer"                | "xfs"      | "none"                                       |
+    | "NVME"     | "mount"      | "single-writer"                | "ext4"     | "none"                                       |
+    | "NVME"     | "mount"      | "multiple-writer"              | "ext4"     | "Mount volumes do not support AccessMode"    |
+    | "NVME"     | "block"      | "single-writer"                | "none"     | "none"                                       |
+    | "NVME"     | "block"      | "multiple-writer"              | "none"     | "none"                                       |
+    | "NVME"     | "mount"      | "single-node-single-writer"    | "none"     | "none"                                       |
+    | "NVME"     | "mount"      | "single-node-multi-writer"     | "none"     | "none"                                       |
 
 @nodePublish
 @v1.0.0
@@ -58,7 +65,47 @@ Feature: PowerMax CSI interface
     | "ISCSI"   | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"                     |
     | "ISCSI"   | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
     | "ISCSI"   | "GobrickConnectError"                   | "induced ConnectVolumeError"                                      |
+    | "NVME"    | "TargetNotCreatedForNodePublish"        | "none"                                                            |
+    | "NVME"    | "BadVolumeIdentifier"                   | "bad volume identifier"                                           |
+    | "NVME"    | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"                     |
+    | "NVME"    | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
+    | "NVME"    | "GobrickConnectError"                   | "induced ConnectVolumeError"                                      |
 
+@nodePublish
+@v1.0.0
+  Scenario Outline: Node stage volume with vSphere enabled
+    Given a PowerMax service
+    And I call set attribute IsVsphereEnabled "true"
+    And I set transport protocol to <transport>
+    And I have a Node "node1" with MaskingView
+    And a controller published volume
+    When I call NodeStageVolume with simulator
+    Then the error contains <errormsg>
+
+    Examples:
+    | transport | errormsg               |
+    | "FC"      | "could not attach RDM" |
+    | "NVME"    | "could not attach RDM" |
+    | "ISCSI"   | "could not attach RDM" |
+
+@nodePublish
+@v1.0.0
+  Scenario Outline: Node unstage volume with vSphere enabled
+    Given a PowerMax service
+    And I call set attribute IsVsphereEnabled "true"
+    And I set transport protocol to <transport>
+    And I have a Node "node1" with MaskingView
+    And a controller published volume
+    When I call NodeStageVolume with simulator
+    And I call NodeUnstageVolume with simulator
+    And there are no remaining mounts
+    Then the error contains <errormsg>
+
+    Examples:
+    | transport | errormsg               |
+    | "FC"      | "none"                 |
+    | "NVME"    | "none"                 |
+    | "ISCSI"   | "none"                 |
 
 @nodePublish
 @v1.0.0

@@ -16,7 +16,7 @@ metadata:
 parameters:
   #######################
   # k8s/driver attributes
-  #######################  
+  #######################
   # "csi.storage.k8s.io/fstype" is used to set the filesystem type which will be used to format the new volume
   # Allowed values:
   #   "ext4" - EXT4 File system
@@ -51,19 +51,19 @@ parameters:
   # This is used in naming storage group, max of 3 letter
   # Optional: true
   # Example: "HL1", "HL2"
-  #HostLimitName: "HL1"
+  # HostLimitName: "HL1"
   # The MBs per Second Host IO limit for the storage class
   # Optional: true, Default: ""
   # Examples: 100, 200, NOLIMIT
-  #HostIOLimitMBSec: ""
+  # HostIOLimitMBSec: ""
   # The IOs per Second Host IO limit for the storage class
   # Optional: true, Default: ""
   # Examples: 100, 200, NOLIMIT
-  #HostIOLimitIOSec: ""
+  # HostIOLimitIOSec: ""
   # distribution of the Host IO limits for the storage class
   # Optional: true, Default: ""
   # Allowed values: Never","Always" or "OnFailure" only
-  #DynamicDistribution: ""
+  # DynamicDistribution: ""
   ########################
   # CSM module attributes
   # ######################
