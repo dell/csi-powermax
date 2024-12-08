@@ -414,7 +414,7 @@ func (f *feature) aPowerMaxService() error {
 		if f.server == nil {
 			f.server = httptest.NewServer(handler)
 		}
-		f.service.opts.Endpoint = f.server.URL
+		//f.service.opts.Endpoint = f.server.URL
 		log.Printf("server url: %s", f.server.URL)
 	} else {
 		f.server = nil
@@ -2643,7 +2643,7 @@ func (f *feature) thereAreNoRemainingMounts() error {
 
 func (f *feature) getTypicalEnviron() []string {
 	stringSlice := make([]string, 0)
-	stringSlice = append(stringSlice, EnvEndpoint+"=unix_sock")
+	//stringSlice = append(stringSlice, EnvEndpoint+"=unix_sock")
 	stringSlice = append(stringSlice, EnvUser+"=admin")
 	stringSlice = append(stringSlice, EnvPassword+"=password")
 	stringSlice = append(stringSlice, EnvNodeName+"=Node1")

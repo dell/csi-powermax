@@ -768,11 +768,7 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	endPoint := ""
-	if s.opts.UseProxy {
-		endPoint = fmt.Sprintf("https://%s:%s", s.opts.ProxyServiceHost, s.opts.ProxyServicePort)
-	} else {
-		endPoint = s.opts.Endpoint
-	}
+	endPoint = fmt.Sprintf("https://%s:%s", s.opts.ProxyServiceHost, s.opts.ProxyServicePort)
 
 	// Create our PowerMax API client, if needed
 	if s.adminClient == nil {
