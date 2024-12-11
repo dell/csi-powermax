@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -43,8 +43,7 @@ const (
 
 var (
 	cleanupStarted      = false
-	licenseCached       = false
-	symmRepCapabilities *types.SymReplicationCapabilities
+	symmRepCapabilities = make(map[string]types.SymmetrixCapability)
 	mutex               sync.Mutex
 	snapCleaner         *snapCleanupWorker
 )
@@ -183,23 +182,33 @@ func (s *service) IsSnapshotLicensed(ctx context.Context, symID string, pmaxClie
 	}
 	mutex.Lock()
 	defer mutex.Unlock()
-	if licenseCached == false {
-		symmRepCapabilities, err = pmaxClient.GetReplicationCapabilities(ctx)
+
+	symmRepCapability, ok := symmRepCapabilities[symID]
+	if !ok {
+		repCapabilities, err := pmaxClient.GetReplicationCapabilities(ctx)
 		if err != nil {
 			return err
 		}
-		licenseCached = true
-		log.Infof("License information with Powermax %s is cached", symID)
-	}
-	for i := range symmRepCapabilities.SymmetrixCapability {
-		if symmRepCapabilities.SymmetrixCapability[i].SymmetrixID == symID {
-			if symmRepCapabilities.SymmetrixCapability[i].SnapVxCapable {
-				return nil
+
+		for _, symmCapability := range repCapabilities.SymmetrixCapability {
+			if symmCapability.SymmetrixID == symID {
+				symmRepCapabilities[symID] = symmCapability
+				log.Infof("License information with PowerMax %s is cached", symID)
+				break
 			}
-			return fmt.Errorf("PowerMax array (%s) doesn't have Snapshot license", symID)
+		}
+
+		symmRepCapability, ok = symmRepCapabilities[symID]
+		if !ok {
+			return fmt.Errorf("PowerMax array (%s) is not being managed by Unisphere", symID)
 		}
 	}
-	return fmt.Errorf("PowerMax array (%s) is not being managed by Unisphere", symID)
+
+	if symmRepCapability.SnapVxCapable {
+		return nil
+	}
+
+	return fmt.Errorf("PowerMax array (%s) doesn't have Snapshot license", symID)
 }
 
 // UnlinkAndTerminate executes cleanup operation on the source/target volume
