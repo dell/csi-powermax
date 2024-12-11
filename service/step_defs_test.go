@@ -3929,7 +3929,6 @@ func (f *feature) noVolumeSource() error {
 }
 
 func (f *feature) iResetTheLicenseCache() error {
-	licenseCached = false
 	symmRepCapabilities = nil
 	return nil
 }
