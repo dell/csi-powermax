@@ -3929,7 +3929,10 @@ func (f *feature) noVolumeSource() error {
 }
 
 func (f *feature) iResetTheLicenseCache() error {
-	symmRepCapabilities = nil
+	for k := range symmRepCapabilities {
+		delete(symmRepCapabilities, k)
+	}
+
 	return nil
 }
 
