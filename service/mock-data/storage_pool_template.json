@@ -1,0 +1,26 @@
+{
+  "effective_used_capacity_percent": 41,
+  "rdfa_dse": true,
+  "num_of_disk_groups": 1,
+  "srpId": "__SRP_ID__",
+  "emulation": "FBA",
+  "total_srdf_dse_allocated_cap_gb": 0.0,
+  "srp_capacity": {
+    "usable_total_tb": 3.42,
+    "subscribed_total_tb": 0.4,
+    "subscribed_allocated_tb": 0.18,
+    "snapshot_total_tb": 0.0,
+    "usable_used_tb": 1.39,
+    "snapshot_modified_tb": 0.0
+  },
+  "reserved_cap_percent": 10,
+  "diskGroupId": [
+    "1"
+  ],
+  "srp_efficiency": {
+    "overall_efficiency_ratio_to_one": 2.2,
+    "virtual_provisioning_savings_ratio_to_one": 2.2,
+    "data_reduction_enabled_percent": 0.0
+  },
+  "compression_state": "Disabled"
+}

@@ -1,0 +1,20 @@
+{
+  "storageGroupId": [
+    "CSI-lqam9025-F-PG_1D4-SG",
+    "CSI-lqam9025-F-PG_1D4-SG_1",
+    "CSI-lqam9025-SRP_1-PG_1D4-Diamond-SG",
+    "CSI-lqam9025-SRP_1-PG_1D4-Silver-SG",
+    "CSI-None-no-slo-SG",
+    "CSI-None-None-SG",
+    "CSI-SRP_1-Diamond-SG",
+    "CSI-SRP_1-None-SG",
+    "CSI-SRP_1-Optimized-SG",
+    "CSI-SRP_1-Silver-SG",
+    "l2se0049_sg",
+    "lqam9020_SG_MV",
+    "lqam9024_sg",
+    "lqam9024_sq2",
+    "lqam9026_sg2",
+	  "csi-no-srp-sg-node1"
+  ]
+}

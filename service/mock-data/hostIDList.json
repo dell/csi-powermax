@@ -1,0 +1,19 @@
+{
+    "hostId": [
+        "IS_lqam9024_IG",
+        "IS_LQAM9025_IG",
+        "l2se0042_ig",
+        "l2se0042_iscsi_ig",
+        "l2se0046_ig",
+        "l2se0046_iscsi_ig",
+        "l2se0049_ig",
+        "l2se0132_IG",
+        "l2se0221_IG",
+        "l2se0226_Initiator",
+        "lqam9025_FC",
+        "LQTF0116_IG",
+        "lqtf0118_ig",
+        "Test",
+		"csi-node-node1"
+    ]
+}

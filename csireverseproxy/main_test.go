@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -76,21 +76,21 @@ const (
 )
 
 var (
-	standAloneServer                    *Server
+	server                              *Server
 	primaryMockServer, backupMockServer *mockServer
 	httpClient                          *http.Client
 )
 
 func startTestServer() error {
-	if standAloneServer != nil {
+	if server != nil {
 		return nil
 	}
 	k8sUtils := k8smock.Init()
 	serverOpts := getServerOpts()
 	serverOpts.ConfigDir = common.TempConfigDir
-	// Create test standAlone proxy config and start the standAlone server
+	// Create test proxy config and start the server
 	serverOpts.ConfigFileName = tmpSAConfigFile
-	err := createTempConfig("StandAlone")
+	err := createTempConfig()
 	if err != nil {
 		return err
 	}
@@ -106,7 +106,7 @@ func startTestServer() error {
 	if err != nil {
 		return err
 	}
-	standAloneServer, err = startServer(k8sUtils, serverOpts)
+	server, err = startServer(k8sUtils, serverOpts)
 	return err
 }
 
@@ -202,8 +202,8 @@ func stopServers() {
 	if backupMockServer != nil {
 		backupMockServer.server.Close()
 	}
-	if standAloneServer != nil {
-		standAloneServer.SigChan <- syscall.SIGHUP
+	if server != nil {
+		server.SigChan <- syscall.SIGHUP
 	}
 }
 
@@ -230,22 +230,21 @@ func writeYAMLConfig(val interface{}, fileName, fileDir string) error {
 	return ioutil.WriteFile(filepath, file, 0o777)
 }
 
-func createTempConfig(mode string) error {
+func createTempConfig() error {
 	proxyConfigMap, err := readYAMLConfig(common.TestConfigFileName, common.TestConfigDir)
 	if err != nil {
 		log.Fatalf("Failed to read sample config file. (%s)", err.Error())
 		return err
 	}
-	// set proxy mode for respective server
-	proxyConfigMap.Mode = config.ProxyMode(mode)
+
 	filename := tmpSAConfigFile
 	proxyConfigMap.Port = "8080"
 	// Create a ManagementServerConfig
 	tempMgmtServerConfig := createTempManagementServers()
-	proxyConfigMap.StandAloneConfig.ManagementServerConfig = tempMgmtServerConfig
+	proxyConfigMap.Config.ManagementServerConfig = tempMgmtServerConfig
 	// Create a StorageArrayConfig
 	tempStorageArrayConfig := createTempStorageArrays()
-	proxyConfigMap.StandAloneConfig.StorageArrayConfig = tempStorageArrayConfig
+	proxyConfigMap.Config.StorageArrayConfig = tempStorageArrayConfig
 	err = writeYAMLConfig(proxyConfigMap, filename, common.TempConfigDir)
 	if err != nil {
 		log.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
@@ -347,7 +346,7 @@ func TestServer_EventHandler(t *testing.T) {
 
 func TestServer_SAEventHandler(t *testing.T) {
 	k8sUtils := k8smock.Init()
-	oldProxySecret := standAloneServer.config.StandAloneProxyConfig.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	oldProxySecret := server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      proxySecretName,
@@ -359,8 +358,8 @@ func TestServer_SAEventHandler(t *testing.T) {
 		},
 		Type: "Generic",
 	}
-	standAloneServer.EventHandler(k8sUtils, newSecret)
-	newProxySecret := standAloneServer.config.StandAloneProxyConfig.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	server.EventHandler(k8sUtils, newSecret)
+	newProxySecret := server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	if reflect.DeepEqual(oldProxySecret, newProxySecret) {
 		t.Errorf("cert file should change after update")
 	} else {
@@ -377,8 +376,8 @@ func TestServer_SAEventHandler(t *testing.T) {
 		},
 		Type: "Generic",
 	}
-	standAloneServer.EventHandler(k8sUtils, newSecret)
-	oldProxySecret = standAloneServer.config.StandAloneProxyConfig.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	server.EventHandler(k8sUtils, newSecret)
+	oldProxySecret = server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	if reflect.DeepEqual(oldProxySecret, newProxySecret) {
 		t.Errorf("cert file should change after update")
 	} else {
@@ -389,7 +388,7 @@ func TestServer_SAEventHandler(t *testing.T) {
 func TestSAHTTPRequest(t *testing.T) {
 	// make a request for version
 	path := utils.Prefix + "/version"
-	resp, err := doHTTPRequest(standAloneServer.Port, path)
+	resp, err := doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -398,7 +397,7 @@ func TestSAHTTPRequest(t *testing.T) {
 
 	// make a request for symmterix
 	path = utils.Prefix + "/91/system/symmetrix"
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -407,7 +406,7 @@ func TestSAHTTPRequest(t *testing.T) {
 
 	// make a request for capabilities
 	path = utils.Prefix + "/91/replication/capabilities/symmetrix"
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -416,7 +415,7 @@ func TestSAHTTPRequest(t *testing.T) {
 
 	// make a request to endpoint for ServeReverseProxy
 	path = utils.Prefix + "/91/sloprovisioning/symmetrix/" + storageArrayID
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -425,7 +424,7 @@ func TestSAHTTPRequest(t *testing.T) {
 
 	// make a request to ServeVolume
 	path = utils.Prefix + "/91/sloprovisioning/symmetrix/" + storageArrayID + "/volume"
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -435,7 +434,7 @@ func TestSAHTTPRequest(t *testing.T) {
 	// make a request to ServeIterator
 	id := "00000000-1111-2abc-def3-44gh55ij66kl_0"
 	path = utils.Prefix + "/common/Iterator/" + id + "/page"
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -444,7 +443,7 @@ func TestSAHTTPRequest(t *testing.T) {
 
 	// make a request for performance
 	path = utils.Prefix + "/performance/Array/keys"
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -452,7 +451,7 @@ func TestSAHTTPRequest(t *testing.T) {
 	fmt.Printf("RESPONSE_BODY: %s\n", resp)
 
 	path = utils.PrivatePrefix + "/91/sloprovisioning/symmetrix/" + storageArrayID
-	resp, err = doHTTPRequest(standAloneServer.Port, path)
+	resp, err = doHTTPRequest(server.Port, path)
 	log.Info("test info is there")
 	if err != nil {
 		t.Error(err.Error())

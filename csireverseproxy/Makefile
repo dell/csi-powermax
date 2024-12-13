@@ -1,4 +1,4 @@
-# Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2020-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 #
 include overrides.mk
 
-coverpackages= revproxy/v2,revproxy/v2/pkg/config,revproxy/v2/pkg/standaloneproxy
+coverpackages= revproxy/v2,revproxy/v2/pkg/config,revproxy/v2/pkg/proxy
 
 run:
 	@./run.sh

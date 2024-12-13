@@ -4,6 +4,6 @@ appVersion: v1
 description: Tests Powermax CSI deployments.
 icon: https://avatars1.githubusercontent.com/u/20958494?s=200&v=4
 keywords:
-- csi-powermax
-- storage
+ - csi-powermax
+ - storage
 engine: gotpl

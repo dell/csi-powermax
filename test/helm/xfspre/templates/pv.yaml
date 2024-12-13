@@ -12,5 +12,5 @@ spec:
     volumeHandle: 72cebf0c00000001
   volumeMode: Filesystem
   accessModes:
-  - ReadWriteOnce
+    - ReadWriteOnce
   storageClassName: {{ .Values.sc }}

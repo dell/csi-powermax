@@ -1,8 +1,7 @@
-mode: StandAlone
 port: 2222
 logLevel: debug
 logFormat: text
-standAloneConfig:
+config:
   storageArrays:
     - storageArrayId: "000000000001"
       primaryURL: https://primary-1.unisphe.re:8443

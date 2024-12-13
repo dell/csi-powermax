@@ -1,0 +1,41 @@
+{
+    "symmetrixPort": {
+        "symmetrixPortKey": {
+            "directorId": "__DIRECTOR_ID__",
+            "portId": "__PORT_ID__"
+        },
+        "port_status": "ON",
+        "director_status": "Online",
+        "type": "GigE",
+        "num_of_cores": 4,
+        "identifier": "iqn.1992-04.com.emc:600009700bcbb70e3287017400000001",
+        "negotiated_speed": "0",
+        "num_of_port_groups": 3,
+        "num_of_masking_views": 2,
+        "num_of_mapped_vols": 10,
+        "vcm_state": "Enabled",
+        "aclx": true,
+        "vnx_attached": false,
+        "avoid_reset_broadcast": false,
+        "environ_set": false,
+        "disable_q_reset_on_ua": false,
+        "soft_reset": false,
+        "scsi_3": true,
+        "scsi_support1": true,
+        "spc2_protocol_version": true,
+        "portgroup": [
+            "IS_lqam9024_PG",
+            "IS_lqam9024_2E_PG",
+            "IS_lqam9025_PG"
+        ],
+        "maskingview": [
+            "IS_lqam9024_view",
+            "lqam9024_diamond_sg_mv_MV"
+        ],
+        "max_speed": "0",
+        "iscsi_target": true,
+        "ip_addresses": [
+            "1.1.1.1"
+        ]
+    }
+}

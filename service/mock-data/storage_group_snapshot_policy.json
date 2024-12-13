@@ -1,0 +1,9 @@
+{
+  "symmetrixID": "000000000001",
+  "snapshot_policy_id": "IntSPA",
+  "storage_group_id": "IntSGA",
+  "compliance": "NONE",
+  "snapshots_in_time_window": 0,
+  "total_snapshots": 0,
+  "suspended": false
+}
