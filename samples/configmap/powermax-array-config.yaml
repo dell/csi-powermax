@@ -19,7 +19,7 @@ data:
   powermax-array-config.yaml: |
     # List of comma-separated port groups (ISCSI only). Example: PortGroup1, portGroup2 Required for iSCSI only
     X_CSI_POWERMAX_PORTGROUPS: ""
-    # Choose which transport protocol to use (ISCSI, FC, NVMETCP, auto) defaults to auto if nothing is specified
+    # Choose which transport protocol to use (ISCSI, FC, NVMETCP or auto) defaults to auto if nothing is specified
     X_CSI_TRANSPORT_PROTOCOL: ""
     # IP address of the Unisphere for PowerMax (Required), Defaults to https://0.0.0.0:8443
     X_CSI_POWERMAX_ENDPOINT: "https://10.0.0.0:8443"
