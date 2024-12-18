@@ -3928,9 +3928,18 @@ func (f *feature) noVolumeSource() error {
 	return nil
 }
 
+func (f *feature) validateSnapshotLicenseCache(count int) error {
+	if len(symmRepCapabilities) != count {
+		return fmt.Errorf("Expected %d array(s) in the license cache but got %d", count, len(symmRepCapabilities))
+	}
+	return nil
+}
+
 func (f *feature) iResetTheLicenseCache() error {
-	licenseCached = false
-	symmRepCapabilities = nil
+	for k := range symmRepCapabilities {
+		delete(symmRepCapabilities, k)
+	}
+
 	return nil
 }
 
@@ -5143,6 +5152,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^a valid DeleteSnapshotResponse is returned$`, f.aValidDeleteSnapshotResponseIsReturned)
 	s.Step(`^a non-existent volume$`, f.aNonexistentVolume)
 	s.Step(`^no volume source$`, f.noVolumeSource)
+	s.Step(`^the snapshot license cache has "(\d+)" array$`, f.validateSnapshotLicenseCache)
 	s.Step(`^I reset the license cache$`, f.iResetTheLicenseCache)
 	s.Step(`^I call IsSnapshotSource$`, f.iCallIsSnapshotSource)
 	s.Step(`^IsSnapshotSource returns "([^"]*)"$`, f.isSnapshotSourceReturns)

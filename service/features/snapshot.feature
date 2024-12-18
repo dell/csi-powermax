@@ -6,13 +6,16 @@ Feature: PowerMax CSI Interface
     Scenario: Snapshot license
         Given a PowerMax service
         When I check the snapshot license
-        And I reset the license cache
         Then no error was received
+        And the snapshot license cache has "1" array
+        And I reset the license cache
+        And the snapshot license cache has "0" array
 @v1.2.0
     Scenario: Snapshot license for unlicensed array
         Given a PowerMax service
         And I induce error "SnapshotNotLicensed"
         When I check the snapshot license
+        And the snapshot license cache has "1" array
         And I reset the license cache
         Then the error contains "doesn't have Snapshot license"
 @v1.2.0
@@ -20,6 +23,7 @@ Feature: PowerMax CSI Interface
         Given a PowerMax service
         And I induce error "InvalidResponse"
         When I check the snapshot license
+        And the snapshot license cache has "0" array
         And I reset the license cache
         Then the error contains "induced error"
 @v1.2.0
@@ -27,6 +31,7 @@ Feature: PowerMax CSI Interface
         Given a PowerMax service
         And I induce error "UnisphereMismatchError"
         When I check the snapshot license
+        And the snapshot license cache has "0" array
         And I reset the license cache
         Then the error contains "not being managed by Unisphere"
 @v1.2.0
