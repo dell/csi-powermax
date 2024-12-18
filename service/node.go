@@ -1654,7 +1654,10 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 					continue
 				}
 				if initiator.Host != "" {
-					if initiator.Host != hostID &&
+					initiatorHostLower := strings.ToLower(initiator.Host)
+					hostIDLower := strings.ToLower(hostID)
+
+					if initiatorHostLower != hostIDLower &&
 						s.opts.ModifyHostName {
 						if !hostUpdated {
 							// User has set ModifyHostName to modify host name in case of a mismatch
@@ -1672,7 +1675,7 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 							log.Warning(errormsg)
 							continue
 						}
-					} else if initiator.Host != hostID {
+					} else if initiatorHostLower != hostIDLower {
 						errormsg = fmt.Sprintf("initiator: %s is already a part of a different host: %s on: %s",
 							initiatorID, initiator.Host, symID)
 						log.Warning(errormsg)
