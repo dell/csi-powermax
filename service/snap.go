@@ -174,8 +174,8 @@ func (s *service) UnlinkTargets(ctx context.Context, symID, srcDevID string, pma
 	return nil
 }
 
-// IsSnapshotLicensed return true if the symmetrix array has
-// SnapVX license
+// This function checks if the PowerMax array has the SnapVX license.
+// It returns an error if the array does not meet the expectations.
 func (s *service) IsSnapshotLicensed(ctx context.Context, symID string, pmaxClient pmax.Pmax) (err error) {
 	if _, err := pmaxClient.IsAllowedArray(symID); err != nil {
 		return err
