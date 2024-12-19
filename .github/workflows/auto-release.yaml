@@ -1,8 +1,8 @@
 name: Auto Release CSM
-on:
+on:  # yamllint disable-line rule:truthy
   workflow_dispatch:
   repository_dispatch:
-    types: [auto-driver-module-release-workflow]
+    types: [auto-release-workflow]
 
 jobs:
   calculate-version:
@@ -13,7 +13,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # Fetch the full history including tags
+          fetch-depth: 0  # Fetch the full history including tags
 
       - name: Get latest release version
         id: get-latest-version
