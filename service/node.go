@@ -1654,35 +1654,33 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 					continue
 				}
 				if initiator.Host != "" {
-					initiatorHostLower := strings.ToLower(initiator.Host)
-					hostIDLower := strings.ToLower(hostID)
-
-					if initiatorHostLower != hostIDLower &&
-						s.opts.ModifyHostName {
-						if !hostUpdated {
-							// User has set ModifyHostName to modify host name in case of a mismatch
-							log.Infof("UpdateHostName processing: %s to %s", initiator.Host, hostID)
-							_, err := pmaxClient.UpdateHostName(ctx, symID, initiator.Host, hostID)
-							if err != nil {
-								errormsg = fmt.Sprintf("Failed to change host name from %s to %s: %s", initiator.HostID, hostID, err)
+					if !strings.EqualFold(initiator.Host, hostID) {
+						if s.opts.ModifyHostName {
+							if !hostUpdated {
+								// User has set ModifyHostName to modify host name in case of a mismatch
+								log.Infof("UpdateHostName processing: %s to %s", initiator.Host, hostID)
+								_, err := pmaxClient.UpdateHostName(ctx, symID, initiator.Host, hostID)
+								if err != nil {
+									errormsg = fmt.Sprintf("Failed to change host name from %s to %s: %s", initiator.Host, hostID, err)
+									log.Warning(errormsg)
+									continue
+								}
+								hostUpdated = true
+							} else {
+								errormsg = fmt.Sprintf("Skipping Updating Host %s for initiator: %s as updated host already present on: %s", initiator.Host,
+									initiatorID, symID)
 								log.Warning(errormsg)
 								continue
 							}
-							hostUpdated = true
 						} else {
-							errormsg = fmt.Sprintf("Skipping Updating Host %s for initiator: %s as updated host already present on: %s", initiator.HostID,
-								initiatorID, symID)
+							errormsg = fmt.Sprintf("initiator: %s is already a part of a different host: %s on: %s",
+								initiatorID, initiator.Host, symID)
 							log.Warning(errormsg)
 							continue
 						}
-					} else if initiatorHostLower != hostIDLower {
-						errormsg = fmt.Sprintf("initiator: %s is already a part of a different host: %s on: %s",
-							initiatorID, initiator.Host, symID)
-						log.Warning(errormsg)
-						continue
 					}
 				}
-				log.Infof("valid initiator: %s\n", initiatorID)
+				log.Infof("Valid initiator: %s", initiatorID)
 				validInitiators = appendIfMissing(validInitiators, nodeInitiator)
 				errormsg = ""
 			}
