@@ -523,6 +523,7 @@ Feature: PowerMax CSI interface
     |node1          | node2                    | nvalid          | induced                                  | errormsg                                            |
     |"host1"        | "host2"                  | 0               | "none"                                   | "is already a part of a different host"             |
     |"host1"        | "host1"                  | 1               | "none"                                   | "none"                                              |
+    |"host1"        | "HOST1"                  | 1               | "none"                                   | "none"                                              |
     |"host1"        | "host1"                  | 0               | "GetInitiatorByIDError"                  | "none"                                              |
 
 @v1.4.0
@@ -542,6 +543,7 @@ Feature: PowerMax CSI interface
     |"host1"        | "host1"   | 1        | false    | "temp-csi-%host1%"        | "none"                    | "none"                                              |
     |"host1"        | "host1"   | 0        | false    | "temp-csi-%host1%"        | "GetInitiatorByIDError"   | "none"                                              |
     |"host1"        | "host2"   | 0        | false    | "temp.!csi-%host1%"       | "none"                    | "is already a part of a different host"             |
+    |"host1"        | "HOST1"   | 1        | true     | "temp-csi-%host1%"        | "UpdateHostError"         | "none"                                              |
     |"host1"        | "host2"   | 1        | true     | "temp-csi-%host1%"        | "none"                    | "none"                                              |
     |"host1"        | "host2"   | 0        | true     | "temp-csi-%host1%"        | "UpdateHostError"         | "Error updating Host"                               |
     |"host1"        | "host2"   | 1        | true     | "temp-csi-%host1"         | "none"                    | "none"                                              |
