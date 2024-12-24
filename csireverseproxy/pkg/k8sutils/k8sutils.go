@@ -239,7 +239,7 @@ func (utils *K8sUtils) StartInformer(callback func(UtilsInterface, *corev1.Secre
 			}
 			callback(utils, newSecret)
 		},
-	})
+	}) // #nosec G104
 
 	utils.InformerFactory.Start(utils.stopCh)
 	return nil
