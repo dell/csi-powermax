@@ -21,6 +21,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,7 +71,8 @@ const (
 	PortGroups                 = "X_CSI_POWERMAX_PORTGROUPS"
 	Protocol                   = "X_CSI_TRANSPORT_PROTOCOL"
 	// PmaxEndPoint               = "X_CSI_POWERMAX_ENDPOINT"
-	ManagedArrays = "X_CSI_MANAGED_ARRAYS"
+	ManagedArrays   = "X_CSI_MANAGED_ARRAYS"
+	defaultCertFile = "tls.crt"
 )
 
 type contextKey string           // specific string type used for context keys
@@ -141,6 +143,7 @@ type Opts struct {
 	IsPodmonEnabled            bool   // used to indicate that podmon is enabled
 	PodmonPort                 string // to indicates the port to be used for exposing podmon API health
 	PodmonPollingFreq          string // indicates the polling frequency to check array connectivity
+	TLSCertDir                 string
 }
 
 // NodeConfig defines rules for given node
@@ -444,6 +447,10 @@ func (s *service) BeforeServe(
 
 	if podmonPollRate, ok := csictx.LookupEnv(ctx, EnvPodmonArrayConnectivityPollRate); ok {
 		opts.PodmonPollingFreq = podmonPollRate
+	}
+
+	if tlsCertDir, ok := csictx.LookupEnv(ctx, EnvTLSCertDirName); ok {
+		opts.TLSCertDir = tlsCertDir
 	}
 
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
@@ -777,7 +784,8 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 	// Create our PowerMax API client, if needed
 	if s.adminClient == nil {
 		applicationName := ApplicationName + "/" + "v" + core.SemVer
-		c, err := pmax.NewClientWithArgs(endPoint, applicationName, s.opts.Insecure, !s.opts.DisableCerts)
+		tlsCertFile := filepath.Join(s.opts.TLSCertDir, defaultCertFile)
+		c, err := pmax.NewClientWithArgs(endPoint, applicationName, s.opts.Insecure, !s.opts.DisableCerts, tlsCertFile)
 		if err != nil {
 			return status.Errorf(codes.FailedPrecondition,
 				"unable to create PowerMax client: %s", err.Error())
