@@ -166,6 +166,6 @@ const (
 	// EnvPodmonArrayConnectivityPollRate indicates the polling frequency to check array connectivity
 	EnvPodmonArrayConnectivityPollRate = "X_CSI_PODMON_ARRAY_CONNECTIVITY_POLL_RATE"
 
-	EnvTLSCertDirName           = "X_CSI_REVPROXY_TLS_CERT_DIR"
-
+	// EnvTLSCertDirName is an env variable that contains the path of reverseproxy tls certificate
+	EnvTLSCertDirName = "X_CSI_REVPROXY_TLS_CERT_DIR"
 )
