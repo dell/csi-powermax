@@ -127,7 +127,7 @@ func (f *feature) aPowermaxService() error {
 		if endpoint == "" {
 			return fmt.Errorf("Cannot read X_CSI_POWERMAX_ENDPOINT")
 		}
-		f.pmaxClient, err = pmax.NewClientWithArgs(endpoint, ApplicationName, true, false)
+		f.pmaxClient, err = pmax.NewClientWithArgs(endpoint, ApplicationName, true, false, "")
 		if err != nil {
 			return fmt.Errorf("Cannot attach to pmax library: %s", err)
 		}
