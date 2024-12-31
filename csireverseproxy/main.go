@@ -19,12 +19,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"path/filepath"
 	"revproxy/v2/pkg/common"
 	"revproxy/v2/pkg/config"
 	"revproxy/v2/pkg/k8sutils"
@@ -57,6 +57,8 @@ type ServerOpts struct {
 	KeyFile        string
 	ConfigDir      string
 	ConfigFileName string
+	SecretFilePath string
+	SecretName     string
 	InCluster      bool
 }
 
@@ -74,6 +76,8 @@ func getServerOpts() ServerOpts {
 	defaultNameSpace := getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace)
 	configFile := getEnv(common.EnvConfigFileName, common.DefaultConfigFileName)
 	configDir := getEnv(common.EnvConfigDirName, common.DefaultConfigDir)
+	secretFilePath := getEnv(common.EnvSecretPath, common.DefaultSecretPath)
+	secretName := getEnv(common.EnvSecretName, common.DefaultSecretName)
 	inClusterEnvVal := getEnv(common.EnvInClusterConfig, "false")
 	inCluster := false
 	if strings.ToLower(inClusterEnvVal) == "true" {
@@ -85,6 +89,8 @@ func getServerOpts() ServerOpts {
 		NameSpace:      defaultNameSpace,
 		ConfigFileName: configFile,
 		ConfigDir:      configDir,
+		SecretFilePath: secretFilePath,
+		SecretName:     secretName,
 		CertFile:       common.DefaultCertFile,
 		KeyFile:        common.DefaultKeyFile,
 		InCluster:      inCluster,
@@ -123,7 +129,7 @@ func (s *Server) Config() *config.ProxyConfig {
 // this includes - reading the config, creating appropriate proxy instance
 // and setting up the signal handler channel
 func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
-	proxyConfigMap, err := config.ReadConfig(s.Opts.ConfigFileName, s.Opts.ConfigDir)
+	/*proxyConfigMap, err := config.ReadConfig(s.Opts.ConfigFileName, s.Opts.ConfigDir)
 	if err != nil {
 		return err
 	}
@@ -131,16 +137,26 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 	proxyConfig, err := config.NewProxyConfig(proxyConfigMap, k8sUtils)
 	if err != nil {
 		return err
+	}*/
+	proxySecretMap, err := config.ReadConfig(s.Opts.SecretName, s.Opts.SecretFilePath)
+	if err != nil {
+		return err
 	}
+
+	proxySecret, err := config.NewProxyConfig(proxySecretMap, k8sUtils)
+	if err != nil {
+		return err
+	}
+
 	s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
 	s.KeyFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.KeyFile)
-	s.Port = proxyConfig.Port
-	proxy, err := proxy.NewProxy(*proxyConfig)
+	//s.Port = proxySecret.Port
+	proxy, err := proxy.NewProxy(*proxySecret)
 	if err != nil {
 		return err
 	}
 	s.Proxy = proxy
-	s.SetConfig(proxyConfig)
+	s.SetConfig(proxySecret)
 	s.SigChan = make(chan os.Signal, 1)
 	return nil
 }
@@ -194,7 +210,7 @@ func (s *Server) SignalHandler(k8sUtils k8sutils.UtilsInterface) {
 	}()
 }
 
-func updateRevProxyLogParams(format, logLevel string) {
+/*func updateRevProxyLogParams(format, logLevel string) {
 	logFormatFromConfig := strings.ToLower(format)
 	var formatter log.Formatter
 	// Use text logger as default
@@ -223,13 +239,13 @@ func updateRevProxyLogParams(format, logLevel string) {
 		log.Print("Couldn't read logLevel from config file. Using debug level as default")
 	}
 	setLogFormatAndLevel(formatter, level)
-}
+}*/
 
-func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
+/*func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 	log.SetFormatter(logFormat)
 	log.Infof("Setting log level to %v", level)
 	log.SetLevel(level)
-}
+}*/
 
 // SetupConfigMapWatcher - Uses viper config change watcher to watch for
 // config change events on the yaml file
@@ -244,7 +260,7 @@ func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
 		if err != nil {
 			log.Errorf("Error in unmarshalling the config: %s", err.Error())
 		} else {
-			updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
+			//updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
 			proxyConfig, err := config.NewProxyConfig(&proxyConfigMap, k8sUtils)
 			if err != nil || proxyConfig == nil {
 				log.Errorf("Error parsing the config: %v", err)
@@ -279,7 +295,7 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 			hasChanged = true
 		}
 	}
-	found = conf.IsSecretConfiguredForArrays(secret.Name)
+	/*found = conf.IsSecretConfiguredForArrays(secret.Name)
 	if found {
 		creds, err := k8sUtils.GetCredentialsFromSecret(secret)
 		if err != nil {
@@ -290,7 +306,7 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 		if isUpdated {
 			hasChanged = true
 		}
-	}
+	}*/
 	if hasChanged {
 		err := s.GetRevProxy().UpdateConfig(*conf)
 		if err != nil {

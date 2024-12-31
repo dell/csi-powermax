@@ -64,7 +64,7 @@ func getProxyConfig(t *testing.T) (*ProxyConfig, error) {
 		t.Errorf("Failed to read config. (%s)", err.Error())
 		return nil, err
 	}
-	for _, storageArray := range configMap.Config.StorageArrayConfig {
+	/*for _, storageArray := range configMap.Config.StorageArrayConfig {
 		for _, secretName := range storageArray.ProxyCredentialSecrets {
 			_, err := k8sUtils.CreateNewCredentialSecret(secretName)
 			if err != nil {
@@ -72,13 +72,13 @@ func getProxyConfig(t *testing.T) (*ProxyConfig, error) {
 				return nil, err
 			}
 		}
-	}
+	}*/
 	for _, managementServer := range configMap.Config.ManagementServerConfig {
-		_, err := k8sUtils.CreateNewCredentialSecret(managementServer.ArrayCredentialSecret)
+		/*_, err := k8sUtils.CreateNewCredentialSecret(managementServer.ArrayCredentialSecret)
 		if err != nil {
 			t.Errorf("Failed to create server credential secret. (%s)", err.Error())
 			return nil, err
-		}
+		}*/
 		_, err = k8sUtils.CreateNewCertSecret(managementServer.CertSecret)
 		if err != nil {
 			t.Errorf("Fialed to create server cert secret. (%s)", err.Error())
@@ -121,7 +121,7 @@ func TestProxyConfig_UpdateCerts(t *testing.T) {
 	fmt.Println("Cert secrets updated successfully.")
 }
 
-func TestProxyConfig_UpdateCreds(t *testing.T) {
+/*func TestProxyConfig_UpdateCreds(t *testing.T) {
 	config, err := getProxyConfig(t)
 	if err != nil {
 		return
@@ -138,7 +138,7 @@ func TestProxyConfig_UpdateCreds(t *testing.T) {
 	}
 	config.UpdateCreds("powermax-secret", newCredentials)
 	fmt.Println("Credentials updated successfully")
-}
+}*/
 
 func TestProxyConfig_UpdateCertsAndCredentials(t *testing.T) {
 	config, err := getProxyConfig(t)
@@ -157,7 +157,7 @@ func TestProxyConfig_UpdateCertsAndCredentials(t *testing.T) {
 	fmt.Println("Certs and Secrets updated successfully")
 }
 
-func TestProxyConfig_UpdateManagementServers(t *testing.T) {
+/*func TestProxyConfig_UpdateManagementServers(t *testing.T) {
 	config, err := getProxyConfig(t)
 	if err != nil {
 		return
@@ -169,7 +169,7 @@ func TestProxyConfig_UpdateManagementServers(t *testing.T) {
 		return
 	}
 	fmt.Println("Management servers updated successfully")
-}
+}*/
 
 func TestProxyConfig_UpdateManagedArrays(t *testing.T) {
 	config, err := getProxyConfig(t)

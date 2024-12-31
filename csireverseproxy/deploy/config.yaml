@@ -1,30 +1,24 @@
-port: 2222
-logLevel: debug
-logFormat: text
-config:
-  storageArrays:
-    - storageArrayId: "000000000001"
-      primaryURL: https://primary-1.unisphe.re:8443
-      backupURL: https://backup-1.unisphe.re:8443
-      proxyCredentialSecrets:
-        - primary-unisphere-secret-1
-        - backup-unisphere-secret-1
-    - storageArrayId: "000000000002"
-      primaryURL: https://primary-2.unisphe.re:8443
-      backupURL: https://backup-2.unisphe.re:8443
-      proxyCredentialSecrets:
-        - primary-unisphere-secret-2
-        - backup-unisphere-secret-2
-  managementServers:
-    - url: https://primary-1.unisphe.re:8443
-      arrayCredentialSecret: primary-unisphere-secret-1
-      skipCertificateValidation: true
-    - url: https://backup-1.unisphe.re:8443
-      arrayCredentialSecret: backup-unisphere-secret-1
-      skipCertificateValidation: false
-    - url: https://primary-2.unisphe.re:8443
-      arrayCredentialSecret: primary-unisphere-secret-2
-      skipCertificateValidation: true
-    - url: https://backup-2.unisphe.re:8443
-      arrayCredentialSecret: backup-unisphere-secret-2
-      skipCertificateValidation: false
+storageArrays:
+  - storageArrayId: "000000000001"
+    primaryEndpoint: https://primary-1.unisphe.re:8443
+    backupEndpoint: https://backup-1.unisphe.re:8443
+  - storageArrayId: "000000000002"
+    primaryEndpoint: https://primary-2.unisphe.re:8443
+    backupEndpoint: https://backup-2.unisphe.re:8443
+managementServers:
+  - endpoint: https://primary-1.unisphe.re:8443
+    username: admin
+    password: password
+    skipCertificateValidation: true
+  - endpoint: https://backup-1.unisphe.re:8443
+    username: admin2
+    password: Password123
+    skipCertificateValidation: false
+  - endpoint: https://primary-2.unisphe.re:8443
+    username: admin3
+    password: Password!
+    skipCertificateValidation: true
+  - endpoint: https://backup-2.unisphe.re:8443
+    username: admin4
+    password: Password123!
+    skipCertificateValidation: false

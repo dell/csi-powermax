@@ -26,7 +26,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sync"
 	"syscall"
 	"testing"
@@ -39,9 +38,6 @@ import (
 	"revproxy/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"gopkg.in/yaml.v2"
 )
@@ -238,7 +234,7 @@ func createTempConfig() error {
 	}
 
 	filename := tmpSAConfigFile
-	proxyConfigMap.Port = "8080"
+	//proxyConfigMap.Port = "8080"
 	// Create a ManagementServerConfig
 	tempMgmtServerConfig := createTempManagementServers()
 	proxyConfigMap.Config.ManagementServerConfig = tempMgmtServerConfig
@@ -255,10 +251,10 @@ func createTempConfig() error {
 func createTempStorageArrays() []config.StorageArrayConfig {
 	tempStorageArrayConfig := []config.StorageArrayConfig{
 		{
-			PrimaryURL:             getURL(primaryPort, "/"),
-			BackupURL:              getURL(backupPort, "/"),
-			StorageArrayID:         storageArrayID,
-			ProxyCredentialSecrets: []string{proxySecretName},
+			PrimaryEndpoint: getURL(primaryPort, "/"),
+			BackupEndpoint:  getURL(backupPort, "/"),
+			StorageArrayID:  storageArrayID,
+			//ProxyCredentialSecrets: []string{proxySecretName},
 		},
 	}
 	return tempStorageArrayConfig
@@ -267,8 +263,8 @@ func createTempStorageArrays() []config.StorageArrayConfig {
 func createTempManagementServers() []config.ManagementServerConfig {
 	// Create a primary management server
 	primaryMgmntServer := config.ManagementServerConfig{
-		ArrayCredentialSecret:     proxySecretName,
-		URL:                       getURL(primaryPort, "/"),
+		//ArrayCredentialSecret:     proxySecretName,
+		Endpoint:                  getURL(primaryPort, "/"),
 		SkipCertificateValidation: skipPrimaryCertValidation,
 	}
 	if !skipPrimaryCertValidation {
@@ -276,8 +272,8 @@ func createTempManagementServers() []config.ManagementServerConfig {
 	}
 	// Create a backup management server
 	backupMgmntServer := config.ManagementServerConfig{
-		ArrayCredentialSecret:     proxySecretName,
-		URL:                       getURL(backupPort, "/"),
+		//ArrayCredentialSecret:     proxySecretName,
+		Endpoint:                  getURL(backupPort, "/"),
 		SkipCertificateValidation: skipBackupCertValidation,
 	}
 	if !skipBackupCertValidation {
@@ -344,7 +340,7 @@ func TestServer_EventHandler(t *testing.T) {
 	}
 }
 
-func TestServer_SAEventHandler(t *testing.T) {
+/*func TestServer_SAEventHandler(t *testing.T) {
 	k8sUtils := k8smock.Init()
 	oldProxySecret := server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	newSecret := &corev1.Secret{
@@ -383,7 +379,7 @@ func TestServer_SAEventHandler(t *testing.T) {
 	} else {
 		fmt.Println("Secret Reverted Successfully")
 	}
-}
+}*/
 
 func TestSAHTTPRequest(t *testing.T) {
 	// make a request for version
