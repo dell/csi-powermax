@@ -3022,14 +3022,14 @@ func (s *service) controllerProbe(ctx context.Context) error {
 		return status.Error(codes.FailedPrecondition,
 			"missing Unisphere endpoint")
 	}
-	if s.opts.User == "" {
+	/*if s.opts.User == "" {
 		return status.Error(codes.FailedPrecondition,
 			"missing Unisphere user")
 	}
 	if s.opts.Password == "" {
 		return status.Error(codes.FailedPrecondition,
 			"missing Unisphere password")
-	}
+	}*/
 
 	log.Debugf("Portgroups length is: %d", len(s.opts.PortGroups))
 	for _, p := range s.opts.PortGroups {
