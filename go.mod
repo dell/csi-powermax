@@ -26,7 +26,11 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
+<<<<<<< HEAD
 	github.com/vmware/govmomi v0.46.3
+=======
+	github.com/vmware/govmomi v0.47.0
+>>>>>>> main
 	golang.org/x/net v0.33.0
 	google.golang.org/grpc v1.69.2
 	google.golang.org/protobuf v1.36.1
