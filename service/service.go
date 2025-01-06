@@ -701,22 +701,19 @@ func (s *service) getProxySettingsFromEnv() (string, string, bool) {
 	}
 	if proxyServiceName, ok := csictx.LookupEnv(context.Background(), EnvUnisphereProxyServiceName); ok {
 		if proxyServiceName != "none" {
+			serviceHost = proxyServiceName
 			// Change it to uppercase
 			proxyServiceName = strings.ToUpper(proxyServiceName)
 			// Change all "-" to underscores
 			proxyServiceName = strings.Replace(proxyServiceName, "-", "_", -1)
-			serviceHostEnv := fmt.Sprintf("%s_SERVICE_HOST", proxyServiceName)
 			servicePortEnv := fmt.Sprintf("%s_SERVICE_PORT", proxyServiceName)
-			if sh, ok := csictx.LookupEnv(context.Background(), serviceHostEnv); ok {
-				serviceHost = sh
-				if sp, ok := csictx.LookupEnv(context.Background(), servicePortEnv); ok {
-					servicePort = sp
-					if serviceHost == "" || servicePort == "" {
-						log.Warning("Either ServiceHost and ServicePort is set to empty")
-						return "", "", false
-					}
-					return serviceHost, servicePort, true
+			if sp, ok := csictx.LookupEnv(context.Background(), servicePortEnv); ok {
+				servicePort = sp
+				if serviceHost == "" || servicePort == "" {
+					log.Warning("Either ServiceHost and ServicePort is set to empty")
+					return "", "", false
 				}
+				return serviceHost, servicePort, true
 			}
 		}
 	}
