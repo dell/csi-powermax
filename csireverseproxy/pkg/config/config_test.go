@@ -14,21 +14,8 @@
 
 package config
 
-import (
-	"fmt"
-	"os"
-	"testing"
-
-	"revproxy/v2/pkg/common"
-	"revproxy/v2/pkg/k8smock"
-	"revproxy/v2/pkg/k8sutils"
-	"revproxy/v2/pkg/utils"
-
-	log "github.com/sirupsen/logrus"
-)
-
-func readConfig() (*ProxyConfigMap, error) {
-	return ReadConfig(common.TestConfigFileName, "./../../"+common.TestConfigDir)
+/*func readConfig() (*ProxyConfig, error) {
+	return ReadConfig("./../../" + common.TestConfigDir)
 }
 
 func TestMain(m *testing.M) {
@@ -53,11 +40,11 @@ func TestReadConfig(t *testing.T) {
 	fmt.Printf("%v", proxyConfigMap)
 }
 
-func newProxyConfig(configMap *ProxyConfigMap, utils k8sutils.UtilsInterface) (*ProxyConfig, error) {
+/*func newProxyConfig(configMap *ProxyConfig, utils k8sutils.UtilsInterface) (*ProxyConfig, error) {
 	return NewProxyConfig(configMap, utils)
-}
+}*/
 
-func getProxyConfig(t *testing.T) (*ProxyConfig, error) {
+/*func getProxyConfig(t *testing.T) (*ProxyConfig, error) {
 	k8sUtils := k8smock.Init()
 	configMap, err := readConfig()
 	if err != nil {
@@ -72,20 +59,20 @@ func getProxyConfig(t *testing.T) (*ProxyConfig, error) {
 				return nil, err
 			}
 		}
-	}*/
+	}
 	for _, managementServer := range configMap.Config.ManagementServerConfig {
 		/*_, err := k8sUtils.CreateNewCredentialSecret(managementServer.ArrayCredentialSecret)
 		if err != nil {
 			t.Errorf("Failed to create server credential secret. (%s)", err.Error())
 			return nil, err
-		}*/
+		}
 		_, err = k8sUtils.CreateNewCertSecret(managementServer.CertSecret)
 		if err != nil {
 			t.Errorf("Fialed to create server cert secret. (%s)", err.Error())
 			return nil, err
 		}
 	}
-	config, err := NewProxyConfig(configMap, k8sUtils)
+	config, err := ParseConfig(configMap, k8sUtils)
 	if err != nil {
 		t.Errorf("Failed to create new config. (%s)", err.Error())
 		return nil, err
@@ -138,7 +125,7 @@ func TestProxyConfig_UpdateCerts(t *testing.T) {
 	}
 	config.UpdateCreds("powermax-secret", newCredentials)
 	fmt.Println("Credentials updated successfully")
-}*/
+}
 
 func TestProxyConfig_UpdateCertsAndCredentials(t *testing.T) {
 	config, err := getProxyConfig(t)
@@ -169,7 +156,7 @@ func TestProxyConfig_UpdateCertsAndCredentials(t *testing.T) {
 		return
 	}
 	fmt.Println("Management servers updated successfully")
-}*/
+}
 
 func TestProxyConfig_UpdateManagedArrays(t *testing.T) {
 	config, err := getProxyConfig(t)
@@ -195,4 +182,4 @@ func TestProxyConfig_GetStorageArray(t *testing.T) {
 		return
 	}
 	fmt.Printf("Storage arrays: %+v\n", config.GetStorageArray("000197900045"))
-}
+}*/

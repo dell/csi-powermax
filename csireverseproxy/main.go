@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -50,13 +51,13 @@ type RevProxy interface {
 
 // ServerOpts - Proxy server configuration
 type ServerOpts struct {
-	CertDir        string
-	TLSCertDir     string
-	NameSpace      string
-	CertFile       string
-	KeyFile        string
-	ConfigDir      string
-	ConfigFileName string
+	CertDir    string
+	TLSCertDir string
+	NameSpace  string
+	CertFile   string
+	KeyFile    string
+	//ConfigDir      string
+	//ConfigFileName string
 	SecretFilePath string
 	SecretName     string
 	InCluster      bool
@@ -74,26 +75,26 @@ func getServerOpts() ServerOpts {
 	certDir := getEnv(common.EnvCertDirName, common.DefaultCertDirName)
 	tlsCertDir := getEnv(common.EnvTLSCertDirName, common.DefaultTLSCertDirName)
 	defaultNameSpace := getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace)
-	configFile := getEnv(common.EnvConfigFileName, common.DefaultConfigFileName)
-	configDir := getEnv(common.EnvConfigDirName, common.DefaultConfigDir)
+	//configFile := getEnv(common.EnvConfigFileName, common.DefaultConfigFileName)
+	//configDir := getEnv(common.EnvConfigDirName, common.DefaultConfigDir)
 	secretFilePath := getEnv(common.EnvSecretPath, common.DefaultSecretPath)
-	secretName := getEnv(common.EnvSecretName, common.DefaultSecretName)
+	//secretName := getEnv(common.EnvSecretName, common.DefaultSecretName)
 	inClusterEnvVal := getEnv(common.EnvInClusterConfig, "false")
 	inCluster := false
 	if strings.ToLower(inClusterEnvVal) == "true" {
 		inCluster = true
 	}
 	return ServerOpts{
-		CertDir:        certDir,
-		TLSCertDir:     tlsCertDir,
-		NameSpace:      defaultNameSpace,
-		ConfigFileName: configFile,
-		ConfigDir:      configDir,
+		CertDir:    certDir,
+		TLSCertDir: tlsCertDir,
+		NameSpace:  defaultNameSpace,
+		//ConfigFileName: configFile,
+		//ConfigDir:      configDir,
 		SecretFilePath: secretFilePath,
-		SecretName:     secretName,
-		CertFile:       common.DefaultCertFile,
-		KeyFile:        common.DefaultKeyFile,
-		InCluster:      inCluster,
+		//SecretName:     secretName,
+		CertFile:  common.DefaultCertFile,
+		KeyFile:   common.DefaultKeyFile,
+		InCluster: inCluster,
 	}
 }
 
@@ -138,7 +139,8 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 	if err != nil {
 		return err
 	}*/
-	proxySecretMap, err := config.ReadConfig(s.Opts.SecretName, s.Opts.SecretFilePath)
+	fmt.Printf("****** START OF REVERSEPROXY ******")
+	proxySecretMap, err := config.ReadConfig(s.Opts.SecretFilePath)
 	if err != nil {
 		return err
 	}
@@ -255,13 +257,13 @@ func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		log.Info("Received a config change event")
-		var proxyConfigMap config.ProxyConfigMap
-		err := viper.Unmarshal(&proxyConfigMap)
+		var proxyConfig config.ProxyConfig
+		err := viper.Unmarshal(&proxyConfig)
 		if err != nil {
 			log.Errorf("Error in unmarshalling the config: %s", err.Error())
 		} else {
 			//updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
-			proxyConfig, err := config.NewProxyConfig(&proxyConfigMap, k8sUtils)
+			proxyConfig, err := config.NewProxyConfig(&proxyConfig, k8sUtils)
 			if err != nil || proxyConfig == nil {
 				log.Errorf("Error parsing the config: %v", err)
 			} else {

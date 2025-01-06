@@ -90,7 +90,7 @@ func newHTTPClient(mgmtServer config.ManagementServer) *http.Client {
 }
 
 func newReverseProxy(mgmtServer config.ManagementServer) common.Proxy {
-	revProxy := httputil.NewSingleHostReverseProxy(&mgmtServer.Endpoint)
+	revProxy := httputil.NewSingleHostReverseProxy(&mgmtServer.URLEndpoint)
 	tlsConfig := newTLSConfig(mgmtServer)
 	revProxy.Transport = &http.Transport{
 		TLSClientConfig:     tlsConfig,
@@ -99,7 +99,7 @@ func newReverseProxy(mgmtServer config.ManagementServer) common.Proxy {
 	}
 	proxy := common.Proxy{
 		ReverseProxy: revProxy,
-		URL:          mgmtServer.Endpoint,
+		URL:          mgmtServer.URLEndpoint,
 		Limits:       mgmtServer.Limits,
 	}
 	return proxy

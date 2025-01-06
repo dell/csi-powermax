@@ -83,14 +83,14 @@ func startTestServer() error {
 	}
 	k8sUtils := k8smock.Init()
 	serverOpts := getServerOpts()
-	serverOpts.ConfigDir = common.TempConfigDir
+	//serverOpts.ConfigDir = common.TempConfigDir
 	// Create test proxy config and start the server
-	serverOpts.ConfigFileName = tmpSAConfigFile
-	err := createTempConfig()
+	//serverOpts.ConfigFileName = tmpSAConfigFile
+	/*err := createTempConfig()
 	if err != nil {
 		return err
-	}
-	_, err = k8sUtils.CreateNewCredentialSecret(proxySecretName)
+	}*/
+	_, err := k8sUtils.CreateNewCredentialSecret(proxySecretName)
 	if err != nil {
 		return err
 	}
@@ -203,8 +203,8 @@ func stopServers() {
 	}
 }
 
-func readYAMLConfig(filename, fileDir string) (config.ProxyConfigMap, error) {
-	configmap := config.ProxyConfigMap{}
+func readYAMLConfig(filename, fileDir string) (config.ProxyConfig, error) {
+	configmap := config.ProxyConfig{}
 	file := filepath.Join(fileDir, filename)
 	yamlFile, err := ioutil.ReadFile(file)
 	if err != nil {
@@ -226,7 +226,7 @@ func writeYAMLConfig(val interface{}, fileName, fileDir string) error {
 	return ioutil.WriteFile(filepath, file, 0o777)
 }
 
-func createTempConfig() error {
+/*func createTempConfig() error {
 	proxyConfigMap, err := readYAMLConfig(common.TestConfigFileName, common.TestConfigDir)
 	if err != nil {
 		log.Fatalf("Failed to read sample config file. (%s)", err.Error())
@@ -246,7 +246,7 @@ func createTempConfig() error {
 		log.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
 	}
 	return err
-}
+}*/
 
 func createTempStorageArrays() []config.StorageArrayConfig {
 	tempStorageArrayConfig := []config.StorageArrayConfig{
