@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ PROG="${0}"
 NODE_VERIFY=1
 VERIFY=1
 MODE="install"
-DEFAULT_DRIVER_VERSION="v2.12.0"
+DEFAULT_DRIVER_VERSION="v2.13.0"
 WATCHLIST=""
 
 #
@@ -49,7 +49,7 @@ function usage() {
   exit 0
 }
 
-DRIVERVERSION="csi-powermax-2.12.0"
+DRIVERVERSION="csi-powermax-2.13.0"
 
 while getopts ":h-:" optchar; do
   case "${optchar}" in

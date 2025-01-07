@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
 
 # verify-csi-powermax method
 function verify-csi-powermax() {
-  verify_k8s_versions "1.29" "1.31"
-  verify_openshift_versions "4.16" "4.17"  
+  verify_k8s_versions "1.30" "1.32"
+  verify_openshift_versions "4.17" "4.18"  
   verify_helm_values_version "${DRIVER_VERSION}"
   verify_namespace "${NS}"
   verify_required_secrets "${RELEASE}-creds"
