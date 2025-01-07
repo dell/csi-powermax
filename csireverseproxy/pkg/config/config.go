@@ -615,7 +615,8 @@ func (pc *ProxyConfig) ParseConfig(proxyConfig Config, k8sUtils k8sutils.UtilsIn
 		} else {
 			return fmt.Errorf("incorrect BackupURL")
 		}
-
+		//fmt.printf("***UPDATEPROXYCREDENTIALS***")
+		fmt.Printf("primary username ")
 		pc.updateProxyCredentials(primaryUsername, primaryPassword, array.StorageArrayID)
 		pc.updateProxyCredentials(backupUsername, backupPassword, array.StorageArrayID)
 

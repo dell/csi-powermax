@@ -56,6 +56,7 @@ type ServerOpts struct {
 	NameSpace  string
 	CertFile   string
 	KeyFile    string
+	Port       string
 	//ConfigDir      string
 	//ConfigFileName string
 	SecretFilePath string
@@ -78,6 +79,7 @@ func getServerOpts() ServerOpts {
 	//configFile := getEnv(common.EnvConfigFileName, common.DefaultConfigFileName)
 	//configDir := getEnv(common.EnvConfigDirName, common.DefaultConfigDir)
 	secretFilePath := getEnv(common.EnvSecretPath, common.DefaultSecretPath)
+	port := getEnv(common.EnvSidecarProxyPort, common.DefaultPort)
 	//secretName := getEnv(common.EnvSecretName, common.DefaultSecretName)
 	inClusterEnvVal := getEnv(common.EnvInClusterConfig, "false")
 	inCluster := false
@@ -91,6 +93,7 @@ func getServerOpts() ServerOpts {
 		//ConfigFileName: configFile,
 		//ConfigDir:      configDir,
 		SecretFilePath: secretFilePath,
+		Port:           port,
 		//SecretName:     secretName,
 		CertFile:  common.DefaultCertFile,
 		KeyFile:   common.DefaultKeyFile,
@@ -152,7 +155,7 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 
 	s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
 	s.KeyFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.KeyFile)
-	//s.Port = proxySecret.Port
+	s.Port = filepath.Join(s.Opts.Port)
 	proxy, err := proxy.NewProxy(*proxySecret)
 	if err != nil {
 		return err
@@ -172,6 +175,7 @@ func (s *Server) GetRevProxy() RevProxy {
 func (s *Server) Start() {
 	s.WaitGroup.Add(1)
 	if s.HTTPServer == nil {
+		fmt.Printf("**START OF REVERSEPROXY***")
 		port := utils.GetListenAddress(s.Port)
 		handler := s.GetRevProxy().GetRouter()
 		server := http.Server{

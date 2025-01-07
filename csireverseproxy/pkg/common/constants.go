@@ -23,6 +23,7 @@ const (
 	DefaultConfigFileName = "config"
 	DefaultConfigDir      = "deploy"
 	DefaultSecretPath     = "deploy"
+	DefaultPort           = "2222"
 	DefaultSecretName     = "powermax-reverseproxy-secret"
 	TestConfigDir         = "test-config"
 	TempConfigDir         = "test-config/tmp"
@@ -34,8 +35,11 @@ const (
 	//EnvConfigDirName            = "X_CSI_REVPROXY_CONFIG_DIR"
 	EnvSecretPath = "X_CSI_REVPROXY_SECRET_PATH"
 	//EnvSecretName               = "X_CSI_REVPROXY_SECRET_NAME"
-	EnvInClusterConfig          = "X_CSI_REVRPOXY_IN_CLUSTER"
-	EnvIsLeaderElectionEnabled  = "X_CSI_REVPROXY_IS_LEADER_ENABLED"
+	EnvInClusterConfig         = "X_CSI_REVRPOXY_IN_CLUSTER"
+	EnvIsLeaderElectionEnabled = "X_CSI_REVPROXY_IS_LEADER_ENABLED"
+	// EnvSidecarProxyPort is the port on which the reverse proxy
+	// server run, if run as a sidecar container
+	EnvSidecarProxyPort         = "X_CSI_POWERMAX_SIDECAR_PROXY_PORT"
 	DefaultNameSpace            = "powermax"
 	MaxActiveReadRequests       = 5
 	MaxOutStandingWriteRequests = 50
