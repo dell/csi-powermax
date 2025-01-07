@@ -257,7 +257,7 @@ func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		log.Info("Received a config change event")
-		var proxyConfig config.ProxyConfig
+		var proxyConfig config.Config
 		err := viper.Unmarshal(&proxyConfig)
 		if err != nil {
 			log.Errorf("Error in unmarshalling the config: %s", err.Error())
