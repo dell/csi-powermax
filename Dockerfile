@@ -1,4 +1,4 @@
-# Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2020-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,10 +30,12 @@ COPY --from=builder /go/src/csi-powermax .
 COPY "csi-powermax.sh" .
 ENTRYPOINT ["/csi-powermax.sh"]
 RUN chmod +x /csi-powermax.sh
-LABEL vendor="Dell Inc." \
+LABEL vendor="Dell Technologies" \
+    maintainer="Dell Technologies" \
     name="csi-powermax" \
     summary="CSI Driver for Dell EMC PowerMax" \
     description="CSI Driver for provisioning persistent storage from Dell EMC PowerMax" \
-    version="2.12.0" \
+    release="1.13.0" \
+    version="2.13.0" \
     license="Apache-2.0"
 COPY ./licenses /licenses
