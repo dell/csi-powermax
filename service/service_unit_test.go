@@ -546,23 +546,20 @@ func TestGetProxySettingsFromEnv(t *testing.T) {
 		useIscsi: true,
 	}
 	_ = os.Setenv(EnvSidecarProxyPort, "8080")
-	ProxyServiceHost, _, _ := s.getProxySettingsFromEnv()
+	ProxyServiceHost, ProxyServicePort, _ := s.getProxySettingsFromEnv()
 	assert.Equal(t, "0.0.0.0", ProxyServiceHost)
+	assert.Equal(t, "8080", ProxyServicePort)
 
 	os.Unsetenv(EnvSidecarProxyPort)
-	_ = os.Setenv(EnvUnisphereProxyServiceName, "Service")
-	_ = os.Setenv("SERVICE_SERVICE_HOST", "")
-	_ = os.Setenv("SERVICE_SERVICE_PORT", "")
-	ProxyServiceHost, ProxyServicePort, _ := s.getProxySettingsFromEnv()
+	_ = os.Setenv(EnvUnisphereProxyServiceName, "reverseproxy-service")
+	_ = os.Setenv("REVERSEPROXY_SERVICE_SERVICE_PORT", "")
+	ProxyServiceHost, ProxyServicePort, _ = s.getProxySettingsFromEnv()
 	assert.Equal(t, "", ProxyServiceHost)
 	assert.Equal(t, "", ProxyServicePort)
 
-	os.Unsetenv("SERVICE_SERVICE_HOST")
-	os.Unsetenv("SERVICE_SERVICE_PORT")
-	_ = os.Setenv("SERVICE_SERVICE_HOST", "SERVICE_SERVICE_HOST")
-	_ = os.Setenv("SERVICE_SERVICE_PORT", "1234")
+	_ = os.Setenv("REVERSEPROXY_SERVICE_SERVICE_PORT", "1234")
 	ProxyServiceHost, ProxyServicePort, _ = s.getProxySettingsFromEnv()
-	assert.Equal(t, "SERVICE_SERVICE_HOST", ProxyServiceHost)
+	assert.Equal(t, "reverseproxy-service", ProxyServiceHost)
 	assert.Equal(t, "1234", ProxyServicePort)
 }
 
