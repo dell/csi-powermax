@@ -22,7 +22,7 @@ import (
 )
 
 func TestGetPowerMaxClient(t *testing.T) {
-	c, err := pmax.NewClientWithArgs("/", "test", true, true)
+	c, err := pmax.NewClientWithArgs("/", "test", true, true, "")
 	if err != nil {
 		t.Fatalf("Faild to create a pmax client: %s", err.Error())
 	}

@@ -19,17 +19,17 @@ require (
 	github.com/dell/gofsutil v1.17.0
 	github.com/dell/goiscsi v1.10.0
 	github.com/dell/gonvme v1.9.0
-	github.com/dell/gopowermax/v2 v2.8.1-0.20241125093918-928d66cb1027
+	github.com/dell/gopowermax/v2 v2.8.1-0.20250107125220-b6e2bd67110b
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/gorilla/mux v1.8.1
 	github.com/kubernetes-csi/csi-lib-utils v0.11.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
-	github.com/vmware/govmomi v0.47.0
+	github.com/vmware/govmomi v0.47.1
 	golang.org/x/net v0.34.0
 	google.golang.org/grpc v1.69.2
-	google.golang.org/protobuf v1.36.1
+	google.golang.org/protobuf v1.36.2
 	k8s.io/api v0.32.0
 	k8s.io/apimachinery v0.32.0
 	k8s.io/client-go v0.32.0

@@ -2653,6 +2653,7 @@ func (f *feature) getTypicalEnviron() []string {
 	stringSlice = append(stringSlice, EnvGrpcMaxThreads+"=1")
 	stringSlice = append(stringSlice, EnvManagedArrays+"=000197900046,000197900047")
 	stringSlice = append(stringSlice, "X_CSI_PRIVATE_MOUNT_DIR=/csi")
+	stringSlice = append(stringSlice, EnvTLSCertDirName+"=/app/tls")
 	return stringSlice
 }
 
