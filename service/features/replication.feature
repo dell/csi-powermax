@@ -216,7 +216,7 @@ Feature: PowerMax CSI Interface
     Then the error contains <errormsg>
     Examples:
       | induced                           | errormsg                          |
-      | "GetProtectedStorageGroupError"   | "cannot be found"                 |
+      | "GetProtectedStorageGroupError"   | "can't be found"                 |
       | "RDFGroupHasPairError"            | "it is not empty"                 |
       | "DeleteStorageGroupError"         | "Error deleting storage group"    |
       | "FetchResponseError"              | "GetProtectedStorageGroup failed" |
