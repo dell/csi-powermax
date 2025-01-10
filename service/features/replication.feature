@@ -207,6 +207,16 @@ Feature: PowerMax CSI Interface
 
   @srdf
   @v1.6.0
+  Scenario: DeleteStorageProtectionGroup with no error
+    Given a PowerMax service
+    And I call RDF enabled CreateVolume "volume1" in namespace "csi-test", mode "ASYNC" and RDFGNo 13
+    And a valid CreateVolumeResponse is returned
+    Then I induce error "GetProtectedStorageGroupError"
+    And I call DeleteStorageProtectionGroup on "csi-rep-sg-csi-test-13-ASYNC"
+    Then no error was received
+
+  @srdf
+  @v1.6.0
   Scenario Outline: DeleteStorageProtectionGroup with different error
     Given a PowerMax service
     And I call RDF enabled CreateVolume "volume1" in namespace "csi-test", mode "ASYNC" and RDFGNo 13
@@ -216,7 +226,6 @@ Feature: PowerMax CSI Interface
     Then the error contains <errormsg>
     Examples:
       | induced                           | errormsg                          |
-      | "GetProtectedStorageGroupError"   | ""                                |
       | "RDFGroupHasPairError"            | "it is not empty"                 |
       | "DeleteStorageGroupError"         | "Error deleting storage group"    |
       | "FetchResponseError"              | "GetProtectedStorageGroup failed" |
