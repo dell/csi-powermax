@@ -3945,7 +3945,7 @@ func (s *service) DeleteStorageProtectionGroup(ctx context.Context, req *csiext.
 	}
 	sg, err := pmaxClient.GetProtectedStorageGroup(ctx, symID, protectionGroupID)
 	if err != nil {
-		if strings.Contains(err.Error(), cannotBeFound) {
+		if strings.Contains(err.Error(), cannotBeFound) || strings.Contains(err.Error(), "cannot be found") {
 			// The protected storage group is already deleted
 			log.Info(fmt.Sprintf("DeleteStorageProtectionGroup: Could not find protected SG: %s on SymID: %s so assume it's already deleted", protectionGroupID, symID))
 			return &csiext.DeleteStorageProtectionGroupResponse{}, nil
