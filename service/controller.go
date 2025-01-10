@@ -84,6 +84,7 @@ const (
 	PGSuffix                        = "PG"
 	notFound                        = "not found"      // error message from s.GetVolumeByID when volume not found
 	cannotBeFound                   = "Could not find" // error message from pmax when volume not found
+	errorNotFound                   = "cannot be found"
 	failedToValidateVolumeNameAndID = "Failed to validate combination of Volume Name and Volume ID"
 	IscsiTransportProtocol          = "ISCSI"
 	FcTransportProtocol             = "FC"
@@ -3945,7 +3946,7 @@ func (s *service) DeleteStorageProtectionGroup(ctx context.Context, req *csiext.
 	}
 	sg, err := pmaxClient.GetProtectedStorageGroup(ctx, symID, protectionGroupID)
 	if err != nil {
-		if strings.Contains(err.Error(), cannotBeFound) {
+		if strings.Contains(err.Error(), cannotBeFound) || strings.Contains(err.Error(), errorNotFound) {
 			// The protected storage group is already deleted
 			log.Info(fmt.Sprintf("DeleteStorageProtectionGroup: Could not find protected SG: %s on SymID: %s so assume it's already deleted", protectionGroupID, symID))
 			return &csiext.DeleteStorageProtectionGroupResponse{}, nil
