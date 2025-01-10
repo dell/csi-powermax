@@ -1,5 +1,5 @@
 /*
- Copyright © 2021-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -1289,7 +1289,7 @@ func (s *service) NodeGetInfo(
 		// array:vsphere
 		// }
 		log.Errorf("No topology keys could be generated")
-		return nil, status.Error(codes.FailedPrecondition, "no topology keys could be generate")
+		return nil, status.Error(codes.FailedPrecondition, "no topology keys could be generated")
 	}
 
 	var maxPowerMaxVolumesPerNode int64
