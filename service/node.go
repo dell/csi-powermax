@@ -2661,9 +2661,15 @@ func (s *service) NodeExpandVolume(
 	// Get the pmax volume name so that it can be searched in the system
 	// to find mount information
 	replace := CSIPrefix + "-" + s.getClusterPrefix() + "-"
+	// check if the VolumeIdentifier has authorization's  volumePrefix
+	hasExtraPrefix := !strings.HasPrefix(vol.VolumeIdentifier, replace)
 	volName := strings.Replace(vol.VolumeIdentifier, replace, "", 1)
 	// remove the namespace from the volName as the mount paths will not have it
-	volName = strings.Join(strings.Split(volName, "-")[:2], "-")
+	if hasExtraPrefix {
+		volName = strings.Join(strings.Split(volName, "-")[:3], "-")
+	} else {
+		volName = strings.Join(strings.Split(volName, "-")[:2], "-")
+	}
 
 	// Locate and fetch all (multipath/regular) mounted paths using this volume
 	devMnt, err := gofsutil.GetMountInfoFromDevice(ctx, volName)
