@@ -2660,10 +2660,25 @@ func (s *service) NodeExpandVolume(
 
 	// Get the pmax volume name so that it can be searched in the system
 	// to find mount information
-	replace := CSIPrefix + "-" + s.getClusterPrefix() + "-"
-	volName := strings.Replace(vol.VolumeIdentifier, replace, "", 1)
-	// remove the namespace from the volName as the mount paths will not have it
-	volName = strings.Join(strings.Split(volName, "-")[:2], "-")
+	// Examples of possible volumeIdentifiers: tn1-csi-ABC-csm-3f7da6bf8d-test, csi-ABC-csm-3f7da6bf8d-test
+	parts := strings.Split(vol.VolumeIdentifier, "-")
+
+	var volName string
+	clusterPrefix := s.getClusterPrefix()
+	// remove the tenant volume prefix (csm-authorization) and namespace from the volName as the mount paths will not have it
+	for i, p := range parts {
+		if p == CSIPrefix {
+			if i+3 < len(parts) {
+				if parts[i+1] == clusterPrefix {
+					volName = parts[i+2] + "-" + parts[i+3]
+					log.Infof("Found volume name: %s", volName)
+				}
+			} else {
+				log.Errorf("expected volume identifier format *-%s-%s-[volumeName]-*, got malformed identifier: %s", CSIPrefix, clusterPrefix, vol.VolumeIdentifier)
+				return nil, status.Error(codes.Internal, "Invalid volume identifer: "+vol.VolumeIdentifier)
+			}
+		}
+	}
 
 	// Locate and fetch all (multipath/regular) mounted paths using this volume
 	devMnt, err := gofsutil.GetMountInfoFromDevice(ctx, volName)
