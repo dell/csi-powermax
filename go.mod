@@ -10,10 +10,10 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/cucumber/godog v0.15.0
 	github.com/cucumber/messages-go/v10 v10.0.3
-	github.com/dell/dell-csi-extensions/common v1.6.0
-	github.com/dell/dell-csi-extensions/migration v1.6.0
-	github.com/dell/dell-csi-extensions/podmon v1.6.0
-	github.com/dell/dell-csi-extensions/replication v1.9.0
+	github.com/dell/dell-csi-extensions/common v1.7.0
+	github.com/dell/dell-csi-extensions/migration v1.7.1
+	github.com/dell/dell-csi-extensions/podmon v1.7.0
+	github.com/dell/dell-csi-extensions/replication v1.10.1
 	github.com/dell/gobrick v1.13.0
 	github.com/dell/gocsi v1.13.0
 	github.com/dell/gofsutil v1.18.0
@@ -28,7 +28,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/vmware/govmomi v0.47.1
 	golang.org/x/net v0.34.0
-	google.golang.org/grpc v1.69.2
+	google.golang.org/grpc v1.69.4
 	google.golang.org/protobuf v1.36.2
 	k8s.io/api v0.32.0
 	k8s.io/apimachinery v0.32.0
