@@ -2625,10 +2625,8 @@ func (s *service) NodeExpandVolume(
 		return nil, status.Error(codes.InvalidArgument,
 			"Volume path required")
 	}
-	log.Println("===== volumePath ", volumePath)
 
 	id := req.GetVolumeId()
-	log.Println("===== id ", id)
 	_, symID, _, _, _, err := s.parseCsiID(id)
 	if err != nil {
 		log.Errorf("Invalid volumeid: %s", id)
@@ -2662,22 +2660,25 @@ func (s *service) NodeExpandVolume(
 
 	// Get the pmax volume name so that it can be searched in the system
 	// to find mount information
-	replace := CSIPrefix + "-" + s.getClusterPrefix() + "-"
-	log.Println("====== replace ", replace)
-	// check if the VolumeIdentifier has authorization's  volumePrefix
-	hasExtraPrefix := !strings.HasPrefix(vol.VolumeIdentifier, replace)
-	log.Println("====== hasExtraPrefix ", hasExtraPrefix)
+	// Examples of possible volumeIdentifiers: tn1-csi-ABC-csm-3f7da6bf8d-test, csi-ABC-csm-3f7da6bf8d-test
+	parts := strings.Split(vol.VolumeIdentifier, "-")
 
-	volName := strings.Replace(vol.VolumeIdentifier, replace, "", 1)
-	log.Println("====== volName ", volName)
-	// remove the namespace from the volName as the mount paths will not have it
-	if hasExtraPrefix {
-		volName = strings.Join(strings.Split(volName, "-")[:3], "-")
-	} else {
-		volName = strings.Join(strings.Split(volName, "-")[:2], "-")
+	var volName string
+	clusterPrefix := s.getClusterPrefix()
+	// remove the tenant volume prefix (csm-authorization) and namespace from the volName as the mount paths will not have it
+	for i, p := range parts {
+		if p == CSIPrefix {
+			if i+3 < len(parts) {
+				if parts[i+1] == clusterPrefix {
+					volName = parts[i+2] + "-" + parts[i+3]
+					log.Infof("Found volume name: %s", volName)
+				}
+			} else {
+				log.Errorf("expected volume identifier format *-%s-%s-[volumeName]-*, got malformed identifier: %s", CSIPrefix, clusterPrefix, vol.VolumeIdentifier)
+				return nil, status.Error(codes.Internal, "Invalid volume identifer: "+vol.VolumeIdentifier)
+			}
+		}
 	}
-
-	log.Println("====== volName ", volName)
 
 	// Locate and fetch all (multipath/regular) mounted paths using this volume
 	devMnt, err := gofsutil.GetMountInfoFromDevice(ctx, volName)
@@ -2718,7 +2719,6 @@ func (s *service) NodeExpandVolume(
 				log.Errorf("Failed to fetch mpath name for device (%s) with error (%s)", devName, err.Error())
 				return nil, status.Error(codes.Internal, err.Error())
 			}
-			log.Println("==== mpathDev ", mpathDev)
 			if mpathDev != "" {
 				err = gofsutil.ResizeMultipath(context.Background(), mpathDev)
 				if err != nil {
@@ -2783,16 +2783,12 @@ func (s *service) NodeExpandVolume(
 	log.Infof("Found %s filesystem mounted on volume %s", fsType, devMnt.MountPoint)
 
 	// Resize the filesystem
-	log.Println("==== resize fs")
-	log.Println("==== devMnt.MPathName ", devMnt.MPathName)
 	err = gofsutil.ResizeFS(context.Background(), devMnt.MountPoint, devicePath, devMnt.PPathName, devMnt.MPathName, fsType)
 	if err != nil {
 		log.Errorf("Failed to resize filesystem: mountpoint (%s) device (%s) with error (%s)",
 			devMnt.MountPoint, devicePath, err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-
-	log.Println("==== filesystem resized")
 
 	return &csi.NodeExpandVolumeResponse{}, nil
 }
