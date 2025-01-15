@@ -14,7 +14,7 @@ require (
 	github.com/dell/dell-csi-extensions/migration v1.7.1
 	github.com/dell/dell-csi-extensions/podmon v1.7.0
 	github.com/dell/dell-csi-extensions/replication v1.10.1
-	github.com/dell/gobrick v1.13.0
+	github.com/dell/gobrick v1.13.1
 	github.com/dell/gocsi v1.13.0
 	github.com/dell/gofsutil v1.18.0
 	github.com/dell/goiscsi v1.11.0
@@ -29,7 +29,7 @@ require (
 	github.com/vmware/govmomi v0.47.1
 	golang.org/x/net v0.34.0
 	google.golang.org/grpc v1.69.4
-	google.golang.org/protobuf v1.36.2
+	google.golang.org/protobuf v1.36.3
 	k8s.io/api v0.32.0
 	k8s.io/apimachinery v0.32.0
 	k8s.io/client-go v0.32.0
