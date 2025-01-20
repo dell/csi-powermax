@@ -384,6 +384,13 @@ func (s *service) BeforeServe(
 	if user, ok := csictx.LookupEnv(ctx, EnvUser); ok {
 		opts.User = user
 	}
+	if opts.User == "" {
+		opts.User = "admin"
+	}
+	// TODO: Remove this commented code later
+	if pw, ok := csictx.LookupEnv(ctx, EnvPassword); ok {
+		opts.Password = pw
+	}
 
 	if _, ok := csictx.LookupEnv(ctx, EnvRevProxyUseSecret); ok {
 
@@ -421,13 +428,6 @@ func (s *service) BeforeServe(
 		}
 	}
 
-	if opts.User == "" {
-		opts.User = "admin"
-	}
-	// TODO: Remove this commented code later
-	// if pw, ok := csictx.LookupEnv(ctx, EnvPassword); ok {
-	// 	opts.Password = pw
-	// }
 	if chapuser, ok := csictx.LookupEnv(ctx, EnvISCSICHAPUserName); ok {
 		opts.CHAPUserName = chapuser
 	}
