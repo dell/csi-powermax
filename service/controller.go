@@ -3015,7 +3015,6 @@ func (s *service) ControllerGetCapabilities(
 }
 
 func (s *service) controllerProbe(ctx context.Context) error {
-	log.Debug("Entering controllerProbe")
 	defer log.Debug("Exiting controllerProbe")
 	// Check that we have the details needed to login to the Gateway
 	if !s.opts.UseProxy && s.opts.Endpoint == "" {
@@ -3026,6 +3025,7 @@ func (s *service) controllerProbe(ctx context.Context) error {
 		return status.Error(codes.FailedPrecondition,
 			"missing Unisphere user")
 	}
+
 	if s.opts.Password == "" {
 		return status.Error(codes.FailedPrecondition,
 			"missing Unisphere password")

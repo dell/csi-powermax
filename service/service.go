@@ -384,12 +384,50 @@ func (s *service) BeforeServe(
 	if user, ok := csictx.LookupEnv(ctx, EnvUser); ok {
 		opts.User = user
 	}
+
+	if _, ok := csictx.LookupEnv(ctx, EnvRevProxyUseSecret); ok {
+
+		secretPath := csictx.Getenv(ctx, EnvRevProxySecretPath)
+		secretNameFromPath := filepath.Base(secretPath)
+		secretPathFromPath := filepath.Dir(secretPath)
+
+		secretParams := viper.New()
+		secretParams.SetConfigName(secretNameFromPath)
+		secretParams.SetConfigType("yaml")
+		secretParams.AddConfigPath(secretPathFromPath)
+
+		err := secretParams.ReadInConfig()
+		if err != nil {
+			log.Errorf("Secret mandated, but secret file not found %s.", err)
+		}
+
+		// Access the managementservers key (which is a slice of maps)
+		managementServers := secretParams.Get("managementservers").([]interface{})
+		// Ensure there's at least one server and extract username/password
+		if len(managementServers) > 0 {
+			// Access the first element of the managementServers slice, which is a map
+			server := managementServers[0].(map[string]interface{})
+
+			// Extract the username and password
+			User := server["username"].(string)
+			Password := server["password"].(string)
+			Endpoint := server["endpoint"].(string)
+
+			opts.User = User
+			opts.Password = Password
+			opts.Endpoint = Endpoint
+		} else {
+			fmt.Println("No management servers found.")
+		}
+	}
+
 	if opts.User == "" {
 		opts.User = "admin"
 	}
-	if pw, ok := csictx.LookupEnv(ctx, EnvPassword); ok {
-		opts.Password = pw
-	}
+	// TODO: Remove this commented code later
+	// if pw, ok := csictx.LookupEnv(ctx, EnvPassword); ok {
+	// 	opts.Password = pw
+	// }
 	if chapuser, ok := csictx.LookupEnv(ctx, EnvISCSICHAPUserName); ok {
 		opts.CHAPUserName = chapuser
 	}
@@ -408,7 +446,7 @@ func (s *service) BeforeServe(
 	if portgroups, ok := csictx.LookupEnv(ctx, EnvPortGroups); ok {
 		tempList, err := s.parseCommaSeperatedList(portgroups)
 		if err != nil {
-			return fmt.Errorf("Invalid value for %s", EnvPortGroups)
+			return fmt.Errorf("invalid value for %s", EnvPortGroups)
 		}
 		opts.PortGroups = tempList
 	}
@@ -602,6 +640,7 @@ func (s *service) BeforeServe(
 	// Start the deletion worker thread
 	log.Printf("s.mode: %s", s.mode)
 	if !strings.EqualFold(s.mode, "node") {
+		// TODO: Review this previously commented code and remove
 		/*symIDs, err := s.adminClient.GetSymmetrixIDList()
 		if err != nil {
 			return err
@@ -789,6 +828,8 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 		}
 		s.adminClient = c
 
+		//TODO: remove the log line below
+		log.Infof("Create admin client using %s %s %s", endPoint, s.opts.User, s.opts.Password)
 		for i := 0; i < maxAuthenticateRetryCount; i++ {
 			err = s.adminClient.Authenticate(ctx, &pmax.ConfigConnect{
 				Endpoint: endPoint,
@@ -797,6 +838,8 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 			})
 			if err == nil {
 				break
+			} else {
+				log.Infof("Error authenticating : %s", err)
 			}
 			time.Sleep(10 * time.Second)
 		}
@@ -809,10 +852,12 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 		// Filter out a list of locally connected list of arrays, and
 		// initialize the PowerMax client for those array only
 		managedArrays := make([]string, 0, len(s.opts.ManagedArrays))
+		log.Infof("Managed arrays - %v", s.opts.ManagedArrays)
 		for _, array := range s.opts.ManagedArrays {
+			log.Infof("GetSymmetrixByID - %v", array)
 			symmetrix, err := s.adminClient.GetSymmetrixByID(ctx, array)
 			if err != nil {
-				log.Errorf("Failed to fetch details for array: %s. [%s]", array, err.Error())
+				log.Errorf("Failed to fetch details for array: %s. Reason: [%s]", array, err.Error())
 			} else {
 				if symmetrix.Local {
 					managedArrays = append(managedArrays, array)
@@ -930,5 +975,41 @@ func setArrayConfigEnvs(ctx context.Context) error {
 		log.Info("Managed arrays from config file:", managedArrays)
 		_ = os.Setenv(ManagedArrays, managedArrays)
 	}
+
+	if _, ok := csictx.LookupEnv(ctx, EnvRevProxyUseSecret); ok {
+
+		secretPath := csictx.Getenv(ctx, EnvRevProxySecretPath)
+
+		secretNameFromPath := filepath.Base(secretPath)
+		secretPathFromPath := filepath.Dir(secretPath)
+
+		secretParams := viper.New()
+		secretParams.SetConfigName(secretNameFromPath)
+		secretParams.SetConfigType("yaml")
+		secretParams.AddConfigPath(secretPathFromPath)
+
+		err := secretParams.ReadInConfig()
+		if err != nil {
+			log.Errorf("Secret mandated, but secret file not found %s.", err)
+		}
+
+		// Access the managementservers key (which is a slice of maps)
+		managementServers := secretParams.Get("managementservers").([]interface{})
+
+		// Ensure there's at least one server and extract username/password
+		if len(managementServers) > 0 {
+
+			// 	// Access the first element of the managementServers slice, which is a map
+			server := managementServers[0].(map[string]interface{})
+
+			// 	// Extract the username and password
+			endpoint = server["endpoint"].(string)
+			log.Printf("Found Endpoint %s", endpoint)
+
+		} else {
+			fmt.Println("No management servers found.")
+		}
+	}
+
 	return nil
 }

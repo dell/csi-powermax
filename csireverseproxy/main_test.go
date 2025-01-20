@@ -255,8 +255,8 @@ func createTempConfig() error {
 func createTempStorageArrays() []config.StorageArrayConfig {
 	tempStorageArrayConfig := []config.StorageArrayConfig{
 		{
-			PrimaryURL:             getURL(primaryPort, "/"),
-			BackupURL:              getURL(backupPort, "/"),
+			PrimaryEndpoint:        getURL(primaryPort, "/"),
+			BackupEndpoint:         getURL(backupPort, "/"),
 			StorageArrayID:         storageArrayID,
 			ProxyCredentialSecrets: []string{proxySecretName},
 		},
@@ -268,7 +268,7 @@ func createTempManagementServers() []config.ManagementServerConfig {
 	// Create a primary management server
 	primaryMgmntServer := config.ManagementServerConfig{
 		ArrayCredentialSecret:     proxySecretName,
-		URL:                       getURL(primaryPort, "/"),
+		Endpoint:                  getURL(primaryPort, "/"),
 		SkipCertificateValidation: skipPrimaryCertValidation,
 	}
 	if !skipPrimaryCertValidation {
@@ -277,7 +277,7 @@ func createTempManagementServers() []config.ManagementServerConfig {
 	// Create a backup management server
 	backupMgmntServer := config.ManagementServerConfig{
 		ArrayCredentialSecret:     proxySecretName,
-		URL:                       getURL(backupPort, "/"),
+		Endpoint:                  getURL(backupPort, "/"),
 		SkipCertificateValidation: skipBackupCertValidation,
 	}
 	if !skipBackupCertValidation {

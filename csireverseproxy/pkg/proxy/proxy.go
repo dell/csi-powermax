@@ -90,7 +90,7 @@ func newHTTPClient(mgmtServer config.ManagementServer) *http.Client {
 }
 
 func newReverseProxy(mgmtServer config.ManagementServer) common.Proxy {
-	revProxy := httputil.NewSingleHostReverseProxy(&mgmtServer.URL)
+	revProxy := httputil.NewSingleHostReverseProxy(&mgmtServer.Endpoint)
 	tlsConfig := newTLSConfig(mgmtServer)
 	revProxy.Transport = &http.Transport{
 		TLSClientConfig:     tlsConfig,
@@ -99,7 +99,7 @@ func newReverseProxy(mgmtServer config.ManagementServer) common.Proxy {
 	}
 	proxy := common.Proxy{
 		ReverseProxy: revProxy,
-		URL:          mgmtServer.URL,
+		URL:          mgmtServer.Endpoint,
 		Limits:       mgmtServer.Limits,
 	}
 	return proxy
@@ -313,7 +313,7 @@ func (revProxy *Proxy) removeBackupEnvoy(arrayID string) {
 }
 
 func (revProxy *Proxy) hasServerChanged(oldServer, newServer config.ManagementServer) bool {
-	return oldServer.URL != newServer.URL ||
+	return oldServer.Endpoint != newServer.Endpoint ||
 		oldServer.CertFile != newServer.CertFile ||
 		oldServer.CredentialSecret != newServer.CredentialSecret ||
 		oldServer.Limits != newServer.Limits ||
@@ -324,7 +324,7 @@ func (revProxy *Proxy) hasServerChanged(oldServer, newServer config.ManagementSe
 func (revProxy *Proxy) UpdateConfig(proxyConfig config.ProxyConfig) error {
 	if reflect.DeepEqual(revProxy.config, proxyConfig) {
 		log.Info("No changes detected in the configuration")
-		return nil
+		//return nil
 	}
 
 	oldServerArrayMap := revProxy.config.GetManagedArraysAndServers()

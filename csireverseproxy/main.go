@@ -58,6 +58,9 @@ type ServerOpts struct {
 	ConfigDir      string
 	ConfigFileName string
 	InCluster      bool
+	SecretFilePath string
+	SecretName     string
+	Port           string
 }
 
 func getEnv(envName, defaultValue string) string {
@@ -76,6 +79,10 @@ func getServerOpts() ServerOpts {
 	configDir := getEnv(common.EnvConfigDirName, common.DefaultConfigDir)
 	inClusterEnvVal := getEnv(common.EnvInClusterConfig, "false")
 	inCluster := false
+	secretFilePath := getEnv(common.EnvSecretPath, common.DefaultSecretPath)
+	secretName := getEnv(common.EnvSecretName, common.DefaultReverseProxySecretName)
+	port := getEnv(common.EnvSidecarProxyPort, common.DefaultPort)
+
 	if strings.ToLower(inClusterEnvVal) == "true" {
 		inCluster = true
 	}
@@ -88,6 +95,9 @@ func getServerOpts() ServerOpts {
 		CertFile:       common.DefaultCertFile,
 		KeyFile:        common.DefaultKeyFile,
 		InCluster:      inCluster,
+		SecretFilePath: secretFilePath,
+		SecretName:     secretName,
+		Port:           port,
 	}
 }
 
@@ -120,28 +130,62 @@ func (s *Server) Config() *config.ProxyConfig {
 }
 
 // Setup sets up the server and the proxy configuration
-// this includes - reading the config, creating appropriate proxy instance
+// this includes - reading the secret, creating appropriate proxy instance
 // and setting up the signal handler channel
 func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
-	proxyConfigMap, err := config.ReadConfig(s.Opts.ConfigFileName, s.Opts.ConfigDir)
-	if err != nil {
-		return err
+
+	// Read the config from secret if secret provided
+	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
+		secretFilePath := getEnv(common.EnvSecretPath, "false")
+		proxySecret, err := config.ReadConfigFromSecret(filepath.Base(secretFilePath), filepath.Dir(secretFilePath))
+		if err != nil {
+			log.Printf("Error while reading config from secret: %v\n", err)
+			return err
+		}
+
+		// TODO: Review if we need to update log params, and if yes from where and update accordingly.
+		// updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
+
+		proxyConfig, err := config.NewProxyConfigFromSecret(proxySecret, k8sUtils)
+		if err != nil {
+			log.Printf("Error while creating proxy config from secret: %v\n", err)
+			return err
+		}
+		s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
+		s.KeyFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.KeyFile)
+		s.Port = proxyConfig.Port
+		proxy, err := proxy.NewProxy(*proxyConfig)
+		if err != nil {
+			log.Printf("Error while creating proxy instance from secret: %v\n", err)
+			return err
+		}
+		s.Proxy = proxy
+		s.SetConfig(proxyConfig)
+		s.SigChan = make(chan os.Signal, 1)
+	} else {
+		// Read the config from config map
+		log.Printf("Reading config using config map")
+		proxyConfigMap, err := config.ReadConfig(s.Opts.ConfigFileName, s.Opts.ConfigDir)
+		if err != nil {
+			return err
+		}
+		updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
+		proxyConfig, err := config.NewProxyConfig(proxyConfigMap, k8sUtils)
+		if err != nil {
+			return err
+		}
+		s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
+		s.KeyFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.KeyFile)
+		s.Port = proxyConfig.Port
+		proxy, err := proxy.NewProxy(*proxyConfig)
+		if err != nil {
+			return err
+		}
+		s.Proxy = proxy
+		s.SetConfig(proxyConfig)
+		s.SigChan = make(chan os.Signal, 1)
 	}
-	updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
-	proxyConfig, err := config.NewProxyConfig(proxyConfigMap, k8sUtils)
-	if err != nil {
-		return err
-	}
-	s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
-	s.KeyFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.KeyFile)
-	s.Port = proxyConfig.Port
-	proxy, err := proxy.NewProxy(*proxyConfig)
-	if err != nil {
-		return err
-	}
-	s.Proxy = proxy
-	s.SetConfig(proxyConfig)
-	s.SigChan = make(chan os.Signal, 1)
+
 	return nil
 }
 
@@ -259,12 +303,40 @@ func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
 	})
 }
 
+// SetupSecretWatcher - Uses viper config change watcher to watch for
+// config change events on the yaml file
+// this also works with secret as viper evaluates the symlinks (from the configmap mount)
+// When a config change event is received, the proxy are updated with the new configuration
+func (s *Server) SetupSecretWatcher(k8sUtils k8sutils.UtilsInterface) {
+	viper.WatchConfig()
+	viper.OnConfigChange(func(e fsnotify.Event) {
+		log.Info("Received a config change event")
+		var proxySecret config.ProxySecret
+		err := viper.Unmarshal(&proxySecret)
+		if err != nil {
+			log.Errorf("Error in unmarshalling the secret: %s", err.Error())
+		} else {
+			// TODO: Review if we need to update log params, and if yes from where and update accordingly.
+			// updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
+			proxySecret, err := config.NewProxyConfigFromSecret(&proxySecret, k8sUtils)
+			if err != nil || proxySecret == nil {
+				log.Errorf("Error parsing the secret: %v", err)
+			} else {
+				s.SetConfig(proxySecret)
+				err = s.GetRevProxy().UpdateConfig(*proxySecret)
+				if err != nil {
+					log.Errorf("Error in updating the secret: %s", err.Error())
+				}
+			}
+		}
+	})
+}
+
 // EventHandler - callback function which is used by k8sutils
 // when an event related to a secret in the namespace being watched
 // is received by the informer
 func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.Secret) {
 	conf := s.Config().DeepCopy()
-	log.Infof("New credential/cert update event for the secret(%s)", secret.Name)
 	hasChanged := false
 
 	found := conf.IsSecretConfiguredForCerts(secret.Name)
@@ -281,15 +353,38 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 	}
 	found = conf.IsSecretConfiguredForArrays(secret.Name)
 	if found {
-		creds, err := k8sUtils.GetCredentialsFromSecret(secret)
-		if err != nil {
-			log.Errorf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
-			return
+		//TODO: remove this : if common.DefaultSecretName == secret.Name {
+		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" && common.DefaultReverseProxySecretName == secret.Name {
+			secretNameFromPath := filepath.Base(s.Opts.SecretFilePath)
+			secretPathFromPath := filepath.Dir(s.Opts.SecretFilePath)
+			proxySecret, err := config.ReadConfigFromSecret(secretNameFromPath, secretPathFromPath)
+			if err != nil {
+				log.Errorf("Error while reading config from secret: %v\n", err)
+				return
+			}
+			for _, mgmtServer := range proxySecret.ManagementServerConfig {
+				creds := &common.Credentials{
+					UserName: mgmtServer.Username,
+					Password: mgmtServer.Password,
+				}
+
+				isUpdated := conf.UpdateCreds(secret.Name, creds)
+				if isUpdated {
+					hasChanged = true
+				}
+			}
+		} else {
+			creds, err := k8sUtils.GetCredentialsFromSecret(secret)
+			if err != nil {
+				log.Errorf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
+				return
+			}
+			isUpdated := conf.UpdateCreds(secret.Name, creds)
+			if isUpdated {
+				hasChanged = true
+			}
 		}
-		isUpdated := conf.UpdateCreds(secret.Name, creds)
-		if isUpdated {
-			hasChanged = true
-		}
+
 	}
 	if hasChanged {
 		err := s.GetRevProxy().UpdateConfig(*conf)
@@ -330,6 +425,9 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 
 	// Setup the watcher on the config map
 	server.SetupConfigMapWatcher(k8sUtils)
+
+	// Setup the watcher on the secret
+	server.SetupSecretWatcher(k8sUtils)
 
 	return server, nil
 }
