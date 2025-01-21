@@ -2720,6 +2720,15 @@ func (f *feature) iCallBeforeServeWithTopologyConfigSetAt(path string) error {
 	return nil
 }
 
+func (f *feature) verifyDefaultReplicationPrefix() error {
+	opts := f.service.opts
+	if opts.ReplicationPrefix != "replication.storage.dell.com" || opts.ReplicationContextPrefix != "powermax" {
+		return fmt.Errorf("expected default replication prefix, got %s %s", opts.ReplicationPrefix, opts.ReplicationContextPrefix)
+	}
+
+	return nil
+}
+
 func (f *feature) iCallNodeStageVolume() error {
 	//	_ = f.getNodePublishVolumeRequest()
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
@@ -5056,6 +5065,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call BeforeServe$`, f.iCallBeforeServe)
 	s.Step(`^I call BeforeServe without ClusterPrefix$`, f.iCallBeforeServeWithoutClusterPrefix)
 	s.Step(`^I call BeforeServe with an invalid ClusterPrefix$`, f.iCallBeforeServeWithAnInvalidClusterPrefix)
+	s.Step(`^replication prefixes have default values$`, f.verifyDefaultReplicationPrefix)
 	s.Step(`^I call NodeStageVolume$`, f.iCallNodeStageVolume)
 	s.Step(`^I call NodeUnstageVolume$`, f.iCallNodeUnstageVolume)
 	s.Step(`^I call NodeStageVolume with simulator$`, f.iCallNodeStageVolumeWithSimulator)

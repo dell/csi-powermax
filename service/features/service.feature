@@ -412,6 +412,12 @@ Feature: PowerMax CSI interface
       When I call BeforeServe with an invalid ClusterPrefix
       Then the error contains "exceeds maximum length"
 
+@v2.14.0
+     Scenario: Test BeforeServe
+      Given a PowerMax service
+      When I call BeforeServe
+      Then replication prefixes have default values
+
 @v1.0.0
      Scenario: Call ListVolumes, should get unimplemented
       Given a PowerMax service
