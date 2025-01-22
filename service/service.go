@@ -378,9 +378,11 @@ func (s *service) BeforeServe(
 	if ep, ok := csictx.LookupEnv(ctx, EnvDriverName); ok {
 		opts.DriverName = ep
 	}
-	if ep, ok := csictx.LookupEnv(ctx, EnvEndpoint); ok {
-		opts.Endpoint = ep
-	}
+	//TODO: Remove this
+	// if ep, ok := csictx.LookupEnv(ctx, EnvEndpoint); ok {
+	// 	opts.Endpoint = ep
+	// }
+
 	if user, ok := csictx.LookupEnv(ctx, EnvUser); ok {
 		opts.User = user
 	}
@@ -392,7 +394,7 @@ func (s *service) BeforeServe(
 		opts.Password = pw
 	}
 
-	if _, ok := csictx.LookupEnv(ctx, EnvRevProxyUseSecret); ok {
+	if useSecret, ok := csictx.LookupEnv(ctx, EnvRevProxyUseSecret); ok && useSecret == "true" {
 
 		secretPath := csictx.Getenv(ctx, EnvRevProxySecretPath)
 		secretNameFromPath := filepath.Base(secretPath)
@@ -418,13 +420,15 @@ func (s *service) BeforeServe(
 			// Extract the username and password
 			User := server["username"].(string)
 			Password := server["password"].(string)
-			Endpoint := server["endpoint"].(string)
+			//TODO: check if this is needed
+			//Endpoint := server["endpoint"].(string)
 
 			opts.User = User
 			opts.Password = Password
-			opts.Endpoint = Endpoint
+			//TODO: check if this is needed
+			//opts.Endpoint = Endpoint
 		} else {
-			fmt.Println("No management servers found.")
+			log.Println("No management servers found.")
 		}
 	}
 
@@ -829,7 +833,6 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 		s.adminClient = c
 
 		//TODO: remove the log line below
-		log.Infof("Create admin client using %s %s %s", endPoint, s.opts.User, s.opts.Password)
 		for i := 0; i < maxAuthenticateRetryCount; i++ {
 			err = s.adminClient.Authenticate(ctx, &pmax.ConfigConnect{
 				Endpoint: endPoint,
@@ -854,7 +857,6 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 		managedArrays := make([]string, 0, len(s.opts.ManagedArrays))
 		log.Infof("Managed arrays - %v", s.opts.ManagedArrays)
 		for _, array := range s.opts.ManagedArrays {
-			log.Infof("GetSymmetrixByID - %v", array)
 			symmetrix, err := s.adminClient.GetSymmetrixByID(ctx, array)
 			if err != nil {
 				log.Errorf("Failed to fetch details for array: %s. Reason: [%s]", array, err.Error())
@@ -935,7 +937,7 @@ func (s *service) SetPollingFrequency(ctx context.Context) int64 {
 }
 
 func setArrayConfigEnvs(ctx context.Context) error {
-	log.Info("---------inside setArrayConfig function----------")
+	log.Info("---------Inside setArrayConfigEnvs function----------")
 	// set additional driver configs moved from envs.
 	configFilePath, ok := csictx.LookupEnv(ctx, EnvArrayConfigPath)
 	if !ok {
@@ -976,10 +978,9 @@ func setArrayConfigEnvs(ctx context.Context) error {
 		_ = os.Setenv(ManagedArrays, managedArrays)
 	}
 
-	if _, ok := csictx.LookupEnv(ctx, EnvRevProxyUseSecret); ok {
+	if useSecret, ok := csictx.LookupEnv(ctx, EnvRevProxyUseSecret); ok && useSecret == "true" {
 
 		secretPath := csictx.Getenv(ctx, EnvRevProxySecretPath)
-
 		secretNameFromPath := filepath.Base(secretPath)
 		secretPathFromPath := filepath.Dir(secretPath)
 
@@ -990,7 +991,7 @@ func setArrayConfigEnvs(ctx context.Context) error {
 
 		err := secretParams.ReadInConfig()
 		if err != nil {
-			log.Errorf("Secret mandated, but secret file not found %s.", err)
+			log.Errorf("Secret mandated, but secret file not found %s", err)
 		}
 
 		// Access the managementservers key (which is a slice of maps)
@@ -998,14 +999,11 @@ func setArrayConfigEnvs(ctx context.Context) error {
 
 		// Ensure there's at least one server and extract username/password
 		if len(managementServers) > 0 {
-
-			// 	// Access the first element of the managementServers slice, which is a map
+			// Access the first element of the managementServers slice, which is a map
 			server := managementServers[0].(map[string]interface{})
 
-			// 	// Extract the username and password
+			// Extract the username and password
 			endpoint = server["endpoint"].(string)
-			log.Printf("Found Endpoint %s", endpoint)
-
 		} else {
 			fmt.Println("No management servers found.")
 		}
