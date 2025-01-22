@@ -280,58 +280,57 @@ func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 // this also works with configmaps as viper evaluates the symlinks (from the configmap mount)
 // When a config change event is received, the proxy are updated with the new configuration
 func (s *Server) SetupConfigWatcher(k8sUtils k8sutils.UtilsInterface) {
-	log.Infof("Received a config change event corresponding to %v", viper.AllSettings())
+	log.Infof("Received a config change event")
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		log.Infof("Received a config change event %s for %s", e.Op.String(), e.Name)
-		var proxyConfigMap config.ProxyConfigMap
-		err := viper.Unmarshal(&proxyConfigMap)
-		if err != nil {
-			log.Errorf("Error in unmarshalling the config: %s", err.Error())
+		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
+			s.configChangeSecret(k8sUtils)
 		} else {
-			updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
-			proxyConfig, err := config.NewProxyConfig(&proxyConfigMap, k8sUtils)
-			if err != nil || proxyConfig == nil {
-				log.Errorf("Error parsing the config: %v", err)
-			} else {
-				s.SetConfig(proxyConfig)
-				err = s.GetRevProxy().UpdateConfig(*proxyConfig)
-				if err != nil {
-					log.Errorf("Error in updating the config: %s", err.Error())
-				}
-			}
+			s.configChangeConfigMap(k8sUtils)
 		}
 	})
 }
 
-// SetupSecretWatcher - Uses viper config change watcher to watch for
-// config change events on the yaml file
-// this also works with secret as viper evaluates the symlinks (from the configmap mount)
-// When a config change event is received, the proxy are updated with the new configuration
-/* func (s *Server) SetupSecretWatcher(k8sUtils k8sutils.UtilsInterface) {
-	viper.WatchConfig()
-	viper.OnConfigChange(func(e fsnotify.Event) {
-		log.Info("Received a config change event")
-		var proxySecret config.ProxySecret
-		err := viper.Unmarshal(&proxySecret)
-		if err != nil {
-			log.Errorf("Error in unmarshalling the secret: %s", err.Error())
+func (s *Server) configChangeConfigMap(k8sUtils k8sutils.UtilsInterface) {
+	var proxyConfigMap config.ProxyConfigMap
+	err := viper.Unmarshal(&proxyConfigMap)
+	if err != nil {
+		log.Errorf("Error in unmarshalling the config: %s", err.Error())
+	} else {
+		updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
+		proxyConfig, err := config.NewProxyConfig(&proxyConfigMap, k8sUtils)
+		if err != nil || proxyConfig == nil {
+			log.Errorf("Error parsing the config: %v", err)
 		} else {
-			// TODO: Review if we need to update log params, and if yes from where and update accordingly.
-			// updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
-			proxySecret, err := config.NewProxyConfigFromSecret(&proxySecret, k8sUtils)
-			if err != nil || proxySecret == nil {
-				log.Errorf("Error parsing the secret: %v", err)
-			} else {
-				s.SetConfig(proxySecret)
-				err = s.GetRevProxy().UpdateConfig(*proxySecret)
-				if err != nil {
-					log.Errorf("Error in updating the secret: %s", err.Error())
-				}
+			s.SetConfig(proxyConfig)
+			err = s.GetRevProxy().UpdateConfig(*proxyConfig)
+			if err != nil {
+				log.Errorf("Error in updating the config: %s", err.Error())
 			}
 		}
-	})
-} */
+	}
+}
+
+func (s *Server) configChangeSecret(k8sUtils k8sutils.UtilsInterface) {
+	var proxySecret config.ProxySecret
+	err := viper.Unmarshal(&proxySecret)
+	if err != nil {
+		log.Errorf("Error in unmarshalling the config: %s", err.Error())
+	} else {
+		//updateRevProxyLogParams(proxySecret.LogFormat, proxySecret.LogLevel)
+		proxyConfig, err := config.NewProxyConfigFromSecret(&proxySecret, k8sUtils)
+		if err != nil || proxyConfig == nil {
+			log.Errorf("Error parsing the config: %v", err)
+		} else {
+			s.SetConfig(proxyConfig)
+			err = s.GetRevProxy().UpdateConfig(*proxyConfig)
+			if err != nil {
+				log.Errorf("Error in updating the config: %s", err.Error())
+			}
+		}
+	}
+}
 
 // EventHandler - callback function which is used by k8sutils
 // when an event related to a secret in the namespace being watched
@@ -354,37 +353,52 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 	}
 	found = conf.IsSecretConfiguredForArrays(secret.Name)
 	if found {
-		// TODO: remove this : if common.DefaultSecretName == secret.Name {
-		// 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" && common.DefaultReverseProxySecretName == secret.Name {
-		// 		secretNameFromPath := filepath.Base(s.Opts.SecretFilePath)
-		// 		secretPathFromPath := filepath.Dir(s.Opts.SecretFilePath)
-		// 		proxySecret, err := config.ReadConfigFromSecret(secretNameFromPath, secretPathFromPath)
-		// 		if err != nil {
-		// 			log.Errorf("Error while reading config from secret: %v\n", err)
-		// 			return
-		// 		}
-		// 		for _, mgmtServer := range proxySecret.ManagementServerConfig {
-		// 			creds := &common.Credentials{
-		// 				UserName: mgmtServer.Username,
-		// 				Password: mgmtServer.Password,
-		// 			}
+		// TODO: Can we fetch the secret from the local path here or do we need to read the actual secret using secret.Data["config"] and unmarshall?
+		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" && common.DefaultReverseProxySecretName == secret.Name {
 
-		// 			isUpdated := conf.UpdateCreds(secret.Name, creds)
-		// 			if isUpdated {
-		// 				hasChanged = true
-		// 			}
-		// 		}
-		// 	} else {
-		creds, err := k8sUtils.GetCredentialsFromSecret(secret)
-		if err != nil {
-			log.Errorf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
-			return
+			// Code to read from the mounted secret path
+			// secretNameFromPath := filepath.Base(s.Opts.SecretFilePath)
+			// secretPathFromPath := filepath.Dir(s.Opts.SecretFilePath)
+			// proxySecret, err := config.ReadConfigFromSecret(secretNameFromPath, secretPathFromPath)
+			// if err != nil {
+			// 	log.Errorf("Error while reading config from secret: %v\n", err)
+			// 	return
+			// }
+
+			// log.Infof("Getting secret from raw data\n")
+			// rawSecretData := secret.Data["config"]
+			// var proxySecret config.ProxySecret
+			// err := yaml.Unmarshal(rawSecretData, &proxySecret)
+			// if err != nil {
+			// 	log.Errorf("error unmarshaling secret: %v", err)
+			// }
+			proxySecret, err := config.GetCredentialsFromRawSecret(secret)
+			if err != nil {
+				log.Errorf("error while reading config from raw secret: %v\n", err)
+			}
+
+			for _, mgmtServer := range proxySecret.ManagementServerConfig {
+				creds := &common.Credentials{
+					UserName: mgmtServer.Username,
+					Password: mgmtServer.Password,
+				}
+
+				isUpdated := conf.UpdateCreds(secret.Name, creds)
+				if isUpdated {
+					hasChanged = true
+				}
+			}
+		} else {
+			creds, err := k8sUtils.GetCredentialsFromSecret(secret)
+			if err != nil {
+				log.Errorf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
+				return
+			}
+			isUpdated := conf.UpdateCreds(secret.Name, creds)
+			if isUpdated {
+				hasChanged = true
+			}
 		}
-		isUpdated := conf.UpdateCreds(secret.Name, creds)
-		if isUpdated {
-			hasChanged = true
-		}
-		//}
 	}
 
 	if hasChanged {
@@ -426,11 +440,6 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 
 	// Setup the watcher on the config map
 	server.SetupConfigWatcher(k8sUtils)
-
-	// TODO : Remove his, one config watcher should be enough.
-	// Rename SetupConfigMapWatcher to SetupConfigWatcher above
-	// Setup the watcher on the secret
-	// server.SetupSecretWatcher(k8sUtils)
 
 	return server, nil
 }

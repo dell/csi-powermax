@@ -27,6 +27,7 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
 
 	"github.com/spf13/viper"
 	corev1 "k8s.io/api/core/v1"
@@ -463,7 +464,6 @@ func (pc *ProxyConfig) GetAuthorizedArrays(username, password string) []string {
 
 // GetManagementServerCredentials - Given a management server URL, returns the associated credentials
 func (pc *ProxyConfig) GetManagementServerCredentials(mgmtURL url.URL) (common.Credentials, error) {
-	// TODO: Review commented code and refactor
 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
 		var arrayCredentials common.Credentials
 		arrayCredentials.UserName = pc.managementServers[mgmtURL].Username
@@ -562,7 +562,7 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 		}
 		if array.BackupEndpoint != "" {
 			if !utils.IsStringInSlice(ipAddresses, array.BackupEndpoint) {
-				return fmt.Errorf("backup endpoint: %s for array: %s is not in the list of management URL addresses. Ignoring it",
+				return fmt.Errorf("backup endpoint: %s for array: %s ",
 					array.BackupEndpoint, array)
 			}
 		}
@@ -809,7 +809,7 @@ func (c *ProxyConfigMap) Unmarshal() error {
 
 // ReadConfig - uses viper to read the config from the config map
 func ReadConfig(configFile, configPath string) (*ProxyConfigMap, error) {
-	viper := viper.New()
+	viper.New()
 	viper.SetConfigName(configFile)
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(configPath)
@@ -845,7 +845,7 @@ func NewProxyConfigFromSecret(proxySecret *ProxySecret, k8sUtils k8sutils.UtilsI
 // ReadConfigFromSecret - read config using secret
 func ReadConfigFromSecret(secretFileName, secretFilePath string) (*ProxySecret, error) {
 	log.Printf("Reading secret: %s from path: %s \n", secretFileName, secretFilePath)
-	viper := viper.New()
+	viper.New()
 	viper.SetConfigName(secretFileName)
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(secretFilePath)
@@ -859,4 +859,17 @@ func ReadConfigFromSecret(secretFileName, secretFilePath string) (*ProxySecret, 
 		return nil, err
 	}
 	return &secret, nil
+}
+
+// GetCredentialsFromRawSecret - get credentials from raw secret
+func GetCredentialsFromRawSecret(secret *corev1.Secret) (*ProxySecret, error) {
+	log.Infof("Getting secret from raw data\n")
+	rawSecretData := secret.Data["config"]
+	var proxySecret ProxySecret
+	err := yaml.Unmarshal(rawSecretData, &proxySecret)
+	if err != nil {
+		log.Errorf("error unmarshaling secret: %v", err)
+	}
+
+	return &proxySecret, nil
 }
