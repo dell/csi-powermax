@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -68,6 +68,8 @@ const (
 	CSILogFormatParam          = "CSI_LOG_FORMAT"
 	ArrayStatus                = "/array-status"
 	DefaultPodmonPollRate      = 60
+	ReplicationContextPrefix   = "powermax"
+	ReplicationPrefix          = "replication.storage.dell.com"
 	PortGroups                 = "X_CSI_POWERMAX_PORTGROUPS"
 	Protocol                   = "X_CSI_TRANSPORT_PROTOCOL"
 	// PmaxEndPoint               = "X_CSI_POWERMAX_ENDPOINT"
@@ -424,11 +426,16 @@ func (s *service) BeforeServe(
 		opts.KubeConfigPath = kubeConfigPath
 	}
 
+	// set default values for replication prefix since replicator sidecar is not needed for Metro feature.
 	if replicationContextPrefix, ok := csictx.LookupEnv(ctx, EnvReplicationContextPrefix); ok {
 		opts.ReplicationContextPrefix = replicationContextPrefix
+	} else {
+		opts.ReplicationContextPrefix = ReplicationContextPrefix
 	}
 	if replicationPrefix, ok := csictx.LookupEnv(ctx, EnvReplicationPrefix); ok {
 		opts.ReplicationPrefix = replicationPrefix
+	} else {
+		opts.ReplicationPrefix = ReplicationPrefix
 	}
 
 	if MaxVolumesPerNode, ok := csictx.LookupEnv(ctx, EnvMaxVolumesPerNode); ok {
