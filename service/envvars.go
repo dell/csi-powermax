@@ -170,11 +170,11 @@ const (
 	EnvTLSCertDirName = "X_CSI_REVPROXY_TLS_CERT_DIR"
 
 	// EnvRevProxyUseSecret is an env variable that indicates if reverseproxy should use secret
-	EnvRevProxyUseSecret = "X_CSI_REVPROXY_USE_SECRET"
+	EnvRevProxyUseSecret = "X_CSI_REVPROXY_USE_SECRET" // #nosec 101
 
 	// EnvRevProxySecretPath is an env variable that indicates reverseproxy secret path
-	EnvRevProxySecretPath = "X_CSI_REVPROXY_SECRET_FILEPATH"
+	EnvRevProxySecretPath = "X_CSI_REVPROXY_SECRET_FILEPATH" // #nosec 101
 
 	// EnvRevProxySecretName is an env variable that indicates reverseproxy secret name
-	EnvRevProxySecretName = "powermax-reverseproxy-secret"
+	EnvRevProxySecretName = "powermax-reverseproxy-secret" // #nosec 101
 )

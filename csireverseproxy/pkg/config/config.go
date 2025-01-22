@@ -282,7 +282,7 @@ func (pc *ProxyConfig) IsSecretConfiguredForArrays(secretName string) bool {
 
 	log.Infof("Checking secret : %s", secretName)
 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" && secretName == common.DefaultReverseProxySecretName {
-		//TODO: Need to check if rray.ProxyCredentialSecrets[secretName].CredentialSecret.Username and password are set or not.
+		// TODO: Need to check if rray.ProxyCredentialSecrets[secretName].CredentialSecret.Username and password are set or not.
 		return true
 	}
 

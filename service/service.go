@@ -420,13 +420,13 @@ func (s *service) BeforeServe(
 			// Extract the username and password
 			User := server["username"].(string)
 			Password := server["password"].(string)
-			//TODO: check if this is needed
-			//Endpoint := server["endpoint"].(string)
+			// TODO: check if this is needed
+			// Endpoint := server["endpoint"].(string)
 
 			opts.User = User
 			opts.Password = Password
-			//TODO: check if this is needed
-			//opts.Endpoint = Endpoint
+			// TODO: check if this is needed
+			// opts.Endpoint = Endpoint
 		} else {
 			log.Println("No management servers found.")
 		}
@@ -832,7 +832,6 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 		}
 		s.adminClient = c
 
-		//TODO: remove the log line below
 		for i := 0; i < maxAuthenticateRetryCount; i++ {
 			err = s.adminClient.Authenticate(ctx, &pmax.ConfigConnect{
 				Endpoint: endPoint,
@@ -841,9 +840,9 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 			})
 			if err == nil {
 				break
-			} else {
-				log.Infof("Error authenticating : %s", err)
 			}
+
+			log.Infof("Error authenticating : %s", err)
 			time.Sleep(10 * time.Second)
 		}
 		if err != nil {
