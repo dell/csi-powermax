@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"reflect"
 
 	"revproxy/v2/pkg/common"
@@ -27,7 +28,6 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v2"
 
 	"github.com/spf13/viper"
 	corev1 "k8s.io/api/core/v1"
@@ -445,7 +445,6 @@ func (pc *ProxyConfig) GetAuthorizedArrays(username, password string) []string {
 	for _, array := range pc.managedArrays {
 		for _, mgmtserver := range pc.managementServers {
 			if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
-				log.Printf("Fetch authorized arrays based on secret\n")
 				isAuth, err = pc.IsUserAuthorized(mgmtserver.Username, mgmtserver.Password, array.StorageArrayIdentifier)
 			} else {
 				isAuth, err = pc.IsUserAuthorized(username, password, array.StorageArrayIdentifier)
@@ -732,7 +731,7 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 			primaryUsername = primaryServer.Username
 			primaryPassword = primaryServer.Password
 		} else {
-			return fmt.Errorf("incorrect primary URL")
+			return fmt.Errorf("incorrect primary endpoint")
 		}
 
 		if secondaryServer, ok := pc.managementServers[backupEndpoint]; ok {
@@ -740,7 +739,7 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 			secondaryPassword = secondaryServer.Password
 
 		} else {
-			return fmt.Errorf("incorrect secondary URL")
+			return fmt.Errorf("incorrect secondary endpoint")
 		}
 		pc.updateProxyCredentialsFromSecret(primaryUsername, primaryPassword, array.StorageArrayIdentifier)
 		pc.updateProxyCredentialsFromSecret(secondaryUsername, secondaryPassword, array.StorageArrayIdentifier)
@@ -861,15 +860,32 @@ func ReadConfigFromSecret(secretFileName, secretFilePath string) (*ProxySecret, 
 	return &secret, nil
 }
 
-// GetCredentialsFromRawSecret - get credentials from raw secret
-func GetCredentialsFromRawSecret(secret *corev1.Secret) (*ProxySecret, error) {
-	log.Infof("Getting secret from raw data\n")
-	rawSecretData := secret.Data["config"]
-	var proxySecret ProxySecret
-	err := yaml.Unmarshal(rawSecretData, &proxySecret)
+// GetMountedSecretFromPath - get credentials from mounted secret
+func GetMountedSecretFromPath() (*ProxySecret, error) {
+	log.Infof("Getting secret from mounted path\n")
+
+	secretFilePath := getEnv(common.EnvSecretPath, "false")
+	secretConfig := viper.New()
+	secretConfig.SetConfigName(filepath.Base(secretFilePath))
+	secretConfig.SetConfigType("yaml")
+	secretConfig.AddConfigPath(filepath.Dir(secretFilePath))
+	err := secretConfig.ReadInConfig()
 	if err != nil {
-		log.Errorf("error unmarshaling secret: %v", err)
+		return nil, err
 	}
+	var proxySecret ProxySecret
+	err = viper.Unmarshal(&proxySecret)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: Remove this code below
+	// rawSecretData := secret.Data["config"]
+	// var proxySecret ProxySecret
+	// err := yaml.Unmarshal(rawSecretData, &proxySecret)
+	// if err != nil {
+	// 	log.Errorf("error unmarshaling secret: %v", err)
+	// }
 
 	return &proxySecret, nil
 }

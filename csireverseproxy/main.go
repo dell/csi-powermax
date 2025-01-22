@@ -318,7 +318,6 @@ func (s *Server) configChangeSecret(k8sUtils k8sutils.UtilsInterface) {
 	if err != nil {
 		log.Errorf("Error in unmarshalling the config: %s", err.Error())
 	} else {
-		//updateRevProxyLogParams(proxySecret.LogFormat, proxySecret.LogLevel)
 		proxyConfig, err := config.NewProxyConfigFromSecret(&proxySecret, k8sUtils)
 		if err != nil || proxyConfig == nil {
 			log.Errorf("Error parsing the config: %v", err)
@@ -353,26 +352,8 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 	}
 	found = conf.IsSecretConfiguredForArrays(secret.Name)
 	if found {
-		// TODO: Can we fetch the secret from the local path here or do we need to read the actual secret using secret.Data["config"] and unmarshall?
 		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" && common.DefaultReverseProxySecretName == secret.Name {
-
-			// Code to read from the mounted secret path
-			// secretNameFromPath := filepath.Base(s.Opts.SecretFilePath)
-			// secretPathFromPath := filepath.Dir(s.Opts.SecretFilePath)
-			// proxySecret, err := config.ReadConfigFromSecret(secretNameFromPath, secretPathFromPath)
-			// if err != nil {
-			// 	log.Errorf("Error while reading config from secret: %v\n", err)
-			// 	return
-			// }
-
-			// log.Infof("Getting secret from raw data\n")
-			// rawSecretData := secret.Data["config"]
-			// var proxySecret config.ProxySecret
-			// err := yaml.Unmarshal(rawSecretData, &proxySecret)
-			// if err != nil {
-			// 	log.Errorf("error unmarshaling secret: %v", err)
-			// }
-			proxySecret, err := config.GetCredentialsFromRawSecret(secret)
+			proxySecret, err := config.GetMountedSecretFromPath()
 			if err != nil {
 				log.Errorf("error while reading config from raw secret: %v\n", err)
 			}
@@ -418,7 +399,7 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 
 	err := server.Setup(k8sUtils)
 	if err != nil {
-		log.Fatalf("Failed to setup server. (%s)", err.Error())
+		log.Fatalf("Failed to setup Server (%s)", err.Error())
 		return nil, err
 	}
 
