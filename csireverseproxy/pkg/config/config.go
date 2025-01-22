@@ -662,7 +662,7 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 		}
 		if array.BackupEndpoint != "" {
 			if !utils.IsStringInSlice(ipAddresses, array.BackupEndpoint) {
-				return fmt.Errorf("backup endpoint: %s for array: %s is not in the list of management URL addresses. Ignoring it",
+				log.Warnf("backup endpoint: %s for array: %s is not in the list of management URL addresses. Ignoring it",
 					array.BackupEndpoint, array)
 			}
 		}
@@ -737,7 +737,6 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 		if secondaryServer, ok := pc.managementServers[backupEndpoint]; ok {
 			secondaryUsername = secondaryServer.Username
 			secondaryPassword = secondaryServer.Password
-
 		} else {
 			return fmt.Errorf("incorrect secondary endpoint")
 		}
