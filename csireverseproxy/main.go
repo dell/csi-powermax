@@ -130,7 +130,7 @@ func (s *Server) Config() *config.ProxyConfig {
 }
 
 // Setup sets up the server and the proxy configuration
-// this includes - reading the secret, creating appropriate proxy instance
+// this includes - reading the secret or config map, creating appropriate proxy instance
 // and setting up the signal handler channel
 func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 
@@ -142,9 +142,6 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 			log.Printf("Error while reading config from secret: %v\n", err)
 			return err
 		}
-
-		// TODO: Review if we need to update log params, and if yes from where and update accordingly.
-		// updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
 
 		proxyConfig, err := config.NewProxyConfigFromSecret(proxySecret, k8sUtils)
 		if err != nil {
@@ -179,6 +176,7 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 		s.Port = proxyConfig.Port
 		proxy, err := proxy.NewProxy(*proxyConfig)
 		if err != nil {
+			log.Printf("Error while creating proxy instance from config map: %v\n", err)
 			return err
 		}
 		s.Proxy = proxy

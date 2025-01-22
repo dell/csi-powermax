@@ -318,16 +318,19 @@ func (revProxy *Proxy) hasServerChanged(oldServer, newServer config.ManagementSe
 		oldServer.CertFile != newServer.CertFile ||
 		oldServer.CredentialSecret != newServer.CredentialSecret ||
 		oldServer.Limits != newServer.Limits ||
-		oldServer.SkipCertificateValidation != newServer.SkipCertificateValidation
+		oldServer.SkipCertificateValidation != newServer.SkipCertificateValidation ||
+		oldServer.Username != newServer.Username ||
+		oldServer.Password != newServer.Password
 }
 
 // UpdateConfig - Given a new proxy config, updates the Proxy
 func (revProxy *Proxy) UpdateConfig(proxyConfig config.ProxyConfig) error {
 	if reflect.DeepEqual(revProxy.config, proxyConfig) {
 		log.Info("No changes detected in the configuration")
-		//return nil
+		return nil
 	}
 
+	log.Info("Updating proxy config since changes detected in the configuration")
 	oldServerArrayMap := revProxy.config.GetManagedArraysAndServers()
 	serverArrayMap := proxyConfig.GetManagedArraysAndServers()
 

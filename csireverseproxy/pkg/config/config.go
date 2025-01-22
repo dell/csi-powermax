@@ -654,16 +654,16 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 	}
 	for _, array := range proxySecret.StorageArrayConfig {
 		if array.PrimaryEndpoint == "" {
-			return fmt.Errorf("primary endpoint not configured for array: %s", array.StorageArrayID)
+			log.Infof("primary endpoint not configured for array: %s", array.StorageArrayID)
 		}
 		if !utils.IsStringInSlice(ipAddresses, array.PrimaryEndpoint) {
-			return fmt.Errorf("primary endpoint: %s for array: %s not present among management URL addresses",
-				array.PrimaryEndpoint, array)
+			log.Warnf("primary endpoint: %s for array: %s not present among management endpoint addresses",
+				array.PrimaryEndpoint, array.StorageArrayID)
 		}
 		if array.BackupEndpoint != "" {
 			if !utils.IsStringInSlice(ipAddresses, array.BackupEndpoint) {
-				log.Warnf("backup endpoint: %s for array: %s is not in the list of management URL addresses. Ignoring it",
-					array.BackupEndpoint, array)
+				log.Warnf("backup endpoint: %s for array: %s not present among management endpoint addresses",
+					array.BackupEndpoint, array.StorageArrayID)
 			}
 		}
 		primaryEndpoint, err := url.Parse(array.PrimaryEndpoint)
@@ -714,35 +714,42 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 			SkipCertificateValidation: managementServer.SkipCertificateValidation,
 			CertFile:                  certFile,
 			CertSecret:                managementServer.CertSecret,
-			//Credentials:               arrayCredentials,
-			CredentialSecret: managementServer.ArrayCredentialSecret,
-			Limits:           managementServer.Limits,
-			Username:         managementServer.Username,
-			Password:         managementServer.Password,
+			Credentials:               common.Credentials{}, // Not used in the case of getting username password from secret
+			CredentialSecret:          managementServer.ArrayCredentialSecret,
+			Limits:                    managementServer.Limits,
+			Username:                  managementServer.Username,
+			Password:                  managementServer.Password,
 		}
 	}
 
 	for _, array := range pc.managedArrays {
+		isPrimaryOk := true
+		isBackupOk := true
 		primaryEndpoint := array.PrimaryEndpoint
 		backupEndpoint := array.SecondaryEndpoint
 		var primaryUsername, primaryPassword string
-		var secondaryUsername, secondaryPassword string
+		var backupUsername, backupPassword string
 		if primaryServer, ok := pc.managementServers[primaryEndpoint]; ok {
 			primaryUsername = primaryServer.Username
 			primaryPassword = primaryServer.Password
+			pc.updateProxyCredentialsFromSecret(primaryUsername, primaryPassword, array.StorageArrayIdentifier)
 		} else {
-			return fmt.Errorf("incorrect primary endpoint")
+			log.Warnf("primary endpoint not configured for %s", array.StorageArrayIdentifier)
+			isPrimaryOk = false
 		}
 
-		if secondaryServer, ok := pc.managementServers[backupEndpoint]; ok {
-			secondaryUsername = secondaryServer.Username
-			secondaryPassword = secondaryServer.Password
+		if backupServer, ok := pc.managementServers[backupEndpoint]; ok {
+			backupUsername = backupServer.Username
+			backupPassword = backupServer.Password
+			pc.updateProxyCredentialsFromSecret(backupUsername, backupPassword, array.StorageArrayIdentifier)
 		} else {
-			return fmt.Errorf("incorrect secondary endpoint")
+			log.Warnf("backup endpoint not configured for %s", array.StorageArrayIdentifier)
+			isBackupOk = false
 		}
-		pc.updateProxyCredentialsFromSecret(primaryUsername, primaryPassword, array.StorageArrayIdentifier)
-		pc.updateProxyCredentialsFromSecret(secondaryUsername, secondaryPassword, array.StorageArrayIdentifier)
 
+		if (!isPrimaryOk) && (!isBackupOk) {
+			log.Errorf("primary and secondary endpoint are not configured for %s", array.StorageArrayIdentifier)
+		}
 	}
 	return nil
 }
