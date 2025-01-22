@@ -378,7 +378,7 @@ func (s *service) BeforeServe(
 	if ep, ok := csictx.LookupEnv(ctx, EnvDriverName); ok {
 		opts.DriverName = ep
 	}
-	//TODO: Remove this
+	// TODO: Remove this later
 	// if ep, ok := csictx.LookupEnv(ctx, EnvEndpoint); ok {
 	// 	opts.Endpoint = ep
 	// }
