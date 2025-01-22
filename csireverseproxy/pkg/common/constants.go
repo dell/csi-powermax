@@ -41,7 +41,7 @@ const (
 	MaxOutStandingWriteRequests   = 50
 	MaxActiveWriteRequests        = 4
 	MaxOutStandingReadRequests    = 50
-	DefaultSecretPath             = "deploy"
+	DefaultSecretPath             = "/etc/powermax/config"
 	DefaultReverseProxySecretName = "powermax-reverseproxy-secret"
 	// EnvSidecarProxyPort is the port on which the reverse proxy
 	// server run, if run as a sidecar container

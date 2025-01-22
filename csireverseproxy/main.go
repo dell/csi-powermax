@@ -275,14 +275,15 @@ func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 	log.SetLevel(level)
 }
 
-// SetupConfigMapWatcher - Uses viper config change watcher to watch for
+// SetupConfigWatcher - Uses viper config change watcher to watch for
 // config change events on the yaml file
 // this also works with configmaps as viper evaluates the symlinks (from the configmap mount)
 // When a config change event is received, the proxy are updated with the new configuration
-func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
+func (s *Server) SetupConfigWatcher(k8sUtils k8sutils.UtilsInterface) {
+	log.Infof("Received a config change event corresponding to %v", viper.AllSettings())
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
-		log.Info("Received a config change event")
+		log.Infof("Received a config change event %s for %s", e.Op.String(), e.Name)
 		var proxyConfigMap config.ProxyConfigMap
 		err := viper.Unmarshal(&proxyConfigMap)
 		if err != nil {
@@ -307,7 +308,7 @@ func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
 // config change events on the yaml file
 // this also works with secret as viper evaluates the symlinks (from the configmap mount)
 // When a config change event is received, the proxy are updated with the new configuration
-func (s *Server) SetupSecretWatcher(k8sUtils k8sutils.UtilsInterface) {
+/* func (s *Server) SetupSecretWatcher(k8sUtils k8sutils.UtilsInterface) {
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		log.Info("Received a config change event")
@@ -330,7 +331,7 @@ func (s *Server) SetupSecretWatcher(k8sUtils k8sutils.UtilsInterface) {
 			}
 		}
 	})
-}
+} */
 
 // EventHandler - callback function which is used by k8sutils
 // when an event related to a secret in the namespace being watched
@@ -353,39 +354,39 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 	}
 	found = conf.IsSecretConfiguredForArrays(secret.Name)
 	if found {
-		//TODO: remove this : if common.DefaultSecretName == secret.Name {
-		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" && common.DefaultReverseProxySecretName == secret.Name {
-			secretNameFromPath := filepath.Base(s.Opts.SecretFilePath)
-			secretPathFromPath := filepath.Dir(s.Opts.SecretFilePath)
-			proxySecret, err := config.ReadConfigFromSecret(secretNameFromPath, secretPathFromPath)
-			if err != nil {
-				log.Errorf("Error while reading config from secret: %v\n", err)
-				return
-			}
-			for _, mgmtServer := range proxySecret.ManagementServerConfig {
-				creds := &common.Credentials{
-					UserName: mgmtServer.Username,
-					Password: mgmtServer.Password,
-				}
+		// TODO: remove this : if common.DefaultSecretName == secret.Name {
+		// 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" && common.DefaultReverseProxySecretName == secret.Name {
+		// 		secretNameFromPath := filepath.Base(s.Opts.SecretFilePath)
+		// 		secretPathFromPath := filepath.Dir(s.Opts.SecretFilePath)
+		// 		proxySecret, err := config.ReadConfigFromSecret(secretNameFromPath, secretPathFromPath)
+		// 		if err != nil {
+		// 			log.Errorf("Error while reading config from secret: %v\n", err)
+		// 			return
+		// 		}
+		// 		for _, mgmtServer := range proxySecret.ManagementServerConfig {
+		// 			creds := &common.Credentials{
+		// 				UserName: mgmtServer.Username,
+		// 				Password: mgmtServer.Password,
+		// 			}
 
-				isUpdated := conf.UpdateCreds(secret.Name, creds)
-				if isUpdated {
-					hasChanged = true
-				}
-			}
-		} else {
-			creds, err := k8sUtils.GetCredentialsFromSecret(secret)
-			if err != nil {
-				log.Errorf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
-				return
-			}
-			isUpdated := conf.UpdateCreds(secret.Name, creds)
-			if isUpdated {
-				hasChanged = true
-			}
+		// 			isUpdated := conf.UpdateCreds(secret.Name, creds)
+		// 			if isUpdated {
+		// 				hasChanged = true
+		// 			}
+		// 		}
+		// 	} else {
+		creds, err := k8sUtils.GetCredentialsFromSecret(secret)
+		if err != nil {
+			log.Errorf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
+			return
 		}
-
+		isUpdated := conf.UpdateCreds(secret.Name, creds)
+		if isUpdated {
+			hasChanged = true
+		}
+		//}
 	}
+
 	if hasChanged {
 		err := s.GetRevProxy().UpdateConfig(*conf)
 		if err != nil {
@@ -424,10 +425,12 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 	server.SignalHandler(k8sUtils)
 
 	// Setup the watcher on the config map
-	server.SetupConfigMapWatcher(k8sUtils)
+	server.SetupConfigWatcher(k8sUtils)
 
+	// TODO : Remove his, one config watcher should be enough.
+	// Rename SetupConfigMapWatcher to SetupConfigWatcher above
 	// Setup the watcher on the secret
-	server.SetupSecretWatcher(k8sUtils)
+	// server.SetupSecretWatcher(k8sUtils)
 
 	return server, nil
 }

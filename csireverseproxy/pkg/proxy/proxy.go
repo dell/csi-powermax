@@ -181,6 +181,7 @@ func (revProxy *Proxy) getAuthorisedArrays(res http.ResponseWriter, req *http.Re
 		utils.WriteHTTPError(res, "No managed arrays under this user", utils.StatusUnAuthorized)
 		return nil, fmt.Errorf("no managed arrays under this user")
 	}
+	log.Printf("Authorized arrays - %s\n", symIDs)
 	return symIDs, nil
 }
 
