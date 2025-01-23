@@ -378,10 +378,6 @@ func (s *service) BeforeServe(
 	if ep, ok := csictx.LookupEnv(ctx, EnvDriverName); ok {
 		opts.DriverName = ep
 	}
-	// TODO: Remove this later
-	// if ep, ok := csictx.LookupEnv(ctx, EnvEndpoint); ok {
-	// 	opts.Endpoint = ep
-	// }
 
 	if user, ok := csictx.LookupEnv(ctx, EnvUser); ok {
 		opts.User = user
@@ -389,7 +385,6 @@ func (s *service) BeforeServe(
 	if opts.User == "" {
 		opts.User = "admin"
 	}
-	// TODO: Remove this commented code later
 	if pw, ok := csictx.LookupEnv(ctx, EnvPassword); ok {
 		opts.Password = pw
 	}
@@ -420,13 +415,9 @@ func (s *service) BeforeServe(
 			// Extract the username and password
 			User := server["username"].(string)
 			Password := server["password"].(string)
-			// TODO: check if this is needed
-			// Endpoint := server["endpoint"].(string)
 
 			opts.User = User
 			opts.Password = Password
-			// TODO: check if this is needed
-			// opts.Endpoint = Endpoint
 		} else {
 			log.Println("No management servers found.")
 		}

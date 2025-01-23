@@ -281,8 +281,8 @@ func (pc *ProxyConfig) IsSecretConfiguredForCerts(secretName string) bool {
 func (pc *ProxyConfig) IsSecretConfiguredForArrays(secretName string) bool {
 
 	log.Infof("Checking secret : %s", secretName)
-	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" && secretName == common.DefaultReverseProxySecretName {
-		// TODO: Need to check if rray.ProxyCredentialSecrets[secretName].CredentialSecret.Username and password are set or not.
+	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
+		// if using secrets, return true. updates for the username password happens in UpdateCreds
 		return true
 	}
 
@@ -312,8 +312,7 @@ func (pc *ProxyConfig) UpdateCreds(secretName string, credentials *common.Creden
 	isUpdated := false
 
 	for _, server := range pc.managementServers {
-		// TODO: Check if there is a better way to check for this
-		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" && secretName == common.DefaultReverseProxySecretName {
+		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
 			server.Username = credentials.UserName
 			server.Password = credentials.Password
 			isUpdated = true
@@ -553,15 +552,15 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 	}
 	for _, array := range config.StorageArrayConfig {
 		if array.PrimaryEndpoint == "" {
-			return fmt.Errorf("primary endpoint not configured for array: %s", array.StorageArrayID)
+			log.Warnf("primary endpoint not configured for array: %s", array.StorageArrayID)
 		}
 		if !utils.IsStringInSlice(ipAddresses, array.PrimaryEndpoint) {
-			return fmt.Errorf("primary endpoint: %s for array: %s not present among management URL addresses",
+			log.Warnf("primary endpoint: %s for array: %s not present among management URL addresses",
 				array.PrimaryEndpoint, array)
 		}
 		if array.BackupEndpoint != "" {
 			if !utils.IsStringInSlice(ipAddresses, array.BackupEndpoint) {
-				return fmt.Errorf("backup endpoint: %s for array: %s ",
+				log.Warnf("backup endpoint: %s for array: %s not present among management URL addresses",
 					array.BackupEndpoint, array)
 			}
 		}
@@ -641,7 +640,7 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 // ParseConfigFromSecret - Parses a given proxy secret
 func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k8sutils.UtilsInterface) error {
 	// TODO: Need to get port information dynamically, Hardcoded for now
-	pc.Port = "2222"
+	pc.Port = getEnv(common.DefaultPort, "2222")
 	log.Printf("Explicitly setting PORT to %s", pc.Port)
 
 	pc.managedArrays = make(map[string]*StorageArray)
@@ -867,6 +866,7 @@ func ReadConfigFromSecret(secretFileName, secretFilePath string) (*ProxySecret, 
 }
 
 // GetMountedSecretFromPath - get credentials from mounted secret
+// This method is similar to ReadConfigFromSecret but we dont want to reset the viper config by calling that method as it is being watched
 func GetMountedSecretFromPath() (*ProxySecret, error) {
 	log.Infof("Getting secret from mounted path\n")
 
@@ -884,14 +884,5 @@ func GetMountedSecretFromPath() (*ProxySecret, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO: Remove this code below
-	// rawSecretData := secret.Data["config"]
-	// var proxySecret ProxySecret
-	// err := yaml.Unmarshal(rawSecretData, &proxySecret)
-	// if err != nil {
-	// 	log.Errorf("error unmarshaling secret: %v", err)
-	// }
-
 	return &proxySecret, nil
 }

@@ -174,7 +174,4 @@ const (
 
 	// EnvRevProxySecretPath is an env variable that indicates reverseproxy secret path
 	EnvRevProxySecretPath = "X_CSI_REVPROXY_SECRET_FILEPATH" // #nosec 101
-
-	// EnvRevProxySecretName is an env variable that indicates reverseproxy secret name
-	EnvRevProxySecretName = "powermax-reverseproxy-secret" // #nosec 101
 )

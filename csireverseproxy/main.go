@@ -80,7 +80,6 @@ func getServerOpts() ServerOpts {
 	inClusterEnvVal := getEnv(common.EnvInClusterConfig, "false")
 	inCluster := false
 	secretFilePath := getEnv(common.EnvSecretPath, common.DefaultSecretPath)
-	secretName := getEnv(common.EnvSecretName, common.DefaultReverseProxySecretName)
 	port := getEnv(common.EnvSidecarProxyPort, common.DefaultPort)
 
 	if strings.ToLower(inClusterEnvVal) == "true" {
@@ -96,7 +95,6 @@ func getServerOpts() ServerOpts {
 		KeyFile:        common.DefaultKeyFile,
 		InCluster:      inCluster,
 		SecretFilePath: secretFilePath,
-		SecretName:     secretName,
 		Port:           port,
 	}
 }
@@ -136,6 +134,7 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 
 	// Read the config from secret if secret provided
 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
+		log.Printf("Reading config using secret")
 		secretFilePath := getEnv(common.EnvSecretPath, "false")
 		proxySecret, err := config.ReadConfigFromSecret(filepath.Base(secretFilePath), filepath.Dir(secretFilePath))
 		if err != nil {
@@ -291,26 +290,34 @@ func (s *Server) SetupConfigWatcher(k8sUtils k8sutils.UtilsInterface) {
 }
 
 func (s *Server) configChangeConfigMap(k8sUtils k8sutils.UtilsInterface) {
+	log.Infof("Received a config change event for configmap")
 	var proxyConfigMap config.ProxyConfigMap
 	err := viper.Unmarshal(&proxyConfigMap)
 	if err != nil {
 		log.Errorf("Error in unmarshalling the config: %s", err.Error())
+		return
+	} //else {
+	err = proxyConfigMap.Unmarshal()
+	if err != nil {
+		log.Errorf("Error in unmarshalling the config map: %s", err.Error())
+		return
+	}
+	updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
+	proxyConfig, err := config.NewProxyConfig(&proxyConfigMap, k8sUtils)
+	if err != nil || proxyConfig == nil {
+		log.Errorf("Error parsing the config: %v", err)
 	} else {
-		updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
-		proxyConfig, err := config.NewProxyConfig(&proxyConfigMap, k8sUtils)
-		if err != nil || proxyConfig == nil {
-			log.Errorf("Error parsing the config: %v", err)
-		} else {
-			s.SetConfig(proxyConfig)
-			err = s.GetRevProxy().UpdateConfig(*proxyConfig)
-			if err != nil {
-				log.Errorf("Error in updating the config: %s", err.Error())
-			}
+		s.SetConfig(proxyConfig)
+		err = s.GetRevProxy().UpdateConfig(*proxyConfig)
+		if err != nil {
+			log.Errorf("Error in updating the config: %s", err.Error())
 		}
 	}
+	//}
 }
 
 func (s *Server) configChangeSecret(k8sUtils k8sutils.UtilsInterface) {
+	log.Infof("Received a config change event for secret")
 	var proxySecret config.ProxySecret
 	err := viper.Unmarshal(&proxySecret)
 	if err != nil {
@@ -350,7 +357,7 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 	}
 	found = conf.IsSecretConfiguredForArrays(secret.Name)
 	if found {
-		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" && common.DefaultReverseProxySecretName == secret.Name {
+		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
 			proxySecret, err := config.GetMountedSecretFromPath()
 			if err != nil {
 				log.Errorf("error while reading config from raw secret: %v\n", err)
