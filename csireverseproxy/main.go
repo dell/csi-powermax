@@ -296,7 +296,7 @@ func (s *Server) configChangeConfigMap(k8sUtils k8sutils.UtilsInterface) {
 	if err != nil {
 		log.Errorf("Error in unmarshalling the config: %s", err.Error())
 		return
-	} //else {
+	}
 	err = proxyConfigMap.Unmarshal()
 	if err != nil {
 		log.Errorf("Error in unmarshalling the config map: %s", err.Error())
@@ -313,7 +313,6 @@ func (s *Server) configChangeConfigMap(k8sUtils k8sutils.UtilsInterface) {
 			log.Errorf("Error in updating the config: %s", err.Error())
 		}
 	}
-	//}
 }
 
 func (s *Server) configChangeSecret(k8sUtils k8sutils.UtilsInterface) {
