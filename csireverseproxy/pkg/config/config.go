@@ -765,7 +765,7 @@ func NewProxyConfig(configMap *ProxyConfigMap, k8sUtils k8sutils.UtilsInterface)
 
 // Unmarshal - Custom unmarshal function for config map
 /* 	Since the common ManagementServerConfig and StorageArrayConfig have been modified to use Endpoint instead of URL,
-	viper has an issue unmarshalling those in to the struct for ConfigMap which uses URLs still. Hence a custom function is needed
+	viper has an issue unmarshalling those in to the struct for ConfigMap which uses URLs still (ex.primaryURL, backupURL in config map definition). Hence a custom function is needed
  	to make sure that they are parsed correctly.
 */
 func (c *ProxyConfigMap) Unmarshal() error {
@@ -794,14 +794,14 @@ func (c *ProxyConfigMap) Unmarshal() error {
 		if urlStr, ok := arrayMap["primaryURL"].(string); ok {
 			parsedURL, err := url.Parse(urlStr)
 			if err != nil {
-				return fmt.Errorf("invalid URL for primaryEndpoint: %w", err)
+				return fmt.Errorf("invalid endpoint for primaryEndpoint: %w", err)
 			}
 			c.Config.StorageArrayConfig[i].PrimaryEndpoint = parsedURL.String()
 		}
 		if urlStr, ok := arrayMap["backupURL"].(string); ok {
 			parsedURL, err := url.Parse(urlStr)
 			if err != nil {
-				return fmt.Errorf("invalid URL for backupEndpoint: %w", err)
+				return fmt.Errorf("invalid endpoint for backupEndpoint: %w", err)
 			}
 			c.Config.StorageArrayConfig[i].BackupEndpoint = parsedURL.String()
 		}
@@ -866,7 +866,7 @@ func ReadConfigFromSecret(secretFileName, secretFilePath string) (*ProxySecret, 
 }
 
 // GetMountedSecretFromPath - get credentials from mounted secret
-// This method is similar to ReadConfigFromSecret but we dont want to reset the viper config by calling that method as it is being watched
+// This method is similar to ReadConfigFromSecret but we dont want to reset the viper instance that is initialized in that method by calling it again as it is being watched
 func GetMountedSecretFromPath() (*ProxySecret, error) {
 	log.Infof("Getting secret from mounted path\n")
 
