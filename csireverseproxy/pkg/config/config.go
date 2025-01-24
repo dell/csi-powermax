@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 
 	"revproxy/v2/pkg/common"
 	"revproxy/v2/pkg/k8sutils"
@@ -36,8 +37,8 @@ import (
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
 	StorageArrayID         string   `yaml:"storageArrayId"`
-	PrimaryEndpoint        string   `yaml:"primaryURL"`
-	BackupEndpoint         string   `yaml:"backupURL,omitempty"`
+	PrimaryEndpoint        string   `yaml:"primaryEndpoint"`
+	BackupEndpoint         string   `yaml:"backupEndpoint,omitempty"`
 	ProxyCredentialSecrets []string `yaml:"proxyCredentialSecrets"`
 }
 
@@ -86,7 +87,7 @@ func (sa *StorageArray) DeepCopy() *StorageArray {
 
 // ManagementServerConfig - represents a management server configuration for the management server
 type ManagementServerConfig struct {
-	Endpoint                  string        `yaml:"url"`
+	Endpoint                  string        `yaml:"endpoint"`
 	ArrayCredentialSecret     string        `yaml:"arrayCredentialSecret,omitempty"`
 	SkipCertificateValidation bool          `yaml:"skipCertificateValidation,omitempty"`
 	CertSecret                string        `yaml:"certSecret,omitempty"`
@@ -460,21 +461,21 @@ func (pc *ProxyConfig) GetAuthorizedArrays(username, password string) []string {
 	return authorizedArrays
 }
 
-// GetManagementServerCredentials - Given a management server URL, returns the associated credentials
-func (pc *ProxyConfig) GetManagementServerCredentials(mgmtURL url.URL) (common.Credentials, error) {
+// GetManagementServerCredentials - Given a management server endoint, returns the associated credentials
+func (pc *ProxyConfig) GetManagementServerCredentials(mgmtEndpoint url.URL) (common.Credentials, error) {
 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
 		var arrayCredentials common.Credentials
-		arrayCredentials.UserName = pc.managementServers[mgmtURL].Username
-		arrayCredentials.Password = pc.managementServers[mgmtURL].Password
-		if _, ok := pc.managementServers[mgmtURL]; ok {
+		arrayCredentials.UserName = pc.managementServers[mgmtEndpoint].Username
+		arrayCredentials.Password = pc.managementServers[mgmtEndpoint].Password
+		if _, ok := pc.managementServers[mgmtEndpoint]; ok {
 			return arrayCredentials, nil
 		}
 	}
 
-	if mgmtServer, ok := pc.managementServers[mgmtURL]; ok {
+	if mgmtServer, ok := pc.managementServers[mgmtEndpoint]; ok {
 		return mgmtServer.Credentials, nil
 	}
-	return common.Credentials{}, fmt.Errorf("url not configured")
+	return common.Credentials{}, fmt.Errorf("endpoint not configured")
 }
 
 // IsUserAuthorized - Returns if a given user is authorized to access a specific storage array
@@ -765,19 +766,20 @@ func NewProxyConfig(configMap *ProxyConfigMap, k8sUtils k8sutils.UtilsInterface)
 
 // Unmarshal - Custom unmarshal function for config map
 /* 	Since the common ManagementServerConfig and StorageArrayConfig have been modified to use Endpoint instead of URL,
-	viper has an issue unmarshalling those in to the struct for ConfigMap which uses URLs still (ex.primaryURL, backupURL in config map definition). Hence a custom function is needed
- 	to make sure that they are parsed correctly.
+	viper has an issue unmarshalling those in to the struct for ConfigMap which uses URLs (ex.primaryURL, backupURL in config map definition). 
+	Hence a custom function is needed to make sure that they are parsed correctly.
+	This method also uses a custom hook to decode int to string as the default mapstructure.decode cannot natively do that.
+	Note: This function only used for unmarshalling configMap to structures.
 */
 func (c *ProxyConfigMap) Unmarshal() error {
 	settings := viper.AllSettings()
 
 	log.Infof("viper all settings: %v\n", viper.AllSettings())
-
 	// Retrieve all settings as a map
 	// Custom handling for URL fields before unmarshaling
 	for i, managementServer := range viper.Get("config.managementservers").([]interface{}) {
 		serverMap := managementServer.(map[interface{}]interface{})
-		// Check if the "url" field exists (mapped from "url" in the YAML) and is a string
+		// Check if the "url" field exists and is a string
 		if urlStr, ok := serverMap["url"].(string); ok {
 			parsedURL, err := url.Parse(urlStr)
 			if err != nil {
@@ -807,8 +809,31 @@ func (c *ProxyConfigMap) Unmarshal() error {
 		}
 	}
 
+	// Create a custom DecodeHook to convert int to string.
+	// Port in config map is defined as an int and needs to be converted to string.
+	decoderConfig := &mapstructure.DecoderConfig{
+		TagName: "mapstructure",
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			// Define a hook to convert int to string
+			func(f, t reflect.Type, data interface{}) (interface{}, error) {
+				if f.Kind() == reflect.Int && t.Kind() == reflect.String {
+					// Convert int to string
+					return strconv.Itoa(data.(int)), nil
+				}
+				return data, nil
+			},
+		),
+		Result: &c,
+	}
+
+	// Decode the config
+	decoder, err := mapstructure.NewDecoder(decoderConfig)
+	if err != nil {
+		return fmt.Errorf("error while decoding : %w", err)
+	}
+
 	// Unmarshal the updated settings into the config struct
-	return mapstructure.Decode(settings, c)
+	return decoder.Decode(settings)
 }
 
 // ReadConfig - uses viper to read the config from the config map
