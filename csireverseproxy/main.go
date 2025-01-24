@@ -59,7 +59,6 @@ type ServerOpts struct {
 	ConfigFileName string
 	InCluster      bool
 	SecretFilePath string
-	SecretName     string
 	Port           string
 }
 
@@ -79,7 +78,6 @@ func getServerOpts() ServerOpts {
 	configDir := getEnv(common.EnvConfigDirName, common.DefaultConfigDir)
 	inClusterEnvVal := getEnv(common.EnvInClusterConfig, "false")
 	inCluster := false
-	secretFilePath := getEnv(common.EnvSecretPath, common.DefaultSecretPath)
 	port := getEnv(common.EnvSidecarProxyPort, common.DefaultPort)
 
 	if strings.ToLower(inClusterEnvVal) == "true" {
@@ -94,7 +92,6 @@ func getServerOpts() ServerOpts {
 		CertFile:       common.DefaultCertFile,
 		KeyFile:        common.DefaultKeyFile,
 		InCluster:      inCluster,
-		SecretFilePath: secretFilePath,
 		Port:           port,
 	}
 }
