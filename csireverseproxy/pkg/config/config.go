@@ -765,8 +765,9 @@ func NewProxyConfig(configMap *ProxyConfigMap, k8sUtils k8sutils.UtilsInterface)
 }
 
 // Unmarshal - Custom unmarshal function for config map
-/* 	Since the common ManagementServerConfig and StorageArrayConfig have been modified to use Endpoint instead of URL,
-	viper has an issue unmarshalling those in to the struct for ConfigMap which uses URLs (ex.primaryURL, backupURL in config map definition). 
+/*
+	Since the common ManagementServerConfig and StorageArrayConfig have been modified to use Endpoint instead of URL,
+	viper has an issue unmarshalling those in to the struct for ConfigMap which uses URLs (ex.primaryURL, backupURL in config map definition).
 	Hence a custom function is needed to make sure that they are parsed correctly.
 	This method also uses a custom hook to decode int to string as the default mapstructure.decode cannot natively do that.
 	Note: This function only used for unmarshalling configMap to structures.
