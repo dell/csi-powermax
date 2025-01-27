@@ -90,7 +90,7 @@ func newHTTPClient(mgmtServer config.ManagementServer) *http.Client {
 }
 
 func newReverseProxy(mgmtServer config.ManagementServer) common.Proxy {
-	revProxy := httputil.NewSingleHostReverseProxy(&mgmtServer.URL)
+	revProxy := httputil.NewSingleHostReverseProxy(&mgmtServer.Endpoint)
 	tlsConfig := newTLSConfig(mgmtServer)
 	revProxy.Transport = &http.Transport{
 		TLSClientConfig:     tlsConfig,
@@ -99,7 +99,7 @@ func newReverseProxy(mgmtServer config.ManagementServer) common.Proxy {
 	}
 	proxy := common.Proxy{
 		ReverseProxy: revProxy,
-		URL:          mgmtServer.URL,
+		URL:          mgmtServer.Endpoint,
 		Limits:       mgmtServer.Limits,
 	}
 	return proxy
@@ -181,6 +181,7 @@ func (revProxy *Proxy) getAuthorisedArrays(res http.ResponseWriter, req *http.Re
 		utils.WriteHTTPError(res, "No managed arrays under this user", utils.StatusUnAuthorized)
 		return nil, fmt.Errorf("no managed arrays under this user")
 	}
+	log.Printf("Authorized arrays - %s\n", symIDs)
 	return symIDs, nil
 }
 
@@ -313,11 +314,13 @@ func (revProxy *Proxy) removeBackupEnvoy(arrayID string) {
 }
 
 func (revProxy *Proxy) hasServerChanged(oldServer, newServer config.ManagementServer) bool {
-	return oldServer.URL != newServer.URL ||
+	return oldServer.Endpoint != newServer.Endpoint ||
 		oldServer.CertFile != newServer.CertFile ||
 		oldServer.CredentialSecret != newServer.CredentialSecret ||
 		oldServer.Limits != newServer.Limits ||
-		oldServer.SkipCertificateValidation != newServer.SkipCertificateValidation
+		oldServer.SkipCertificateValidation != newServer.SkipCertificateValidation ||
+		oldServer.Username != newServer.Username ||
+		oldServer.Password != newServer.Password
 }
 
 // UpdateConfig - Given a new proxy config, updates the Proxy
@@ -327,6 +330,7 @@ func (revProxy *Proxy) UpdateConfig(proxyConfig config.ProxyConfig) error {
 		return nil
 	}
 
+	log.Info("Updating proxy config since changes detected in the configuration")
 	oldServerArrayMap := revProxy.config.GetManagedArraysAndServers()
 	serverArrayMap := proxyConfig.GetManagedArraysAndServers()
 

@@ -22,6 +22,7 @@ const (
 	DefaultCertDirName          = "certs"
 	DefaultConfigFileName       = "config"
 	DefaultConfigDir            = "deploy"
+	DefaultPort                 = "2222"
 	TestConfigDir               = "test-config"
 	TempConfigDir               = "test-config/tmp"
 	TestConfigFileName          = "config.yaml"
@@ -32,9 +33,16 @@ const (
 	EnvConfigDirName            = "X_CSI_REVPROXY_CONFIG_DIR"
 	EnvInClusterConfig          = "X_CSI_REVRPOXY_IN_CLUSTER"
 	EnvIsLeaderElectionEnabled  = "X_CSI_REVPROXY_IS_LEADER_ENABLED"
+	EnvSecretPath               = "X_CSI_REVPROXY_SECRET_FILEPATH"
+	EnvSecretName               = "X_CSI_REVPROXY_SECRET_NAME"
+	EnvReverseProxyUseSecret    = "X_CSI_REVPROXY_USE_SECRET"
 	DefaultNameSpace            = "powermax"
 	MaxActiveReadRequests       = 5
 	MaxOutStandingWriteRequests = 50
 	MaxActiveWriteRequests      = 4
 	MaxOutStandingReadRequests  = 50
+	DefaultSecretPath           = "/etc/powermax/config"
+	// EnvSidecarProxyPort is the port on which the reverse proxy
+	// server run, if run as a sidecar container
+	EnvSidecarProxyPort = "X_CSI_POWERMAX_SIDECAR_PROXY_PORT"
 )
