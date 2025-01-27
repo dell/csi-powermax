@@ -29,12 +29,10 @@ const (
 	EnvCertDirName              = "X_CSI_REVPROXY_CERT_DIR"
 	EnvTLSCertDirName           = "X_CSI_REVPROXY_TLS_CERT_DIR"
 	EnvWatchNameSpace           = "X_CSI_REVPROXY_WATCH_NAMESPACE"
-	EnvConfigFileName           = "X_CSI_REVPROXY_CONFIG_FILE_NAME"
-	EnvConfigDirName            = "X_CSI_REVPROXY_CONFIG_DIR"
+	EnvPowermaxConfigPath       = "X_CSI_POWERMAX_CONFIG_PATH"
 	EnvInClusterConfig          = "X_CSI_REVRPOXY_IN_CLUSTER"
 	EnvIsLeaderElectionEnabled  = "X_CSI_REVPROXY_IS_LEADER_ENABLED"
-	EnvSecretPath               = "X_CSI_REVPROXY_SECRET_FILEPATH"
-	EnvSecretName               = "X_CSI_REVPROXY_SECRET_NAME"
+	EnvSecretFilePath           = "X_CSI_REVPROXY_SECRET_FILEPATH"
 	EnvReverseProxyUseSecret    = "X_CSI_REVPROXY_USE_SECRET"
 	DefaultNameSpace            = "powermax"
 	MaxActiveReadRequests       = 5
@@ -45,4 +43,8 @@ const (
 	// EnvSidecarProxyPort is the port on which the reverse proxy
 	// server run, if run as a sidecar container
 	EnvSidecarProxyPort = "X_CSI_POWERMAX_SIDECAR_PROXY_PORT"
+
+	// Unused - Remove later
+	EnvConfigFileName = "X_CSI_REVPROXY_CONFIG_FILE_NAME"
+	EnvConfigDirName  = "X_CSI_REVPROXY_CONFIG_DIR"
 )
