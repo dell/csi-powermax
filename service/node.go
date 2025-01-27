@@ -1788,19 +1788,22 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 		nodeChroot, _ := csictx.LookupEnv(context.Background(), EnvNodeChroot)
 		if s.useNVMeTCP {
 			// resetOtherProtocols
-			s.useFC = false
-			s.useIscsi = false
+
 			// check nvme module availability on the host
 			err = s.setupArrayForNVMeTCP(ctx, symID, validNVMeTCPs, pmaxClient)
 			if err != nil {
 				log.Errorf("Failed to do the NVMe setup for the Array(%s). Error - %s", symID, err.Error())
+			} else {
+				s.initNVMeTCPConnector(nodeChroot)
+				s.arrayTransportProtocolMap[symID] = NvmeTCPTransportProtocol
+				s.useFC = false
+				s.useIscsi = false
 			}
-			s.initNVMeTCPConnector(nodeChroot)
-			s.arrayTransportProtocolMap[symID] = NvmeTCPTransportProtocol
-		} else if s.useFC {
+
+		}
+		if s.useFC {
 			// resetOtherProtocols
-			s.useNVMeTCP = false
-			s.useIscsi = false
+
 			formattedFCs := make([]string, 0)
 			for _, initiatorID := range validFCs {
 				elems := strings.Split(initiatorID, ":")
@@ -1809,14 +1812,18 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			err := s.setupArrayForFC(ctx, symID, formattedFCs, pmaxClient)
 			if err != nil {
 				log.Errorf("Failed to do the FC setup the Array(%s). Error - %s", symID, err.Error())
+			} else {
+				s.initFCConnector(nodeChroot)
+				s.arrayTransportProtocolMap[symID] = FcTransportProtocol
+				isSymConnFC[symID] = true
+				s.useNVMeTCP = false
+				s.useIscsi = false
 			}
-			s.initFCConnector(nodeChroot)
-			s.arrayTransportProtocolMap[symID] = FcTransportProtocol
-			isSymConnFC[symID] = true
-		} else if s.useIscsi {
+
+		}
+		if s.useIscsi {
 			// resetOtherProtocols
-			s.useNVMeTCP = false
-			s.useNFS = false
+
 			err := s.ensureISCSIDaemonStarted()
 			if err != nil {
 				log.Errorf("Failed to start the ISCSI Daemon. Error - %s", err.Error())
@@ -1824,9 +1831,13 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			err = s.setupArrayForIscsi(ctx, symID, validIscsis, pmaxClient)
 			if err != nil {
 				log.Errorf("Failed to do the ISCSI setup for the Array(%s). Error - %s", symID, err.Error())
+			} else {
+				s.initISCSIConnector(nodeChroot)
+				s.arrayTransportProtocolMap[symID] = IscsiTransportProtocol
+				s.useNVMeTCP = false
+				s.useNFS = false
 			}
-			s.initISCSIConnector(nodeChroot)
-			s.arrayTransportProtocolMap[symID] = IscsiTransportProtocol
+
 		}
 	}
 
