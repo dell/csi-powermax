@@ -25,10 +25,11 @@ import (
 	"revproxy/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 func readConfig() (*ProxyConfigMap, error) {
-	return ReadConfig(common.TestConfigFileName, "./../../"+common.TestConfigDir)
+	return ReadConfig(common.TestConfigFileName, "./../../"+common.TestConfigDir, viper.New())
 }
 
 func TestMain(m *testing.M) {
