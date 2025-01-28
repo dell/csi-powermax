@@ -26,6 +26,7 @@ const (
 	TestConfigDir               = "test-config"
 	TempConfigDir               = "test-config/tmp"
 	TestConfigFileName          = "config.yaml"
+	TestSecretFileName            = "secret-config.yaml"
 	EnvCertDirName              = "X_CSI_REVPROXY_CERT_DIR"
 	EnvTLSCertDirName           = "X_CSI_REVPROXY_TLS_CERT_DIR"
 	EnvWatchNameSpace           = "X_CSI_REVPROXY_WATCH_NAMESPACE"
