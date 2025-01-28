@@ -635,7 +635,6 @@ func (s *service) BeforeServe(
 	// Start the deletion worker thread
 	log.Printf("s.mode: %s", s.mode)
 	if !strings.EqualFold(s.mode, "node") {
-	
 		s.NewDeletionWorker(s.opts.ClusterPrefix, s.opts.ManagedArrays)
 	}
 
