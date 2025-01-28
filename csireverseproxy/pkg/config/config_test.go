@@ -24,10 +24,11 @@ import (
 	"revproxy/v2/pkg/k8sutils"
 	"revproxy/v2/pkg/utils"
 
+	"path/filepath"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
-	"path/filepath"
 )
 
 func readConfig() (*ProxyConfigMap, error) {
@@ -36,11 +37,10 @@ func readConfig() (*ProxyConfigMap, error) {
 
 func readProxySecret() (*ProxySecret, error) {
 	setReverseProxyUseSecret(true)
-	relativePath := filepath.Join(".","..","..",common.TestConfigDir,common.TestSecretFileName)
+	relativePath := filepath.Join(".", "..", "..", common.TestConfigDir, common.TestSecretFileName)
 	setEnv(common.EnvSecretFilePath, relativePath)
 	return ReadConfigFromSecret(viper.New())
 }
-
 
 func TestMain(m *testing.M) {
 	status := 0
@@ -84,6 +84,7 @@ func newProxyConfig(configMap *ProxyConfigMap, utils k8sutils.UtilsInterface) (*
 }
 
 func getProxyConfig(t *testing.T) (*ProxyConfig, error) {
+	setReverseProxyUseSecret(false)
 	k8sUtils := k8smock.Init()
 	configMap, err := readConfig()
 	if err != nil {
@@ -372,6 +373,154 @@ func TestProxyConfig_ParseConfigFromSecret(t *testing.T) {
 				return
 			}
 			//assert.Equal(t, tc.expectedConfig, &config)
+		})
+	}
+}
+
+func TestProxyConfig_GetAuthorizedArraysFromSecret(t *testing.T) {
+	testCases := []struct {
+		name           string
+		username       string
+		password       string
+		proxySecret    ProxySecret
+		expectedArrays []string
+		expectedError  error
+	}{
+		{
+			name:     "Valid config with one array and one management server",
+			username: "test-username",
+			password: "password",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID:  "test-symm-id",
+						PrimaryEndpoint: "https://management.example.com",
+					},
+				},
+
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError:  nil,
+			expectedArrays: []string{"test-symm-id"},
+		},
+		{
+			name:     "Invalid config with no arrays",
+			username: "test-username",
+			password: "password",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError: fmt.Errorf("no storage arrays configured"),
+		},
+		{
+			name:     "Invalid config with no endpoints configured for a storage array",
+			username: "test-username",
+			password: "password",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID: "test-symm-id",
+					},
+				},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError: fmt.Errorf("primary endpoint not configured for array: test-symm-id"),
+		},
+		{
+			name:     "Invalid config with primary endpoint not among management servers",
+			username: "test-username",
+			password: "password",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID:  "test-symm-id",
+						PrimaryEndpoint: "https://example.com",
+					},
+				},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError: fmt.Errorf("primary endpoint: %s for array: %s not present among management endpoint addresses", "https://example.com", "test-symm-id"),
+		},
+		{
+			name:     "Valid config with multiple arrays and multiple management servers",
+			username: "test-username",
+			password: "password",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID:  "array1",
+						PrimaryEndpoint: "https://management1.example.com",
+						BackupEndpoint:  "https://management2.example.com",
+					},
+					{
+						StorageArrayID:  "array2",
+						PrimaryEndpoint: "https://management1.example.com",
+						BackupEndpoint:  "https://management2.example.com",
+					},
+				},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management1.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+					{
+						Endpoint:                  "https://management2.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError:  nil,
+			expectedArrays: []string{"array1", "array2", "array1", "array2"}, //Returns the arrays via the two different management servers! Is this unexpected?!
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var config ProxyConfig
+			err := config.ParseConfigFromSecret(tc.proxySecret, nil)
+			if err != nil {
+				assert.Equal(t, tc.expectedError, err)
+				return
+			}
+			authorizedArrays := config.GetAuthorizedArrays(tc.username, tc.password)
+			if err != nil {
+				assert.Equal(t, tc.expectedError, err)
+			} else {
+				assert.Equal(t, len(tc.expectedArrays), len(authorizedArrays))
+			}
 		})
 	}
 }
