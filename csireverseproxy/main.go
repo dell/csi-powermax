@@ -132,8 +132,9 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 	// Read the config from secret if secret provided
 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
 		log.Printf("Reading config using secret")
-		secretFilePath := getEnv(common.EnvSecretPath, "false")
-		proxySecret, err := config.ReadConfigFromSecret(filepath.Base(secretFilePath), filepath.Dir(secretFilePath))
+
+		vs := viper.New()
+		proxySecret, err := config.ReadConfigFromSecret(vs)
 		if err != nil {
 			log.Printf("Error while reading config from secret: %v\n", err)
 			return err
@@ -146,19 +147,43 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 		}
 		s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
 		s.KeyFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.KeyFile)
+
 		s.Port = proxyConfig.Port
 		proxy, err := proxy.NewProxy(*proxyConfig)
 		if err != nil {
 			log.Printf("Error while creating proxy instance from secret: %v\n", err)
 			return err
 		}
+
+		log.Infof("Setting up watcher for mounted secret")
+		s.SetupConfigWatcher(k8sUtils, vs, s.configChangeSecret)
+
+		// params config map
+		vcp := viper.New()
+		paramsFilePath := getEnv(common.EnvPowermaxConfigPath, "")
+		paramsConfig, err := config.ReadParamsConfigMapFromPath(paramsFilePath, vcp)
+		if err != nil {
+			log.Printf("Error while reading from params config map: %v\n", err)
+			return err
+		}
+		if paramsConfig.Port != "" {
+			log.Infof("Setting reverseproxy port to %s", paramsConfig.Port)
+			s.Port = paramsConfig.Port
+			proxyConfig.Port = paramsConfig.Port
+		}
+
+		log.Infof("Setting up watcher for mounted params config map")
+		s.SetupConfigWatcher(k8sUtils, vcp, s.configChangeParamsConfigMap)
+
 		s.Proxy = proxy
 		s.SetConfig(proxyConfig)
 		s.SigChan = make(chan os.Signal, 1)
+
 	} else {
 		// Read the config from config map
 		log.Printf("Reading config using config map")
-		proxyConfigMap, err := config.ReadConfig(s.Opts.ConfigFileName, s.Opts.ConfigDir)
+		vcm := viper.New()
+		proxyConfigMap, err := config.ReadConfig(s.Opts.ConfigFileName, s.Opts.ConfigDir, vcm)
 		if err != nil {
 			return err
 		}
@@ -175,6 +200,11 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 			log.Printf("Error while creating proxy instance from config map: %v\n", err)
 			return err
 		}
+
+		log.Infof("Setting up watcher for mounted reverse proxy config map")
+
+		s.SetupConfigWatcher(k8sUtils, vcm, s.configChangeConfigMap)
+
 		s.Proxy = proxy
 		s.SetConfig(proxyConfig)
 		s.SigChan = make(chan os.Signal, 1)
@@ -273,28 +303,23 @@ func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 // config change events on the yaml file
 // this also works with configmaps as viper evaluates the symlinks (from the configmap mount)
 // When a config change event is received, the proxy are updated with the new configuration
-func (s *Server) SetupConfigWatcher(k8sUtils k8sutils.UtilsInterface) {
-	log.Infof("Received a config change event")
-	viper.WatchConfig()
-	viper.OnConfigChange(func(e fsnotify.Event) {
+func (s *Server) SetupConfigWatcher(k8sUtils k8sutils.UtilsInterface, v *viper.Viper, f func(k k8sutils.UtilsInterface, v *viper.Viper)) {
+	v.WatchConfig()
+	v.OnConfigChange(func(e fsnotify.Event) {
 		log.Infof("Received a config change event %s for %s", e.Op.String(), e.Name)
-		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
-			s.configChangeSecret(k8sUtils)
-		} else {
-			s.configChangeConfigMap(k8sUtils)
-		}
+		f(k8sUtils, v)
 	})
 }
 
-func (s *Server) configChangeConfigMap(k8sUtils k8sutils.UtilsInterface) {
+func (s *Server) configChangeConfigMap(k8sUtils k8sutils.UtilsInterface, vcm *viper.Viper) {
 	log.Infof("Received a config change event for configmap")
 	var proxyConfigMap config.ProxyConfigMap
-	err := viper.Unmarshal(&proxyConfigMap)
+	err := vcm.Unmarshal(&proxyConfigMap)
 	if err != nil {
 		log.Errorf("Error in unmarshalling the config: %s", err.Error())
 		return
 	}
-	err = proxyConfigMap.Unmarshal()
+	err = proxyConfigMap.CustomUnmarshal(vcm)
 	if err != nil {
 		log.Errorf("Error in unmarshalling the config map: %s", err.Error())
 		return
@@ -312,10 +337,10 @@ func (s *Server) configChangeConfigMap(k8sUtils k8sutils.UtilsInterface) {
 	}
 }
 
-func (s *Server) configChangeSecret(k8sUtils k8sutils.UtilsInterface) {
+func (s *Server) configChangeSecret(k8sUtils k8sutils.UtilsInterface, vs *viper.Viper) {
 	log.Infof("Received a config change event for secret")
 	var proxySecret config.ProxySecret
-	err := viper.Unmarshal(&proxySecret)
+	err := vs.Unmarshal(&proxySecret)
 	if err != nil {
 		log.Errorf("Error in unmarshalling the config: %s", err.Error())
 	} else {
@@ -329,6 +354,25 @@ func (s *Server) configChangeSecret(k8sUtils k8sutils.UtilsInterface) {
 				log.Errorf("Error in updating the config: %s", err.Error())
 			}
 		}
+	}
+}
+
+func (s *Server) configChangeParamsConfigMap(k8sUtils k8sutils.UtilsInterface, vcmp *viper.Viper) {
+	log.Infof("Received a config change event for params configmap - all settings %v", vcmp.AllSettings())
+	var ParamsConfigMap config.ParamsConfigMap
+	err := vcmp.Unmarshal(&ParamsConfigMap)
+	if err != nil {
+		log.Errorf("Error in unmarshalling the params config: %s", err.Error())
+		return
+	}
+
+	updateRevProxyLogParams(ParamsConfigMap.LogFormat, ParamsConfigMap.LogLevel)
+	config := s.Config()
+	log.Infof("Updating reverse proxy port to %s", ParamsConfigMap.Port)
+	config.Port = ParamsConfigMap.Port
+	err = s.GetRevProxy().UpdateConfig(*config)
+	if err != nil {
+		log.Errorf("Error in updating the config: %s", err.Error())
 	}
 }
 
@@ -354,7 +398,7 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 	found = conf.IsSecretConfiguredForArrays(secret.Name)
 	if found {
 		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
-			proxySecret, err := config.GetMountedSecretFromPath()
+			proxySecret, err := config.ReadConfigFromSecret(viper.New())
 			if err != nil {
 				log.Errorf("error while reading config from raw secret: %v\n", err)
 			}
@@ -419,9 +463,6 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 
 	// Setup the signal handler
 	server.SignalHandler(k8sUtils)
-
-	// Setup the watcher on the config map
-	server.SetupConfigWatcher(k8sUtils)
 
 	return server, nil
 }

@@ -76,8 +76,7 @@ func (sa *StorageArray) DeepCopy() *StorageArray {
 	if sa == nil {
 		return nil
 	}
-	cloned := StorageArray{}
-	cloned = *sa
+	cloned := *sa
 	cloned.ProxyCredentialSecrets = make(map[string]ProxyCredentialSecret, len(sa.ProxyCredentialSecrets))
 	for secret, proxySecret := range sa.ProxyCredentialSecrets {
 		cloned.ProxyCredentialSecrets[secret] = proxySecret
@@ -112,8 +111,7 @@ type ManagementServer struct {
 
 // DeepCopy is used for creating a deep copy of Management Server
 func (ms *ManagementServer) DeepCopy() *ManagementServer {
-	clone := ManagementServer{}
-	clone = *ms
+	clone := *ms
 	clone.StorageArrayIdentifiers = make([]string, len(ms.StorageArrayIdentifiers))
 	copy(clone.StorageArrayIdentifiers, ms.StorageArrayIdentifiers)
 	return &clone
@@ -145,6 +143,13 @@ type ProxyConfig struct {
 	managedArrays     map[string]*StorageArray
 	managementServers map[url.URL]*ManagementServer
 	proxyCredentials  map[string]*ProxyUser
+}
+
+// ParamsConfigMap - represents the config map for params
+type ParamsConfigMap struct {
+	Port      string `yaml:"csi_powermax_reverse_proxy_port" mapstructure:"csi_powermax_reverse_proxy_port,omitempty"`
+	LogLevel  string `yaml:"csi_log_level" mapstructure:"csi_log_level,omitempty"`
+	LogFormat string `yaml:"csi_log_format" mapstructure:"csi_log_format,omitempty"`
 }
 
 // DeepCopy is used to create a deep copy of ProxyConfig
@@ -519,8 +524,6 @@ func (pc *ProxyConfig) GetManagementServer(url url.URL) (ManagementServer, bool)
 type ProxyUser struct {
 	StorageArrayIdentifiers []string
 	ProxyCredential         common.Credentials
-	//Username                string
-	// Password                string
 }
 
 // DeepClone is used to create a deep copy of Proxy User
@@ -528,8 +531,8 @@ func (pu *ProxyUser) DeepClone() *ProxyUser {
 	if pu == nil {
 		return nil
 	}
-	cloned := ProxyUser{}
-	cloned = *pu
+
+	cloned := *pu
 	cloned.StorageArrayIdentifiers = make([]string, len(pu.StorageArrayIdentifiers))
 	copy(cloned.StorageArrayIdentifiers, pu.StorageArrayIdentifiers)
 	return &cloned
@@ -553,10 +556,10 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 	}
 	for _, array := range config.StorageArrayConfig {
 		if array.PrimaryEndpoint == "" {
-			log.Warnf("primary endpoint not configured for array: %s", array.StorageArrayID)
+			return fmt.Errorf("primary endpoint not configured for array: %s", array.StorageArrayID)
 		}
 		if !utils.IsStringInSlice(ipAddresses, array.PrimaryEndpoint) {
-			log.Warnf("primary endpoint: %s for array: %s not present among management URL addresses",
+			return fmt.Errorf("primary endpoint: %s for array: %s not present among management URL addresses",
 				array.PrimaryEndpoint, array)
 		}
 		if array.BackupEndpoint != "" {
@@ -640,9 +643,8 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 
 // ParseConfigFromSecret - Parses a given proxy secret
 func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k8sutils.UtilsInterface) error {
-	// TODO: Need to get port information dynamically, Hardcoded for now
+	// Set the port to default, this will be updated later
 	pc.Port = getEnv(common.DefaultPort, "2222")
-	log.Printf("Explicitly setting PORT to %s", pc.Port)
 
 	pc.managedArrays = make(map[string]*StorageArray)
 	pc.managementServers = make(map[url.URL]*ManagementServer)
@@ -654,10 +656,10 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 	}
 	for _, array := range proxySecret.StorageArrayConfig {
 		if array.PrimaryEndpoint == "" {
-			log.Infof("primary endpoint not configured for array: %s", array.StorageArrayID)
+			return fmt.Errorf("primary endpoint not configured for array: %s", array.StorageArrayID)
 		}
 		if !utils.IsStringInSlice(ipAddresses, array.PrimaryEndpoint) {
-			log.Warnf("primary endpoint: %s for array: %s not present among management endpoint addresses",
+			return fmt.Errorf("primary endpoint: %s for array: %s not present among management endpoint addresses",
 				array.PrimaryEndpoint, array.StorageArrayID)
 		}
 		if array.BackupEndpoint != "" {
@@ -723,8 +725,6 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 	}
 
 	for _, array := range pc.managedArrays {
-		isPrimaryOk := true
-		isBackupOk := true
 		primaryEndpoint := array.PrimaryEndpoint
 		backupEndpoint := array.SecondaryEndpoint
 		var primaryUsername, primaryPassword string
@@ -734,8 +734,7 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 			primaryPassword = primaryServer.Password
 			pc.updateProxyCredentialsFromSecret(primaryUsername, primaryPassword, array.StorageArrayIdentifier)
 		} else {
-			log.Warnf("primary endpoint not configured for %s", array.StorageArrayIdentifier)
-			isPrimaryOk = false
+			log.Errorf("primary endpoint not configured for %s", array.StorageArrayIdentifier)
 		}
 
 		if backupServer, ok := pc.managementServers[backupEndpoint]; ok {
@@ -744,11 +743,6 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 			pc.updateProxyCredentialsFromSecret(backupUsername, backupPassword, array.StorageArrayIdentifier)
 		} else {
 			log.Warnf("backup endpoint not configured for %s", array.StorageArrayIdentifier)
-			isBackupOk = false
-		}
-
-		if (!isPrimaryOk) && (!isBackupOk) {
-			log.Errorf("primary and secondary endpoint are not configured for %s", array.StorageArrayIdentifier)
 		}
 	}
 	return nil
@@ -764,7 +758,7 @@ func NewProxyConfig(configMap *ProxyConfigMap, k8sUtils k8sutils.UtilsInterface)
 	return &proxyConfig, nil
 }
 
-// Unmarshal - Custom unmarshal function for config map
+// CustomUnmarshal - Custom unmarshal function for config map
 /*
 	Since the common ManagementServerConfig and StorageArrayConfig have been modified to use Endpoint instead of URL,
 	viper has an issue unmarshalling those in to the struct for ConfigMap which uses URLs (ex.primaryURL, backupURL in config map definition).
@@ -772,13 +766,13 @@ func NewProxyConfig(configMap *ProxyConfigMap, k8sUtils k8sutils.UtilsInterface)
 	This method also uses a custom hook to decode int to string as the default mapstructure.decode cannot natively do that.
 	Note: This function only used for unmarshalling configMap to structures.
 */
-func (c *ProxyConfigMap) Unmarshal() error {
-	settings := viper.AllSettings()
+func (c *ProxyConfigMap) CustomUnmarshal(vcm *viper.Viper) error {
+	settings := vcm.AllSettings()
 
-	log.Infof("viper all settings: %v\n", viper.AllSettings())
+	log.Infof("viper all settings: %v\n", vcm.AllSettings())
 	// Retrieve all settings as a map
 	// Custom handling for URL fields before unmarshaling
-	for i, managementServer := range viper.Get("config.managementservers").([]interface{}) {
+	for i, managementServer := range vcm.Get("config.managementservers").([]interface{}) {
 		serverMap := managementServer.(map[interface{}]interface{})
 		// Check if the "url" field exists and is a string
 		if urlStr, ok := serverMap["url"].(string); ok {
@@ -791,7 +785,7 @@ func (c *ProxyConfigMap) Unmarshal() error {
 		}
 	}
 
-	for i, storageArray := range viper.Get("config.storagearrays").([]interface{}) {
+	for i, storageArray := range vcm.Get("config.storagearrays").([]interface{}) {
 		arrayMap := storageArray.(map[interface{}]interface{})
 		// Parse the primaryurl and backupurl to see if they exist
 		if urlStr, ok := arrayMap["primaryURL"].(string); ok {
@@ -838,24 +832,22 @@ func (c *ProxyConfigMap) Unmarshal() error {
 }
 
 // ReadConfig - uses viper to read the config from the config map
-func ReadConfig(configFile, configPath string) (*ProxyConfigMap, error) {
-	viper.New()
-	viper.SetConfigName(configFile)
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(configPath)
-	// viper.SetEnvPrefix("X_CSI_REVPROXY")
-	err := viper.ReadInConfig()
+func ReadConfig(configFile, configPath string, vcm *viper.Viper) (*ProxyConfigMap, error) {
+	vcm.SetConfigName(configFile)
+	vcm.SetConfigType("yaml")
+	vcm.AddConfigPath(configPath)
+	err := vcm.ReadInConfig()
 	if err != nil {
 		return nil, err
 	}
-	log.Println(viper.AllSettings())
+	log.Println(vcm.AllSettings())
 	var configMap ProxyConfigMap
-	err = viper.Unmarshal(&configMap)
+	err = vcm.Unmarshal(&configMap)
 	if err != nil {
 		return nil, err
 	}
 
-	err = configMap.Unmarshal()
+	err = configMap.CustomUnmarshal(vcm)
 	if err != nil {
 		return nil, err
 	}
@@ -873,42 +865,43 @@ func NewProxyConfigFromSecret(proxySecret *ProxySecret, k8sUtils k8sutils.UtilsI
 }
 
 // ReadConfigFromSecret - read config using secret
-func ReadConfigFromSecret(secretFileName, secretFilePath string) (*ProxySecret, error) {
-	log.Printf("Reading secret: %s from path: %s \n", secretFileName, secretFilePath)
-	viper.New()
-	viper.SetConfigName(secretFileName)
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(secretFilePath)
-	err := viper.ReadInConfig()
+func ReadConfigFromSecret(vs *viper.Viper) (*ProxySecret, error) {
+	secretFilePath := getEnv(common.EnvSecretFilePath, common.DefaultSecretPath)
+	secretFileName := filepath.Base(secretFilePath)
+	secretFileDir := filepath.Dir(secretFilePath)
+	log.Printf("Reading secret: %s from path: %s \n", secretFileName, secretFileDir)
+	vs.SetConfigName(secretFileName)
+	vs.SetConfigType("yaml")
+	vs.AddConfigPath(secretFileDir)
+	err := vs.ReadInConfig()
 	if err != nil {
 		return nil, err
 	}
 	var secret ProxySecret
-	err = viper.Unmarshal(&secret)
+	err = vs.Unmarshal(&secret)
 	if err != nil {
 		return nil, err
 	}
 	return &secret, nil
 }
 
-// GetMountedSecretFromPath - get credentials from mounted secret
-// This method is similar to ReadConfigFromSecret but we dont want to reset the viper instance that is initialized in that method by calling it again as it is being watched
-func GetMountedSecretFromPath() (*ProxySecret, error) {
-	log.Infof("Getting secret from mounted path\n")
+// ReadParamsConfigMapFromPath - read config map for params
+func ReadParamsConfigMapFromPath(configFilePath string, vcp *viper.Viper) (*ParamsConfigMap, error) {
+	log.Printf("Reading params config map: %s from path: %s", filepath.Base(configFilePath), filepath.Dir(configFilePath))
 
-	secretFilePath := getEnv(common.EnvSecretPath, "false")
-	secretConfig := viper.New()
-	secretConfig.SetConfigName(filepath.Base(secretFilePath))
-	secretConfig.SetConfigType("yaml")
-	secretConfig.AddConfigPath(filepath.Dir(secretFilePath))
-	err := secretConfig.ReadInConfig()
+	vcp.SetConfigName(filepath.Base(configFilePath))
+	vcp.SetConfigType("yaml")
+	vcp.AddConfigPath(filepath.Dir(configFilePath))
+	err := vcp.ReadInConfig()
+
 	if err != nil {
 		return nil, err
 	}
-	var proxySecret ProxySecret
-	err = viper.Unmarshal(&proxySecret)
-	if err != nil {
-		return nil, err
-	}
-	return &proxySecret, nil
+
+	var paramsConfig ParamsConfigMap
+	paramsConfig.LogFormat = vcp.GetString("csi_log_format")
+	paramsConfig.Port = vcp.GetString("csi_powermax_reverse_proxy_port")
+	paramsConfig.LogLevel = vcp.GetString("csi_log_level")
+
+	return &paramsConfig, nil
 }
