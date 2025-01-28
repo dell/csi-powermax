@@ -25,11 +25,12 @@ import (
 	"revproxy/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
 )
 
 func readConfig() (*ProxyConfigMap, error) {
-	return ReadConfig(common.TestConfigFileName, "./../../"+common.TestConfigDir)
+	return ReadConfig(common.TestConfigFileName, "./../../"+common.TestConfigDir, viper.New())
 }
 
 func TestMain(m *testing.M) {
@@ -139,7 +140,7 @@ func TestParseConfig(t *testing.T) {
 			name: "Primary URL is nil",
 			before: func(cm *ProxyConfigMap) {
 				*cm = deepCopyFunc(configMap)
-				cm.Config.StorageArrayConfig[0].PrimaryURL = ""
+				cm.Config.StorageArrayConfig[0].PrimaryEndpoint = ""
 			},
 			wantErr: true,
 		},
@@ -147,7 +148,7 @@ func TestParseConfig(t *testing.T) {
 			name: "Backup URL is nil",
 			before: func(cm *ProxyConfigMap) {
 				*cm = deepCopyFunc(configMap)
-				cm.Config.StorageArrayConfig[0].BackupURL = ""
+				cm.Config.StorageArrayConfig[0].BackupEndpoint = ""
 			},
 			wantErr: true,
 		},
@@ -156,7 +157,7 @@ func TestParseConfig(t *testing.T) {
 			before: func(cm *ProxyConfigMap) {
 				*cm = deepCopyFunc(configMap)
 				// modify the configmap to include a new array
-				cm.Config.StorageArrayConfig[0].BackupURL = "123000123000"
+				cm.Config.StorageArrayConfig[0].BackupEndpoint = "123000123000"
 			},
 			wantErr: true,
 		},
@@ -165,8 +166,8 @@ func TestParseConfig(t *testing.T) {
 			before: func(cm *ProxyConfigMap) {
 				*cm = deepCopyFunc(configMap)
 				storageArrayConfig := StorageArrayConfig{
-					PrimaryURL:             "new-primary-1.unisphe.re:8443",
-					BackupURL:              "new-backup-1.unisphe.re:8443",
+					PrimaryEndpoint:        "new-primary-1.unisphe.re:8443",
+					BackupEndpoint:         "new-backup-1.unisphe.re:8443",
 					StorageArrayID:         "123000123000",
 					ProxyCredentialSecrets: []string{"new-primary-unisphere-secret-1", "new-backup-unisphere-secret-1"},
 				}
@@ -278,14 +279,15 @@ func TestProxyConfig_UpdateManagedArrays(t *testing.T) {
 	// Test invalid config
 	managedArrays := &newConfig.managedArrays
 	for _, array := range *managedArrays {
-		saveURL := array.PrimaryURL
-		array.PrimaryURL = url.URL{
-			Scheme: "https", Host: "new-primary-1.unisphe.re:8443"}
+		saveURL := array.PrimaryEndpoint
+		array.PrimaryEndpoint = url.URL{
+			Scheme: "https", Host: "new-primary-1.unisphe.re:8443",
+		}
 		config.UpdateManagedArrays(newConfig)
-		array.PrimaryURL = saveURL
+		array.PrimaryEndpoint = saveURL
 
 	}
-	//config.UpdateManagedArrays(newConfig)
+	// config.UpdateManagedArrays(newConfig)
 	fmt.Printf("Managed arrays updated successfully")
 }
 
@@ -302,10 +304,9 @@ func TestProxyConfig_GetStorageArray(t *testing.T) {
 	if err != nil {
 		return
 	}
-	fmt.Printf("Storage arrays: %+v\n", config.GetStorageArray("000197900045")) //non empty invalid
+	fmt.Printf("Storage arrays: %+v\n", config.GetStorageArray("000197900045")) // non empty invalid
 	fmt.Printf("Storage arrays: %+v\n", config.GetStorageArray("000000000001")) // non empty valid
-	fmt.Printf("Storage arrays: %+v\n", config.GetStorageArray(""))             //emp
-
+	fmt.Printf("Storage arrays: %+v\n", config.GetStorageArray(""))             // emp
 }
 
 func TestProxyConfig_GetManagedArrayAndServers(t *testing.T) {
@@ -324,7 +325,7 @@ func Test_GetManagementServerCredentials(t *testing.T) {
 	}
 
 	for _, server := range config.GetManagementServers() {
-		_, _ = config.GetManagementServerCredentials(server.URL)
+		_, _ = config.GetManagementServerCredentials(server.Endpoint)
 	}
 
 	// Fetch invalid mgmt server
@@ -340,7 +341,7 @@ func TestGetManagementServer(t *testing.T) {
 		return
 	}
 	for _, server := range config.GetManagementServers() {
-		_, _ = config.GetManagementServer(server.URL)
+		_, _ = config.GetManagementServer(server.Endpoint)
 	}
 
 	_, _ = config.GetManagementServer(url.URL{

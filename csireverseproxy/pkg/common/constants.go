@@ -33,9 +33,9 @@ const (
 	EnvConfigDirName            = "X_CSI_REVPROXY_CONFIG_DIR"
 	EnvInClusterConfig          = "X_CSI_REVRPOXY_IN_CLUSTER"
 	EnvIsLeaderElectionEnabled  = "X_CSI_REVPROXY_IS_LEADER_ENABLED"
-	EnvSecretPath               = "X_CSI_REVPROXY_SECRET_FILEPATH"
-	EnvSecretName               = "X_CSI_REVPROXY_SECRET_NAME"
+	EnvSecretFilePath           = "X_CSI_REVPROXY_SECRET_FILEPATH"
 	EnvReverseProxyUseSecret    = "X_CSI_REVPROXY_USE_SECRET"
+	EnvPowermaxConfigPath       = "X_CSI_POWERMAX_CONFIG_PATH"
 	DefaultNameSpace            = "powermax"
 	MaxActiveReadRequests       = 5
 	MaxOutStandingWriteRequests = 50

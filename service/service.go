@@ -649,16 +649,6 @@ func (s *service) BeforeServe(
 	// Start the deletion worker thread
 	log.Printf("s.mode: %s", s.mode)
 	if !strings.EqualFold(s.mode, "node") {
-		// TODO: Review this previously commented code and remove
-		/*symIDs, err := s.adminClient.GetSymmetrixIDList()
-		if err != nil {
-			return err
-		}
-		if len(symIDs.SymmetrixIDs) == 0 {
-			errMsg := "no arrays connected to the unisphere"
-			log.Println(errMsg)
-			return fmt.Errorf("%s", errMsg)
-		}*/
 		s.NewDeletionWorker(s.opts.ClusterPrefix, s.opts.ManagedArrays)
 	}
 
