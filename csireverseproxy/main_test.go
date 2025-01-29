@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -107,6 +108,10 @@ func startTestServer() error {
 		return err
 	}
 	server, err = startServer(k8sUtils, serverOpts)
+	if err == nil {
+		log.Printf("started revproxy server successfully on port %s", serverOpts.Port)
+	}
+
 	return err
 }
 
@@ -314,6 +319,14 @@ func TestMain(m *testing.M) {
 		stopServers()
 		os.Exit(1)
 	}
+
+	err = serverReady()
+	if err != nil {
+		log.Fatalf("Failed to start proxy server. (%s)", err.Error())
+		stopServers()
+		os.Exit(1)
+	}
+
 	log.Info("Proxy server started successfully")
 	if st := m.Run(); st > status {
 		status = st
@@ -327,6 +340,41 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	os.Exit(status)
+}
+
+func serverReady() error {
+	client := getHTTPClient()
+
+	url := getURL(server.Port, "/")
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	responseCh := make(chan *http.Response)
+	errorCh := make(chan error)
+
+	go func() {
+		resp, err := client.Get(url)
+		if err != nil {
+			errorCh <- err
+			return
+		}
+		responseCh <- resp
+	}()
+
+	select {
+	case resp := <-responseCh:
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			// server is ready to accept requests
+			return nil
+		}
+	case err := <-errorCh:
+		fmt.Println("Error:", err)
+	case <-time.After(time.Second * 10):
+		return errors.New("timeout: server is not ready to accept requests")
+	}
+	return nil
 }
 
 func TestServer_Start(t *testing.T) {

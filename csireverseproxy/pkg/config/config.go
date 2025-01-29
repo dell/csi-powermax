@@ -470,9 +470,9 @@ func (pc *ProxyConfig) GetAuthorizedArrays(username, password string) []string {
 func (pc *ProxyConfig) GetManagementServerCredentials(mgmtEndpoint url.URL) (common.Credentials, error) {
 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
 		var arrayCredentials common.Credentials
-		arrayCredentials.UserName = pc.managementServers[mgmtEndpoint].Username
-		arrayCredentials.Password = pc.managementServers[mgmtEndpoint].Password
 		if _, ok := pc.managementServers[mgmtEndpoint]; ok {
+			arrayCredentials.UserName = pc.managementServers[mgmtEndpoint].Username
+			arrayCredentials.Password = pc.managementServers[mgmtEndpoint].Password
 			return arrayCredentials, nil
 		}
 	}
