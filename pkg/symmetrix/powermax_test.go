@@ -152,3 +152,86 @@ func TestReplicationCapabilitiesCache_Get(t *testing.T) {
 		})
 	}
 }
+
+func TestGetSGName(t *testing.T) {
+	tests := []struct {
+		name                   string
+		applicationPrefix      string
+		serviceLevel           string
+		storageResourcePool    string
+		expectedStorageGroupID string
+	}{
+		{
+			name:                   "empty application prefix",
+			applicationPrefix:      "",
+			serviceLevel:           "serviceLevel",
+			storageResourcePool:    "storageResourcePool",
+			expectedStorageGroupID: "csi-clusterPrefix-serviceLevel-storageResourcePool-SG",
+		},
+		{
+			name:                   "non-empty application prefix",
+			applicationPrefix:      "applicationPrefix",
+			serviceLevel:           "serviceLevel",
+			storageResourcePool:    "storageResourcePool",
+			expectedStorageGroupID: "csi-clusterPrefix-applicationPrefix-serviceLevel-storageResourcePool-SG",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &PowerMax{
+				SymID:         "symID",
+				ClusterPrefix: "clusterPrefix",
+				client:        mocks.NewMockPmaxClient(gomock.NewController(t)),
+			}
+
+			actual := p.GetSGName(tt.applicationPrefix, tt.serviceLevel, tt.storageResourcePool)
+			if actual != tt.expectedStorageGroupID {
+				t.Errorf("expected storage group ID %s, but got %s", tt.expectedStorageGroupID, actual)
+			}
+		})
+	}
+}
+
+func TestGetVolumeIdentifier(t *testing.T) {
+	tests := []struct {
+		name           string
+		volumeName     string
+		clusterPrefix  string
+		expectedResult string
+	}{
+		{
+			name:           "short volume name",
+			volumeName:     "short-volume-name",
+			clusterPrefix:  "cluster-prefix",
+			expectedResult: "csi-cluster-prefix-short-volume-name",
+		},
+		{
+			name:           "long volume name",
+			volumeName:     "this-is-a-very-long-volume-name-that-exceeds-the-maximum-length",
+			clusterPrefix:  "cluster-prefix",
+			expectedResult: "csi-cluster-prefix-this-is-a-very-long-voleeds-the-maximum-length",
+		},
+		{
+			name:           "empty volume name",
+			volumeName:     "",
+			clusterPrefix:  "cluster-prefix",
+			expectedResult: "csi-cluster-prefix-",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &PowerMax{
+				SymID:         "symID",
+				ClusterPrefix: tt.clusterPrefix,
+				client:        mocks.NewMockPmaxClient(gomock.NewController(t)),
+			}
+
+			actual := p.GetVolumeIdentifier(tt.volumeName)
+			if actual != tt.expectedResult {
+				t.Errorf("expected %s, but got %s", tt.expectedResult, actual)
+			}
+		})
+	}
+}
