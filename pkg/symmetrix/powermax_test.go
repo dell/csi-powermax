@@ -16,6 +16,7 @@ package symmetrix
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -231,6 +232,212 @@ func TestGetVolumeIdentifier(t *testing.T) {
 			actual := p.GetVolumeIdentifier(tt.volumeName)
 			if actual != tt.expectedResult {
 				t.Errorf("expected %s, but got %s", tt.expectedResult, actual)
+			}
+		})
+	}
+}
+
+func TestSRPCache_Get(t *testing.T) {
+	tests := []struct {
+		name           string
+		cache          SRPCache
+		client         func() *mocks.MockPmaxClient
+		symID          string
+		expectedResult []string
+		expectedError  error
+	}{
+		{
+			name: "cache not initialized",
+			cache: SRPCache{
+				identifiers: []string{"srp1", "srp2"},
+				time: CacheTime{
+					CreationTime:  time.Now().Add(-1 * time.Hour),
+					CacheValidity: SRPCacheValidity,
+				},
+			},
+			client: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				return client
+			},
+			symID:          "symID",
+			expectedResult: []string{"srp1", "srp2"},
+			expectedError:  nil,
+		},
+		{
+			name: "cache expired",
+			cache: SRPCache{
+				identifiers: []string{"srp1", "srp2"},
+				time: CacheTime{
+					CreationTime:  time.Now().Add(-25 * time.Hour),
+					CacheValidity: SRPCacheValidity,
+				},
+			},
+			client: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().GetStoragePoolList(gomock.Any(), "symID").Return(&types.StoragePoolList{
+					StoragePoolIDs: []string{"srp3", "srp4"},
+				}, nil)
+				return client
+			},
+			symID:          "symID",
+			expectedResult: []string{"srp3", "srp4"},
+			expectedError:  nil,
+		},
+		{
+			name: "error from client",
+			cache: SRPCache{
+				identifiers: []string{"srp1", "srp2"},
+				time: CacheTime{
+					CreationTime:  time.Now().Add(-25 * time.Hour),
+					CacheValidity: SRPCacheValidity,
+				},
+			},
+			client: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().GetStoragePoolList(gomock.Any(), "symID").Return(nil, fmt.Errorf("some error"))
+				return client
+			},
+			symID:          "symID",
+			expectedResult: nil,
+			expectedError:  fmt.Errorf("some error"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual, err := tt.cache.Get(context.Background(), tt.client(), tt.symID)
+			if !reflect.DeepEqual(err, tt.expectedError) {
+				t.Errorf("expected error %v, but got %v", tt.expectedError, err)
+			}
+			if !reflect.DeepEqual(actual, tt.expectedResult) {
+				t.Errorf("expected %v, but got %v", tt.expectedResult, actual)
+			}
+		})
+	}
+}
+
+func TestPowerMax_GetSRPs(t *testing.T) {
+	tests := []struct {
+		name           string
+		symID          string
+		client         func() *mocks.MockPmaxClient
+		expectedResult []string
+		expectedError  error
+	}{
+		{
+			name:  "cache not initialized",
+			symID: "symID",
+			client: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().GetStoragePoolList(gomock.Any(), "symID").Return(&types.StoragePoolList{
+					StoragePoolIDs: []string{"srp1", "srp2"},
+				}, nil)
+				return client
+			},
+			expectedResult: []string{"srp1", "srp2"},
+			expectedError:  nil,
+		},
+		{
+			name:  "cache expired",
+			symID: "symID",
+			client: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().GetStoragePoolList(gomock.Any(), "symID").Return(&types.StoragePoolList{
+					StoragePoolIDs: []string{"srp3", "srp4"},
+				}, nil)
+				return client
+			},
+			expectedResult: []string{"srp3", "srp4"},
+			expectedError:  nil,
+		},
+		{
+			name:  "error from client",
+			symID: "symID",
+			client: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().GetStoragePoolList(gomock.Any(), "symID").Return(nil, fmt.Errorf("some error"))
+				return client
+			},
+			expectedResult: nil,
+			expectedError:  fmt.Errorf("some error"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &PowerMax{
+				SymID:  tt.symID,
+				client: tt.client(),
+				storageResourcePoolCache: SRPCache{
+					identifiers: []string{"srp1", "srp2"},
+					time: CacheTime{
+						CreationTime:  time.Now().Add(-25 * time.Hour),
+						CacheValidity: SRPCacheValidity,
+					},
+				},
+			}
+
+			actual, err := p.GetSRPs(context.Background())
+			if !reflect.DeepEqual(err, tt.expectedError) {
+				t.Errorf("expected error %v, but got %v", tt.expectedError, err)
+			}
+			if !reflect.DeepEqual(actual, tt.expectedResult) {
+				t.Errorf("expected %v, but got %v", tt.expectedResult, actual)
+			}
+		})
+	}
+}
+
+func TestPowerMax_GetServiceLevels(t *testing.T) {
+	tests := []struct {
+		name           string
+		expectedResult []string
+	}{
+		{
+			name:           "default service levels",
+			expectedResult: []string{"Diamond", "Platinum", "Gold", "Silver", "Bronze", "Optimized", "None"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &PowerMax{
+				SymID:  "symID",
+				client: &mocks.MockPmaxClient{},
+			}
+
+			actual, err := p.GetServiceLevels()
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(actual, tt.expectedResult) {
+				t.Errorf("expected %v, but got %v", tt.expectedResult, actual)
+			}
+		})
+	}
+}
+
+func TestPowerMax_GetDefaultServiceLevel(t *testing.T) {
+	tests := []struct {
+		name           string
+		expectedResult string
+	}{
+		{
+			name:           "default service level",
+			expectedResult: "Optimized",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &PowerMax{
+				SymID:  "symID",
+				client: &mocks.MockPmaxClient{},
+			}
+
+			actual := p.GetDefaultServiceLevel()
+			if !reflect.DeepEqual(actual, tt.expectedResult) {
+				t.Errorf("expected %v, but got %v", tt.expectedResult, actual)
 			}
 		})
 	}

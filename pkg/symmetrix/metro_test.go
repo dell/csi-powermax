@@ -150,3 +150,71 @@ func TestTransport_RoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestMetroClient_getActiveArray(t *testing.T) {
+	tests := []struct {
+		name           string
+		failureWeight  int
+		failureCount   int
+		lastFailure    time.Time
+		expectedActive string
+		activeArray    string
+	}{
+		{
+			name:           "failure count below threshold",
+			failureWeight:  1,
+			failureCount:   1,
+			lastFailure:    time.Now().Add(-1 * time.Minute),
+			expectedActive: "primaryArray",
+			activeArray:    "primaryArray",
+		},
+		{
+			name:           "failure count at threshold",
+			failureWeight:  1,
+			failureCount:   failoverThereshold,
+			lastFailure:    time.Now().Add(-1 * time.Minute),
+			expectedActive: "secondaryArray",
+			activeArray:    "primaryArray",
+		},
+		{
+			name:           "failure count above threshold",
+			failureWeight:  1,
+			failureCount:   failoverThereshold + 1,
+			lastFailure:    time.Now().Add(-1 * time.Minute),
+			expectedActive: "secondaryArray",
+			activeArray:    "primaryArray",
+		},
+		{
+			name:           "last failure more than failure time threshold",
+			failureWeight:  1,
+			failureCount:   1,
+			lastFailure:    time.Now().Add(-2 * time.Minute),
+			expectedActive: "primaryArray",
+			activeArray:    "primaryArray",
+		},
+		{
+			name:           "failure count above threshold and active array was secondaryArray",
+			failureWeight:  1,
+			failureCount:   failoverThereshold + 1,
+			lastFailure:    time.Now().Add(-1 * time.Minute),
+			expectedActive: "primaryArray",
+			activeArray:    "secondaryArray",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &metroClient{
+				primaryArray:   "primaryArray",
+				secondaryArray: "secondaryArray",
+				activeArray:    tt.activeArray,
+				failureCount:   tt.failureCount,
+				lastFailure:    tt.lastFailure,
+			}
+
+			if got := m.getActiveArray(); got != tt.expectedActive {
+				t.Errorf("getActiveArray() = %v, want %v", got, tt.expectedActive)
+			}
+		})
+	}
+}
