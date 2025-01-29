@@ -21,12 +21,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"testing"
-
 	"revproxy/v2/pkg/common"
 	"revproxy/v2/pkg/config"
 	"revproxy/v2/pkg/k8smock"
 	"revproxy/v2/pkg/utils"
+	"testing"
 
 	types "github.com/dell/gopowermax/v2/types/v100"
 	"github.com/stretchr/testify/assert"

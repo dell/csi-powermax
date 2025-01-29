@@ -7,6 +7,7 @@ require (
 	github.com/fsnotify/fsnotify v1.4.9
 	github.com/gorilla/mux v1.7.3
 	github.com/kubernetes-csi/csi-lib-utils v0.9.1
+	github.com/mitchellh/mapstructure v1.1.2
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.7.0
@@ -32,7 +33,6 @@ require (
 	github.com/imdario/mergo v0.3.5 // indirect
 	github.com/json-iterator/go v1.1.10 // indirect
 	github.com/magiconair/properties v1.8.1 // indirect
-	github.com/mitchellh/mapstructure v1.1.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/pelletier/go-toml v1.2.0 // indirect
