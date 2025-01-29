@@ -39,6 +39,11 @@ var (
 	validSLO                 = [...]string{"Diamond", "Platinum", "Gold", "Silver", "Bronze", "Optimized", "None"}
 )
 
+//go:generate mockgen -destination=mocks/pmaxclient.go -package=mocks github.com/dell/csi-powermax/v2/pkg/symmetrix PmaxClient
+type PmaxClient interface {
+	pmax.Pmax
+}
+
 // We need to implement look through caches so that the caller
 // is not bothered with updating the values in the cache
 
@@ -65,11 +70,6 @@ func (c *CacheTime) IsValid() bool {
 func (c *CacheTime) Set(validity time.Duration) {
 	c.CreationTime = time.Now()
 	c.CacheValidity = validity
-}
-
-//go:generate mockgen -destination=mocks/pmaxclient.go -package=mocks github.com/dell/csi-powermax/v2/pkg/symmetrix PmaxClient
-type PmaxClient interface {
-	pmax.Pmax
 }
 
 // ReplicationCapabilitiesCache ...
