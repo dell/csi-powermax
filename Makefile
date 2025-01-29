@@ -43,7 +43,7 @@ install:
 docker:
 	go generate
 	go run core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk build-base-image docker
+	make -f docker.mk docker
 	# build the reverseproxy container as part of this target
 	( cd csireverseproxy; make docker )
 
@@ -52,7 +52,7 @@ docker:
 docker-no-cache:
 	go generate
 	go run core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk build-base-image docker-no-cache
+	make -f docker.mk docker-no-cache
 	# build the reverseproxy container as part of this target
 	( cd csireverseproxy; make docker-no-cache )
 
@@ -71,9 +71,6 @@ bdd-test: golint check
 # Linux only; populate env.sh with the hardware parameters
 integration-test:
 	( cd test/integration; sh run.sh )
-
-release:
-	BUILD_TYPE="R" $(MAKE) clean build docker push
 
 version:
 	go generate
