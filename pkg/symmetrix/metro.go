@@ -100,6 +100,11 @@ type transport struct {
 	healthHandler func(int)
 }
 
+//go:generate mockgen -destination=mocks/roundtripper.go -package=mocks github.com/dell/csi-powermax/v2/pkg/symmetrix RoundTripperInterface
+type RoundTripperInterface interface {
+	http.RoundTripper
+}
+
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.RoundTripper.RoundTrip(req)
 	if err != nil {

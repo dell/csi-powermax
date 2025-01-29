@@ -67,7 +67,7 @@ func (c *CacheTime) Set(validity time.Duration) {
 	c.CacheValidity = validity
 }
 
-//go:generate mockgen -destination=mocks/mocks.go -package=mocks github.com/dell/csi-powermax/v2/pkg/symmetrix PmaxClient
+//go:generate mockgen -destination=mocks/pmaxclient.go -package=mocks github.com/dell/csi-powermax/v2/pkg/symmetrix PmaxClient
 type PmaxClient interface {
 	pmax.Pmax
 }
