@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"sync"
 
-	"revproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
 
 	log "github.com/sirupsen/logrus"
 )

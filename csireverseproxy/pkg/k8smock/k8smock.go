@@ -22,9 +22,9 @@ import (
 	"strconv"
 	"time"
 
-	"revproxy/v2/pkg/common"
-	"revproxy/v2/pkg/k8sutils"
-	"revproxy/v2/pkg/utils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
