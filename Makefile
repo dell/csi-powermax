@@ -52,7 +52,7 @@ docker:
 docker-no-cache:
 	go generate
 	go run core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk build-base-image docker-no-cache
+	make -f docker.mk docker-no-cache
 	# build the reverseproxy container as part of this target
 	( cd csireverseproxy; make docker-no-cache )
 
