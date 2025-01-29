@@ -15,10 +15,15 @@
 package symmetrix
 
 import (
+	"context"
+	"reflect"
 	"testing"
+	"time"
 
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
+	"github.com/golang/mock/gomock"
 )
 
 func TestGetPowerMaxClient(t *testing.T) {
@@ -72,5 +77,78 @@ func TestUpdate(t *testing.T) {
 				t.Errorf("update call failed -- RdfCapable not set properly in capability: cap.RdfCapable: %+v", rep.cap.RdfCapable)
 			}
 		}
+	}
+}
+
+func TestCacheTime_IsValid(t *testing.T) {
+	tests := []struct {
+		name     string
+		cache    CacheTime
+		expected bool
+	}{
+		{
+			name:     "cache not initialized",
+			cache:    CacheTime{},
+			expected: false,
+		},
+		{
+			name:     "cache still valid",
+			cache:    CacheTime{CreationTime: time.Now(), CacheValidity: time.Hour},
+			expected: true,
+		},
+		{
+			name:     "cache expired",
+			cache:    CacheTime{CreationTime: time.Now().Add(-2 * time.Hour), CacheValidity: time.Hour},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := tt.cache.IsValid()
+			if actual != tt.expected {
+				t.Errorf("expected %v, but got %v", tt.expected, actual)
+			}
+		})
+	}
+}
+
+func TestReplicationCapabilitiesCache_Get(t *testing.T) {
+	tests := []struct {
+		name     string
+		cache    ReplicationCapabilitiesCache
+		ctx      context.Context
+		client   func() *mocks.MockPmaxClient
+		symID    string
+		expected *types.SymmetrixCapability
+		err      error
+	}{
+		{
+			name:  "cache not initialized",
+			cache: ReplicationCapabilitiesCache{},
+			ctx:   context.Background(),
+			client: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().GetReplicationCapabilities(gomock.Any()).Times(1).Return(&types.SymReplicationCapabilities{
+					SymmetrixCapability: []types.SymmetrixCapability{{SymmetrixID: "symID"}},
+				}, nil)
+				return client
+			},
+			symID:    "symID",
+			expected: &types.SymmetrixCapability{SymmetrixID: "symID"},
+			err:      nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual, err := tt.cache.Get(tt.ctx, tt.client(), tt.symID)
+			if !reflect.DeepEqual(err, tt.err) {
+				t.Errorf("expected error %v, but got %v", tt.err, err)
+			}
+			if !reflect.DeepEqual(actual, tt.expected) {
+				t.Errorf("expected %v, but got %v", tt.expected, actual)
+			}
+		})
 	}
 }
