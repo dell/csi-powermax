@@ -48,7 +48,6 @@ func TestNew(t *testing.T) {
 			// Call the New function and validate it is not nil
 			p := New()
 			assert.NotNil(t, p)
-
 		})
 	}
 }
