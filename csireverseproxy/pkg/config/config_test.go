@@ -16,7 +16,9 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 
 	"revproxy/v2/pkg/common"
@@ -25,6 +27,8 @@ import (
 	"revproxy/v2/pkg/utils"
 
 	"path/filepath"
+
+	"reflect"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -249,6 +253,20 @@ func TestNewProxyConfigFromSecret(t *testing.T) {
 		return
 	}
 	fmt.Printf("Management servers: %+v\n", proxyConfig.GetManagementServers())
+}
+
+func getProxyConfigFromSecret(t *testing.T) (*ProxyConfig, error) {
+	proxySecret, err := readProxySecret()
+	if err != nil {
+		t.Errorf(err.Error())
+		return nil, err
+	}
+	k8sUtils := k8smock.Init()
+	proxyConfig, err := NewProxyConfigFromSecret(proxySecret, k8sUtils)
+	if err != nil {
+		return nil, err
+	}
+	return proxyConfig, nil
 }
 func TestProxyConfig_ParseConfigFromSecret(t *testing.T) {
 	testCases := []struct {
@@ -520,6 +538,120 @@ func TestProxyConfig_GetAuthorizedArraysFromSecret(t *testing.T) {
 				assert.Equal(t, tc.expectedError, err)
 			} else {
 				assert.Equal(t, len(tc.expectedArrays), len(authorizedArrays))
+			}
+		})
+	}
+}
+func TestManagementServer_DeepCopy(t *testing.T) {
+	testCases := []struct {
+		name             string
+		managementServer ManagementServer
+		expectedCopy     ManagementServer
+	}{
+		{
+			name: "Valid management server",
+			managementServer: ManagementServer{
+				Endpoint:                  url.URL{Host: "example.com"},
+				StorageArrayIdentifiers:   []string{"000197900045"},
+				Credentials:               common.Credentials{UserName: "test-username", Password: "test-password"},
+				CredentialSecret:          "test-secret",
+				SkipCertificateValidation: true,
+				CertFile:                  "test-cert",
+				CertSecret:                "test-cert-secret",
+				Username:                  "test-username",
+				Password:                  "test-password",
+			},
+			expectedCopy: ManagementServer{
+				Endpoint:                  url.URL{Host: "example.com"},
+				StorageArrayIdentifiers:   []string{"000197900045"},
+				Credentials:               common.Credentials{UserName: "test-username", Password: "test-password"},
+				CredentialSecret:          "test-secret",
+				SkipCertificateValidation: true,
+				CertFile:                  "test-cert",
+				CertSecret:                "test-cert-secret",
+				Username:                  "test-username",
+				Password:                  "test-password",
+			},
+		},
+		// Add more test cases as needed
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			copy := tc.managementServer.DeepCopy()
+			if !reflect.DeepEqual(tc.expectedCopy, *copy) {
+				t.Errorf("Expected copy: %+v, but got: %+v", tc.expectedCopy, *copy)
+			}
+		})
+	}
+}
+
+func TestProxyConfig_GetManagementServerCredentials(t *testing.T) {
+	testCases := []struct {
+		name          string
+		mgmtEndpoint  url.URL
+		expectedCred  common.Credentials
+		expectedError error
+	}{
+		{
+			name:          "Valid management server with EnvReverseProxyUseSecret=true",
+			mgmtEndpoint:  url.URL{Host: "primary-1.unisphe.re:8443"},
+			expectedCred:  common.Credentials{UserName: "admin", Password: "password"},
+			expectedError: nil,
+		},
+		{
+			name:          "Valid management server with EnvReverseProxyUseSecret=false",
+			mgmtEndpoint:  url.URL{Host: "primary-1.unisphe.re:8443"},
+			expectedCred:  common.Credentials{UserName: "test-username", Password: "test-password"},
+			expectedError: nil,
+		},
+		{
+			name:          "Invalid management server with EnvReverseProxyUseSecret=true",
+			mgmtEndpoint:  url.URL{Host: "invalid.com"},
+			expectedCred:  common.Credentials{},
+			expectedError: fmt.Errorf("endpoint not configured"),
+		},
+		{
+			name:          "Invalid management server with EnvReverseProxyUseSecret=false",
+			mgmtEndpoint:  url.URL{Host: "invalid.com"},
+			expectedCred:  common.Credentials{},
+			expectedError: fmt.Errorf("endpoint not configured"),
+		},
+		// Add more test cases as needed
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var config *ProxyConfig
+			var err error
+			var endpoint url.URL
+
+			// Set the EnvReverseProxyUseSecret environment variable
+			if strings.Contains(tc.name, "EnvReverseProxyUseSecret=true") {
+				setReverseProxyUseSecret(true)
+				config, err = getProxyConfigFromSecret(t)
+				if err != nil {
+					return
+				}
+
+			} else if strings.Contains(tc.name, "EnvReverseProxyUseSecret=false") {
+				setReverseProxyUseSecret(false)
+				config, err = getProxyConfig(t)
+				if err != nil {
+					return
+				}
+			}
+			if tc.expectedError == nil {
+				endpoint = config.GetManagementServers()[0].Endpoint
+			} else {
+				endpoint = tc.mgmtEndpoint
+			}
+
+			credentials, err := config.GetManagementServerCredentials(endpoint)
+			if err != nil {
+				assert.Equal(t, tc.expectedError, err)
+			} else {
+				assert.Equal(t, tc.expectedCred, credentials)
 			}
 		})
 	}

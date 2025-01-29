@@ -107,6 +107,10 @@ func startTestServer() error {
 		return err
 	}
 	server, err = startServer(k8sUtils, serverOpts)
+	if err == nil {
+		log.Printf("started revproxy server successfully on port %s", serverOpts.Port)
+	}
+
 	return err
 }
 
