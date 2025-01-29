@@ -78,9 +78,8 @@ func setEnv(key, value string) error {
 func setReverseProxyUseSecret(value bool) error {
 	if value {
 		return setEnv(common.EnvReverseProxyUseSecret, "true")
-	} else {
-		return setEnv(common.EnvReverseProxyUseSecret, "false")
 	}
+	return setEnv(common.EnvReverseProxyUseSecret, "false")
 }
 
 func newProxyConfig(configMap *ProxyConfigMap, utils k8sutils.UtilsInterface) (*ProxyConfig, error) {

@@ -36,9 +36,8 @@ func setEnv(key, value string) error {
 func setReverseProxyUseSecret(value bool) error {
 	if value {
 		return setEnv(common.EnvReverseProxyUseSecret, "true")
-	} else {
-		return setEnv(common.EnvReverseProxyUseSecret, "false")
 	}
+	return setEnv(common.EnvReverseProxyUseSecret, "false")
 }
 func readProxySecret() (*config.ProxySecret, error) {
 	setReverseProxyUseSecret(true)
