@@ -39,6 +39,8 @@ var (
 	validSLO                 = [...]string{"Diamond", "Platinum", "Gold", "Silver", "Bronze", "Optimized", "None"}
 )
 
+// PmaxClient is the interface for Pmax
+//
 //go:generate mockgen -destination=mocks/pmaxclient.go -package=mocks github.com/dell/csi-powermax/v2/pkg/symmetrix PmaxClient
 type PmaxClient interface {
 	pmax.Pmax

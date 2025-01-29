@@ -31,6 +31,8 @@ const (
 	failureTimeThreshold time.Duration = 2 * time.Minute
 )
 
+// RoundTripperInterface is an interface for http.RoundTripper
+//
 //go:generate mockgen -destination=mocks/roundtripper.go -package=mocks github.com/dell/csi-powermax/v2/pkg/symmetrix RoundTripperInterface
 type RoundTripperInterface interface {
 	http.RoundTripper
