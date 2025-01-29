@@ -41,6 +41,3 @@ docker-push: docker
 
 unit-test:
 	go test -v -coverprofile c.out -coverpkg $(coverpackages) ./...
-
-download-csm-common:
-	curl -O -L https://raw.githubusercontent.com/dell/csm/main/config/csm-common.mk
