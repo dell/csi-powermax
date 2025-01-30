@@ -47,8 +47,18 @@ docker-push: docker
 	make -f docker.mk push
 
 unit-test:
-	go test -v -coverprofile c.out -coverpkg $(coverpackages) ./...
+	# CONFIG=secret go test -v -coverprofile c1.out -coverpkg $(coverpackages) ./...
+	# CONFIG=configmap go test -v -coverprofile c2.out -coverpkg $(coverpackages) ./...
+	# Merge coverage files
+	# tail -n +1 c1.out > c.out
+	# tail -n +2 c2.out >> c.out
+
+	# Generate HTML report from merged file
+	# go tool cover -html=c.out -o c.html
+	#
+	go test -v -coverprofile c1.out -coverpkg $(coverpackages) ./...
 
 download-csm-common:
 	curl -O -L https://raw.githubusercontent.com/dell/csm/main/config/csm-common.mk
+
 

@@ -171,7 +171,7 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 			s.Port = paramsConfig.Port
 			proxyConfig.Port = paramsConfig.Port
 		}
-
+		updateRevProxyLogParams(paramsConfig.LogFormat, paramsConfig.LogLevel)
 		log.Infof("Setting up watcher for mounted params config map")
 		s.SetupConfigWatcher(k8sUtils, vcp, s.configChangeParamsConfigMap)
 
@@ -246,7 +246,7 @@ func (s *Server) Start() {
 func (s *Server) SignalHandler(k8sUtils k8sutils.UtilsInterface) {
 	go func() {
 		signal.Notify(s.SigChan, syscall.SIGINT, syscall.SIGHUP)
-		log.Debug("SignalHandler setup to listen for SIGINT and SIGHUP")
+		log.Infof("SignalHandler setup to listen for SIGINT and SIGHUP")
 		sig := <-s.SigChan
 		log.Infof("Received signal: %v", sig)
 		// Stop InformerFactory
