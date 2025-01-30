@@ -16,11 +16,11 @@ limitations under the License.
 package proxy
 
 import (
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
 	"os"
 	"path/filepath"
-	"revproxy/v2/pkg/common"
-	"revproxy/v2/pkg/config"
-	"revproxy/v2/pkg/k8smock"
 	"testing"
 
 	"github.com/spf13/viper"
