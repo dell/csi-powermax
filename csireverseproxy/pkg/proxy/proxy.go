@@ -29,10 +29,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"revproxy/v2/pkg/cache"
-	"revproxy/v2/pkg/common"
-	"revproxy/v2/pkg/config"
-	"revproxy/v2/pkg/utils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/cache"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 

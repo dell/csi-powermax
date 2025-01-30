@@ -21,9 +21,9 @@ import (
 	"reflect"
 	"testing"
 
-	"revproxy/v2/pkg/common"
-	"revproxy/v2/pkg/k8sutils"
-	"revproxy/v2/pkg/utils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"

@@ -35,12 +35,12 @@ import (
 	"testing"
 	"time"
 
-	"revproxy/v2/pkg/common"
-	"revproxy/v2/pkg/config"
-	"revproxy/v2/pkg/k8smock"
-	"revproxy/v2/pkg/k8sutils"
-	"revproxy/v2/pkg/servermock"
-	"revproxy/v2/pkg/utils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/servermock"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
 	"github.com/sirupsen/logrus"
@@ -446,7 +446,7 @@ func TestSignalHandlerOnConfigChange(t *testing.T) {
 	// Failure case, lets create a new mgmt server with bad URL.
 	badManagementServer := config.ManagementServerConfig{
 		ArrayCredentialSecret:     proxySecretName,
-		URL:                       "://example.com/@",
+		Endpoint:                  "://example.com/@",
 		SkipCertificateValidation: true,
 	}
 

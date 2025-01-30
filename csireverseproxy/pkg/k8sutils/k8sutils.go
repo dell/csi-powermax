@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"time"
 
-	"revproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
 
 	"k8s.io/client-go/tools/clientcmd"
 

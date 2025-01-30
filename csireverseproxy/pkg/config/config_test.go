@@ -20,12 +20,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"revproxy/v2/pkg/common"
-	"revproxy/v2/pkg/k8smock"
-	"revproxy/v2/pkg/k8sutils"
-	"revproxy/v2/pkg/utils"
 	"strings"
 	"testing"
+
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
