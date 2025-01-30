@@ -1905,7 +1905,11 @@ func (s *service) setupArrayForNVMeTCP(ctx context.Context, array string, NQNs [
 
 	// Create or update the NVMe Host and Initiators
 	_, err = s.getAndConfigureMaskingViewTargetsNVMeTCP(ctx, array, mvName, pmaxClient)
-	return err
+	if err != nil && !(strings.Contains(err.Error(), "Masking View") && strings.Contains(err.Error(), "cannot be found")) {
+		return err
+	}
+	log.Warning(err.Error())
+	return nil
 }
 
 func (s *service) updateNQNWithHostID(ctx context.Context, symID string, NQNs []string, pmaxClient pmax.Pmax) ([]string, error) {
