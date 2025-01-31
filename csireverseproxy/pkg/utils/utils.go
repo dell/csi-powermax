@@ -18,7 +18,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
@@ -175,12 +174,12 @@ func RemoveTempFiles() error {
 	rootDir := RootDir()
 	certsDir := rootDir + "/../" + common.DefaultCertDirName
 	tmpConfigDir := rootDir + "/../" + common.TempConfigDir
-	certFiles, err := ioutil.ReadDir(certsDir)
+	certFiles, err := os.ReadDir(certsDir)
 	if err != nil {
 		log.Fatalf("Failed to list cert files in `%s`", certsDir)
 		return err
 	}
-	configFiles, err := ioutil.ReadDir(tmpConfigDir)
+	configFiles, err := os.ReadDir(tmpConfigDir)
 	if err != nil {
 		log.Fatalf("Failed to list config files in `%s`", tmpConfigDir)
 		return err

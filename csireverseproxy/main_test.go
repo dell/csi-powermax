@@ -103,7 +103,6 @@ func startTestServer(config string) error {
 		os.Setenv(common.EnvSecretFilePath, common.TempConfigDir+"/"+tmpSAConfigFile)
 		os.Setenv(common.EnvPowermaxConfigPath, common.TestConfigDir+"/"+paramsConfigMapFile)
 		err = createTempSecret()
-		time.Sleep(2 * time.Second)
 		if err != nil {
 			return err
 		}
@@ -292,7 +291,6 @@ func createTempConfig() error {
 		return err
 	}
 
-	filename := tmpSAConfigFile
 	proxyConfigMap.Port = common.DefaultPort
 	// Create a ManagementServerConfig
 	tempMgmtServerConfig := createTempManagementServers()
@@ -300,7 +298,7 @@ func createTempConfig() error {
 	// Create a StorageArrayConfig
 	tempStorageArrayConfig := createTempStorageArrays()
 	proxyConfigMap.Config.StorageArrayConfig = tempStorageArrayConfig
-	err = writeYAMLConfig(proxyConfigMap, filename, common.TempConfigDir)
+	err = writeYAMLConfig(proxyConfigMap, tmpSAConfigFile, common.TempConfigDir)
 	if err != nil {
 		log.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
 	}
@@ -314,16 +312,13 @@ func createTempSecret() error {
 		return err
 	}
 
-	filename := tmpSAConfigFile
-	// proxyConfigMap.Port = "8080"
 	// Create a ManagementServerConfig
-
 	tempMgmtServerConfig := createTempManagementServers()
 	proxySecret.ManagementServerConfig = tempMgmtServerConfig
 	// Create a StorageArrayConfig
 	tempStorageArrayConfig := createTempStorageArrays()
 	proxySecret.StorageArrayConfig = tempStorageArrayConfig
-	err = writeYAMLConfig(proxySecret, filename, common.TempConfigDir)
+	err = writeYAMLConfig(proxySecret, tmpSAConfigFile, common.TempConfigDir)
 	if err != nil {
 		log.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
 	}
@@ -496,9 +491,8 @@ func TestMultipleRuns(t *testing.T) {
 	// Run the test logic multiple times with different configurations
 	t.Run("TestSecretCase", func(t *testing.T) {
 		log.Infof("#### Running tests with secret ####")
-		config := "secret"
 		os.Setenv(common.EnvReverseProxyUseSecret, "true")
-		InitializeSetup(config)
+		InitializeSetup("secret")
 		defer TearDownSetup()
 
 		//Run tests
