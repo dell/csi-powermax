@@ -1877,7 +1877,11 @@ func (s *service) setupArrayForIscsi(ctx context.Context, array string, IQNs []s
 		return err
 	}
 	_, err = s.getAndConfigureMaskingViewTargets(ctx, array, mvName, IQNs, pmaxClient)
-	return err
+	if err != nil && !(strings.Contains(err.Error(), "Masking View") && strings.Contains(err.Error(), "cannot be found")) {
+		return err
+	}
+	log.Warning(err.Error())
+	return nil
 }
 
 // setupArrayForIscsi is called to set up a node for iscsi operation.
