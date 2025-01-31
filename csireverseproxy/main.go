@@ -171,6 +171,7 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 			s.Port = paramsConfig.Port
 			proxyConfig.Port = paramsConfig.Port
 		}
+
 		updateRevProxyLogParams(paramsConfig.LogFormat, paramsConfig.LogLevel)
 		log.Infof("Setting up watcher for mounted params config map")
 		s.SetupConfigWatcher(k8sUtils, vcp, s.configChangeParamsConfigMap)
@@ -366,10 +367,10 @@ func (s *Server) configChangeParamsConfigMap(k8sUtils k8sutils.UtilsInterface, v
 		return
 	}
 
-	updateRevProxyLogParams(ParamsConfigMap.LogFormat, ParamsConfigMap.LogLevel)
 	config := s.Config()
 	log.Infof("Updating reverse proxy port to %s", ParamsConfigMap.Port)
 	config.Port = ParamsConfigMap.Port
+	updateRevProxyLogParams(ParamsConfigMap.LogFormat, ParamsConfigMap.LogLevel)
 	err = s.GetRevProxy().UpdateConfig(*config)
 	if err != nil {
 		log.Errorf("Error in updating the config: %s", err.Error())

@@ -869,7 +869,7 @@ func ReadConfigFromSecret(vs *viper.Viper) (*ProxySecret, error) {
 	secretFilePath := getEnv(common.EnvSecretFilePath, common.DefaultSecretPath)
 	secretFileName := filepath.Base(secretFilePath)
 	secretFileDir := filepath.Dir(secretFilePath)
-	log.Printf("Reading secret: %s from path: %s \n", secretFileName, secretFileDir)
+	log.Printf("Reading secret: %s from path: %s", secretFileName, secretFileDir)
 	vs.SetConfigName(secretFileName)
 	vs.SetConfigType("yaml")
 	vs.AddConfigPath(secretFileDir)

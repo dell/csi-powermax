@@ -19,10 +19,10 @@ config:
       skipCertificateValidation: true
     - url: https://backup-1.unisphe.re:8443
       arrayCredentialSecret: backup-unisphere-secret-1
-      skipCertificateValidation: true
+      skipCertificateValidation: false
     - url: https://primary-2.unisphe.re:8443
       arrayCredentialSecret: primary-unisphere-secret-2
-      skipCertificateValidation: false
+      skipCertificateValidation: true
     - url: https://backup-2.unisphe.re:8443
       arrayCredentialSecret: backup-unisphere-secret-2
       skipCertificateValidation: false

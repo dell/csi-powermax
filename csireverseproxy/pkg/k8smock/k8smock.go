@@ -38,8 +38,6 @@ const (
 	resyncPeriod = time.Minute * 30
 )
 
-var mockUtils *MockUtils
-
 // MockUtils - mock kubernetes utils
 type MockUtils struct {
 	KubernetesClient *kubernetes.Clientset
@@ -51,25 +49,24 @@ type MockUtils struct {
 	SecretCert       []byte
 	Username         []byte
 	Password         []byte
+	TimeNowFunc      func() int64
 }
 
 // Init - initializes the mock k8s utils
 func Init() *MockUtils {
-	if mockUtils != nil {
-		return mockUtils
-	}
 	kubernetesClient := kubernetes.NewSimpleClientset()
 
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(kubernetesClient, resyncPeriod, informers.WithNamespace(common.DefaultNameSpace))
 
 	secretInformer := informerFactory.Core().V1().Secrets()
 	certDirectory := utils.RootDir() + "/../" + common.DefaultCertDirName
-	mockUtils = &MockUtils{
+	mockUtils := &MockUtils{
 		KubernetesClient: kubernetesClient,
 		InformerFactory:  informerFactory,
 		SecretInformer:   secretInformer,
 		Namespace:        common.DefaultNameSpace,
 		CertDirectory:    certDirectory,
+		TimeNowFunc:      time.Now().UnixNano,
 	}
 	return mockUtils
 }
@@ -78,7 +75,7 @@ func (mockUtils *MockUtils) getCertFileFromSecret(certSecret *corev1.Secret) (st
 	if certSecret == nil {
 		return "", fmt.Errorf("cert secret can't be nil")
 	}
-	timestamp := strconv.FormatInt(time.Now().UnixNano(), 10)
+	timestamp := strconv.FormatInt(mockUtils.TimeNowFunc(), 10)
 	certFilePath := fmt.Sprintf("%s/%s-proxy-%s.pem", mockUtils.CertDirectory, certSecret.Name, timestamp)
 	err := mockUtils.createFile(certFilePath, certSecret.Data["cert"])
 	if err != nil {
@@ -165,8 +162,8 @@ func (mockUtils *MockUtils) StopInformer() {
 
 // CreateNewCertSecret - creates a new mock secret for certs
 func (mockUtils *MockUtils) CreateNewCertSecret(secretName string) (*corev1.Secret, error) {
-	secret, _ := mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Get(context.TODO(), secretName, metav1.GetOptions{})
-	if secret != nil {
+	secret, err := mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	if secret != nil && err == nil {
 		return secret, nil
 	}
 	data := map[string][]byte{
@@ -188,8 +185,8 @@ func (mockUtils *MockUtils) CreateNewCertSecret(secretName string) (*corev1.Secr
 
 // CreateNewCredentialSecret - creates a new mock secret for credentials
 func (mockUtils *MockUtils) CreateNewCredentialSecret(secretName string) (*corev1.Secret, error) {
-	secret, _ := mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Get(context.TODO(), secretName, metav1.GetOptions{})
-	if secret != nil {
+	secret, err := mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	if secret != nil && err == nil {
 		return secret, nil
 	}
 	data := map[string][]byte{
