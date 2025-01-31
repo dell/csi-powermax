@@ -359,7 +359,7 @@ func (s *Server) configChangeSecret(k8sUtils k8sutils.UtilsInterface, vs *viper.
 }
 
 func (s *Server) configChangeParamsConfigMap(k8sUtils k8sutils.UtilsInterface, vcmp *viper.Viper) {
-	log.Infof("Received a config change event for params configmap - all settings %v", vcmp.AllSettings())
+	log.Infof("Received a config change event for params configmap")
 	var ParamsConfigMap config.ParamsConfigMap
 	err := vcmp.Unmarshal(&ParamsConfigMap)
 	if err != nil {

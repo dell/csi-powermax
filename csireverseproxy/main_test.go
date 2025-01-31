@@ -327,7 +327,6 @@ func createTempSecret() error {
 	if err != nil {
 		log.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
 	}
-	// os.Setenv(common.EnvSecretFilePath, common.TempConfigDir+"/"+filename)
 	return err
 }
 

@@ -769,7 +769,7 @@ func NewProxyConfig(configMap *ProxyConfigMap, k8sUtils k8sutils.UtilsInterface)
 func (c *ProxyConfigMap) CustomUnmarshal(vcm *viper.Viper) error {
 	settings := vcm.AllSettings()
 
-	log.Infof("viper all settings: %v\n", vcm.AllSettings())
+	log.Debugf("viper all settings: %v\n", vcm.AllSettings())
 	// Retrieve all settings as a map
 	// Custom handling for URL fields before unmarshaling
 	for i, managementServer := range vcm.Get("config.managementservers").([]interface{}) {
@@ -840,7 +840,7 @@ func ReadConfig(configFile, configPath string, vcm *viper.Viper) (*ProxyConfigMa
 	if err != nil {
 		return nil, err
 	}
-	log.Println(vcm.AllSettings())
+	log.Debugln(vcm.AllSettings())
 	var configMap ProxyConfigMap
 	err = vcm.Unmarshal(&configMap)
 	if err != nil {
@@ -877,6 +877,7 @@ func ReadConfigFromSecret(vs *viper.Viper) (*ProxySecret, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Debugln(vs.AllSettings())
 	var secret ProxySecret
 	err = vs.Unmarshal(&secret)
 	if err != nil {
@@ -893,6 +894,7 @@ func ReadParamsConfigMapFromPath(configFilePath string, vcp *viper.Viper) (*Para
 	vcp.SetConfigType("yaml")
 	vcp.AddConfigPath(filepath.Dir(configFilePath))
 	err := vcp.ReadInConfig()
+	log.Debugln(vcp.AllSettings())
 
 	if err != nil {
 		return nil, err

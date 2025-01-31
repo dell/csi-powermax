@@ -12,7 +12,7 @@
  limitations under the License.
 */
 
-package k8smock_test
+package k8smock
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
-	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubernetes "k8s.io/client-go/kubernetes/fake"
@@ -28,17 +28,17 @@ import (
 
 func TestMockUtils(t *testing.T) {
 
-	mockutils := &k8smock.MockUtils{
-		CertDirectory:    "/tmp",
-		KubernetesClient: kubernetes.NewSimpleClientset(),
-		TimeNowFunc: func() int64 { // Mock the timestamp
-			return 1700000000000000000 // Fixed timestamp for testing
-		},
+	mockutils := Init()
+
+	mockutils.CertDirectory = "/tmp"
+	mockutils.KubernetesClient = kubernetes.NewSimpleClientset()
+	mockutils.TimeNowFunc = func() int64 { // Mock the timestamp
+		return 1700000000000000000 // Fixed timestamp for testing
 	}
 
 	testCases := []struct {
 		description string
-		mockUtils   *k8smock.MockUtils
+		mockUtils   *MockUtils
 		expected    interface{}
 	}{
 		{
@@ -63,13 +63,13 @@ func TestMockUtils(t *testing.T) {
 		},
 		{
 			description: "Test CreateNewCertSecret method",
-			mockUtils:   k8smock.Init(),
+			mockUtils:   Init(),
 			expected: &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "dummy-secret-name", Namespace: common.DefaultNameSpace}, Data: map[string][]byte{
 				"cert": []byte("This is a dummy cert file")}, Type: "Generic"},
 		},
 		{
 			description: "Test CreateNewCredentialSecret method",
-			mockUtils:   k8smock.Init(),
+			mockUtils:   Init(),
 			expected:    &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "dummy-secret-name", Namespace: common.DefaultNameSpace}, Data: map[string][]byte{"username": []byte("test-username"), "password": []byte("test-password")}, Type: "Generic"},
 		},
 	}

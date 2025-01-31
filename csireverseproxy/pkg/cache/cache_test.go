@@ -12,13 +12,11 @@
  limitations under the License.
 */
 
-package cache_test
+package cache
 
 import (
 	"testing"
 	"time"
-
-	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/cache"
 )
 
 func TestCache(t *testing.T) {
@@ -33,7 +31,7 @@ func TestCache(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		c := cache.New("test", time.Second)
+		c := New("test", time.Second)
 		c.Set(tc.key, tc.value)
 		if v, ok := c.Get(tc.key); !ok || v != tc.value {
 			t.Errorf("Expected value %v, got %v", tc.value, v)
@@ -51,7 +49,7 @@ func TestCache(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		c := cache.New("test", time.Second)
+		c := New("test", time.Second)
 		c.Set(tc.key, tc.value)
 		if v, ok := c.Get(tc.key); !ok || v != tc.value {
 			t.Errorf("Expected value %v, got %v", tc.value, v)
@@ -69,7 +67,7 @@ func TestCache(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		c := cache.New("test", time.Second)
+		c := New("test", time.Second)
 		c.Set(tc.key, tc.value)
 		c.Remove(tc.key)
 		if v, ok := c.Get(tc.key); ok || v != nil {
