@@ -44,6 +44,7 @@ type Envoy interface {
 func NewEnvoy(proxy *Proxy) Envoy {
 	e := &envoy{
 		healthMonitor: NewProxyHealth(),
+		primary:       &Proxy{},
 	}
 	e.setPrimary(proxy)
 	return e

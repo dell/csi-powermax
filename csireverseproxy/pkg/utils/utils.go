@@ -102,12 +102,13 @@ func GetListenAddress(portNumber string) string {
 func WriteHTTPResponse(w http.ResponseWriter, val interface{}) {
 	jsonBytes, err := json.Marshal(val)
 	if err != nil {
-		fmt.Println("error:", err)
 		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
 		return
 	}
 	_, err = w.Write(jsonBytes)
 	if err != nil {
+		w.Write([]byte(err.Error()))
 		log.Error("Couldn't write to ResponseWriter")
 		w.WriteHeader(http.StatusInternalServerError)
 	}
