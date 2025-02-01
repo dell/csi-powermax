@@ -54,13 +54,14 @@ type K8sUtils struct {
 	Namespace        string
 	CertDirectory    string
 	stopCh           chan struct{}
+	TimeNowFunc      func() int64
 }
 
 var k8sUtils *K8sUtils
 
 // KubernetesClient - client connection
 type KubernetesClient struct {
-	Clientset *kubernetes.Clientset
+	Clientset kubernetes.Interface
 }
 
 func getKubeConfigPathFromEnv() string {
@@ -149,6 +150,7 @@ func Init(namespace, certDirectory string, inCluster bool, resyncPeriod time.Dur
 		Namespace:        namespace,
 		CertDirectory:    certDirectory,
 		stopCh:           make(chan struct{}),
+		TimeNowFunc:      time.Now().UnixNano,
 	}
 	return k8sUtils, nil
 }
@@ -157,7 +159,7 @@ func (utils *K8sUtils) getCertFileFromSecret(certSecret *corev1.Secret) (string,
 	if certSecret == nil {
 		return "", fmt.Errorf("cert secret can't be nil")
 	}
-	timestamp := strconv.FormatInt(time.Now().UnixNano(), 10)
+	timestamp := strconv.FormatInt(utils.TimeNowFunc(), 10)
 	certFile := fmt.Sprintf("%s/%s-proxy-%s.pem", k8sUtils.CertDirectory, certSecret.Name, timestamp)
 	err := utils.createFile(certFile, certSecret.Data["cert"])
 	if err != nil {

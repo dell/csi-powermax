@@ -108,7 +108,7 @@ func TestRemoveTempFiles(t *testing.T) {
 	if err != nil && os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(certsDirPath)
+	//defer os.RemoveAll(certsDirPath)
 
 	path = filepath.Join(rootDir, "/../", common.TempConfigDir)
 	configDirPath, err := filepath.Abs(path)
@@ -116,7 +116,7 @@ func TestRemoveTempFiles(t *testing.T) {
 	if err != nil && os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(configDirPath)
+	//defer os.RemoveAll(configDirPath)
 
 	// Create temporary files in the directories
 	certFile, err := os.CreateTemp(certsDirPath, "cert.pem")

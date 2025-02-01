@@ -108,16 +108,22 @@ func TestGetActiveProxy(t *testing.T) {
 }
 
 func TestGetActiveHTTPClient(t *testing.T) {
-	primary := &http.Client{}
-	backup := &http.Client{}
-	e := &envoy{primaryHTTP: primary, backupHTTP: backup}
+	primaryHttpClient := &http.Client{}
+	backupHttpClient := &http.Client{}
+	primary := &Proxy{ReverseProxy: &httputil.ReverseProxy{Transport: &http.Transport{}}}
+	backup := &Proxy{ReverseProxy: &httputil.ReverseProxy{Transport: &http.Transport{}}}
 
-	if e.GetActiveHTTPClient() != primary {
+	e := &envoy{primaryHTTP: primaryHttpClient,
+		backupHTTP: backupHttpClient,
+		primary:    primary,
+		backup:     backup}
+
+	if e.GetActiveHTTPClient() != primaryHttpClient {
 		t.Errorf("Expected primary HTTP client to be active")
 	}
 
 	atomic.StoreInt32(&e.active, 1)
-	if e.GetActiveHTTPClient() != backup {
+	if e.GetActiveHTTPClient() != backupHttpClient {
 		t.Errorf("Expected backup HTTP client to be active")
 	}
 }
