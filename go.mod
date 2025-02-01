@@ -2,7 +2,7 @@ module github.com/dell/csi-powermax/v2
 
 go 1.23.0
 
-toolchain go1.23.4
+toolchain go1.23.5
 
 require (
 	github.com/akutz/goof v0.1.2
