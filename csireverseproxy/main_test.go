@@ -381,64 +381,9 @@ func createTempManagementServers() []config.ManagementServerConfig {
 	return tempMgmtServerConfig
 }
 
-func ZZZOriginalMain(m *testing.M) {
-	config := os.Getenv("CONFIG")
-
-	log.Infof("### Running tests for config - %s ####", config)
-	var err error
-	status := 0
-	// Start the mock server
-	log.Info("Creating primary mock server...")
-	primaryMockServer, err = createMockServer(primaryPort)
-	if err != nil {
-		log.Fatalf("Failed to create primary mock server. (%s)", err.Error())
-		os.Exit(1)
-	}
-	log.Infof("Primary mock server listening on %s", primaryMockServer.server.URL)
-	log.Info("Creating backup mock server...")
-	backupMockServer, err = createMockServer(backupPort)
-	if err != nil {
-		log.Fatalf("Failed to create backup mock server. (%s)", err.Error())
-		stopServers()
-		os.Exit(1)
-	}
-	log.Infof("Backup mock server listening on %s", backupMockServer.server.URL)
-	// Start proxy server and other services
-	log.Info("Starting proxy server...")
-	err = startTestServer(config)
-	if err != nil {
-		log.Fatalf("Failed to start proxy server. (%s)", err.Error())
-		stopServers()
-		os.Exit(1)
-	}
-
-	err = serverReady()
-	if err != nil {
-		log.Fatalf("Failed to start proxy server. (%s)", err.Error())
-		stopServers()
-		os.Exit(1)
-	}
-
-	log.Info("Proxy server started successfully")
-	if st := m.Run(); st > 0 {
-		log.Infof("Test run status = %d", st)
-	}
-	log.Info("Stopping the mock and proxy servers")
-	stopServers()
-	log.Info("Removing the certs, temp files")
-	err = utils.RemoveTempFiles()
-	if err != nil {
-		log.Fatalln(err.Error())
-		os.Exit(1)
-	}
-
-	log.Infof("Test run completed for %s", config)
-	os.Exit(status)
-}
-
 func InitializeSetup(config string) {
 	var err error
-	//status := 0
+
 	// Start the mock server
 	log.Info("Creating primary mock server...")
 	primaryMockServer, err = createMockServer(primaryPort)
@@ -488,7 +433,7 @@ func TearDownSetup() {
 
 func TestMultipleRuns(t *testing.T) {
 
-	// Run the test logic multiple times with different configurations
+	// Run the tests multiple times with different configurations (secret or configmap)
 	t.Run("TestSecretCase", func(t *testing.T) {
 		log.Infof("#### Running tests with secret ####")
 		os.Setenv(common.EnvReverseProxyUseSecret, "true")
@@ -496,28 +441,28 @@ func TestMultipleRuns(t *testing.T) {
 		defer TearDownSetup()
 
 		//Run tests
-		TestSAHTTPRequest(t)
-		TestServer_EventHandler(t)
-		TestServer_SAEventHandler(t)
-		TestSecretHandler(t)
-		TestCMHandler(t)
-		TestCMParamsHandler(t)
+		SAHTTPRequestTest(t)
+		TestServerEventHandler(t)
+		ServerSAEventHandlerTest(t)
+		SecretHandlerTest(t)
+		CMHandlerTest(t)
+		CMParamsHandlerTest(t)
 		log.Infof("#### END Running tests with secret ####")
 	})
 
-	t.Run("TestCMCase", func(t *testing.T) {
+	t.Run("TestConfigMapCase", func(t *testing.T) {
 		log.Infof("#### Running tests with configmap ####")
 		InitializeSetup("configmap")
 		defer TearDownSetup()
 		os.Setenv(common.EnvReverseProxyUseSecret, "false")
 
 		// Run tests
-		TestSAHTTPRequest(t)
-		TestServer_EventHandler(t)
-		TestServer_SAEventHandler(t)
-		TestSecretHandler(t)
-		TestCMHandler(t)
-		TestCMParamsHandler(t)
+		SAHTTPRequestTest(t)
+		TestServerEventHandler(t)
+		ServerSAEventHandlerTest(t)
+		SecretHandlerTest(t)
+		CMHandlerTest(t)
+		CMParamsHandlerTest(t)
 		log.Infof("#### END Running tests with configmap ####")
 	})
 }
@@ -557,7 +502,7 @@ func serverReady() error {
 	return nil
 }
 
-func TestServer_Start(t *testing.T) {
+func TestServerStart(t *testing.T) {
 
 	config := "configmap"
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
@@ -570,7 +515,7 @@ func TestServer_Start(t *testing.T) {
 	}
 }
 
-func TestServer_EventHandler(t *testing.T) {
+func TestServerEventHandler(t *testing.T) {
 	k8sUtils := k8smock.Init()
 	_, err := k8sUtils.CreateNewCertSecret(primaryCertSecretName)
 	if err != nil {
@@ -578,10 +523,15 @@ func TestServer_EventHandler(t *testing.T) {
 	}
 }
 
-func TestServer_SAEventHandler(t *testing.T) {
+// Tests the server SA event handler, needs a running server.
+// For tests marked as needs a running server, the following can be used to make them run independently
+// 1. Rename the test function name to begin with Test
+// 2. call InitializeSetup with the parameter "secret" or "configmap"
+// 3. call TearDownSetup at the end (or defer)
+func ServerSAEventHandlerTest(t *testing.T) {
+
 	k8sUtils := k8smock.Init()
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
-		//t.Skip("Skipping test as proxy is using secret")
 		return
 	}
 
@@ -624,9 +574,9 @@ func TestServer_SAEventHandler(t *testing.T) {
 	}
 }
 
-func TestSecretHandler(t *testing.T) {
+// Tests teh secret handler, needs a running server
+func SecretHandlerTest(t *testing.T) {
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "false" {
-		//t.Skip("Skipping test as proxy is using secret")
 		return
 	}
 	secret, err := readYAMLSecret(tmpSAConfigFile, common.TempConfigDir)
@@ -644,9 +594,9 @@ func TestSecretHandler(t *testing.T) {
 	time.Sleep(10 * time.Second)
 }
 
-func TestCMParamsHandler(t *testing.T) {
+// Tests the params configmap handler of reverseproxy, needs a running server
+func CMParamsHandlerTest(t *testing.T) {
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "false" {
-		// t.Skip("Skipping test as proxy is using secret")
 		return
 	}
 	cmp, err := readYAMLConfigParams(paramsConfigMapFile, common.TestConfigDir)
@@ -666,10 +616,9 @@ func TestCMParamsHandler(t *testing.T) {
 	time.Sleep(10 * time.Second)
 }
 
-func TestCMHandler(t *testing.T) {
-
+// Tests the configmap handler, needs a running server
+func CMHandlerTest(t *testing.T) {
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
-		//t.Skip("Skipping test as proxy is using secret")
 		return
 	}
 	cm, err := readYAMLConfig(tmpSAConfigFile, common.TempConfigDir)
@@ -687,7 +636,8 @@ func TestCMHandler(t *testing.T) {
 	time.Sleep(10 * time.Second)
 }
 
-func TestSAHTTPRequest(t *testing.T) {
+// Tests the http request, needs a running server
+func SAHTTPRequestTest(t *testing.T) {
 	// make a request for version
 	path := utils.Prefix + "/version"
 	resp, err := doHTTPRequest(server.Port, path)
