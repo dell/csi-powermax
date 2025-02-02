@@ -1,5 +1,5 @@
 /*
- Copyright © 2021-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -288,8 +288,8 @@ func (pc *ProxyConfig) IsSecretConfiguredForArrays(secretName string) bool {
 
 	log.Infof("Checking secret : %s", secretName)
 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
-		// if using secrets, return true. updates for the username password happens in UpdateCreds
-		return true
+		// return false if using secrets. updates for the username password happens via viper and handled in handler.
+		return false
 	}
 
 	for _, array := range pc.managedArrays {

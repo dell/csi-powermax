@@ -1,5 +1,5 @@
 /*
- Copyright © 2021-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -398,33 +398,14 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 	}
 	found = conf.IsSecretConfiguredForArrays(secret.Name)
 	if found {
-		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
-			proxySecret, err := config.ReadConfigFromSecret(viper.New())
-			if err != nil {
-				log.Errorf("error while reading config from raw secret: %v\n", err)
-			}
-
-			for _, mgmtServer := range proxySecret.ManagementServerConfig {
-				creds := &common.Credentials{
-					UserName: mgmtServer.Username,
-					Password: mgmtServer.Password,
-				}
-
-				isUpdated := conf.UpdateCreds(secret.Name, creds)
-				if isUpdated {
-					hasChanged = true
-				}
-			}
-		} else {
-			creds, err := k8sUtils.GetCredentialsFromSecret(secret)
-			if err != nil {
-				log.Errorf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
-				return
-			}
-			isUpdated := conf.UpdateCreds(secret.Name, creds)
-			if isUpdated {
-				hasChanged = true
-			}
+		creds, err := k8sUtils.GetCredentialsFromSecret(secret)
+		if err != nil {
+			log.Errorf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
+			return
+		}
+		isUpdated := conf.UpdateCreds(secret.Name, creds)
+		if isUpdated {
+			hasChanged = true
 		}
 	}
 
