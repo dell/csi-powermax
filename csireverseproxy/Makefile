@@ -12,8 +12,6 @@
 #
 include overrides.mk
 
-coverpackages= revproxy/v2,revproxy/v2/pkg/config,revproxy/v2/pkg/proxy
-
 run:
 	@./run.sh
 
@@ -47,7 +45,7 @@ docker-push: docker
 	make -f docker.mk push
 
 unit-test:
-	go test -v -coverprofile c1.out -coverpkg $(coverpackages) ./...
+	go test -v -coverprofile c1.out ./...
 
 download-csm-common:
 	curl -O -L https://raw.githubusercontent.com/dell/csm/main/config/csm-common.mk
