@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -108,22 +108,22 @@ func TestGetActiveProxy(t *testing.T) {
 }
 
 func TestGetActiveHTTPClient(t *testing.T) {
-	primaryHttpClient := &http.Client{}
-	backupHttpClient := &http.Client{}
+	primaryHTTPClient := &http.Client{}
+	backupHTTPClient := &http.Client{}
 	primary := &Proxy{ReverseProxy: &httputil.ReverseProxy{Transport: &http.Transport{}}}
 	backup := &Proxy{ReverseProxy: &httputil.ReverseProxy{Transport: &http.Transport{}}}
 
-	e := &envoy{primaryHTTP: primaryHttpClient,
-		backupHTTP: backupHttpClient,
+	e := &envoy{primaryHTTP: primaryHTTPClient,
+		backupHTTP: backupHTTPClient,
 		primary:    primary,
 		backup:     backup}
 
-	if e.GetActiveHTTPClient() != primaryHttpClient {
+	if e.GetActiveHTTPClient() != primaryHTTPClient {
 		t.Errorf("Expected primary HTTP client to be active")
 	}
 
 	atomic.StoreInt32(&e.active, 1)
-	if e.GetActiveHTTPClient() != backupHttpClient {
+	if e.GetActiveHTTPClient() != backupHTTPClient {
 		t.Errorf("Expected backup HTTP client to be active")
 	}
 }
