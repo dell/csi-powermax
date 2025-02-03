@@ -18,6 +18,7 @@ package utils
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -68,18 +69,6 @@ func TestGetRequestType(t *testing.T) {
 		t.Errorf("expected WriteRequest")
 	}
 }
-
-// func TestIsValidResponse(t *testing.T) {
-// 	resp := &http.Response{StatusCode: http.StatusOK}
-// 	if err := IsValidResponse(resp); err != nil {
-// 		t.Errorf("expected nil error, got %v", err)
-// 	}
-
-// 	resp = &http.Response{StatusCode: http.StatusUnauthorized}
-// 	if err := IsValidResponse(resp); err == nil {
-// 		t.Errorf("expected error, got nil")
-// 	}
-// }
 
 func TestIsValidResponse(t *testing.T) {
 	tests := []struct {
@@ -156,7 +145,6 @@ func TestRemoveTempFiles(t *testing.T) {
 	if err != nil && os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	//defer os.RemoveAll(certsDirPath)
 
 	path = filepath.Join(rootDir, "/../", common.TempConfigDir)
 	configDirPath, err := filepath.Abs(path)
@@ -164,7 +152,6 @@ func TestRemoveTempFiles(t *testing.T) {
 	if err != nil && os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	//defer os.RemoveAll(configDirPath)
 
 	// Create temporary files in the directories
 	certFile, err := os.CreateTemp(certsDirPath, "cert.pem")
@@ -197,14 +184,19 @@ func TestRemoveTempFiles(t *testing.T) {
 	}
 }
 
-// MockLogger is a mock implementation of the log.Logger interface
-type MockLogger struct {
-	logMessage string
+// MockResponseWriter simulates an error when Write is called
+type MockResponseWriter struct{}
+
+func (m *MockResponseWriter) Header() http.Header {
+	return http.Header{}
 }
 
-func (l *MockLogger) Write(p []byte) (n int, err error) {
-	l.logMessage = string(p)
-	return len(p), nil
+func (m *MockResponseWriter) Write(_ []byte) (int, error) {
+	return 0, errors.New("simulated write error")
+}
+
+func (m *MockResponseWriter) WriteHeader(statusCode int) {
+	fmt.Printf("Mock WriteHeader called with status: %d", statusCode)
 }
 
 func TestWriteHTTPResponse(t *testing.T) {
@@ -237,6 +229,10 @@ func TestWriteHTTPResponse(t *testing.T) {
 	if w.Body.String() != expectedResponse {
 		t.Errorf("Expected response - %s, but got - %s", expectedResponse, w.Body.String())
 	}
+
+	// Error case
+	mockW := &MockResponseWriter{}
+	WriteHTTPResponse(mockW, nil) // Simulate an HTTP handler call with mock response writer
 }
 
 func TestGetMaxActive(t *testing.T) {
