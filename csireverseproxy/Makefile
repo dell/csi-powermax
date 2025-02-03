@@ -1,4 +1,4 @@
-# Copyright © 2020-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2020-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,8 @@
 # limitations under the License.
 #
 include overrides.mk
+
+coverpackages= revproxy/v2,revproxy/v2/pkg/config,revproxy/v2/pkg/proxy
 
 run:
 	@./run.sh
@@ -45,7 +47,7 @@ docker-push: docker
 	make -f docker.mk push
 
 unit-test:
-	go test -v -coverprofile c1.out ./...
+	go test -v -coverprofile c.out -coverpkg $(coverpackages) ./...
 
 download-csm-common:
 	curl -O -L https://raw.githubusercontent.com/dell/csm/main/config/csm-common.mk

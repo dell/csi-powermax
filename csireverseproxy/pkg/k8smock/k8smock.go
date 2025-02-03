@@ -51,7 +51,6 @@ type MockUtils struct {
 	SecretCert       []byte
 	Username         []byte
 	Password         []byte
-	TimeNowFunc      func() int64
 }
 
 // Init - initializes the mock k8s utils
@@ -71,7 +70,6 @@ func Init() *MockUtils {
 		SecretInformer:   secretInformer,
 		Namespace:        common.DefaultNameSpace,
 		CertDirectory:    certDirectory,
-		TimeNowFunc:      time.Now().UnixNano,
 	}
 	return mockUtils
 }
@@ -80,7 +78,7 @@ func (mockUtils *MockUtils) getCertFileFromSecret(certSecret *corev1.Secret) (st
 	if certSecret == nil {
 		return "", fmt.Errorf("cert secret can't be nil")
 	}
-	timestamp := strconv.FormatInt(mockUtils.TimeNowFunc(), 10)
+	timestamp := strconv.FormatInt(time.Now().UnixNano(), 10)
 	certFilePath := fmt.Sprintf("%s/%s-proxy-%s.pem", mockUtils.CertDirectory, certSecret.Name, timestamp)
 	err := mockUtils.createFile(certFilePath, certSecret.Data["cert"])
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
@@ -104,15 +105,14 @@ func WriteHTTPResponse(w http.ResponseWriter, val interface{}) {
 	if err != nil {
 		fmt.Println("error:", err)
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
 		return
 	}
 	_, err = w.Write(jsonBytes)
 	if err != nil {
-		w.Write([]byte(err.Error()))
 		log.Error("Couldn't write to ResponseWriter")
 		w.WriteHeader(http.StatusInternalServerError)
 	}
+	return
 }
 
 // IsValidResponse - checks if response is valid
@@ -174,12 +174,12 @@ func RemoveTempFiles() error {
 	rootDir := RootDir()
 	certsDir := rootDir + "/../" + common.DefaultCertDirName
 	tmpConfigDir := rootDir + "/../" + common.TempConfigDir
-	certFiles, err := os.ReadDir(certsDir)
+	certFiles, err := ioutil.ReadDir(certsDir)
 	if err != nil {
 		log.Fatalf("Failed to list cert files in `%s`", certsDir)
 		return err
 	}
-	configFiles, err := os.ReadDir(tmpConfigDir)
+	configFiles, err := ioutil.ReadDir(tmpConfigDir)
 	if err != nil {
 		log.Fatalf("Failed to list config files in `%s`", tmpConfigDir)
 		return err
