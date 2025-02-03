@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -236,7 +235,7 @@ func stopServers() {
 func readYAMLConfig(filename, fileDir string) (config.ProxyConfigMap, error) {
 	configmap := config.ProxyConfigMap{}
 	file := filepath.Join(fileDir, filename)
-	yamlFile, err := ioutil.ReadFile(file)
+	yamlFile, err := os.ReadFile(file)
 	if err != nil {
 		return configmap, err
 	}
@@ -381,6 +380,7 @@ func createTempManagementServers() []config.ManagementServerConfig {
 	return tempMgmtServerConfig
 }
 
+// Initializes test setup, sets up managements server, and starts proxy server.
 func InitializeSetup(config string) {
 	var err error
 
@@ -433,6 +433,9 @@ func TearDownSetup() {
 
 func TestMultipleRuns(t *testing.T) {
 
+	// Remove any files left over from previous runs to ensure clean run
+	TearDownSetup()
+
 	// Run the tests multiple times with different configurations (secret or configmap)
 	t.Run("TestSecretCase", func(t *testing.T) {
 		log.Infof("#### Running tests with secret ####")
@@ -442,7 +445,6 @@ func TestMultipleRuns(t *testing.T) {
 
 		//Run tests
 		SAHTTPRequestTest(t)
-		TestServerEventHandler(t)
 		ServerSAEventHandlerTest(t)
 		SecretHandlerTest(t)
 		CMHandlerTest(t)
@@ -458,7 +460,6 @@ func TestMultipleRuns(t *testing.T) {
 
 		// Run tests
 		SAHTTPRequestTest(t)
-		TestServerEventHandler(t)
 		ServerSAEventHandlerTest(t)
 		SecretHandlerTest(t)
 		CMHandlerTest(t)
@@ -471,7 +472,6 @@ func serverReady() error {
 	client := getHTTPClient()
 
 	url := getURL(server.Port, "/")
-
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -530,6 +530,7 @@ func TestServerEventHandler(t *testing.T) {
 // 3. call TearDownSetup at the end (or defer)
 func ServerSAEventHandlerTest(t *testing.T) {
 
+	log.Infof("Start ServerSAEventHandlerTest")
 	k8sUtils := k8smock.Init()
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
 		return
@@ -572,11 +573,17 @@ func ServerSAEventHandlerTest(t *testing.T) {
 	} else {
 		fmt.Println("Secret Reverted Successfully")
 	}
+
+	log.Infof("End ServerSAEventHandlerTest")
 }
 
-// Tests teh secret handler, needs a running server
+// Tests the secret handler, needs a running server
 func SecretHandlerTest(t *testing.T) {
+	log.Infof("Start SecretHandlerTest")
+	defer log.Infof("End SecretHandlerTest")
+
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "false" {
+		log.Infof("SecretHandlerTest: Skipping test for config map case")
 		return
 	}
 	secret, err := readYAMLSecret(tmpSAConfigFile, common.TempConfigDir)
@@ -587,16 +594,21 @@ func SecretHandlerTest(t *testing.T) {
 
 	secret.ManagementServerConfig[0].Password = "test-password"
 	err = writeYAMLConfig(secret, tmpSAConfigFile, common.TempConfigDir)
+	// sleep for 10 seconds to allow the secret to be updated
 	time.Sleep(10 * time.Second)
 
 	secret.ManagementServerConfig[0].Password = "password"
 	err = writeYAMLConfig(secret, tmpSAConfigFile, common.TempConfigDir)
+	// sleep for 10 seconds to allow the secret to be updated
 	time.Sleep(10 * time.Second)
 }
 
 // Tests the params configmap handler of reverseproxy, needs a running server
 func CMParamsHandlerTest(t *testing.T) {
+	log.Infof("Start CMParamsHandlerTest")
+	defer log.Infof("End CMParamsHandlerTest")
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "false" {
+		log.Infof("CMParamsHandlerTest: Skipping test for config map case")
 		return
 	}
 	cmp, err := readYAMLConfigParams(paramsConfigMapFile, common.TestConfigDir)
@@ -608,17 +620,23 @@ func CMParamsHandlerTest(t *testing.T) {
 	cmp.LogFormat = "json"
 	cmp.LogLevel = "debug"
 	err = writeYAMLConfig(cmp, paramsConfigMapFile, common.TestConfigDir)
+	// sleep for 10 seconds to allow the configmap to be updated
 	time.Sleep(10 * time.Second)
 
 	cmp.LogFormat = "TEXT"
 	cmp.LogLevel = "info"
 	err = writeYAMLConfig(cmp, paramsConfigMapFile, common.TempConfigDir)
+	// sleep for 10 seconds to allow the configmap to be updated
 	time.Sleep(10 * time.Second)
 }
 
 // Tests the configmap handler, needs a running server
 func CMHandlerTest(t *testing.T) {
+	log.Infof("Start CMHandlerTest")
+	defer log.Infof("End CMHandlerTest")
+
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
+		log.Infof("CMHandlerTest: Skipping test for secret case")
 		return
 	}
 	cm, err := readYAMLConfig(tmpSAConfigFile, common.TempConfigDir)
@@ -629,15 +647,21 @@ func CMHandlerTest(t *testing.T) {
 
 	cm.Config.ManagementServerConfig[0].ArrayCredentialSecret = "test-secret"
 	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
+	// sleep for 10 seconds to allow the configmap to be updated
 	time.Sleep(10 * time.Second)
 
 	cm.Config.ManagementServerConfig[0].ArrayCredentialSecret = "proxy-secret-1"
 	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
+	// sleep for 10 seconds to allow the configmap to be updated
 	time.Sleep(10 * time.Second)
+
 }
 
 // Tests the http request, needs a running server
 func SAHTTPRequestTest(t *testing.T) {
+
+	log.Infof("Start SAHTTPRequestTest")
+	defer log.Infof("End SAHTTPRequestTest")
 	// make a request for version
 	path := utils.Prefix + "/version"
 	resp, err := doHTTPRequest(server.Port, path)
