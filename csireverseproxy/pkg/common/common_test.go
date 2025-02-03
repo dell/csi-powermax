@@ -15,7 +15,10 @@
 package common
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -85,5 +88,70 @@ func TestHealthReset(t *testing.T) {
 		t.Error("Proxy health not reset properly")
 	} else {
 		fmt.Printf("Proxy health reset successfully after %d success requests\n", successCount)
+	}
+}
+
+type mockRoundTripper struct {
+	resp *http.Response
+	err  error
+}
+
+func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return m.resp, m.err
+}
+
+func TestRoundTrip(t *testing.T) {
+	tests := []struct {
+		name           string
+		resp           *http.Response
+		err            error
+		expectedHealth bool
+	}{
+		{
+			name: "Successful 2xx response",
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+			},
+			expectedHealth: true,
+		},
+		{
+			name: "Unauthorized response",
+			resp: &http.Response{
+				StatusCode: http.StatusUnauthorized,
+			},
+			expectedHealth: false,
+		},
+		{
+			name: "Server error response",
+			resp: &http.Response{
+				StatusCode: http.StatusInternalServerError,
+			},
+			expectedHealth: false,
+		},
+		{
+			name:           "Transport error",
+			err:            errors.New("network error"),
+			expectedHealth: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			healthStatus := false
+			tp := &Transport{
+				RoundTripper: &mockRoundTripper{resp: tt.resp, err: tt.err},
+				HealthHandler: func(status bool) {
+					healthStatus = status
+				},
+			}
+
+			req := httptest.NewRequest("GET", "http://example.com", nil)
+			req.Header.Set("RequestID", "12345")
+			_, _ = tp.RoundTrip(req)
+
+			if healthStatus != tt.expectedHealth {
+				t.Errorf("expected health %v, got %v", tt.expectedHealth, healthStatus)
+			}
+		})
 	}
 }
