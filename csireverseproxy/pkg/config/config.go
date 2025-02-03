@@ -773,8 +773,8 @@ func (c *ProxyConfigMap) CustomUnmarshal(vcm *viper.Viper) error {
 	// Retrieve all settings as a map
 	// Custom handling for URL fields before unmarshaling
 	for i, managementServer := range vcm.Get("config.managementservers").([]interface{}) {
-		log.Infof("managementServer: %+v\n", managementServer)
-		serverMap := managementServer.(map[interface{}]interface{})
+		serverMap := managementServer.(map[string]interface{})
+		log.Infof("serverMap: %+v", serverMap)
 		// Check if the "url" field exists and is a string
 		if urlStr, ok := serverMap["url"].(string); ok {
 			parsedURL, err := url.Parse(urlStr)
@@ -787,16 +787,16 @@ func (c *ProxyConfigMap) CustomUnmarshal(vcm *viper.Viper) error {
 	}
 
 	for i, storageArray := range vcm.Get("config.storagearrays").([]interface{}) {
-		arrayMap := storageArray.(map[interface{}]interface{})
+		arrayMap := storageArray.(map[string]interface{})
 		// Parse the primaryurl and backupurl to see if they exist
-		if urlStr, ok := arrayMap["primaryURL"].(string); ok {
+		if urlStr, ok := arrayMap["primaryurl"].(string); ok {
 			parsedURL, err := url.Parse(urlStr)
 			if err != nil {
 				return fmt.Errorf("invalid endpoint for primaryEndpoint: %w", err)
 			}
 			c.Config.StorageArrayConfig[i].PrimaryEndpoint = parsedURL.String()
 		}
-		if urlStr, ok := arrayMap["backupURL"].(string); ok {
+		if urlStr, ok := arrayMap["backupurl"].(string); ok {
 			parsedURL, err := url.Parse(urlStr)
 			if err != nil {
 				return fmt.Errorf("invalid endpoint for backupEndpoint: %w", err)
@@ -841,7 +841,7 @@ func ReadConfig(configFile, configPath string, vcm *viper.Viper) (*ProxyConfigMa
 	if err != nil {
 		return nil, err
 	}
-	log.Println(vcm.AllSettings())
+
 	var configMap ProxyConfigMap
 	err = vcm.Unmarshal(&configMap)
 	if err != nil {
