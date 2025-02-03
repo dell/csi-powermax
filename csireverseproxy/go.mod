@@ -2,7 +2,7 @@ module github.com/dell/csi-powermax/csireverseproxy/v2
 
 go 1.23.1
 
-toolchain go1.23.3
+toolchain go1.23.5
 
 require (
 	github.com/dell/gopowermax/v2 v2.9.0
