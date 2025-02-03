@@ -179,10 +179,11 @@ func (mockUtils *MockUtils) StopInformer() {
 
 // CreateNewCertSecret - creates a new mock secret for certs
 func (mockUtils *MockUtils) CreateNewCertSecret(secretName string) (*corev1.Secret, error) {
-	secret, _ := mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Get(context.TODO(), secretName, metav1.GetOptions{})
-	if secret != nil {
-		return secret, nil
+	_, err := mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return nil, err
 	}
+
 	data := map[string][]byte{
 		"cert": []byte("This is a dummy cert file"),
 	}
@@ -197,7 +198,12 @@ func (mockUtils *MockUtils) CreateNewCertSecret(secretName string) (*corev1.Secr
 		Data: data,
 		Type: "Generic",
 	}
-	return mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Create(context.TODO(), secretObj, metav1.CreateOptions{})
+	_, err = mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Create(context.TODO(), secretObj, metav1.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return nil, err
+	}
+
+	return nil, nil
 }
 
 // CreateNewCredentialSecret - creates a new mock secret for credentials
