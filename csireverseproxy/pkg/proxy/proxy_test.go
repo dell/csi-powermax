@@ -16,12 +16,13 @@ limitations under the License.
 package proxy
 
 import (
-	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
-	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config"
-	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
 
 	"github.com/spf13/viper"
 )
@@ -53,6 +54,11 @@ func getProxyConfigFromSecret(t *testing.T) (*config.ProxyConfig, error) {
 		return nil, err
 	}
 	k8sUtils := k8smock.Init()
+	_, err = k8sUtils.CreateNewCertSecret("secret-cert")
+	if err != nil {
+		return nil, err
+	}
+
 	proxyConfig, err := config.NewProxyConfigFromSecret(proxySecret, k8sUtils)
 	if err != nil {
 		return nil, err
