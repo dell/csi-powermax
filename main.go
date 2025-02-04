@@ -54,7 +54,11 @@ func main() {
 			os.Exit(1)
 		}
 		// Attempt to become leader and start the driver
-		k8sutils.LeaderElection(k8sClientSet, lockName, *leaderElectionNamespace, run)
+		err = k8sutils.LeaderElection(k8sClientSet, lockName, *leaderElectionNamespace, run)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "failed to initialize leader election: %v", err)
+			os.Exit(1)
+		}
 	}
 }
 
@@ -92,9 +96,9 @@ const usage = `    X_CSI_POWERMAX_ENDPOINT
 
         The default value is an empty list
 
-    X_CSI_K8S_CLUSTER_PREFIX 
+    X_CSI_K8S_CLUSTER_PREFIX
         Specifies a prefix to apply to objects created via this K8s/CSI cluster
-         
+
         The default value is empty
     X_CSI_POWERMAX_ARRAYS
         Specifies a list of Arrays that the driver can choose from

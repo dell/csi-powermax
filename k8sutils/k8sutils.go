@@ -18,16 +18,14 @@ package k8sutils
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"strings"
 
-	v12 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	log "github.com/sirupsen/logrus"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
+	log "github.com/sirupsen/logrus"
+
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -53,7 +51,7 @@ var k8sUtils *K8sUtils
 
 // KubernetesClient - client connection
 type KubernetesClient struct {
-	ClientSet *kubernetes.Clientset
+	ClientSet kubernetes.Interface
 }
 
 // Init - Initializes the k8s client and creates the secret informer
@@ -61,13 +59,12 @@ func Init(kubeConfig string) (*K8sUtils, error) {
 	if k8sUtils != nil {
 		return k8sUtils, nil
 	}
-	var kubeClient *kubernetes.Clientset
 	kubeClient, err := CreateKubeClientSet(kubeConfig)
 	if err != nil {
 		log.Errorf("failed to create kube client. error: %s", err.Error())
 		return nil, err
 	}
-	k8sUtils := &K8sUtils{
+	k8sUtils = &K8sUtils{
 		KubernetesClient: &KubernetesClient{
 			ClientSet: kubeClient,
 		},
@@ -78,45 +75,40 @@ func Init(kubeConfig string) (*K8sUtils, error) {
 // CreateKubeClientSet - Returns kubeClient set
 func CreateKubeClientSet(kubeConfig string) (*kubernetes.Clientset, error) {
 	var clientSet *kubernetes.Clientset
+	var config *rest.Config
+	var err error
 	if kubeConfig != "" {
 		// use the current context in kubeConfig
-		config, err := clientcmd.BuildConfigFromFlags("", kubeConfig)
-		if err != nil {
-			return nil, err
-		}
-		// create the clientSet
-		clientSet, err = kubernetes.NewForConfig(config)
+		config, err = clientcmd.BuildConfigFromFlags("", kubeConfig)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		config, err := rest.InClusterConfig()
+		config, err = rest.InClusterConfig()
 		if err != nil {
 			return nil, err
 		}
-		// creates the clientSet
-		clientSet, err = kubernetes.NewForConfig(config)
-		if err != nil {
-			return nil, err
-		}
+	}
+	// create the clientSet
+	clientSet, err = kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
 	}
 	return clientSet, nil
 }
 
 // LeaderElection ...
-func LeaderElection(clientSet *kubernetes.Clientset, lockName string, namespace string, runFunc func(ctx context.Context)) {
+func LeaderElection(clientSet kubernetes.Interface, lockName string, namespace string, runFunc func(ctx context.Context)) error {
 	le := leaderelection.NewLeaderElection(clientSet, lockName, runFunc)
 	le.WithNamespace(namespace)
-	if err := le.Run(); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "failed to initialize leader election: %v", err)
-		os.Exit(1)
-	}
+
+	return le.Run()
 }
 
 // GetNodeLabels returns back Node labels for the node name
 func (c *K8sUtils) GetNodeLabels(nodeFullName string) (map[string]string, error) {
 	// access the API to fetch node object
-	node, err := c.KubernetesClient.ClientSet.CoreV1().Nodes().Get(context.TODO(), nodeFullName, v1.GetOptions{})
+	node, err := c.KubernetesClient.ClientSet.CoreV1().Nodes().Get(context.TODO(), nodeFullName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -128,14 +120,14 @@ func (c *K8sUtils) GetNodeLabels(nodeFullName string) (map[string]string, error)
 // GetNodeIPs returns cluster IP of the node object
 func (c *K8sUtils) GetNodeIPs(nodeID string) string {
 	// access the API to fetch node object
-	nodeList, err := c.KubernetesClient.ClientSet.CoreV1().Nodes().List(context.TODO(), v1.ListOptions{})
+	nodeList, err := c.KubernetesClient.ClientSet.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return ""
 	}
 	for _, node := range nodeList.Items {
 		if strings.Contains(node.Name, nodeID) {
 			for _, addr := range node.Status.Addresses {
-				if addr.Type == v12.NodeInternalIP {
+				if addr.Type == corev1.NodeInternalIP {
 					return addr.Address
 				}
 			}
