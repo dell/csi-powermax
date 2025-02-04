@@ -31,11 +31,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-type leaderElection interface {
-	Run() error
-	WithNamespace(namespace string)
-}
-
 // UtilsInterface - interface which provides helper methods related to k8s
 type UtilsInterface interface {
 	GetNodeLabels(string) (map[string]string, error)
