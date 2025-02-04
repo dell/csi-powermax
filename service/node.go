@@ -718,7 +718,7 @@ func (s *service) NodePublishVolume(
 
 	var symlinkPath string
 	var devicePath string
-	if s.useNVMeTCP || s.opts.TransportProtocol == "" {
+	if s.useNVMeTCP || s.arrayTransportProtocolMap[symID] == NvmeTCPTransportProtocol {
 		symlinkPath, devicePath, err = gofsutil.WWNToDevicePathX(context.Background(), vol.NGUID)
 		if err != nil || symlinkPath == "" {
 			errmsg := fmt.Sprintf("Device path not found for WWN %s: %s", deviceWWN, err)
