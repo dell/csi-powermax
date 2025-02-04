@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -38,6 +39,47 @@ import (
 func readConfigFile(fileName string) string {
 	relativePath := filepath.Join(".", "..", "..", common.TestConfigDir, fileName)
 	return relativePath
+}
+
+func setEnv(key, value string) error {
+	err := os.Setenv(key, value)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func setReverseProxyUseSecret(value bool) error {
+	if value {
+		return setEnv(common.EnvReverseProxyUseSecret, "true")
+	}
+	return setEnv(common.EnvReverseProxyUseSecret, "false")
+}
+
+func readProxySecret() (*config.ProxySecret, error) {
+	setReverseProxyUseSecret(true)
+	relativePath := filepath.Join(".", "..", "..", common.TestConfigDir, common.TestSecretFileName)
+	setEnv(common.EnvSecretFilePath, relativePath)
+	return config.ReadConfigFromSecret(viper.New())
+}
+
+func getProxyConfigFromSecret(t *testing.T) (*config.ProxyConfig, error) {
+	proxySecret, err := readProxySecret()
+	if err != nil {
+		t.Errorf(err.Error())
+		return nil, err
+	}
+	k8sUtils := k8smock.Init()
+	_, err = k8sUtils.CreateNewCertSecret("secret-cert")
+	if err != nil {
+		return nil, err
+	}
+
+	proxyConfig, err := config.NewProxyConfigFromSecret(proxySecret, k8sUtils)
+	if err != nil {
+		return nil, err
+	}
+	return proxyConfig, nil
 }
 
 func TestNewProxy(t *testing.T) {

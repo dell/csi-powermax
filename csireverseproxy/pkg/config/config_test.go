@@ -259,8 +259,24 @@ func TestProxyConfig_UpdateCertsAndCredentials(t *testing.T) {
 		return
 	}
 	k8sUtils := k8smock.Init()
-	serverSecret, _ := k8sUtils.CreateNewCredentialSecret("powermax-secret")
-	proxySecret, _ := k8sUtils.CreateNewCredentialSecret("proxy-secret")
+	_, err = k8sUtils.CreateNewCredentialSecret("powermax-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverSecret, err := k8sUtils.GetSecretFromSecretName("powermax-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = k8sUtils.CreateNewCredentialSecret("proxy-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxySecret, err := k8sUtils.GetSecretFromSecretName("powermax-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	serverSecret.Data["username"] = []byte("new-username")
 	proxySecret.Data["username"] = []byte("new-username")
 	certSecret, _ := k8sUtils.CreateNewCertSecret("secret-cert")
@@ -399,7 +415,7 @@ func TestReadConfigFromSecret(t *testing.T) {
 	setReverseProxyUseSecret(true)
 	proxySecret, err := readProxySecret()
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Error(err)
 		return
 	}
 	fmt.Printf("%v", proxySecret)
