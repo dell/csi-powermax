@@ -54,7 +54,7 @@ func Test_CreateKubeClientSet(t *testing.T) {
 		{
 			name:       "when kubeconfig does not exist",
 			kubeConfig: kubeconfigFilepath,
-			before: func(filepath string) error {
+			before: func(_ string) error {
 				// intentionally do not create the temp kubeconfig
 				return nil
 			},
@@ -152,7 +152,7 @@ func TestK8sUtils_GetNodeIPs(t *testing.T) {
 			args: args{
 				nodeID: "node1",
 			},
-			before: func(t test) error { return nil },
+			before: func(_ test) error { return nil },
 			after: func(t test) {
 				t.fields.KubernetesClient = nil
 			},
@@ -260,7 +260,7 @@ func TestK8sUtils_GetNodeLabels(t *testing.T) {
 				KubernetesClient: &KubernetesClient{ClientSet: fake.NewClientset()},
 			},
 			args:   args{nodeFullName: "node1"},
-			before: func(tt test) error { return nil },
+			before: func(_ test) error { return nil },
 			after: func(tt test) {
 				tt.fields.KubernetesClient = nil
 			},
@@ -396,7 +396,7 @@ func Test_LeaderElection(t *testing.T) {
 				clientSet: fake.NewClientset(),
 				lockName:  "driver-csi-powermax-dellemc-com",
 				namespace: "powermax",
-				runFunc: func(ctx context.Context) {
+				runFunc: func(_ context.Context) {
 					t.Log("leader is elected and run func is running")
 					testCh <- true
 				},
@@ -453,6 +453,6 @@ preferences: {}
 users:
 - name: admin`
 
-	err := os.WriteFile(filepath, []byte(kubeconfig), 0o777)
+	err := os.WriteFile(filepath, []byte(kubeconfig), 0o600)
 	return err
 }
