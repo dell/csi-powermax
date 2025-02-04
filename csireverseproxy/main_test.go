@@ -108,7 +108,6 @@ func startTestServer(config string) error {
 	} else {
 		log.Infof("Reverse proxy reading mounted config map")
 		os.Setenv(common.EnvReverseProxyUseSecret, "false")
-		//os.Setenv(common.EnvPowermaxConfigPath, common.TempConfigDir+"/"+"sa-config-test-main.yaml")
 		err := createTempConfig()
 		if err != nil {
 			return err
@@ -594,13 +593,13 @@ func SecretHandlerTest(t *testing.T) {
 
 	secret.ManagementServerConfig[0].Password = "test-password"
 	err = writeYAMLConfig(secret, tmpSAConfigFile, common.TempConfigDir)
-	// sleep for 10 seconds to allow the secret to be updated
-	time.Sleep(10 * time.Second)
+	// sleep for 1 seconds to allow the secret to be updated
+	time.Sleep(1 * time.Second)
 
 	secret.ManagementServerConfig[0].Password = "password"
 	err = writeYAMLConfig(secret, tmpSAConfigFile, common.TempConfigDir)
-	// sleep for 10 seconds to allow the secret to be updated
-	time.Sleep(10 * time.Second)
+	// sleep for 1 seconds to allow the secret to be updated
+	time.Sleep(1 * time.Second)
 }
 
 // Tests the params configmap handler of reverseproxy, needs a running server
@@ -620,14 +619,14 @@ func CMParamsHandlerTest(t *testing.T) {
 	cmp.LogFormat = "json"
 	cmp.LogLevel = "debug"
 	err = writeYAMLConfig(cmp, paramsConfigMapFile, common.TestConfigDir)
-	// sleep for 10 seconds to allow the configmap to be updated
-	time.Sleep(10 * time.Second)
+	// sleep for 1 seconds to allow the configmap to be updated
+	time.Sleep(1 * time.Second)
 
 	cmp.LogFormat = "TEXT"
 	cmp.LogLevel = "info"
 	err = writeYAMLConfig(cmp, paramsConfigMapFile, common.TempConfigDir)
-	// sleep for 10 seconds to allow the configmap to be updated
-	time.Sleep(10 * time.Second)
+	// sleep for 1 seconds to allow the configmap to be updated
+	time.Sleep(1 * time.Second)
 }
 
 // Tests the configmap handler, needs a running server
@@ -647,13 +646,13 @@ func CMHandlerTest(t *testing.T) {
 
 	cm.Config.ManagementServerConfig[0].ArrayCredentialSecret = "test-secret"
 	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
-	// sleep for 10 seconds to allow the configmap to be updated
-	time.Sleep(10 * time.Second)
+	// sleep for 1 seconds to allow the configmap to be updated
+	time.Sleep(1 * time.Second)
 
 	cm.Config.ManagementServerConfig[0].ArrayCredentialSecret = "proxy-secret-1"
 	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
-	// sleep for 10 seconds to allow the configmap to be updated
-	time.Sleep(10 * time.Second)
+	// sleep for 1 seconds to allow the configmap to be updated
+	time.Sleep(1 * time.Second)
 
 }
 
