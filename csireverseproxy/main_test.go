@@ -593,11 +593,17 @@ func SecretHandlerTest(t *testing.T) {
 
 	secret.ManagementServerConfig[0].Password = "test-password"
 	err = writeYAMLConfig(secret, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update secret file. (%s)", err.Error())
+	}
 	// sleep for 1 seconds to allow the secret to be updated
 	time.Sleep(1 * time.Second)
 
 	secret.ManagementServerConfig[0].Password = "password"
 	err = writeYAMLConfig(secret, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update secret file. (%s)", err.Error())
+	}
 	// sleep for 1 seconds to allow the secret to be updated
 	time.Sleep(1 * time.Second)
 }
@@ -619,12 +625,18 @@ func CMParamsHandlerTest(t *testing.T) {
 	cmp.LogFormat = "json"
 	cmp.LogLevel = "debug"
 	err = writeYAMLConfig(cmp, paramsConfigMapFile, common.TestConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update config map params file. (%s)", err.Error())
+	}
 	// sleep for 1 seconds to allow the configmap to be updated
 	time.Sleep(1 * time.Second)
 
 	cmp.LogFormat = "TEXT"
 	cmp.LogLevel = "info"
 	err = writeYAMLConfig(cmp, paramsConfigMapFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update config map params file. (%s)", err.Error())
+	}
 	// sleep for 1 seconds to allow the configmap to be updated
 	time.Sleep(1 * time.Second)
 }
@@ -646,11 +658,17 @@ func CMHandlerTest(t *testing.T) {
 
 	cm.Config.ManagementServerConfig[0].ArrayCredentialSecret = "test-secret"
 	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update config map file. (%s)", err.Error())
+	}
 	// sleep for 1 seconds to allow the configmap to be updated
 	time.Sleep(1 * time.Second)
 
 	cm.Config.ManagementServerConfig[0].ArrayCredentialSecret = "proxy-secret-1"
 	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update config map file. (%s)", err.Error())
+	}
 	// sleep for 1 seconds to allow the configmap to be updated
 	time.Sleep(1 * time.Second)
 
