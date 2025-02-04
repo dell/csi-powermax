@@ -84,6 +84,9 @@ const (
 	backupPort                = "9109"
 	skipPrimaryCertValidation = false
 	skipBackupCertValidation  = false
+	mgmtServerUsername        = "admin"
+	mgmtServerPassword        = "password"
+	paramsConfigMapFile       = "config-params.yaml"
 )
 
 var (
@@ -92,19 +95,34 @@ var (
 	httpClient                          *http.Client
 )
 
-func startTestServer() error {
+func startTestServer(config string) error {
 	if server != nil {
 		return nil
 	}
+	var err error
 	k8sUtils := k8smock.Init()
 	os.Setenv(common.EnvInClusterConfig, "true")
 	serverOpts := getServerOpts()
 	serverOpts.ConfigDir = common.TempConfigDir
 	// Create test proxy config and start the server
 	serverOpts.ConfigFileName = tmpSAConfigFile
-	err := createTempConfig()
-	if err != nil {
-		return err
+
+	if config == "secret" {
+		log.Infof("Reverse proxy reading mounted secret")
+		os.Setenv(common.EnvReverseProxyUseSecret, "true")
+		os.Setenv(common.EnvSecretFilePath, common.TempConfigDir+"/"+tmpSAConfigFile)
+		os.Setenv(common.EnvPowermaxConfigPath, common.TestConfigDir+"/"+paramsConfigMapFile)
+		err = createTempSecret()
+		if err != nil {
+			return err
+		}
+	} else {
+		log.Infof("Reverse proxy reading mounted config map")
+		os.Setenv(common.EnvReverseProxyUseSecret, "false")
+		err := createTempConfig()
+		if err != nil {
+			return err
+		}
 	}
 	_, err = k8sUtils.CreateNewCredentialSecret(proxySecretName)
 	if err != nil {
@@ -229,6 +247,7 @@ func stopServers() {
 	}
 	if server != nil {
 		server.SigChan <- syscall.SIGHUP
+		server = nil
 	}
 }
 
@@ -244,6 +263,34 @@ func readYAMLConfig(filename, fileDir string) (config.ProxyConfigMap, error) {
 		return configmap, err
 	}
 	return configmap, nil
+}
+
+func readYAMLConfigParams(filename, fileDir string) (config.ParamsConfigMap, error) {
+	configmap := config.ParamsConfigMap{}
+	file := filepath.Join(fileDir, filename)
+	yamlFile, err := os.ReadFile(file)
+	if err != nil {
+		return configmap, err
+	}
+	err = yaml.Unmarshal(yamlFile, &configmap)
+	if err != nil {
+		return configmap, err
+	}
+	return configmap, nil
+}
+
+func readYAMLSecret(filename, fileDir string) (config.ProxySecret, error) {
+	secret := config.ProxySecret{}
+	file := filepath.Join(fileDir, filename)
+	yamlFile, err := os.ReadFile(file)
+	if err != nil {
+		return secret, err
+	}
+	err = yaml.Unmarshal(yamlFile, &secret)
+	if err != nil {
+		return secret, err
+	}
+	return secret, nil
 }
 
 func writeYAMLConfig(val interface{}, fileName, fileDir string) error {
@@ -262,15 +309,34 @@ func createTempConfig() error {
 		return err
 	}
 
-	filename := tmpSAConfigFile
-	proxyConfigMap.Port = "2222"
+	proxyConfigMap.Port = common.DefaultPort
 	// Create a ManagementServerConfig
 	tempMgmtServerConfig := createTempManagementServers()
 	proxyConfigMap.Config.ManagementServerConfig = tempMgmtServerConfig
 	// Create a StorageArrayConfig
 	tempStorageArrayConfig := createTempStorageArrays()
 	proxyConfigMap.Config.StorageArrayConfig = tempStorageArrayConfig
-	err = writeYAMLConfig(proxyConfigMap, filename, common.TempConfigDir)
+	err = writeYAMLConfig(proxyConfigMap, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		log.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
+	}
+	return err
+}
+
+func createTempSecret() error {
+	proxySecret, err := readYAMLSecret(common.TestSecretFileName, common.TestConfigDir)
+	if err != nil {
+		log.Fatalf("Failed to read secret (%s)", err.Error())
+		return err
+	}
+
+	// Create a ManagementServerConfig
+	tempMgmtServerConfig := createTempManagementServers()
+	proxySecret.ManagementServerConfig = tempMgmtServerConfig
+	// Create a StorageArrayConfig
+	tempStorageArrayConfig := createTempStorageArrays()
+	proxySecret.StorageArrayConfig = tempStorageArrayConfig
+	err = writeYAMLConfig(proxySecret, tmpSAConfigFile, common.TempConfigDir)
 	if err != nil {
 		log.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
 	}
@@ -286,36 +352,58 @@ func createTempStorageArrays() []config.StorageArrayConfig {
 			ProxyCredentialSecrets: []string{proxySecretName},
 		},
 	}
+
+	if getEnv(common.EnvReverseProxyUseSecret, "false") == "false" {
+		for i := 0; i < len(tempStorageArrayConfig); i++ {
+			tempStorageArrayConfig[i].ProxyCredentialSecrets = []string{proxySecretName}
+		}
+	}
 	return tempStorageArrayConfig
 }
 
 func createTempManagementServers() []config.ManagementServerConfig {
 	// Create a primary management server
 	primaryMgmntServer := config.ManagementServerConfig{
-		ArrayCredentialSecret:     proxySecretName,
 		Endpoint:                  getURL(primaryPort, "/"),
 		SkipCertificateValidation: skipPrimaryCertValidation,
 	}
-	if !skipPrimaryCertValidation {
+
+	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
+		primaryMgmntServer.SkipCertificateValidation = true
+	} else {
 		primaryMgmntServer.CertSecret = primaryCertSecretName
 	}
+
 	// Create a backup management server
 	backupMgmntServer := config.ManagementServerConfig{
-		ArrayCredentialSecret:     proxySecretName,
 		Endpoint:                  getURL(backupPort, "/"),
 		SkipCertificateValidation: skipBackupCertValidation,
 	}
-	if !skipBackupCertValidation {
-		backupMgmntServer.CertSecret = backupCertSecretName
+
+	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
+		backupMgmntServer.SkipCertificateValidation = true
+	} else {
+		backupMgmntServer.CertSecret = primaryCertSecretName
+	}
+
+	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
+		primaryMgmntServer.Username = mgmtServerUsername
+		primaryMgmntServer.Password = mgmtServerPassword
+		backupMgmntServer.Username = mgmtServerUsername
+		backupMgmntServer.Password = mgmtServerPassword
+	} else {
+		primaryMgmntServer.ArrayCredentialSecret = proxySecretName
+		backupMgmntServer.ArrayCredentialSecret = proxySecretName
 	}
 
 	tempMgmtServerConfig := []config.ManagementServerConfig{primaryMgmntServer, backupMgmntServer}
 	return tempMgmtServerConfig
 }
 
-func TestMain(m *testing.M) {
-	status := 0
+// Initializes test setup, sets up managements server, and starts proxy server.
+func InitializeSetup(config string) {
 	var err error
+
 	// Start the mock server
 	log.Info("Creating primary mock server...")
 	primaryMockServer, err = createMockServer(primaryPort)
@@ -334,7 +422,7 @@ func TestMain(m *testing.M) {
 	log.Infof("Backup mock server listening on %s", backupMockServer.server.URL)
 	// Start proxy server and other services
 	log.Info("Starting proxy server...")
-	err = startTestServer()
+	err = startTestServer(config)
 	if err != nil {
 		log.Fatalf("Failed to start proxy server. (%s)", err.Error())
 		stopServers()
@@ -347,27 +435,61 @@ func TestMain(m *testing.M) {
 		stopServers()
 		os.Exit(1)
 	}
-
 	log.Info("Proxy server started successfully")
-	if st := m.Run(); st > status {
-		status = st
-	}
+}
+
+func TearDownSetup() {
 	log.Info("Stopping the mock and proxy servers")
 	stopServers()
-	log.Info("Removing the certs")
-	err = utils.RemoveTempFiles()
+	log.Info("Removing the certs, temp files")
+	err := utils.RemoveTempFiles()
 	if err != nil {
 		log.Fatalln(err.Error())
 		os.Exit(1)
 	}
-	os.Exit(status)
+	log.Info("Proxy and mock servers stopped successfully")
+}
+
+func TestMultipleRuns(t *testing.T) {
+	// Remove any files left over from previous runs to ensure clean run
+	TearDownSetup()
+
+	// Run the tests multiple times with different configurations (secret or configmap)
+	t.Run("TestSecretCase", func(t *testing.T) {
+		log.Infof("#### Running tests with secret ####")
+		os.Setenv(common.EnvReverseProxyUseSecret, "true")
+		InitializeSetup("secret")
+		defer TearDownSetup()
+
+		// Run tests
+		SAHTTPRequestTest(t)
+		ServerSAEventHandlerTest(t)
+		SecretHandlerTest(t)
+		CMHandlerTest(t)
+		CMParamsHandlerTest(t)
+		log.Infof("#### END Running tests with secret ####")
+	})
+
+	t.Run("TestConfigMapCase", func(t *testing.T) {
+		log.Infof("#### Running tests with configmap ####")
+		InitializeSetup("configmap")
+		defer TearDownSetup()
+		os.Setenv(common.EnvReverseProxyUseSecret, "false")
+
+		// Run tests
+		SAHTTPRequestTest(t)
+		ServerSAEventHandlerTest(t)
+		SecretHandlerTest(t)
+		CMHandlerTest(t)
+		CMParamsHandlerTest(t)
+		log.Infof("#### END Running tests with configmap ####")
+	})
 }
 
 func serverReady() error {
 	client := getHTTPClient()
 
 	url := getURL(server.Port, "/")
-
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -398,8 +520,13 @@ func serverReady() error {
 	return nil
 }
 
-func TestServer_Start(t *testing.T) {
-	err := startTestServer()
+func TestServerStart(t *testing.T) {
+	config := "configmap"
+	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
+		config = "secret"
+	}
+
+	err := startTestServer(config)
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -475,8 +602,18 @@ func TestServer_EventHandler(t *testing.T) {
 	}
 }
 
-func TestServer_SAEventHandler(t *testing.T) {
+// Tests the server SA event handler, needs a running server.
+// For tests marked as needs a running server, the following can be used to make them run independently
+// 1. Rename the test function name to begin with Test
+// 2. call InitializeSetup with the parameter "secret" or "configmap"
+// 3. call TearDownSetup at the end (or defer)
+func ServerSAEventHandlerTest(t *testing.T) {
+	log.Infof("Start ServerSAEventHandlerTest")
 	k8sUtils := k8smock.Init()
+	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
+		return
+	}
+
 	oldProxySecret := server.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -514,9 +651,111 @@ func TestServer_SAEventHandler(t *testing.T) {
 	} else {
 		fmt.Println("Secret Reverted Successfully")
 	}
+
+	log.Infof("End ServerSAEventHandlerTest")
 }
 
-func TestSAHTTPRequest(t *testing.T) {
+// Tests the secret handler, needs a running server
+func SecretHandlerTest(t *testing.T) {
+	log.Infof("Start SecretHandlerTest")
+	defer log.Infof("End SecretHandlerTest")
+
+	if os.Getenv(common.EnvReverseProxyUseSecret) == "false" {
+		log.Infof("SecretHandlerTest: Skipping test for config map case")
+		return
+	}
+	secret, err := readYAMLSecret(tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Error("Failed to read config")
+		return
+	}
+
+	secret.ManagementServerConfig[0].Password = "test-password"
+	err = writeYAMLConfig(secret, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update secret file. (%s)", err.Error())
+	}
+	// sleep for 1 seconds to allow the secret to be updated
+	time.Sleep(1 * time.Second)
+
+	secret.ManagementServerConfig[0].Password = "password"
+	err = writeYAMLConfig(secret, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update secret file. (%s)", err.Error())
+	}
+	// sleep for 1 seconds to allow the secret to be updated
+	time.Sleep(1 * time.Second)
+}
+
+// Tests the params configmap handler of reverseproxy, needs a running server
+func CMParamsHandlerTest(t *testing.T) {
+	log.Infof("Start CMParamsHandlerTest")
+	defer log.Infof("End CMParamsHandlerTest")
+	if os.Getenv(common.EnvReverseProxyUseSecret) == "false" {
+		log.Infof("CMParamsHandlerTest: Skipping test for config map case")
+		return
+	}
+	cmp, err := readYAMLConfigParams(paramsConfigMapFile, common.TestConfigDir)
+	if err != nil {
+		t.Error("Failed to read config")
+		return
+	}
+
+	cmp.LogFormat = "json"
+	cmp.LogLevel = "debug"
+	err = writeYAMLConfig(cmp, paramsConfigMapFile, common.TestConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update config map params file. (%s)", err.Error())
+	}
+	// sleep for 1 seconds to allow the configmap to be updated
+	time.Sleep(1 * time.Second)
+
+	cmp.LogFormat = "TEXT"
+	cmp.LogLevel = "info"
+	err = writeYAMLConfig(cmp, paramsConfigMapFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update config map params file. (%s)", err.Error())
+	}
+	// sleep for 1 seconds to allow the configmap to be updated
+	time.Sleep(1 * time.Second)
+}
+
+// Tests the configmap handler, needs a running server
+func CMHandlerTest(t *testing.T) {
+	log.Infof("Start CMHandlerTest")
+	defer log.Infof("End CMHandlerTest")
+
+	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
+		log.Infof("CMHandlerTest: Skipping test for secret case")
+		return
+	}
+	cm, err := readYAMLConfig(tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Error("Failed to read config")
+		return
+	}
+
+	cm.Config.ManagementServerConfig[0].ArrayCredentialSecret = "test-secret"
+	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update config map file. (%s)", err.Error())
+	}
+	// sleep for 1 seconds to allow the configmap to be updated
+	time.Sleep(1 * time.Second)
+
+	cm.Config.ManagementServerConfig[0].ArrayCredentialSecret = "proxy-secret-1"
+	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update config map file. (%s)", err.Error())
+	}
+	// sleep for 1 seconds to allow the configmap to be updated
+	time.Sleep(1 * time.Second)
+}
+
+// Tests the http request, needs a running server
+func SAHTTPRequestTest(t *testing.T) {
+	log.Infof("Start SAHTTPRequestTest")
+	defer log.Infof("End SAHTTPRequestTest")
 	// make a request for version
 	path := utils.Prefix + "/version"
 	resp, err := doHTTPRequest(server.Port, path)
