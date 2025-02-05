@@ -56,7 +56,7 @@ func driverRun() error {
 		lockName := fmt.Sprintf("driver-%s", driverName)
 		k8sClientSet, err := getKubeClientSetFunc(*flags.kubeconfig)
 		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "failed to kube clientset for leader election: %v", err)
+			_, _ = fmt.Fprintf(os.Stderr, "failed to create kube clientset for leader election: %v", err)
 			return err
 		}
 		// Attempt to become leader and start the driver
