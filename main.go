@@ -26,40 +26,76 @@ import (
 	"github.com/dell/csi-powermax/v2/provider"
 	"github.com/dell/csi-powermax/v2/service"
 	"github.com/dell/gocsi"
+	"k8s.io/client-go/kubernetes"
 )
+
+var flags struct {
+	enableLeaderElection    *bool
+	leaderElectionNamespace *string
+	kubeconfig              *string
+}
 
 // main is ignored when this package is built as a go plug-in
 func main() {
+	setEnvsFunc()
+	initFlagsFunc()
+
+	err := driverRun()
+	if err != nil {
+		os.Exit(1)
+	}
+}
+
+func driverRun() error {
+	run := driverRunFunc
+
+	if !*flags.enableLeaderElection {
+		run(context.TODO())
+	} else {
+		driverName := strings.Replace(service.Name, ".", "-", -1)
+		lockName := fmt.Sprintf("driver-%s", driverName)
+		k8sClientSet, err := getKubeClientSetFunc(*flags.kubeconfig)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "failed to kube clientset for leader election: %v", err)
+			return err
+		}
+		// Attempt to become leader and start the driver
+		err = runWithLeaderElectionFunc(k8sClientSet, lockName, *flags.leaderElectionNamespace, run)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "failed to initialize leader election: %v", err)
+			return err
+		}
+	}
+
+	return nil
+}
+
+var driverRunFunc = func(ctx context.Context) {
+	gocsi.Run(ctx, service.Name, "A PowerMax Container Storage Interface (CSI) Plugin",
+		usage, provider.New())
+}
+
+var runWithLeaderElectionFunc = func(clientSet kubernetes.Interface, lockName string, namespace string, runFunc func(ctx context.Context)) error {
+	return k8sutils.LeaderElection(clientSet, lockName, namespace, runFunc)
+}
+
+var getKubeClientSetFunc = func(kubeconfigFilepath string) (kubernetes.Interface, error) {
+	return k8sutils.CreateKubeClientSet(kubeconfigFilepath)
+}
+
+var setEnvsFunc = func() {
 	// Always set X_CSI_DEBUG to false irrespective of what user has specified
 	_ = os.Setenv(gocsi.EnvVarDebug, "false")
 	// We always want to enable Request and Response logging (no reason for users to control this)
 	_ = os.Setenv(gocsi.EnvVarReqLogging, "true")
 	_ = os.Setenv(gocsi.EnvVarRepLogging, "true")
-	enableLeaderElection := flag.Bool("leader-election", false, "boolean to enable leader election")
-	leaderElectionNamespace := flag.String("leader-election-namespace", "", "namespace where leader election lease will be created")
-	kubeconfig := flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+}
+
+var initFlagsFunc = func() {
+	flags.enableLeaderElection = flag.Bool("leader-election", false, "boolean to enable leader election")
+	flags.leaderElectionNamespace = flag.String("leader-election-namespace", "", "namespace where leader election lease will be created")
+	flags.kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
 	flag.Parse()
-	run := func(ctx context.Context) {
-		gocsi.Run(ctx, service.Name, "A PowerMax Container Storage Interface (CSI) Plugin",
-			usage, provider.New())
-	}
-	if !*enableLeaderElection {
-		run(context.TODO())
-	} else {
-		driverName := strings.Replace(service.Name, ".", "-", -1)
-		lockName := fmt.Sprintf("driver-%s", driverName)
-		k8sClientSet, err := k8sutils.CreateKubeClientSet(*kubeconfig)
-		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "failed to initialize leader election: %v", err)
-			os.Exit(1)
-		}
-		// Attempt to become leader and start the driver
-		err = k8sutils.LeaderElection(k8sClientSet, lockName, *leaderElectionNamespace, run)
-		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "failed to initialize leader election: %v", err)
-			os.Exit(1)
-		}
-	}
 }
 
 const usage = `    X_CSI_POWERMAX_ENDPOINT
