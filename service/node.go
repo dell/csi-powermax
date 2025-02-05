@@ -718,7 +718,8 @@ func (s *service) NodePublishVolume(
 
 	var symlinkPath string
 	var devicePath string
-	if s.useNVMeTCP || s.arrayTransportProtocolMap[symID] == NvmeTCPTransportProtocol {
+	if s.useNVMeTCP {
+		log.Infof("Inside NVMETCP")
 		symlinkPath, devicePath, err = gofsutil.WWNToDevicePathX(context.Background(), vol.NGUID)
 		if err != nil || symlinkPath == "" {
 			errmsg := fmt.Sprintf("Device path not found for WWN %s: %s", deviceWWN, err)
@@ -726,6 +727,7 @@ func (s *service) NodePublishVolume(
 			return nil, status.Error(codes.NotFound, errmsg)
 		}
 	} else {
+		log.Infof("Not Inside NVMETCP")
 		symlinkPath, devicePath, err = gofsutil.WWNToDevicePathX(context.Background(), deviceWWN)
 		if err != nil || symlinkPath == "" {
 			errmsg := fmt.Sprintf("Device path not found for WWN %s: %s", deviceWWN, err)
