@@ -15,10 +15,10 @@ on:  # yamllint disable-line rule:truthy
           - minor
           - patch
       reverseproxyCheckInput:
-          description: 'Release CSI-ReverseProxy Image'
-          type: boolean
-          default: false
-          required: false
+        description: 'Release CSI-ReverseProxy Image'
+        type: boolean
+        default: false
+        required: false
 jobs:
   csm-release:
     uses: dell/common-github-actions/.github/workflows/csm-release-driver-module.yaml@main
