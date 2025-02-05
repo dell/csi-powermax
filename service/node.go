@@ -719,7 +719,6 @@ func (s *service) NodePublishVolume(
 	var symlinkPath string
 	var devicePath string
 	if s.useNVMeTCP {
-		log.Infof("Inside NVMETCP")
 		symlinkPath, devicePath, err = gofsutil.WWNToDevicePathX(context.Background(), vol.NGUID)
 		if err != nil || symlinkPath == "" {
 			errmsg := fmt.Sprintf("Device path not found for WWN %s: %s", deviceWWN, err)
@@ -727,7 +726,6 @@ func (s *service) NodePublishVolume(
 			return nil, status.Error(codes.NotFound, errmsg)
 		}
 	} else {
-		log.Infof("Not Inside NVMETCP")
 		symlinkPath, devicePath, err = gofsutil.WWNToDevicePathX(context.Background(), deviceWWN)
 		if err != nil || symlinkPath == "" {
 			errmsg := fmt.Sprintf("Device path not found for WWN %s: %s", deviceWWN, err)
@@ -1789,8 +1787,6 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 
 		nodeChroot, _ := csictx.LookupEnv(context.Background(), EnvNodeChroot)
 		if s.useNVMeTCP {
-			// resetOtherProtocols
-
 			// check nvme module availability on the host
 			err = s.setupArrayForNVMeTCP(ctx, symID, validNVMeTCPs, pmaxClient)
 			if err != nil {
@@ -1798,14 +1794,13 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			} else {
 				s.initNVMeTCPConnector(nodeChroot)
 				s.arrayTransportProtocolMap[symID] = NvmeTCPTransportProtocol
+				// resetOtherProtocols
 				s.useFC = false
 				s.useIscsi = false
 			}
 
 		}
 		if s.useFC {
-			// resetOtherProtocols
-
 			formattedFCs := make([]string, 0)
 			for _, initiatorID := range validFCs {
 				elems := strings.Split(initiatorID, ":")
@@ -1818,14 +1813,13 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 				s.initFCConnector(nodeChroot)
 				s.arrayTransportProtocolMap[symID] = FcTransportProtocol
 				isSymConnFC[symID] = true
+				// resetOtherProtocols
 				s.useNVMeTCP = false
 				s.useIscsi = false
 			}
 
 		}
 		if s.useIscsi {
-			// resetOtherProtocols
-
 			err := s.ensureISCSIDaemonStarted()
 			if err != nil {
 				log.Errorf("Failed to start the ISCSI Daemon. Error - %s", err.Error())
@@ -1836,6 +1830,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			} else {
 				s.initISCSIConnector(nodeChroot)
 				s.arrayTransportProtocolMap[symID] = IscsiTransportProtocol
+				// resetOtherProtocols
 				s.useNVMeTCP = false
 				s.useNFS = false
 			}
