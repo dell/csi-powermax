@@ -34,7 +34,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-const kubeconfigFileDir = "./"
+const kubeconfigFileDir = "../../test-config/tmp"
 
 func InitMockK8sUtils(namespace, certDirectory string, inCluster bool, resyncPeriod time.Duration, kubeClient *KubernetesClient) (*K8sUtils, error) {
 
@@ -76,17 +76,21 @@ func TestInitMethods(t *testing.T) {
 
 func TestInit(t *testing.T) {
 
-	err := createTempKubeconfig(kubeconfigFileDir + "config")
+	// Create temp kubeconfig
+	kubeDir := filepath.Join(kubeconfigFileDir, ".kube")
+	kubeFile := filepath.Join(kubeDir, "config")
+	err := os.MkdirAll(kubeDir, 0o700)
+	if err != nil {
+		t.Errorf("Failed to create temp kubeconfig directory. (%s)", err.Error())
+	}
+	err = createTempKubeconfig(kubeFile)
 	if err != nil {
 		t.Errorf("Failed to create temp kubeconfig file. (%s)", err.Error())
 		return
 	}
 	defer func() {
-		removeDir := kubeconfigFileDir + ".kube"
-		fmt.Printf(
-			"removing directory %s", removeDir,
-		)
-		_ = os.RemoveAll(removeDir)
+		fmt.Printf("removing temp kubeconfig directory %s", kubeDir)
+		_ = os.RemoveAll(kubeDir)
 	}()
 
 	tests := []struct {
@@ -635,12 +639,7 @@ func TestStopInformer(t *testing.T) {
 
 // creatTempKubeconfig creates a temporary, fake kubeconfig in the current directory
 // using the given file path.
-func createTempKubeconfig(path string) error {
-	dir := filepath.Dir(path) + "/.kube"
-	err := os.MkdirAll(dir, 0o700)
-	if err != nil {
-		return err
-	}
+func createTempKubeconfig(kubeFilePath string) error {
 	kubeconfig := `clusters:
 - cluster:
     server: https://some.hostname.or.ip:6443
@@ -655,7 +654,7 @@ preferences: {}
 users:
 - name: admin`
 
-	filename := filepath.Join(dir, filepath.Base(path))
-	err = os.WriteFile(filename, []byte(kubeconfig), 0o600)
+	//filename := filepath.Join(dir, filepath.Base(path))
+	err := os.WriteFile(kubeFilePath, []byte(kubeconfig), 0o600)
 	return err
 }
