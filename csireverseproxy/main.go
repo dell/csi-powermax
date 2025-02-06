@@ -359,10 +359,10 @@ func run(ctx context.Context) {
 }
 
 func main() {
-	var kubeClient k8sutils.KubernetesClient
+
 	if isLEEnabled := getEnv(common.EnvIsLeaderElectionEnabled, "false"); isLEEnabled == "true" {
 		isInCluster := getEnv(common.EnvInClusterConfig, "false")
-		kubeClient, err := k8sutils.Init(common.DefaultNameSpace, common.DefaultCertDirName, isInCluster == "true", time.Second*30, &kubeClient)
+		kubeClient, err := k8sutils.Init(common.DefaultNameSpace, common.DefaultCertDirName, isInCluster == "true", time.Second*30, &k8sutils.KubernetesClient{})
 		if err != nil {
 			log.Fatalf("Failed to create kube client: [%s]", err.Error())
 		}
