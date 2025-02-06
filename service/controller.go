@@ -2223,7 +2223,7 @@ func getMVLockKey(symID, tgtMaskingViewID string) string {
 // on array is NVMe or not
 func (s *service) IsNodeNVMe(ctx context.Context, symID, nodeID string, pmaxClient pmax.Pmax) (bool, error) {
 	nvmeTCPHostID, _, nvmeTCPMaskingViewID := s.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
-	if s.opts.TransportProtocol == NvmeTCPTransportProtocol || s.opts.TransportProtocol == "" {
+	if s.opts.TransportProtocol == NvmeTCPTransportProtocol || s.useNVMeTCP {
 		log.Debug("Preferred transport protocol is set to NVME/TCP")
 		// Check if NVME MV exists
 		_, nvmeMvErr := pmaxClient.GetMaskingViewByID(ctx, symID, nvmeTCPMaskingViewID)
