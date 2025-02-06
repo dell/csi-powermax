@@ -18,40 +18,208 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"revproxy/v2/pkg/common"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
 )
 
-func InitMockK8sUtils(namespace, certDirectory string, inCluster bool, resyncPeriod time.Duration) (*K8sUtils, error) {
-	if k8sUtils != nil {
-		return k8sUtils, nil
-	}
-	informerFactory := informers.NewSharedInformerFactoryWithOptions(fake.NewSimpleClientset(), resyncPeriod, informers.WithNamespace(namespace))
+const kubeconfigFileDir = "./"
 
+func InitMockK8sUtils(namespace, certDirectory string, inCluster bool, resyncPeriod time.Duration, kubeClient *KubernetesClient) (*K8sUtils, error) {
+
+	kubeClient.Clientset = fake.NewSimpleClientset()
+
+	informerFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient.Clientset, resyncPeriod, informers.WithNamespace(namespace))
 	secretInformer := informerFactory.Core().V1().Secrets()
 
 	k8sUtils = &K8sUtils{
-		KubernetesClient: &KubernetesClient{
-			Clientset: fake.NewSimpleClientset(),
+		KubernetesClient: *kubeClient,
+		InformerFactory:  informerFactory,
+		SecretInformer:   secretInformer,
+		Namespace:        namespace,
+		CertDirectory:    certDirectory,
+		stopCh:           make(chan struct{}),
+		TimeNowFunc: func() int64 { // Mock the timestamp
+			return 1700000000000000000 // Fixed timestamp for testing
 		},
-		InformerFactory: informerFactory,
-		SecretInformer:  secretInformer,
-		Namespace:       namespace,
-		CertDirectory:   certDirectory,
-		stopCh:          make(chan struct{}),
-	}
-
-	k8sUtils.TimeNowFunc = func() int64 { // Mock the timestamp
-		return 1700000000000000000 // Fixed timestamp for testing
 	}
 	return k8sUtils, nil
+}
+
+func TestInitMethods(t *testing.T) {
+	client := &KubernetesClient{}
+	client.InitMethods()
+
+	if client.NewForConfigFunc == nil {
+		t.Errorf("NewForConfigFunc not set")
+	}
+
+	if client.RestForConfigFunc == nil {
+		t.Errorf("RestForConfigFunc not set")
+	}
+
+	if client.GetPathFromEnvFunc == nil {
+		t.Errorf("GetPathFromEnvFunc not set")
+	}
+}
+
+func TestInit(t *testing.T) {
+
+	err := createTempKubeconfig(kubeconfigFileDir + "config")
+	if err != nil {
+		t.Errorf("Failed to create temp kubeconfig file. (%s)", err.Error())
+		return
+	}
+	defer func() {
+		removeDir := kubeconfigFileDir + ".kube"
+		fmt.Printf(
+			"removing directory %s", removeDir,
+		)
+		_ = os.RemoveAll(removeDir)
+	}()
+
+	tests := []struct {
+		name        string
+		client      KubernetesClient
+		utils       *K8sUtils
+		inCluster   bool
+		createError error
+		expectError bool
+	}{
+		{
+			name:        "Test utils not nil",
+			client:      KubernetesClient{}, //Does not matter for this test
+			inCluster:   true,
+			utils:       &K8sUtils{},
+			createError: nil,
+			expectError: false,
+		},
+		{
+			name:        "Successful in cluster",
+			inCluster:   true,
+			utils:       nil,
+			createError: nil,
+			expectError: false,
+			client: KubernetesClient{
+				Clientset:         fake.NewSimpleClientset(),
+				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
+				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+					return fake.NewSimpleClientset(), nil
+				},
+				GetPathFromEnvFunc: func() string { return kubeconfigFileDir },
+			},
+		},
+		{
+			name:  "Successful out of cluster",
+			utils: nil,
+			client: KubernetesClient{
+				Clientset:         fake.NewSimpleClientset(),
+				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
+				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+					return fake.NewSimpleClientset(), nil
+				},
+				GetPathFromEnvFunc: func() string { return kubeconfigFileDir },
+			},
+			inCluster:   false,
+			createError: nil,
+			expectError: false,
+		},
+		{
+			name:  "Failure in cluster fail rest.InClusterConfig",
+			utils: nil,
+			client: KubernetesClient{
+				Clientset:         fake.NewSimpleClientset(),
+				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, errors.Errorf("rest.InConfig failed") },
+				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+					return fake.NewSimpleClientset(), nil
+				},
+				GetPathFromEnvFunc: func() string { return kubeconfigFileDir },
+			},
+			inCluster:   true,
+			createError: nil,
+			expectError: true,
+		},
+		{
+			name:  "Failure in cluster fail kubernetes.newForConfig",
+			utils: nil,
+			client: KubernetesClient{
+				Clientset:         fake.NewSimpleClientset(),
+				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
+				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+					return fake.NewSimpleClientset(), errors.Errorf("kubernetes.NewForConfig failed")
+				},
+				GetPathFromEnvFunc: func() string { return kubeconfigFileDir },
+			},
+			inCluster:   true,
+			createError: nil,
+			expectError: true,
+		},
+		{
+			name:  "Failure out of cluster fail kubernetes.newForConfig",
+			utils: nil,
+			client: KubernetesClient{
+				Clientset:         fake.NewSimpleClientset(),
+				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
+				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+					return fake.NewSimpleClientset(), errors.Errorf("kubernetes.NewForConfig failed")
+				},
+				GetPathFromEnvFunc: func() string { return kubeconfigFileDir },
+			},
+			inCluster:   false,
+			createError: nil,
+			expectError: true,
+		},
+		{
+			name:  "Failure out of cluster no kubeconfig",
+			utils: nil,
+			client: KubernetesClient{
+				Clientset:         fake.NewSimpleClientset(),
+				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
+				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+					return fake.NewSimpleClientset(), errors.Errorf("kubeconfig not found")
+				},
+				GetPathFromEnvFunc: func() string { return "" },
+			},
+			inCluster:   false,
+			createError: nil,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			k8sUtils = tt.utils // Resets the k8sUtils global for all except the first one
+			_, err := Init(common.DefaultNameSpace, "/tmp/certs", tt.inCluster, time.Minute, &tt.client)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected an error but got none")
+				}
+				if k8sUtils != nil {
+					t.Errorf("expected k8sUtils to be nil but got %v", k8sUtils)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("did not expect an error but got %v", err)
+				}
+				if k8sUtils == nil {
+					t.Errorf("expected k8sUtils to be non-nil but got nil")
+				}
+			}
+
+		})
+	}
 }
 
 func TestGetKubeConfigPathFromEnv(t *testing.T) {
@@ -94,75 +262,202 @@ func TestGetKubeConfigPathFromEnv(t *testing.T) {
 	}
 }
 
-func TestGetSecretAndCredentials(t *testing.T) {
-	k8sutils, _ := InitMockK8sUtils(common.DefaultNameSpace, "/tmp/certs", false, time.Second)
+func TestGetCredentialsFromSecret(t *testing.T) {
+	mockUtils, _ := InitMockK8sUtils(common.DefaultNameSpace, "/tmp/certs", false, time.Second, &KubernetesClient{})
+
+	tests := []struct {
+		name     string
+		utils    *K8sUtils
+		secret   *corev1.Secret
+		wantCred *common.Credentials
+		wantErr  bool
+	}{
+		{
+			name:  "GetSecret - valid secret",
+			utils: mockUtils,
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-secret",
+				},
+				Data: map[string][]byte{
+					"cert":     []byte("test-cert"),
+					"username": []byte("test-username"),
+					"password": []byte("test-password"),
+				},
+			},
+			wantCred: &common.Credentials{UserName: "test-username", Password: "test-password"},
+			wantErr:  false,
+		},
+		{
+			name:    "GetSecret-Invalid secret",
+			utils:   mockUtils,
+			wantErr: true,
+		},
+		{
+			name:  "GetSecret-No username secret",
+			utils: mockUtils,
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-secret",
+				},
+				Data: map[string][]byte{
+					"cert": []byte("test-cert"),
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cred, err := tt.utils.GetCredentialsFromSecret(tt.secret)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetCredentialsFromSecret error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			if !reflect.DeepEqual(cred, tt.wantCred) {
+				t.Errorf("GetCredentialsFromSecret = want %v, got %v", tt.wantCred, cred)
+			}
+		})
+	}
+}
+
+func TestGetCredentialsFromSecretName(t *testing.T) {
+	mockUtils, _ := InitMockK8sUtils(common.DefaultNameSpace, "/tmp/certs", false, time.Second, &KubernetesClient{})
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-secret",
+		},
+		Data: map[string][]byte{
+			"cert":     []byte("test-cert"),
+			"username": []byte("test-username"),
+			"password": []byte("test-password"),
+		},
+	}
+
+	secretNoUserName := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-secret-no-username",
+		},
+		Data: map[string][]byte{
+			"cert": []byte("test-cert"),
+		},
+	}
+	_, err := mockUtils.KubernetesClient.Clientset.CoreV1().Secrets(common.DefaultNameSpace).Create(context.TODO(), secret, metav1.CreateOptions{})
+	if err != nil {
+		t.Errorf("failed to create mock secret. error: %s", err.Error())
+	}
+
+	_, err = mockUtils.KubernetesClient.Clientset.CoreV1().Secrets(common.DefaultNameSpace).Create(context.TODO(), secretNoUserName, metav1.CreateOptions{})
+	if err != nil {
+		t.Errorf("failed to create mock secret. error: %s", err.Error())
+	}
+
+	tests := []struct {
+		name       string
+		utils      *K8sUtils
+		secretName string
+		wantCred   *common.Credentials
+		wantErr    bool
+	}{
+		{
+			name:       "GetSecret-Vvalid secret",
+			utils:      mockUtils,
+			secretName: "test-secret",
+			wantCred:   &common.Credentials{UserName: "test-username", Password: "test-password"},
+			wantErr:    false,
+		},
+		{
+			name:       "GetSecret-Invalid secret",
+			utils:      mockUtils,
+			secretName: "invalid-secret",
+			wantErr:    true,
+		},
+		{
+			name:       "GetSecret-No username secret",
+			utils:      mockUtils,
+			secretName: "test-secret-no-username",
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cred, err := tt.utils.GetCredentialsFromSecretName(tt.secretName)
+
+			//Create the secret
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetCredentialsFromSecretName error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			if !reflect.DeepEqual(cred, tt.wantCred) {
+				t.Errorf("GetCredentialsFromSecretName = want %v, got %v", tt.wantCred, cred)
+			}
+		})
+	}
+}
+
+func TestGetCertFileFromSecret(t *testing.T) {
+	mockUtils, _ := InitMockK8sUtils(common.DefaultNameSpace, "/tmp/certs", false, time.Second, &KubernetesClient{})
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-secret",
+		},
+		Data: map[string][]byte{
+			"cert":     []byte("test-cert"),
+			"username": []byte("test-username"),
+			"password": []byte("test-password"),
+		},
+	}
+	_, err := mockUtils.KubernetesClient.Clientset.CoreV1().Secrets(common.DefaultNameSpace).Create(context.TODO(), secret, metav1.CreateOptions{})
+	if err != nil {
+		t.Errorf("failed to create mock secret. error: %s", err.Error())
+	}
 
 	tests := []struct {
 		name     string
 		utils    *K8sUtils
 		secret   *corev1.Secret
 		wantCert string
-		wantCred *common.Credentials
 		wantErr  bool
+		credName string
 	}{
 		{
-			name:  "GetCertFileFromSecret - valid secret",
-			utils: k8sutils,
-			secret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-secret",
-				},
-				Data: map[string][]byte{
-					"cert":     []byte("test-cert"),
-					"username": []byte("test-username"),
-					"password": []byte("test-password"),
-				},
-			},
+			name:     "GetCertFileFromSecret-Valid secret",
+			utils:    mockUtils,
+			secret:   secret,
 			wantCert: "/tmp/certs/test-secret-proxy-1700000000000000000.pem",
-			wantCred: &common.Credentials{UserName: "test-username", Password: "test-password"},
 			wantErr:  false,
 		},
 		{
-			name:    "GetCertFileFromSecret - invalid secret",
-			utils:   k8sutils,
+			name:    "GetCertFileFromSecret-Invalid secret",
+			utils:   mockUtils,
+			secret:  nil,
 			wantErr: true,
 		},
-		{
-			name:  "GetCredentialsFromSecret - valid secret",
-			utils: k8sutils,
-			secret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-secret",
-				},
-				Data: map[string][]byte{
-					"username": []byte("test-username"),
-					"password": []byte("test-password"),
-				},
-			},
-			wantCred: &common.Credentials{
-				UserName: "test-username",
-				Password: "test-password",
-			},
-			wantErr:  false,
-			wantCert: "/tmp/certs/test-secret-proxy-1700000000000000000.pem",
-		},
-		{
-			name:    "GetCredentialsFromSecret - invalid secret",
-			utils:   k8sutils,
-			wantErr: true,
-		},
-		//Add more test cases if needed
 	}
 
 	for _, tt := range tests {
+
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up any necessary test fixtures
-			os.Mkdir("/tmp/certs", 0o700)
-
+			err := os.MkdirAll("/tmp/certs", 0o700)
+			if err != nil {
+				t.Errorf("Error creating certs directory: %v", err)
+			}
 			// Call the relevant methods of the K8sUtils struct
 			cert, err := tt.utils.GetCertFileFromSecret(tt.secret)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("GetCertFileFromSecret() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("GetCertFileFromSecret error = %v, wantErr %v", err, tt.wantErr)
 			}
 
 			if tt.wantErr {
@@ -170,103 +465,66 @@ func TestGetSecretAndCredentials(t *testing.T) {
 			}
 
 			if cert != tt.wantCert {
-				t.Errorf("GetCertFileFromSecret() = %v, want %v", cert, tt.wantCert)
+				t.Errorf("GetCertFileFromSecret = want %v, got %v", tt.wantCert, cert)
 			}
-
-			cred, err := tt.utils.GetCredentialsFromSecret(tt.secret)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetCredentialsFromSecret() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if tt.wantErr {
-				return
-			}
-
-			if !reflect.DeepEqual(cred, tt.wantCred) {
-				t.Errorf("GetCredentialsFromSecret() = %v, want %v", cred, tt.wantCred)
-			}
-
-			// Perform any additional assertions or cleanup
+			os.RemoveAll("/tmp/certs")
 		})
 	}
 }
 
-func TestGetSecretAndCredentialsByName(t *testing.T) {
-	k8sutils, _ := InitMockK8sUtils(common.DefaultNameSpace, "/tmp/certs", false, time.Second)
+func TestGetCertFileFromSecretName(t *testing.T) {
+	mockUtils, _ := InitMockK8sUtils(common.DefaultNameSpace, "/tmp/certs", false, time.Second, &KubernetesClient{})
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-secret",
+		},
+		Data: map[string][]byte{
+			"cert":     []byte("test-cert"),
+			"username": []byte("test-username"),
+			"password": []byte("test-password"),
+		},
+	}
+	_, err := mockUtils.KubernetesClient.Clientset.CoreV1().Secrets(common.DefaultNameSpace).Create(context.TODO(), secret, metav1.CreateOptions{})
+	if err != nil {
+		t.Errorf("failed to create mock secret. error: %s", err.Error())
+	}
 
 	tests := []struct {
 		name       string
 		utils      *K8sUtils
-		secret     *corev1.Secret
-		wantCert   string
-		wantCred   *common.Credentials
-		wantErr    bool
 		secretName string
+		wantCert   string
+		wantErr    bool
 		credName   string
 	}{
 		{
-			name:  "GetCertFileFromSecretName - valid secret",
-			utils: k8sutils,
-			secret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-secret",
-				},
-				Data: map[string][]byte{
-					"cert":     []byte("test-cert"),
-					"username": []byte("test-username"),
-					"password": []byte("test-password"),
-				},
-			},
+			name:       "GetCertFileFromSecretName-Valid secret",
+			utils:      mockUtils,
 			secretName: "test-secret",
 			wantCert:   "/tmp/certs/test-secret-proxy-1700000000000000000.pem",
-			wantCred:   &common.Credentials{UserName: "test-username", Password: "test-password"},
 			wantErr:    false,
 		},
 		{
-			name:    "GetCertFileFromSecretName - invalid secret",
-			utils:   k8sutils,
-			wantErr: true,
+			name:       "GetCertFileFromSecretName-Invalid secret",
+			utils:      mockUtils,
+			secretName: "invalid-secret",
+			wantErr:    true,
 		},
-		{
-			name:       "GetCredentialsFromSecretName - valid secret",
-			credName:   "creds",
-			secretName: "test-secret",
-			utils:      k8sutils,
-			secret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-secret",
-				},
-				Data: map[string][]byte{
-					"username": []byte("test-username"),
-					"password": []byte("test-password"),
-				},
-			},
-			wantCred: &common.Credentials{
-				UserName: "test-username",
-				Password: "test-password",
-			},
-			wantErr:  false,
-			wantCert: "/tmp/certs/test-secret-proxy-1700000000000000000.pem",
-		},
-		{
-			name:    "GetCredentialsFromSecretName - invalid secret",
-			utils:   k8sutils,
-			wantErr: true,
-		},
-		//Add more test cases if needed
 	}
 
 	for _, tt := range tests {
 
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up any necessary test fixtures
-			os.Mkdir("/tmp/certs", 0o700)
-			tt.utils.KubernetesClient.Clientset.CoreV1().Secrets(common.DefaultNameSpace).Create(context.TODO(), tt.secret, metav1.CreateOptions{})
+			err := os.MkdirAll("/tmp/certs", 0o700)
+			if err != nil {
+				t.Errorf("Error creating certs directory: %v", err)
+			}
 
 			// Call the relevant methods of the K8sUtils struct
 			cert, err := tt.utils.GetCertFileFromSecretName(tt.secretName)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("GetCertFileFromSecret() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("GetCertFileFromSecretName error = %v, wantErr %v", err, tt.wantErr)
 			}
 
 			if tt.wantErr {
@@ -274,78 +532,88 @@ func TestGetSecretAndCredentialsByName(t *testing.T) {
 			}
 
 			if cert != tt.wantCert {
-				t.Errorf("GetCertFileFromSecret() = %v, want %v", cert, tt.wantCert)
+				t.Errorf("GetCertFileFromSecretName = want cert %v, got %v", tt.wantCert, cert)
 			}
 
-			cred, err := tt.utils.GetCredentialsFromSecretName(tt.secretName)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetCredentialsFromSecret() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			if tt.wantErr {
-				return
-			}
-
-			if !reflect.DeepEqual(cred, tt.wantCred) {
-				t.Errorf("GetCredentialsFromSecret() = %v, want %v", cred, tt.wantCred)
-			}
-			// Perform any additional assertions or cleanup
+			//Cleanup
+			os.RemoveAll("/tmp/certs")
 		})
 	}
 }
 
+// TestStartInformer checks if the StartInformer function properly triggers the callback.
 func TestStartInformer(t *testing.T) {
-	mockUtils, err := InitMockK8sUtils(common.DefaultNameSpace, "/tmp/certs", false, time.Second)
+	// Create a fake Kubernetes clientset
+	clientset := fake.NewSimpleClientset()
+
+	// Create informer factory and a shared stop channel
+	informerFactory := informers.NewSharedInformerFactory(clientset, 0)
+	secretInformer := informerFactory.Core().V1().Secrets()
+
+	// Create K8sUtils struct with mocked informer
+	utils := &K8sUtils{
+		SecretInformer:  secretInformer,
+		InformerFactory: informerFactory,
+		stopCh:          make(chan struct{}), // Stop channel for cleanup
+	}
+
+	// Use WaitGroup to ensure the callback is invoked
+	var wg sync.WaitGroup
+	wg.Add(2) // Expect two invocations (AddFunc and UpdateFunc)
+
+	// Callback function to check if it is invoked
+	callback := func(_ UtilsInterface, secret *corev1.Secret) {
+		fmt.Printf("Callback invoked for secret: %s\n", secret.Name)
+		wg.Done()
+	}
+
+	// Start the informer in a separate goroutine
+	go func() {
+		err := utils.StartInformer(callback)
+		if err != nil {
+			t.Errorf("StartInformer failed: %v", err)
+		}
+	}()
+
+	// Wait for informer to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Create a secret (this should trigger AddFunc)
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "test-secret",
+			Namespace:       "default",
+			ResourceVersion: "1",
+		},
+	}
+	_, err := clientset.CoreV1().Secrets("default").Create(context.TODO(), secret, metav1.CreateOptions{})
 	if err != nil {
-		fmt.Println("Error initializing mock k8s utils:", err)
-		return
-	}
-	mockUtils.stopCh = make(chan struct{})
-
-	callback := func(utils UtilsInterface, secret *corev1.Secret) {
-		fmt.Println("Callback invoked for secret:", secret.Name)
+		t.Fatalf("Failed to create secret: %v", err)
 	}
 
-	err = mockUtils.StartInformer(callback)
+	// Update the secret (this should trigger UpdateFunc)
+	secret.ResourceVersion = "2"
+	_, err = clientset.CoreV1().Secrets("default").Update(context.TODO(), secret, metav1.UpdateOptions{})
 	if err != nil {
-		fmt.Println("Error starting informer:", err)
-	} else {
-		fmt.Println("Informer started successfully")
+		t.Fatalf("Failed to update secret: %v", err)
 	}
-}
 
-func TestStartInformerV2(t *testing.T) {
-	mockUtils, err := InitMockK8sUtils(common.DefaultNameSpace, "/tmp/certs", false, time.Second)
+	// Update the secret with nothing changed (this should trigger UpdateFunc)
+	secret.ResourceVersion = "2"
+	_, err = clientset.CoreV1().Secrets("default").Update(context.TODO(), secret, metav1.UpdateOptions{})
 	if err != nil {
-		fmt.Println("Error initializing mock k8s utils:", err)
-		return
-	}
-	mockUtils.stopCh = make(chan struct{})
-
-	callback := func(utils UtilsInterface, secret *corev1.Secret) {
-		fmt.Println("Callback invoked for secret:", secret.Name)
+		t.Fatalf("Failed to update secret: %v", err)
 	}
 
-	// Simulating informer event handling
-	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "test-secret", ResourceVersion: "1"}}
-	updatedSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "test-secret", ResourceVersion: "2"}}
+	// Wait for the callback to be triggered
+	wg.Wait()
 
-	// Manually invoke AddFunc
-	callback(mockUtils, secret)
-
-	// Manually invoke UpdateFunc with a different resource version
-	callback(mockUtils, updatedSecret)
-
-	err = mockUtils.StartInformer(callback)
-	if err != nil {
-		fmt.Println("Error starting informer:", err)
-	} else {
-		fmt.Println("Informer started successfully")
-	}
+	// Cleanup: Stop the informer
+	close(utils.stopCh)
 }
 
 func TestStopInformer(t *testing.T) {
-	mockUtils, err := InitMockK8sUtils(common.DefaultNameSpace, "/tmp/certs", false, time.Second)
+	mockUtils, err := InitMockK8sUtils(common.DefaultNameSpace, "/tmp/certs", false, time.Second, &KubernetesClient{})
 	if err != nil {
 		fmt.Println("Error initializing mock k8s utils:", err)
 		return
@@ -363,4 +631,31 @@ func TestStopInformer(t *testing.T) {
 	} else {
 		fmt.Println("Stop channel still open")
 	}
+}
+
+// creatTempKubeconfig creates a temporary, fake kubeconfig in the current directory
+// using the given file path.
+func createTempKubeconfig(path string) error {
+	dir := filepath.Dir(path) + "/.kube"
+	err := os.MkdirAll(dir, 0o700)
+	if err != nil {
+		return err
+	}
+	kubeconfig := `clusters:
+- cluster:
+    server: https://some.hostname.or.ip:6443
+  name: fake-cluster
+contexts:
+- context:
+    cluster: fake-cluster
+    user: admin
+  name: admin
+current-context: admin
+preferences: {}
+users:
+- name: admin`
+
+	filename := filepath.Join(dir, filepath.Base(path))
+	err = os.WriteFile(filename, []byte(kubeconfig), 0o600)
+	return err
 }

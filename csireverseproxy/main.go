@@ -341,7 +341,7 @@ func run(ctx context.Context) {
 	opts := getServerOpts()
 
 	// Create an informer
-	k8sUtils, err := k8sutils.Init(opts.NameSpace, opts.CertDir, opts.InCluster, time.Second*30)
+	k8sUtils, err := k8sutils.Init(opts.NameSpace, opts.CertDir, opts.InCluster, time.Second*30, &k8sutils.KubernetesClient{})
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -359,13 +359,14 @@ func run(ctx context.Context) {
 }
 
 func main() {
+	var kubeClient k8sutils.KubernetesClient
 	if isLEEnabled := getEnv(common.EnvIsLeaderElectionEnabled, "false"); isLEEnabled == "true" {
 		isInCluster := getEnv(common.EnvInClusterConfig, "false")
-		kubeClient := k8sutils.KubernetesClient{}
-		if err := kubeClient.CreateKubeClient(isInCluster == "true"); err != nil {
+		kubeClient, err := k8sutils.Init(common.DefaultNameSpace, common.DefaultCertDirName, isInCluster == "true", time.Second*30, &kubeClient)
+		if err != nil {
 			log.Fatalf("Failed to create kube client: [%s]", err.Error())
 		}
-		le := leaderelection.NewLeaderElection(kubeClient.Clientset, "csi-powermax-reverse-proxy-dellemc-com", run)
+		le := leaderelection.NewLeaderElection(kubeClient.KubernetesClient.Clientset, "csi-powermax-reverse-proxy-dellemc-com", run)
 		defaultNamespace := getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace)
 		le.WithNamespace(defaultNamespace)
 		if err := le.Run(); err != nil {

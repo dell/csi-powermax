@@ -1,5 +1,5 @@
 /*
-Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import (
 
 	"revproxy/v2/pkg/common"
 
-	log "github.com/sirupsen/logrus"
 	"k8s.io/client-go/tools/clientcmd"
 
 	corev1 "k8s.io/api/core/v1"
@@ -48,7 +47,7 @@ type UtilsInterface interface {
 
 // K8sUtils stores the configuration of the k8s client, k8s client and the informer
 type K8sUtils struct {
-	KubernetesClient *KubernetesClient
+	KubernetesClient KubernetesClient
 	InformerFactory  informers.SharedInformerFactory
 	SecretInformer   informerv1.SecretInformer
 	Namespace        string
@@ -59,16 +58,12 @@ type K8sUtils struct {
 
 var k8sUtils *K8sUtils
 
-// KubernetesClient - client connection
+// KubernetesClient Define an interface for the KubernetesClient methods
 type KubernetesClient struct {
-	Clientset kubernetes.Interface
-}
-
-func getKubeConfigPathFromEnv() string {
-	if h := os.Getenv("HOME"); h != "" {
-		return h
-	}
-	return os.Getenv("X_CSI_KUBECONFIG_PATH") // user specified path
+	Clientset          kubernetes.Interface
+	RestForConfigFunc  func() (*rest.Config, error)
+	NewForConfigFunc   func(config *rest.Config) (kubernetes.Interface, error)
+	GetPathFromEnvFunc func() string
 }
 
 // CreateKubeClient - Creates a k8s client - either InCluster or OutOfCluster
@@ -82,15 +77,16 @@ func (c *KubernetesClient) CreateKubeClient(inCluster bool) error {
 // CreateInClusterKubeClient - creates the in-cluster config
 func (c *KubernetesClient) CreateInClusterKubeClient() error {
 	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
+	config, err := c.RestForConfigFunc()
 	if err != nil {
 		return err
 	}
 	// creates the Clientset
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, err := c.NewForConfigFunc(config)
 	if err != nil {
 		return err
 	}
+
 	c.Clientset = clientset
 	return nil
 }
@@ -98,7 +94,7 @@ func (c *KubernetesClient) CreateInClusterKubeClient() error {
 // CreateOutOfClusterKubeClient - Creates a Kubernetes Clientset
 func (c *KubernetesClient) CreateOutOfClusterKubeClient() error {
 	var kubeconfig string
-	if path := getKubeConfigPathFromEnv(); path != "" {
+	if path := c.GetPathFromEnvFunc(); path != "" {
 		kubeconfig = filepath.Join(path, ".kube", "config")
 	}
 	if kubeconfig == "" {
@@ -110,7 +106,7 @@ func (c *KubernetesClient) CreateOutOfClusterKubeClient() error {
 		return err
 	}
 	// create the Clientset
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, err := c.NewForConfigFunc(config)
 	if err != nil {
 		return err
 	}
@@ -127,24 +123,40 @@ func (c *KubernetesClient) GetSecret(namespace, secretName string) (*corev1.Secr
 	return secret, nil
 }
 
+// InitMethods - Initializes the methods for the k8s client
+func (c *KubernetesClient) InitMethods() {
+	if c.RestForConfigFunc == nil {
+		c.RestForConfigFunc = func() (*rest.Config, error) { return rest.InClusterConfig() }
+
+	}
+	if c.NewForConfigFunc == nil {
+		c.NewForConfigFunc = func(config *rest.Config) (kubernetes.Interface, error) {
+			return kubernetes.NewForConfig(config)
+		}
+	}
+
+	if c.GetPathFromEnvFunc == nil {
+		c.GetPathFromEnvFunc = func() string { return getKubeConfigPathFromEnv() }
+	}
+}
+
 // Init - Initializes the k8s client and creates the secret informer
-func Init(namespace, certDirectory string, inCluster bool, resyncPeriod time.Duration) (*K8sUtils, error) {
+func Init(namespace, certDirectory string, inCluster bool, resyncPeriod time.Duration, kubeClient *KubernetesClient) (*K8sUtils, error) {
 	if k8sUtils != nil {
 		return k8sUtils, nil
 	}
-	var kubeClient KubernetesClient
+
+	kubeClient.InitMethods()
 	err := kubeClient.CreateKubeClient(inCluster)
 	if err != nil {
-		log.Errorf("failed to create kube client. error: %s", err.Error())
 		return nil, err
 	}
 
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient.Clientset, resyncPeriod, informers.WithNamespace(namespace))
-
 	secretInformer := informerFactory.Core().V1().Secrets()
 
 	k8sUtils = &K8sUtils{
-		KubernetesClient: &kubeClient,
+		KubernetesClient: *kubeClient,
 		InformerFactory:  informerFactory,
 		SecretInformer:   secretInformer,
 		Namespace:        namespace,
@@ -152,6 +164,7 @@ func Init(namespace, certDirectory string, inCluster bool, resyncPeriod time.Dur
 		stopCh:           make(chan struct{}),
 		TimeNowFunc:      time.Now().UnixNano,
 	}
+
 	return k8sUtils, nil
 }
 
@@ -250,4 +263,11 @@ func (utils *K8sUtils) StartInformer(callback func(UtilsInterface, *corev1.Secre
 // StopInformer - stops the informer
 func (utils *K8sUtils) StopInformer() {
 	close(utils.stopCh)
+}
+
+func getKubeConfigPathFromEnv() string {
+	if h := os.Getenv("HOME"); h != "" {
+		return h
+	}
+	return os.Getenv("X_CSI_KUBECONFIG_PATH") // user specified path
 }
