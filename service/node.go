@@ -1789,6 +1789,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 		if s.useNVMeTCP {
 			// check nvme module availability on the host
 			err = s.setupArrayForNVMeTCP(ctx, symID, validNVMeTCPs, pmaxClient)
+			log.Infof("test Autodiscovery3: %v", err)
 			if err != nil {
 				log.Errorf("Failed to do the NVMe setup for the Array(%s). Error - %s", symID, err.Error())
 			} else {
@@ -1888,10 +1889,13 @@ func (s *service) setupArrayForNVMeTCP(ctx context.Context, array string, NQNs [
 
 	// Discover targets on the host
 	err := s.setupNVMeTCPTargetDiscovery(ctx, array, pmaxClient)
+	log.Infof(`Test Autodiscovery: %v`, err)
 	if err != nil {
 		log.Error(err.Error())
+		log.Infof("test Autodiscovery5: %v", err)
 		return err
 	}
+	log.Infof("test Autodiscovery6: %v", err)
 	updatesHostNQNs, err := s.updateNQNWithHostID(ctx, array, NQNs, pmaxClient)
 	if err != nil || updatesHostNQNs == nil {
 		return fmt.Errorf(" Error updating NQN with HostID, len of updatedNQN: %d", len(updatesHostNQNs))
@@ -2021,7 +2025,7 @@ func (s *service) setupNVMeTCPTargetDiscovery(ctx context.Context, array string,
 		log.Errorf("Couldn't find any ip interfaces on any of the port-groups")
 		return err
 	}
-
+	log.Infof("test Autodiscovery2: %v", ipInterfaces)
 	for _, ip := range ipInterfaces {
 		// Attempt target discovery from host
 		log.Debugf("Discovering NVMe targets on %s", ip)
