@@ -15,6 +15,9 @@
 package proxy
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -25,6 +28,8 @@ import (
 	"revproxy/v2/pkg/config"
 	"revproxy/v2/pkg/k8smock"
 	"revproxy/v2/pkg/utils"
+
+	types "github.com/dell/gopowermax/v2/types/v100"
 
 	"github.com/gorilla/mux"
 )
@@ -68,66 +73,54 @@ func TestNewProxy(t *testing.T) {
 }
 
 func TestGetRouter(t *testing.T) {
-	testCases := []struct {
-		name           string
-		proxy          *Proxy
-		expectedRouter *mux.Router
-		expectedErr    error
-	}{
-		{
-			name: "Successful case",
-			proxy: &Proxy{
-				config: config.ProxyConfig{
-					// Set the necessary fields for the ProxyConfig
-				},
-			},
-			expectedRouter: mux.NewRouter(),
-			expectedErr:    nil,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			router := tc.proxy.GetRouter()
-			req := func() *http.Request {
-				// ctx := context.WithValue(context.Background(), 0, arrayID)
-				req, _ := http.NewRequest("GET", "/volume", nil)
-				vars := map[string]string{
-					"symid": "000000000001",
-				}
-				req = mux.SetURLVars(req, vars)
-				req.SetBasicAuth("test-username", "test-password")
-				return req
-			}()
-
-			router.ServeHTTP(httptest.NewRecorder(), req)
-
-			t.Logf("Router: %v", router)
-		})
-	}
-}
-
-type ProxyClientSymIDKey string
-
-func TestServeVolume(t *testing.T) {
+	volumeIteratorID := "00000000-1111-2abc-def3-44gh55ij66kl_0"
 	server := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Logf("fake unisphere received: %s %s", r.Method, r.URL)
-		_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
-		if err != nil {
-			t.Errorf("expected nil error, got %v", err)
+		switch r.URL.Path {
+		case "/univmax/restapi/1.0/sloprovisioning/symmetrix":
+			list := types.SymmetrixIDList{
+				SymmetrixIDs: []string{"00000000-1111-2abc-def3-44gh55ij66kl"},
+			}
+
+			bytes, _ := json.Marshal(list)
+
+			_, err := w.Write(bytes)
+			if err != nil {
+				t.Errorf("expected nil error, got %v", err)
+			}
+		case "/univmax/restapi/1.0/replication/capabilities/symmetrix":
+			result := types.SymReplicationCapabilities{
+				SymmetrixCapability: []types.SymmetrixCapability{
+					{
+						SymmetrixID: "00000000-1111-2abc-def3-44gh55ij66kl",
+					},
+				},
+				Successful:  true,
+				FailMessage: "",
+			}
+
+			bytes, _ := json.Marshal(result)
+
+			_, err := w.Write(bytes)
+			if err != nil {
+				t.Errorf("expected nil error, got %v", err)
+			}
+		default:
+			_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
+			if err != nil {
+				t.Errorf("expected nil error, got %v", err)
+			}
 		}
 	}))
 
-	// symKey := "proxyClientSymID"
-	arrayID := "000000000001"
 	testCases := []struct {
 		name        string
 		proxy       func() *Proxy
-		req         *http.Request
+		req         []func() *http.Request
 		expectedErr error
 	}{
 		{
-			name: "Successful case",
+			name: "Success: ServeVolume - /{version}/sloprovisioning/symmetrix/{symid}/volume",
 			proxy: func() *Proxy {
 				// Create a new Proxy
 				proxy, err := createValidProxyConfig(t, server)
@@ -138,30 +131,275 @@ func TestServeVolume(t *testing.T) {
 
 				return proxy
 			},
-			req: func() *http.Request {
-				// ctx := context.WithValue(context.Background(), 0, arrayID)
-				req, _ := http.NewRequest("GET", "/volume", nil)
-				vars := map[string]string{
-					"symid": arrayID,
-				}
-				req = mux.SetURLVars(req, vars)
-				req.SetBasicAuth("test-username", "test-password")
-				return req
-			}(),
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					url := fmt.Sprintf("/univmax/restapi/%s/sloprovisioning/symmetrix/%s/volume", "9.1", arrayID)
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+					return req
+				},
+			},
 			expectedErr: nil,
 		},
-		// {
-		// 	name:  "Error case",
-		// 	proxy: &Proxy{
-		// 		// Set the necessary fields for the Proxy object
-		// 	},
-		// 	req: func() *http.Request {
-		// 		req, _ := http.NewRequest("GET", "/volume", nil)
-		// 		return req
-		// 	}(),
-		// 	expectedErr: errors.New("some error"),
-		// },
-		// Add more test cases as needed
+		{
+			name: "Success: ServeReverseProxy - /{version}/sloprovisioning/symmetrix/{symid}",
+			proxy: func() *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					url := fmt.Sprintf("%s/%s/sloprovisioning/symmetrix/%s", utils.Prefix, "9.1", arrayID)
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+					return req
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "Success: ServeVersions - /{version}/system/version",
+			proxy: func() *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					url := fmt.Sprintf("%s/%s/system/version", utils.Prefix, "9.1")
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+					return req
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "Success: ServePerformance - /performance/Array/keys",
+			proxy: func() *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					url := fmt.Sprintf("%s/performance/Array/keys", utils.Prefix)
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+					return req
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "Success: ServeVolumePerformance - /performance/Volume/metrics",
+			proxy: func() *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					url := fmt.Sprintf("%s/performance/Volume/metrics", utils.Prefix)
+
+					body := []byte(`{"systemId": "000000000001"}`)
+					req, _ := http.NewRequest("GET", url, bytes.NewBuffer(body))
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+
+					return req
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "Success: ServeFSPerformance - /performance/file/filesystem/metrics",
+			proxy: func() *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					url := fmt.Sprintf("%s/performance/file/filesystem/metrics", utils.Prefix)
+
+					body := []byte(`{"systemId": "000000000001"}`)
+					req, _ := http.NewRequest("GET", url, bytes.NewBuffer(body))
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+
+					return req
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "Success: ServeIterator - /common/Iterator/{iterId}/page",
+			proxy: func() *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					url := fmt.Sprintf("/univmax/restapi/%s/sloprovisioning/symmetrix/%s/volume", "9.1", arrayID)
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+					return req
+				},
+				func() *http.Request {
+					arrayID := "000000000001"
+					iterID := volumeIteratorID
+					url := fmt.Sprintf("%s/common/Iterator/%s/page", utils.Prefix, iterID)
+
+					body := []byte(`{"systemId": "000000000001"}`)
+					req, _ := http.NewRequest("GET", url, bytes.NewBuffer(body))
+
+					vars := map[string]string{
+						"symid":  arrayID,
+						"iterId": iterID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+
+					return req
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "Success: ServeSymmetrix - /{version}/sloprovisioning/symmetrix",
+			proxy: func() *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					version := "1.0"
+					url := fmt.Sprintf("%s/%s/sloprovisioning/symmetrix", utils.Prefix, version)
+
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+
+					return req
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "Success: ServeReplicationCapabilities - /{version}/replication/capabilities/symmetrix",
+			proxy: func() *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					version := "1.0"
+					url := fmt.Sprintf("%s/%s/replication/capabilities/symmetrix", utils.Prefix, version)
+
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+
+					return req
+				},
+			},
+			expectedErr: nil,
+		},
 	}
 
 	go utils.LockRequestHandler()
@@ -174,10 +412,14 @@ func TestServeVolume(t *testing.T) {
 				return
 			}
 
-			proxy.ServeVolume(httptest.NewRecorder(), tc.req)
-			// if !reflect.DeepEqual(err, tc.expectedErr) {
-			// 	t.Errorf("Expected error to be %v, but got %v", tc.expectedErr, err)
-			// }
+			// Setup router
+			router := proxy.GetRouter()
+			for _, reqFunc := range tc.req {
+				req := reqFunc()
+				router.ServeHTTP(httptest.NewRecorder(), req)
+			}
+
+			t.Logf("Router: %v", router)
 		})
 	}
 }
