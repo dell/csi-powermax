@@ -1,3 +1,17 @@
+/*
+ Copyright © 2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
+
 package file
 
 import (
@@ -295,13 +309,13 @@ func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt str
 		// staging already done
 		return &csi.NodeStageVolumeResponse{}, nil
 	}
-	if err := os.MkdirAll(privTgt, 0o750); err != nil {
+	if err := MkdirAll(privTgt, 0o750); err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"can't create target folder %s: %s", privTgt, err.Error())
 	}
 	log.Info("stage path successfully created")
 
-	if err := gofsutil.Mount(ctx, nfsExportPath, privTgt, "nfs"); err != nil {
+	if err := Mount(ctx, nfsExportPath, privTgt, "nfs"); err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"error mount nfs share %s to target path: %s", nfsExportPath, err.Error())
 	}
@@ -344,7 +358,7 @@ func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, r
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
-	if err := os.MkdirAll(targetPath, 0o750); err != nil {
+	if err := MkdirAll(targetPath, 0o750); err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"can't create target folder %s: %s", targetPath, err.Error())
 	}
@@ -357,7 +371,7 @@ func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, r
 		mntFlags = append(mntFlags, "ro")
 	}
 	stagingPath := req.GetStagingTargetPath()
-	if err := gofsutil.BindMount(ctx, stagingPath, targetPath, mntFlags...); err != nil {
+	if err := BindMount(ctx, stagingPath, targetPath, mntFlags...); err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"error bind disk %s to target path %s: err %s", stagingPath, targetPath, err.Error())
 	}
@@ -438,7 +452,7 @@ func isAlreadyPublished(targetPath string) (bool, error) {
 
 func getTargetMount(target string) (gofsutil.Info, bool, error) {
 	var targetMount gofsutil.Info
-	mounts, err := gofsutil.GetMounts(context.Background())
+	mounts, err := GetMounts(context.Background())
 	if err != nil {
 		log.Error("could not reliably determine existing mount status")
 		return targetMount, false, status.Error(codes.Internal, "could not reliably determine existing mount status")
@@ -452,4 +466,20 @@ func getTargetMount(target string) (gofsutil.Info, bool, error) {
 		}
 	}
 	return targetMount, found, nil
+}
+
+var GetMounts = func(ctx context.Context) ([]gofsutil.Info, error) {
+	return gofsutil.GetMounts(ctx)
+}
+
+var Mount = func(ctx context.Context, source string, target string, fstype string, options ...string) error {
+	return gofsutil.Mount(ctx, source, target, fstype, options...)
+}
+
+var BindMount = func(ctx context.Context, source string, target string, options ...string) error {
+	return gofsutil.BindMount(ctx, source, target, options...)
+}
+
+var MkdirAll = func(path string, perm os.FileMode) error {
+	return os.MkdirAll(path, perm)
 }
