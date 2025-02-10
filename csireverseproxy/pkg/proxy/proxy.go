@@ -535,11 +535,15 @@ func (revProxy *Proxy) ServeVolumePerformance(res http.ResponseWriter, req *http
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(reqParam); err != nil {
 		log.Errorf("Decoding fails for mertics req for volume: %s", err.Error())
+		return
 	}
+
 	resp, err := revProxy.getResponseIfAuthorised(res, req, reqParam.SystemID)
 	if err != nil {
 		log.Errorf("Authorisation step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
+		return
 	}
+
 	defer resp.Body.Close()
 	err = utils.IsValidResponse(resp)
 	if err != nil {
