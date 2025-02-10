@@ -74,7 +74,7 @@ spec:
               value: /app/tls
               # Change this to the namespace where proxy will be installed
             - name: X_CSI_REVPROXY_WATCH_NAMESPACE
-              value: powermax         
+              value: powermax
           volumeMounts:
             - name: configmap-volume
               mountPath: /etc/config/configmap
