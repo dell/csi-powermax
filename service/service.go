@@ -171,20 +171,24 @@ type service struct {
 	iscsiClient    goiscsi.ISCSIinterface
 	nvmetcpClient  gonvme.NVMEinterface
 	// replace this with Unisphere system if needed
-	system             *interface{}
-	privDir            string
-	loggedInArrays     map[string]bool
-	loggedInNVMeArrays map[string]bool
-	mutex              sync.Mutex
-	cacheMutex         sync.Mutex
-	nodeProbeMutex     sync.Mutex
-	nodeIsInitialized  bool
-	useNFS             bool
-	useFC              bool
-	useIscsi           bool
-	useNVMeTCP         bool
-	iscsiTargets       map[string][]string
-	nvmeTargets        map[string][]string
+	system                    *interface{}
+	privDir                   string
+	loggedInArrays            map[string]bool
+	loggedInNVMeArrays        map[string]bool
+	mutex                     sync.Mutex
+	cacheMutex                sync.Mutex
+	nodeProbeMutex            sync.Mutex
+	probeStatus               *sync.Map
+	probeStatusMutex          sync.Mutex
+	pollingFrequencyMutex     sync.Mutex
+	pollingFrequencyInSeconds int64
+	nodeIsInitialized         bool
+	useNFS                    bool
+	useFC                     bool
+	useIscsi                  bool
+	useNVMeTCP                bool
+	iscsiTargets              map[string][]string
+	nvmeTargets               map[string][]string
 
 	// Timeout for storage pool cache
 	storagePoolCacheDuration time.Duration
@@ -218,6 +222,7 @@ func New() Service {
 	}
 	svc.sgSvc = newStorageGroupService(svc)
 	svc.pmaxTimeoutSeconds = defaultPmaxTimeout
+	svc.probeStatus = new(sync.Map)
 	return svc
 }
 
@@ -887,14 +892,25 @@ func getLogFields(ctx context.Context) log.Fields {
 // SetPollingFrequency reads the pollingFrequency from Env, sets default vale if ENV not found
 func (s *service) SetPollingFrequency(ctx context.Context) int64 {
 	var pollingFrequency int64
+	s.pollingFrequencyMutex.Lock()
+	defer s.pollingFrequencyMutex.Unlock()
 	if pollRateEnv, ok := csictx.LookupEnv(ctx, EnvPodmonArrayConnectivityPollRate); ok {
 		if pollingFrequency, _ = strconv.ParseInt(pollRateEnv, 10, 32); pollingFrequency != 0 {
 			log.Debugf("use pollingFrequency as %d seconds", pollingFrequency)
-			return pollingFrequency
+			s.pollingFrequencyInSeconds = pollingFrequency
+			return s.pollingFrequencyInSeconds
 		}
 	}
 	log.Debugf("use default pollingFrequency as %d seconds", DefaultPodmonPollRate)
-	return DefaultPodmonPollRate
+	s.pollingFrequencyInSeconds = DefaultPodmonPollRate
+	return s.pollingFrequencyInSeconds
+}
+
+// GetPollingFrequency returns the pollingFrequency
+func (s *service) GetPollingFrequency() int64 {
+	s.pollingFrequencyMutex.Lock()
+	defer s.pollingFrequencyMutex.Unlock()
+	return s.pollingFrequencyInSeconds
 }
 
 func setArrayConfigEnvs(ctx context.Context) error {
