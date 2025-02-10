@@ -92,4 +92,3 @@ spec:
             secretName: csirevproxy-tls-secret
         - name: cert-dir
           emptyDir:
-          
