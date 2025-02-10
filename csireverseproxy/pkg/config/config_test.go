@@ -54,10 +54,6 @@ func TestReadConfig(t *testing.T) {
 	fmt.Printf("%v", proxyConfigMap)
 }
 
-// func newProxyConfig(configMap *ProxyConfigMap, utils k8sutils.UtilsInterface) (*ProxyConfig, error) {
-// 	return NewProxyConfig(configMap, utils)
-// }
-
 func getProxyConfig(t *testing.T) (*ProxyConfig, error) {
 	k8sUtils := k8smock.Init()
 	configMap, err := readConfig()
