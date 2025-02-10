@@ -396,7 +396,7 @@ func TestSignalHandlerOnConfigChange(t *testing.T) {
 	// sleep for 1 seconds to allow the configmap to be updated
 	time.Sleep(1 * time.Second)
 
-	// Failure case, lets create a new mgmt server with bad URL. 
+	// Failure case, lets create a new mgmt server with bad URL.
 	badManagementServer := config.ManagementServerConfig{
 		ArrayCredentialSecret:     proxySecretName,
 		URL:                       "://example.com/@",
@@ -409,6 +409,9 @@ func TestSignalHandlerOnConfigChange(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to update config map file. (%s)", err.Error())
 	}
+
+	// sleep for 1 seconds to allow the configmap to be updated
+	time.Sleep(1 * time.Second)
 	// Revert to original config for safety
 	cm.Config.ManagementServerConfig = originalConfig
 	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)

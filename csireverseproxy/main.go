@@ -60,6 +60,20 @@ type ServerOpts struct {
 	InCluster      bool
 }
 
+// Server represents the proxy server
+type Server struct {
+	HTTPServer *http.Server
+	Port       string
+	CertFile   string
+	KeyFile    string
+	config     *config.ProxyConfig
+	Proxy      *proxy.Proxy
+	SigChan    chan os.Signal
+	WaitGroup  sync.WaitGroup
+	Mutex      sync.Mutex
+	Opts       ServerOpts
+}
+
 func getEnv(envName, defaultValue string) string {
 	envVal, found := os.LookupEnv(envName)
 	if !found {
@@ -89,20 +103,6 @@ func getServerOpts() ServerOpts {
 		KeyFile:        common.DefaultKeyFile,
 		InCluster:      inCluster,
 	}
-}
-
-// Server represents the proxy server
-type Server struct {
-	HTTPServer *http.Server
-	Port       string
-	CertFile   string
-	KeyFile    string
-	config     *config.ProxyConfig
-	Proxy      *proxy.Proxy
-	SigChan    chan os.Signal
-	WaitGroup  sync.WaitGroup
-	Mutex      sync.Mutex
-	Opts       ServerOpts
 }
 
 // SetConfig - sets config for the server
@@ -365,12 +365,12 @@ func main() {
 		isInCluster := getEnv(common.EnvInClusterConfig, "false")
 		kubeClient, err := k8sInitFunc(common.DefaultNameSpace, common.DefaultCertDirName, isInCluster == "true", time.Second*30, &k8sutils.KubernetesClient{})
 		if err != nil {
-			log.Errorf("Failed to create kube client: [%s]", err.Error())
+			log.Errorf("failed to create kube client: [%s]", err.Error())
 			return
 		}
 		err = runWithLeaderElectionFunc(&kubeClient.KubernetesClient)
 		if err != nil {
-			log.Errorf("Failed to initialize leader election: [%s]", err.Error())
+			log.Errorf("failed to initialize leader election: [%s]", err.Error())
 		}
 	} else {
 		runFunc(context.TODO())
@@ -382,7 +382,7 @@ var runWithLeaderElectionFunc = func(kubeClient *k8sutils.KubernetesClient) (err
 	lei := leaderelection.NewLeaderElection(kubeClient.Clientset, "csi-powermax-reverse-proxy-dellemc-com", runFunc)
 	lei.WithNamespace(getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace))
 	if err = lei.Run(); err != nil {
-		log.Errorf("Failed to initialize leader election: [%s]", err.Error())
+		log.Errorf("leader election failed reason: [%s]", err.Error())
 	}
 	return err
 }
