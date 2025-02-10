@@ -30,3 +30,4 @@ config:
       arrayCredentialSecret: backup-unisphere-secret-2
       skipCertificateValidation: false
       certSecret: primary-unisphere-cert-2
+      
