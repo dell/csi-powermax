@@ -1336,6 +1336,217 @@ func TestGetRouter_ServeIterator(t *testing.T) {
 	}
 }
 
+func TestGetRouter_ServeSymmetrix(t *testing.T) {
+	testCases := []struct {
+		name   string
+		proxy  func(*httptest.Server) *Proxy
+		req    []func() *http.Request
+		server *httptest.Server
+	}{
+		{
+			name: "Success: ServeSymmetrix - /{version}/sloprovisioning/symmetrix",
+			proxy: func(server *httptest.Server) *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					version := "1.0"
+					url := fmt.Sprintf("%s/%s/sloprovisioning/symmetrix", utils.Prefix, version)
+
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+
+					return req
+				},
+			},
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				list := types.SymmetrixIDList{
+					SymmetrixIDs: []string{"00000000-1111-2abc-def3-44gh55ij66kl"},
+				}
+
+				bytes, _ := json.Marshal(list)
+
+				_, err := w.Write(bytes)
+				if err != nil {
+					t.Errorf("expected nil error, got %v", err)
+				}
+			})),
+		},
+		{
+			name: "Fail: ServeSymmetrix - unauthorized",
+			proxy: func(server *httptest.Server) *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					version := "1.0"
+					url := fmt.Sprintf("%s/%s/sloprovisioning/symmetrix", utils.Prefix, version)
+
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+
+					return req
+				},
+			},
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+		},
+		{
+			name: "Fail: ServeSymmetrix - Bad Response",
+			proxy: func(server *httptest.Server) *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					version := "1.0"
+					url := fmt.Sprintf("%s/%s/sloprovisioning/symmetrix", utils.Prefix, version)
+
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+
+					return req
+				},
+			},
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusUnauthorized)
+			})),
+		},
+		{
+			name: "Fail: ServeSymmetrix - Illformed Response",
+			proxy: func(server *httptest.Server) *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					version := "1.0"
+					url := fmt.Sprintf("%s/%s/sloprovisioning/symmetrix", utils.Prefix, version)
+
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+
+					return req
+				},
+			},
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				bytes, _ := json.Marshal(``)
+
+				_, err := w.Write(bytes)
+				if err != nil {
+					t.Errorf("expected nil error, got %v", err)
+				}
+			})),
+		},
+		{
+			name: "Fail: ServeSymmetrix - Empty Response",
+			proxy: func(server *httptest.Server) *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					version := "1.0"
+					url := fmt.Sprintf("%s/%s/sloprovisioning/symmetrix", utils.Prefix, version)
+
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+
+					return req
+				},
+			},
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				list := types.SymmetrixIDList{}
+
+				bytes, _ := json.Marshal(list)
+
+				_, err := w.Write(bytes)
+				if err != nil {
+					t.Errorf("expected nil error, got %v", err)
+				}
+			})),
+		},
+	}
+
+	utils.InitializeLock()
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			proxy := tc.proxy(tc.server)
+			if proxy == nil {
+				return
+			}
+
+			// Setup router
+			router := proxy.GetRouter()
+			for _, reqFunc := range tc.req {
+				req := reqFunc()
+				router.ServeHTTP(httptest.NewRecorder(), req)
+			}
+		})
+	}
+}
+
 func TestGetRouter(t *testing.T) {
 	// volumeIteratorID := "00000000-1111-2abc-def3-44gh55ij66kl_0"
 	server := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1383,37 +1594,6 @@ func TestGetRouter(t *testing.T) {
 		req         []func() *http.Request
 		expectedErr error
 	}{
-		{
-			name: "Success: ServeSymmetrix - /{version}/sloprovisioning/symmetrix",
-			proxy: func() *Proxy {
-				// Create a new Proxy
-				proxy, err := createValidProxyConfig(t, server)
-				if err != nil {
-					t.Errorf("Failed to create proxy: %v", err)
-					return nil
-				}
-
-				return proxy
-			},
-			req: []func() *http.Request{
-				func() *http.Request {
-					arrayID := "000000000001"
-					version := "1.0"
-					url := fmt.Sprintf("%s/%s/sloprovisioning/symmetrix", utils.Prefix, version)
-
-					req, _ := http.NewRequest("GET", url, nil)
-
-					vars := map[string]string{
-						"symid": arrayID,
-					}
-					req = mux.SetURLVars(req, vars)
-					req.SetBasicAuth("test-username", "test-password")
-
-					return req
-				},
-			},
-			expectedErr: nil,
-		},
 		{
 			name: "Success: ServeReplicationCapabilities - /{version}/replication/capabilities/symmetrix",
 			proxy: func() *Proxy {
