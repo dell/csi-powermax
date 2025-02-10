@@ -186,7 +186,7 @@ func (s *Server) SignalHandler(k8sUtils k8sutils.UtilsInterface) {
 		// gracefully shutdown http server
 		err := s.HTTPServer.Shutdown(context.Background())
 		if err != nil {
-			log.Fatalf("Error during graceful shutdown of the server: %v", err)
+			log.Errorf("Error during graceful shutdown of the server: %v", err)
 		} else {
 			log.Info("Server shutdown gracefully on signal")
 		}
@@ -249,6 +249,7 @@ func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
 			if err != nil || proxyConfig == nil {
 				log.Errorf("Error parsing the config: %v", err)
 			} else {
+				log.Info("Successfully parsed the updated config")
 				s.SetConfig(proxyConfig)
 				err = s.GetRevProxy().UpdateConfig(*proxyConfig)
 				if err != nil {
@@ -308,16 +309,12 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 
 	err := server.Setup(k8sUtils)
 	if err != nil {
-		log.Fatalf("Failed to setup server. (%s)", err.Error())
+		log.Errorf("Failed to setup server. (%s)", err.Error())
 		return nil, err
 	}
 
 	// Start the Secrets informer
-	err = k8sUtils.StartInformer(server.EventHandler)
-	if err != nil {
-		log.Fatalf("Failed to start informer. (%s)", err.Error())
-		return nil, err
-	}
+	k8sUtils.StartInformer(server.EventHandler)
 
 	// Start the lock request handler
 	utils.InitializeLock()
@@ -334,21 +331,24 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 	return server, nil
 }
 
-func run(ctx context.Context) {
+func run(ctx context.Context) error {
+
 	signal.Ignore()
 
 	// Get the server opts
 	opts := getServerOpts()
 
 	// Create an informer
-	k8sUtils, err := k8sutils.Init(opts.NameSpace, opts.CertDir, opts.InCluster, time.Second*30, &k8sutils.KubernetesClient{})
+	k8sUtils, err := k8sInitFunc(opts.NameSpace, opts.CertDir, opts.InCluster, time.Second*30, &k8sutils.KubernetesClient{})
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Errorf("run failed - %s", err.Error())
+		return err
 	}
 
-	server, err := startServer(k8sUtils, opts)
+	server, err := startServerFunc(k8sUtils, opts)
 	if err != nil {
-		log.Fatalln("Server start failed")
+		log.Errorf("Server start failed - %s", err.Error())
+		return err
 	}
 
 	// Wait for the server to exit gracefully
@@ -356,23 +356,48 @@ func run(ctx context.Context) {
 
 	// Sleep for sometime to allow all goroutines to finish logging
 	time.Sleep(100 * time.Millisecond)
+
+	return nil
 }
 
 func main() {
-
 	if isLEEnabled := getEnv(common.EnvIsLeaderElectionEnabled, "false"); isLEEnabled == "true" {
 		isInCluster := getEnv(common.EnvInClusterConfig, "false")
-		kubeClient, err := k8sutils.Init(common.DefaultNameSpace, common.DefaultCertDirName, isInCluster == "true", time.Second*30, &k8sutils.KubernetesClient{})
+		kubeClient, err := k8sInitFunc(common.DefaultNameSpace, common.DefaultCertDirName, isInCluster == "true", time.Second*30, &k8sutils.KubernetesClient{})
 		if err != nil {
-			log.Fatalf("Failed to create kube client: [%s]", err.Error())
+			log.Errorf("Failed to create kube client: [%s]", err.Error())
+			return
 		}
-		le := leaderelection.NewLeaderElection(kubeClient.KubernetesClient.Clientset, "csi-powermax-reverse-proxy-dellemc-com", run)
-		defaultNamespace := getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace)
-		le.WithNamespace(defaultNamespace)
-		if err := le.Run(); err != nil {
-			log.Fatalf("Failed to initialize leader election: [%s]", err.Error())
+		err = runWithLeaderElectionFunc(&kubeClient.KubernetesClient)
+		if err != nil {
+			log.Errorf("Failed to initialize leader election: [%s]", err.Error())
 		}
 	} else {
-		run(context.TODO())
+		runFunc(context.TODO())
 	}
+}
+
+var runWithLeaderElectionFunc = func(kubeClient *k8sutils.KubernetesClient) (err error) {
+	//var err error
+	lei := leaderelection.NewLeaderElection(kubeClient.Clientset, "csi-powermax-reverse-proxy-dellemc-com", runFunc)
+	lei.WithNamespace(getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace))
+	if err = lei.Run(); err != nil {
+		log.Errorf("Failed to initialize leader election: [%s]", err.Error())
+	}
+	return err
+}
+
+var k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+	return k8sutils.Init(namespace, certDir, isInCluster, resyncPeriod, kubeClient)
+}
+
+var runFunc = func(ctx context.Context) {
+	err := run(ctx)
+	if err != nil {
+		log.Errorf("Failed to run server: %s ", err.Error())
+	}
+}
+
+var startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+	return startServer(k8sUtils, opts)
 }

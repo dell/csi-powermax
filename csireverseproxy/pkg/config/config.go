@@ -59,20 +59,6 @@ type StorageArrayServer struct {
 	BackupServer  *ManagementServer
 }
 
-// DeepCopy - used for deep copy of StorageArray
-func (sa *StorageArray) DeepCopy() *StorageArray {
-	if sa == nil {
-		return nil
-	}
-	cloned := StorageArray{}
-	cloned = *sa
-	cloned.ProxyCredentialSecrets = make(map[string]ProxyCredentialSecret, len(sa.ProxyCredentialSecrets))
-	for secret, proxySecret := range sa.ProxyCredentialSecrets {
-		cloned.ProxyCredentialSecrets[secret] = proxySecret
-	}
-	return &cloned
-}
-
 // ManagementServerConfig - represents a management server configuration for the management server
 type ManagementServerConfig struct {
 	URL                       string        `yaml:"url"`
@@ -94,19 +80,16 @@ type ManagementServer struct {
 	Limits                    common.Limits
 }
 
-// DeepCopy is used for creating a deep copy of Management Server
-func (ms *ManagementServer) DeepCopy() *ManagementServer {
-	clone := ManagementServer{}
-	clone = *ms
-	clone.StorageArrayIdentifiers = make([]string, len(ms.StorageArrayIdentifiers))
-	copy(clone.StorageArrayIdentifiers, ms.StorageArrayIdentifiers)
-	return &clone
-}
-
 // Config - represents proxy configuration in the config file
 type Config struct {
 	StorageArrayConfig     []StorageArrayConfig     `yaml:"storageArrays" mapstructure:"storageArrays"`
 	ManagementServerConfig []ManagementServerConfig `yaml:"managementServers" mapstructure:"managementServers"`
+}
+
+// ProxyUser - used for storing a proxy user and list of associated storage array identifiers
+type ProxyUser struct {
+	StorageArrayIdentifiers []string
+	ProxyCredential         common.Credentials
 }
 
 // ProxyConfigMap - represents the configuration file
@@ -123,6 +106,15 @@ type ProxyConfig struct {
 	managedArrays     map[string]*StorageArray
 	managementServers map[url.URL]*ManagementServer
 	proxyCredentials  map[string]*ProxyUser
+}
+
+// DeepCopy is used for creating a deep copy of Management Server
+func (ms *ManagementServer) DeepCopy() *ManagementServer {
+	clone := ManagementServer{}
+	clone = *ms
+	clone.StorageArrayIdentifiers = make([]string, len(ms.StorageArrayIdentifiers))
+	copy(clone.StorageArrayIdentifiers, ms.StorageArrayIdentifiers)
+	return &clone
 }
 
 // DeepCopy is used to create a deep copy of ProxyConfig
@@ -226,7 +218,7 @@ func (pc *ProxyConfig) GetManagedArraysAndServers() map[string]StorageArrayServe
 func (pc *ProxyConfig) IsSecretConfiguredForCerts(secretName string) bool {
 	found := false
 	for _, server := range pc.managementServers {
-		if server.CertSecret == secretName {
+		if server.CredentialSecret == secretName {
 			found = true
 			break
 		}
@@ -439,24 +431,6 @@ func (pc *ProxyConfig) GetManagementServer(url url.URL) (ManagementServer, bool)
 	return ManagementServer{}, false
 }
 
-// ProxyUser - used for storing a proxy user and list of associated storage array identifiers
-type ProxyUser struct {
-	StorageArrayIdentifiers []string
-	ProxyCredential         common.Credentials
-}
-
-// DeepClone is used to create a deep copy of Proxy User
-func (pu *ProxyUser) DeepClone() *ProxyUser {
-	if pu == nil {
-		return nil
-	}
-	cloned := ProxyUser{}
-	cloned = *pu
-	cloned.StorageArrayIdentifiers = make([]string, len(pu.StorageArrayIdentifiers))
-	copy(cloned.StorageArrayIdentifiers, pu.StorageArrayIdentifiers)
-	return &cloned
-}
-
 // ParseConfig - Parses a given proxy config map
 func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sutils.UtilsInterface) error {
 	pc.Port = proxyConfigMap.Port
@@ -504,16 +478,8 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 			SecondaryURL:           *backupURL,
 		}
 		// adding Primary and Backup URl to storageArrayIdentifier, later to be used in management server
-		if _, ok := storageArrayIdentifiers[*primaryURL]; ok {
-			storageArrayIdentifiers[*primaryURL] = append(storageArrayIdentifiers[*primaryURL], array.StorageArrayID)
-		} else {
-			storageArrayIdentifiers[*primaryURL] = []string{array.StorageArrayID}
-		}
-		if _, ok := storageArrayIdentifiers[*backupURL]; ok {
-			storageArrayIdentifiers[*backupURL] = append(storageArrayIdentifiers[*backupURL], array.StorageArrayID)
-		} else {
-			storageArrayIdentifiers[*backupURL] = []string{array.StorageArrayID}
-		}
+		storageArrayIdentifiers[*primaryURL] = append(storageArrayIdentifiers[*primaryURL], array.StorageArrayID)
+		storageArrayIdentifiers[*backupURL] = append(storageArrayIdentifiers[*backupURL], array.StorageArrayID)
 
 		// Reading proxy credentials for the array
 		if len(array.ProxyCredentialSecrets) > 0 {

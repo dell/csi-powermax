@@ -41,7 +41,7 @@ type UtilsInterface interface {
 	GetCertFileFromSecretName(string) (string, error)
 	GetCredentialsFromSecret(*corev1.Secret) (*common.Credentials, error)
 	GetCredentialsFromSecretName(string) (*common.Credentials, error)
-	StartInformer(func(UtilsInterface, *corev1.Secret)) error
+	StartInformer(func(UtilsInterface, *corev1.Secret))
 	StopInformer()
 }
 
@@ -241,7 +241,7 @@ func (utils *K8sUtils) createFile(fileName string, data []byte) error {
 
 // StartInformer -  starts the informer to listen for any events related to secrets
 // in the namespace being watched
-func (utils *K8sUtils) StartInformer(callback func(UtilsInterface, *corev1.Secret)) error {
+func (utils *K8sUtils) StartInformer(callback func(UtilsInterface, *corev1.Secret)) {
 	utils.SecretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			callback(utils, obj.(*corev1.Secret))
@@ -257,7 +257,6 @@ func (utils *K8sUtils) StartInformer(callback func(UtilsInterface, *corev1.Secre
 	}) // #nosec G104
 
 	utils.InformerFactory.Start(utils.stopCh)
-	return nil
 }
 
 // StopInformer - stops the informer
