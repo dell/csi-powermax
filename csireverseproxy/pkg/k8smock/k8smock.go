@@ -156,8 +156,7 @@ func (mockUtils *MockUtils) GetCredentialsFromSecret(secret *corev1.Secret) (*co
 }
 
 // StartInformer - mock implementation for StartInformer
-func (mockUtils *MockUtils) StartInformer(callback func(k8sutils.UtilsInterface, *corev1.Secret)) error {
-	return nil
+func (mockUtils *MockUtils) StartInformer(callback func(k8sutils.UtilsInterface, *corev1.Secret)) {
 }
 
 // StopInformer - mock implementation for StopInformer

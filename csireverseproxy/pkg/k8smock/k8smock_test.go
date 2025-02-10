@@ -52,12 +52,7 @@ func TestStartInformer(t *testing.T) {
 	dummyEventHandler := func(ui k8sutils.UtilsInterface, secret *corev1.Secret) {}
 
 	mockUtils := Init()
-	err := mockUtils.StartInformer(dummyEventHandler)
-	if err != nil {
-		t.Errorf("Failed to start informer: %v", err)
-		return
-	}
-
+	mockUtils.StartInformer(dummyEventHandler)
 	fmt.Printf("mockUtils: %+v\n", mockUtils)
 }
 
