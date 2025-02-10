@@ -1877,7 +1877,7 @@ func (s *service) setupArrayForIscsi(ctx context.Context, array string, IQNs []s
 	if err != nil && !(strings.Contains(err.Error(), "Masking View") && strings.Contains(err.Error(), "cannot be found")) {
 		return err
 	}
-	log.Warning(err.Error())
+	log.Warning(err)
 	return nil
 }
 
@@ -1909,7 +1909,7 @@ func (s *service) setupArrayForNVMeTCP(ctx context.Context, array string, NQNs [
 	if err != nil && !(strings.Contains(err.Error(), "Masking View") && strings.Contains(err.Error(), "cannot be found")) {
 		return err
 	}
-	log.Warning(err.Error())
+	log.Warning(err)
 	return nil
 }
 
