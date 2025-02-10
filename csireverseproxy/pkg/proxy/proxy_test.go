@@ -34,13 +34,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func readConfigFile() string {
-	relativePath := filepath.Join(".", "..", "..", common.TestConfigDir, common.TestConfigFileName)
+func readConfigFile(fileName string) string {
+	relativePath := filepath.Join(".", "..", "..", common.TestConfigDir, fileName)
 	return relativePath
 }
 
 func TestNewProxy(t *testing.T) {
-	configFile := readConfigFile()
+	configFile := readConfigFile(common.TestConfigFileName)
 	configMap, err := config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
@@ -70,6 +70,147 @@ func TestNewProxy(t *testing.T) {
 		t.Errorf("Failed to create new proxy: %v", err)
 		return
 	}
+}
+
+func TestUpdateConfig(t *testing.T) {
+	configFile := readConfigFile(common.TestConfigFileName)
+	configMap, err := config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	k8sUtils := k8smock.Init()
+	_, err = k8sUtils.CreateNewCertSecret("secret-cert")
+	if err != nil {
+		t.Fatalf("Failed to create new cert secret: %v", err)
+	}
+
+	err = createSecrets(k8sUtils)
+	if err != nil {
+		t.Fatalf("Failed to create secrets: %v", err)
+	}
+
+	proxyConfig, err := config.NewProxyConfig(configMap, k8sUtils)
+	if err != nil {
+		t.Fatalf("Failed to create new proxy config: %v", err)
+	}
+
+	t.Logf("proxyConfig: %v", proxyConfig)
+
+	// Create a new Proxy using the ProxyConfig
+	proxy, err := NewProxy(*proxyConfig)
+	if err != nil {
+		t.Errorf("Failed to create new proxy: %v", err)
+		return
+	}
+
+	// Create new configFile - Test Update ALL endpoints
+	configFile = readConfigFile("configB.yaml")
+	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	newConfig, err := config.NewProxyConfig(configMap, k8sUtils)
+	if err != nil {
+		t.Fatalf("Failed to create new proxy config: %v", err)
+	}
+
+	// Update the Proxy with the updated ProxyConfig
+	err = proxy.UpdateConfig(*newConfig)
+	if err != nil {
+		t.Errorf("Failed to update proxy config: %v", err)
+		return
+	}
+	// End of Test Update ALL endpoints
+
+	// Create new configFile - Test Remove array
+	configFile = readConfigFile("configB_single.yaml")
+	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	singleConfig, err := config.NewProxyConfig(configMap, k8sUtils)
+	if err != nil {
+		t.Fatalf("Failed to create new proxy config: %v", err)
+	}
+
+	// Update the Proxy with the updated ProxyConfig
+	err = proxy.UpdateConfig(*singleConfig)
+	if err != nil {
+		t.Errorf("Failed to update proxy config: %v", err)
+		return
+	}
+	// End of Test Remove array
+
+	// Create new configFile - Test No Backup
+	configFile = readConfigFile("configB_single_noBackup.yaml")
+	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	noBackup, err := config.NewProxyConfig(configMap, k8sUtils)
+	if err != nil {
+		t.Fatalf("Failed to create new proxy config: %v", err)
+	}
+
+	// Update the Proxy with the updated ProxyConfig
+	err = proxy.UpdateConfig(*noBackup)
+	if err != nil {
+		t.Errorf("Failed to update proxy config: %v", err)
+		return
+	}
+	// End of Test No Backup
+
+	// Create new configFile - Test Add Backup
+	configFile = readConfigFile("configB_single.yaml")
+	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	addBackup, err := config.NewProxyConfig(configMap, k8sUtils)
+	if err != nil {
+		t.Fatalf("Failed to create new proxy config: %v", err)
+	}
+
+	// Update the Proxy with the updated ProxyConfig
+	err = proxy.UpdateConfig(*addBackup)
+	if err != nil {
+		t.Errorf("Failed to update proxy config: %v", err)
+		return
+	}
+	// End of Test Add Backup
+
+	// Create new configFile - Test New Array
+	configFile = readConfigFile("configC_single.yaml")
+	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	lastConfig, err := config.NewProxyConfig(configMap, k8sUtils)
+	if err != nil {
+		t.Fatalf("Failed to create new proxy config: %v", err)
+	}
+
+	// Update the Proxy with the updated ProxyConfig
+	err = proxy.UpdateConfig(*lastConfig)
+	if err != nil {
+		t.Errorf("Failed to update proxy config: %v", err)
+		return
+	}
+	// End of Test New Array
+
+	// Create new configFile - Test No Update
+	err = proxy.UpdateConfig(*lastConfig)
+	if err != nil {
+		t.Errorf("Failed to update proxy config: %v", err)
+		return
+	}
+	// End of Test No Update
 }
 
 func TestGetRouter(t *testing.T) {
