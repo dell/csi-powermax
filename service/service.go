@@ -204,7 +204,8 @@ type service struct {
 	allowedTopologyKeys       map[string][]string // map of nodes to allowed topology keys
 	deniedTopologyKeys        map[string][]string // map of nodes to denied topology keys
 
-	k8sUtils k8sutils.UtilsInterface
+	k8sUtils    k8sutils.UtilsInterface
+	snapCleaner *snapCleanupWorker
 }
 
 // New returns a new Service.
@@ -624,8 +625,8 @@ func (s *service) BeforeServe(
 	// Start the snapshot housekeeping worker thread
 	if !strings.EqualFold(s.mode, "node") {
 		s.startSnapCleanupWorker() // #nosec G20
-		if snapCleaner == nil {
-			snapCleaner = new(snapCleanupWorker)
+		if s.snapCleaner == nil {
+			s.snapCleaner = new(snapCleanupWorker)
 		}
 	}
 

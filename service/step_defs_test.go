@@ -421,8 +421,13 @@ func (f *feature) aPowerMaxService() error {
 	}
 
 	// Make sure the snapshot cleanup thread is started.
-	f.service.startSnapCleanupWorker()
-	snapCleaner.PollingInterval = 2 * time.Second
+	e := f.service.startSnapCleanupWorker()
+	if e != nil && !strings.Contains(e.Error(), "already added to the configuration") {
+		return fmt.Errorf("failed to start snapshot cleanup worker. err: %s", e.Error())
+	}
+	if f.service.snapCleaner != nil {
+		f.service.snapCleaner.PollingInterval = 2 * time.Second
+	}
 	// Start the lock workers
 	f.service.StartLockManager(1 * time.Minute)
 	// Make sure the deletion worker is started.
@@ -3999,14 +4004,14 @@ func (f *feature) iQueueSnapshotsForTermination() error {
 	if err != nil {
 		return fmt.Errorf("Invalid snapshot name")
 	}
-	snapCleaner.requestCleanup(snapDelReq1)
+	s.snapCleaner.requestCleanup(snapDelReq1)
 	snap2 := f.snapshotNameToID["snapshot2"]
 	snapDelReq2 := new(snapCleanupRequest)
 	snapDelReq2.snapshotID, snapDelReq2.symmetrixID, snapDelReq2.volumeID, _, _, err = f.service.parseCsiID(snap2)
 	if err != nil {
 		return fmt.Errorf("Invalid snapshot name")
 	}
-	snapCleaner.requestCleanup(snapDelReq2)
+	s.snapCleaner.requestCleanup(snapDelReq2)
 	snapshot := f.snapshotNameToID["snapshot3"]
 	snapDelReq := new(snapCleanupRequest)
 	snapDelReq.snapshotID, snapDelReq.symmetrixID, snapDelReq.volumeID, _, _, err = f.service.parseCsiID(snapshot)
@@ -4014,7 +4019,7 @@ func (f *feature) iQueueSnapshotsForTermination() error {
 		return fmt.Errorf("Invalid snapshot name")
 	}
 	time.Sleep(10 * time.Second)
-	snapCleaner.requestCleanup(snapDelReq)
+	s.snapCleaner.requestCleanup(snapDelReq)
 	return nil
 }
 
