@@ -416,6 +416,14 @@ func (f *feature) aPowerMaxService() error {
 		}
 		f.service.opts.Endpoint = f.server.URL
 		log.Printf("server url: %s", f.server.URL)
+
+		// initialize the admin client
+		if f.service.adminClient == nil {
+			err := f.service.controllerProbe(context.Background())
+			if err != nil && !strings.Contains(err.Error(), "already added to the configuration") {
+				log.Fatal(err.Error())
+			}
+		}
 	} else {
 		f.server = nil
 	}
@@ -4004,14 +4012,14 @@ func (f *feature) iQueueSnapshotsForTermination() error {
 	if err != nil {
 		return fmt.Errorf("Invalid snapshot name")
 	}
-	s.snapCleaner.requestCleanup(snapDelReq1)
+	f.service.snapCleaner.requestCleanup(snapDelReq1)
 	snap2 := f.snapshotNameToID["snapshot2"]
 	snapDelReq2 := new(snapCleanupRequest)
 	snapDelReq2.snapshotID, snapDelReq2.symmetrixID, snapDelReq2.volumeID, _, _, err = f.service.parseCsiID(snap2)
 	if err != nil {
 		return fmt.Errorf("Invalid snapshot name")
 	}
-	s.snapCleaner.requestCleanup(snapDelReq2)
+	f.service.snapCleaner.requestCleanup(snapDelReq2)
 	snapshot := f.snapshotNameToID["snapshot3"]
 	snapDelReq := new(snapCleanupRequest)
 	snapDelReq.snapshotID, snapDelReq.symmetrixID, snapDelReq.volumeID, _, _, err = f.service.parseCsiID(snapshot)
@@ -4019,7 +4027,7 @@ func (f *feature) iQueueSnapshotsForTermination() error {
 		return fmt.Errorf("Invalid snapshot name")
 	}
 	time.Sleep(10 * time.Second)
-	s.snapCleaner.requestCleanup(snapDelReq)
+	f.service.snapCleaner.requestCleanup(snapDelReq)
 	return nil
 }
 
