@@ -1,33 +1,30 @@
 port: 2222
-logLevel: info
-logFormat: text
 config:
   storageArrays:
     - storageArrayId: "000000000001"
-      primaryURL: https://primary-1.unisphe.re:8443
-      backupURL: https://backup-1.unisphe.re:8443
+      primaryURL: https://primary-3.unisphe.re:8443
+      backupURL: https://backup-3.unisphe.re:8443
       proxyCredentialSecrets:
         - primary-unisphere-secret-1
         - backup-unisphere-secret-1
     - storageArrayId: "000000000002"
-      primaryURL: https://primary-2.unisphe.re:8443
-      backupURL: https://backup-2.unisphe.re:8443
+      primaryURL: https://primary-4.unisphe.re:8443
+      backupURL: https://backup-5.unisphe.re:8443
       proxyCredentialSecrets:
         - primary-unisphere-secret-2
         - backup-unisphere-secret-2
   managementServers:
-    - url: https://primary-1.unisphe.re:8443
+    - url: https://primary-3.unisphe.re:8443
       arrayCredentialSecret: primary-unisphere-secret-1
       skipCertificateValidation: true
-    - url: https://backup-1.unisphe.re:8443
+    - url: https://backup-3.unisphe.re:8443
       arrayCredentialSecret: backup-unisphere-secret-1
-      skipCertificateValidation: true
-      certSecret: "secret-cert"
-    - url: https://primary-2.unisphe.re:8443
-      arrayCredentialSecret: primary-unisphere-secret-2
       skipCertificateValidation: false
-      certSecret: primary-unisphere-cert-2
-    - url: https://backup-2.unisphe.re:8443
+      certSecret: "secret-cert"
+    - url: https://primary-4.unisphe.re:8443
+      arrayCredentialSecret: primary-unisphere-secret-2
+      skipCertificateValidation: true
+    - url: https://backup-5.unisphe.re:8443
       arrayCredentialSecret: backup-unisphere-secret-2
       skipCertificateValidation: false
       certSecret: "secret-cert"
