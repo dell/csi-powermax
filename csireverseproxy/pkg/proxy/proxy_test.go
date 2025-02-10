@@ -468,6 +468,124 @@ func TestGetRouter_ServeReverseProxy(t *testing.T) {
 		})
 	}
 }
+
+func TestGetRouter_ServeVersions(t *testing.T) {
+	testCases := []struct {
+		name   string
+		proxy  func(*httptest.Server) *Proxy
+		req    []func() *http.Request
+		server *httptest.Server
+	}{
+		{
+			name: "Success: ServeVersions - /{version}/system/version",
+			proxy: func(server *httptest.Server) *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					url := fmt.Sprintf("%s/%s/system/version", utils.Prefix, "9.1")
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "test-password")
+					return req
+				},
+			},
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
+				if err != nil {
+					t.Errorf("expected nil error, got %v", err)
+				}
+
+			})),
+		},
+		{
+			name: "Fail: ServeVersions - unauthorized",
+			proxy: func(server *httptest.Server) *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					url := fmt.Sprintf("%s/%s/system/version", utils.Prefix, "9.1")
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					return req
+				},
+			},
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+		},
+		{
+			name: "Fail: ServeVersions - unauthorized - wrong password",
+			proxy: func(server *httptest.Server) *Proxy {
+				// Create a new Proxy
+				proxy, err := createValidProxyConfig(t, server)
+				if err != nil {
+					t.Errorf("Failed to create proxy: %v", err)
+					return nil
+				}
+
+				return proxy
+			},
+			req: []func() *http.Request{
+				func() *http.Request {
+					arrayID := "000000000001"
+					url := fmt.Sprintf("%s/%s/system/version", utils.Prefix, "9.1")
+					req, _ := http.NewRequest("GET", url, nil)
+
+					vars := map[string]string{
+						"symid": arrayID,
+					}
+					req = mux.SetURLVars(req, vars)
+					req.SetBasicAuth("test-username", "myPassword")
+					return req
+				},
+			},
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+		},
+	}
+
+	utils.InitializeLock()
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			proxy := tc.proxy(tc.server)
+			if proxy == nil {
+				return
+			}
+
+			// Setup router
+			router := proxy.GetRouter()
+			for _, reqFunc := range tc.req {
+				req := reqFunc()
+				router.ServeHTTP(httptest.NewRecorder(), req)
+			}
+		})
+	}
+}
+
 func TestGetRouter(t *testing.T) {
 	volumeIteratorID := "00000000-1111-2abc-def3-44gh55ij66kl_0"
 	server := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -515,34 +633,6 @@ func TestGetRouter(t *testing.T) {
 		req         []func() *http.Request
 		expectedErr error
 	}{
-		{
-			name: "Success: ServeVersions - /{version}/system/version",
-			proxy: func() *Proxy {
-				// Create a new Proxy
-				proxy, err := createValidProxyConfig(t, server)
-				if err != nil {
-					t.Errorf("Failed to create proxy: %v", err)
-					return nil
-				}
-
-				return proxy
-			},
-			req: []func() *http.Request{
-				func() *http.Request {
-					arrayID := "000000000001"
-					url := fmt.Sprintf("%s/%s/system/version", utils.Prefix, "9.1")
-					req, _ := http.NewRequest("GET", url, nil)
-
-					vars := map[string]string{
-						"symid": arrayID,
-					}
-					req = mux.SetURLVars(req, vars)
-					req.SetBasicAuth("test-username", "test-password")
-					return req
-				},
-			},
-			expectedErr: nil,
-		},
 		{
 			name: "Success: ServePerformance - /performance/Array/keys",
 			proxy: func() *Proxy {
