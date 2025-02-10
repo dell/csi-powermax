@@ -19,10 +19,10 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -110,7 +110,7 @@ func newTLSConfig(mgmtServer config.ManagementServer) *tls.Config {
 		InsecureSkipVerify: mgmtServer.SkipCertificateValidation, // #nosec G402 InsecureSkipVerify cannot be false always as expected by gosec, this needs to be configurable
 	}
 	if !mgmtServer.SkipCertificateValidation {
-		caCert, err := ioutil.ReadFile(mgmtServer.CertFile)
+		caCert, err := os.ReadFile(mgmtServer.CertFile)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -173,7 +173,7 @@ func (revProxy *Proxy) getProxyBySymmID(storageArrayID string) (common.Proxy, er
 func (revProxy *Proxy) getAuthorisedArrays(res http.ResponseWriter, req *http.Request) ([]string, error) {
 	username, password, ok := req.BasicAuth()
 	if !ok {
-		utils.WriteHTTPError(res, fmt.Sprintf("no authorization provided"), utils.StatusUnAuthorized)
+		utils.WriteHTTPError(res, "no authorization provided", utils.StatusUnAuthorized)
 		return nil, fmt.Errorf("no authorization provided")
 	}
 	symIDs := revProxy.config.GetAuthorizedArrays(username, password)
@@ -431,7 +431,7 @@ func (revProxy *Proxy) symIDMiddleware(next http.Handler) http.Handler {
 func (revProxy *Proxy) isAuthorized(res http.ResponseWriter, req *http.Request, storageArrayID string) error {
 	username, password, ok := req.BasicAuth()
 	if !ok {
-		utils.WriteHTTPError(res, fmt.Sprintf("no authorization provided"), utils.StatusUnAuthorized)
+		utils.WriteHTTPError(res, "no authorization provided", utils.StatusUnAuthorized)
 	}
 	_, err := revProxy.config.IsUserAuthorized(username, password, storageArrayID)
 	if err != nil {
@@ -534,7 +534,7 @@ func (revProxy *Proxy) ServeVolumePerformance(res http.ResponseWriter, req *http
 	reqParam := new(types.VolumeMetricsParam)
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(reqParam); err != nil {
-		log.Errorf("Decoding fails for mertics req for volume: %s", err.Error())
+		log.Errorf("Decoding fails for metrics req for volume: %s", err.Error())
 		return
 	}
 
@@ -547,7 +547,7 @@ func (revProxy *Proxy) ServeVolumePerformance(res http.ResponseWriter, req *http
 	defer resp.Body.Close()
 	err = utils.IsValidResponse(resp)
 	if err != nil {
-		log.Errorf("Get performace metrics step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
+		log.Errorf("Get performance metrics step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
 	} else {
 		metricsIterator := new(types.VolumeMetricsIterator)
 		if err := json.NewDecoder(resp.Body).Decode(metricsIterator); err != nil {
@@ -563,7 +563,7 @@ func (revProxy *Proxy) ServeFSPerformance(res http.ResponseWriter, req *http.Req
 	reqParam := new(types.FileSystemMetricsParam)
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(reqParam); err != nil {
-		log.Errorf("Decoding fails for mertics req for volume: %s", err.Error())
+		log.Errorf("Decoding fails for metrics req for volume: %s", err.Error())
 		return
 	}
 
@@ -576,7 +576,7 @@ func (revProxy *Proxy) ServeFSPerformance(res http.ResponseWriter, req *http.Req
 	defer resp.Body.Close()
 	err = utils.IsValidResponse(resp)
 	if err != nil {
-		log.Errorf("Get performace metrics step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
+		log.Errorf("Get performance metrics step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
 	} else {
 		metricsIterator := new(types.FileSystemMetricsIterator)
 		if err := json.NewDecoder(resp.Body).Decode(metricsIterator); err != nil {
@@ -650,9 +650,8 @@ func (revProxy *Proxy) ServeSymmetrix(res http.ResponseWriter, req *http.Request
 					utils.WriteHTTPError(res, "decoding error: "+err.Error(), 400)
 					log.Errorf("decoding error: %s", err.Error())
 				}
-				for _, sym := range symmetrixList.SymmetrixIDs {
-					allSymmetrixIDList.SymmetrixIDs = append(allSymmetrixIDList.SymmetrixIDs, sym)
-				}
+
+				allSymmetrixIDList.SymmetrixIDs = append(allSymmetrixIDList.SymmetrixIDs, symmetrixList.SymmetrixIDs...)
 			}
 		}()
 	}
@@ -680,18 +679,15 @@ func (revProxy *Proxy) ServeReplicationCapabilities(res http.ResponseWriter, req
 			defer resp.Body.Close()
 			err = utils.IsValidResponse(resp)
 			if err != nil {
-				log.Errorf("Get Repelication capabilities step fails for: (%s) symID with error (%s)", symID, err.Error())
+				log.Errorf("Get replication capabilities step fails for: (%s) symID with error (%s)", symID, err.Error())
 			} else {
 				symCapabilities := new(types.SymReplicationCapabilities)
 				if err := json.NewDecoder(resp.Body).Decode(symCapabilities); err != nil {
 					utils.WriteHTTPError(res, "decoding error: "+err.Error(), 400)
 					log.Errorf("decoding error: %s", err.Error())
 				}
-				// symCapability := symCapabilities.SymmetrixCapability
-				// symRepCapabilities.SymmetrixCapability = append(symRepCapabilities.SymmetrixCapability, symCapability)
-				for _, symCapability := range symCapabilities.SymmetrixCapability {
-					symRepCapabilities.SymmetrixCapability = append(symRepCapabilities.SymmetrixCapability, symCapability)
-				}
+
+				symRepCapabilities.SymmetrixCapability = append(symRepCapabilities.SymmetrixCapability, symCapabilities.SymmetrixCapability...)
 			}
 		}()
 	}
