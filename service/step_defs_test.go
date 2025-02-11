@@ -3161,7 +3161,7 @@ func (f *feature) deletionWorkerProcessesWhichResultsIn(volumeName, errormsg str
 		if f.service.deletionWorker == nil {
 			return fmt.Errorf("delWorker nil")
 		}
-		for _, vol := range f.service.deletionWorker.DeletionQueues[arrayID].DeviceList {
+		for _, vol := range f.service.deletionWorker.DeletionQueues[arrayID].GetDeviceList() {
 			if volumeName == vol.VolumeIdentifier {
 				// We expected an error
 				if errormsg == "none" {
@@ -3233,11 +3233,9 @@ func (f *feature) volumesAreBeingProcessedForDeletion(nVols int) error {
 	cnt := 0
 	for retryno := 0; retryno < retry; retryno++ {
 		for _, dQ := range f.service.deletionWorker.DeletionQueues {
-			if dQ.DeviceList != nil {
-				dQ.Print()
-				cnt = cnt + len(dQ.DeviceList)
-				break
-			}
+			dQ.Print()
+			cnt = cnt + len(dQ.GetDeviceList())
+			break
 		}
 		if cnt > 0 {
 			break

@@ -201,6 +201,17 @@ func (queue *deletionQueue) Print() {
 	queue.print()
 }
 
+func (queue *deletionQueue) GetDeviceList() []csiDevice {
+	queue.lock.Lock()
+	defer queue.lock.Unlock()
+	log.Info("Deletion queue")
+	result := make([]csiDevice, 0)
+	for _, v := range queue.DeviceList {
+		result = append(result, *v)
+	}
+	return result
+}
+
 func (queue *deletionQueue) print() {
 	log.Debugf("Length of deletion queue for: %s - %d", queue.SymID, len(queue.DeviceList))
 	for _, dev := range queue.DeviceList {
