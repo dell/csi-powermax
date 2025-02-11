@@ -738,7 +738,7 @@ Feature: PowerMax CSI interface
       Then 0 nvmetcp targets are returned
 
 @v1.4.0
-    Scenario: Validate nodeHostSetup with temporary fc failure
+    Scenario: Validate nodeHostSetup with temporary FC failure
       Given a PowerMax service
       And I set transport protocol to "FC"
       And I induce error "GetHostError"
@@ -748,7 +748,7 @@ Feature: PowerMax CSI interface
       Then no error was received
 
 @v2.13.0
-    Scenario: Validate nodeHostSetup with temporary nvme failure
+    Scenario: Validate nodeHostSetup with temporary NVMe failure
       Given a PowerMax service
       And I set transport protocol to "NVME"
       And I induce error "GetHostError"
@@ -758,7 +758,7 @@ Feature: PowerMax CSI interface
       Then no error was received
 
 @v2.13.0
-    Scenario: Validate nodeHostSetup with temporary iscsi failure
+    Scenario: Validate nodeHostSetup with temporary iSCSI failure
       Given a PowerMax service
       And I set transport protocol to "ISCSI"
       And I induce error "GetHostError"
