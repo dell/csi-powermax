@@ -36,6 +36,12 @@ func (s *service) newProbeStatus() {
 	s.probeStatus = new(sync.Map)
 }
 
+func (s *service) storeProbeStatus(k, v any) {
+	s.probeStatusMutex.Lock()
+	defer s.probeStatusMutex.Unlock()
+	s.probeStatus.Store(k, v)
+}
+
 // startAPIService reads nodes to array status periodically
 func (s *service) startAPIService(ctx context.Context) {
 	if !s.opts.IsPodmonEnabled {
@@ -198,7 +204,7 @@ func (s *service) testConnectivityAndUpdateStatus(ctx context.Context, symID str
 		}
 		status.LastAttempt = time.Now().Unix()
 		log.Debugf("array %s , storing status %+v", symID, status)
-		s.probeStatus.Store(symID, status)
+		s.storeProbeStatus(symID, status)
 		cancel()
 		// sleep for half the pollingFrequency and run check again
 		time.Sleep(time.Second * time.Duration(s.GetPollingFrequency()/2))

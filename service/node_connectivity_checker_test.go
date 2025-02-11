@@ -51,7 +51,7 @@ func TestApiRouter(t *testing.T) {
 	}
 	// fill some invalid dummy data in the cache and try to fetch
 	s.newProbeStatus()
-	s.probeStatus.Store("SymID2", "status")
+	s.storeProbeStatus("SymID2", "status")
 
 	resp5, err := http.Get("http://localhost:8083/array-status")
 	if err != nil || resp5.StatusCode != 500 {
@@ -63,7 +63,7 @@ func TestApiRouter(t *testing.T) {
 	status.LastSuccess = time.Now().Unix()
 	status.LastAttempt = time.Now().Unix()
 	s.newProbeStatus()
-	s.probeStatus.Store("SymID", status)
+	s.storeProbeStatus("SymID", status)
 
 	// array status
 	resp2, err := http.Get("http://localhost:8083/array-status")
@@ -76,7 +76,7 @@ func TestApiRouter(t *testing.T) {
 		t.Errorf("Error while probing array status %v", err)
 	}
 	value := make(chan int)
-	s.probeStatus.Store("SymID3", value)
+	s.storeProbeStatus("SymID3", value)
 	resp9, err := http.Get("http://localhost:8083/array-status/SymID3")
 	if err != nil || resp9.StatusCode != 500 {
 		t.Errorf("Error while probing array status %v", err)
@@ -229,7 +229,7 @@ func TestConnectivityStatus(t *testing.T) {
 	}
 
 	// Store valid data in probeStatus
-	s.probeStatus.Store("SymID", status)
+	s.storeProbeStatus("SymID", status)
 
 	// Test cases
 	tests := []struct {
@@ -256,7 +256,7 @@ func TestConnectivityStatus(t *testing.T) {
 
 			if tt.probeStatus != nil {
 				tt.probeStatus.Range(func(key, value interface{}) bool {
-					s.probeStatus.Store(key, value)
+					s.storeProbeStatus(key, value)
 					return true
 				})
 			}
