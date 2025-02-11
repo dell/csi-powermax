@@ -1,4 +1,4 @@
-# Copyright © 2024 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ metadata:
   namespace: powermax
 data:
   powermax-array-config.yaml: |
-    # List of comma-separated port groups (ISCSI only). Example: PortGroup1, portGroup2 Required for iSCSI only
+    # List of comma-separated port groups (ISCSI and NVMe/TCP only). Example: PortGroup1, portGroup2 Required for iSCSI and NVMe/TCP only
     X_CSI_POWERMAX_PORTGROUPS: ""
     # Choose which transport protocol to use (ISCSI, FC, NVMETCP or auto) defaults to auto if nothing is specified
     X_CSI_TRANSPORT_PROTOCOL: ""
