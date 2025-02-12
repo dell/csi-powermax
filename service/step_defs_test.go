@@ -246,8 +246,8 @@ func (f *feature) aPowerMaxService() error {
 		fmt.Printf("time for last op: %v\n", dur)
 	}
 	f.lastTime = now
-	induceOverloadError = false
-	inducePendingError = false
+	SetInduceOverloadError(false)
+	SetInducePendingError(false)
 	inducedMockReverseProxy = true
 	gofsutil.GOFSWWNPath = "test/dev/disk/by-id/wwn-0x"
 	nodePublishSleepTime = 5 * time.Millisecond
@@ -1375,9 +1375,9 @@ func (f *feature) iInduceError(errtype string) error {
 		mockgosystemdInducedErrors.ISCSIDInactiveError = true
 		mockgosystemdInducedErrors.JobFailure = true
 	case "InduceOverloadError":
-		induceOverloadError = true
+		SetInduceOverloadError(true)
 	case "InducePendingError":
-		inducePendingError = true
+		SetInducePendingError(true)
 	case "InvalidateNodeID":
 		f.iInvalidateTheNodeID()
 	case "NoMountInfo":
@@ -3364,9 +3364,9 @@ func (f *feature) theErrorClearsAfterSeconds(seconds int64) error {
 		case "DeleteVolumeError":
 			mock.SafeSetInducedError(mock.InducedErrors, "DeleteVolumeError", false)
 		case "InduceOverloadError":
-			induceOverloadError = false
+			SetInduceOverloadError(false)
 		case "InducePendingError":
-			inducePendingError = false
+			SetInducePendingError(false)
 		}
 		f.doneChan <- true
 	}(seconds)
