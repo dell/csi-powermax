@@ -478,8 +478,8 @@ func (f *feature) getService() *service {
 	opts.KubeConfigPath = kubeconfig
 	opts.NodeName, _ = os.Hostname()
 	opts.PortGroups = []string{"portgroup1", "portgroup2"}
-	mock.AddPortGroup("portgroup1", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
-	mock.AddPortGroup("portgroup2", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+	mock.AddPortGroupWithPortID("portgroup1", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+	mock.AddPortGroupWithPortID("portgroup2", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 	opts.ManagedArrays = []string{"000197900046", "000197900047", "000000000013"}
 	opts.NodeFullName, _ = os.Hostname()
 	opts.EnableSnapshotCGDelete = true
@@ -1606,7 +1606,7 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		} else {
 			portGroupID = "fc_ports"
 		}
-		mock.AddPortGroup(portGroupID, "Fibre", []string{defaultFCDirPort})
+		mock.AddPortGroupWithPortID(portGroupID, "Fibre", []string{defaultFCDirPort})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	} else if transportProtocol == "NVME" {
 		f.hostID, f.sgID, f.mvID = f.service.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
@@ -1622,7 +1622,7 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		} else {
 			portGroupID = "iscsi_ports"
 		}
-		mock.AddPortGroup(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+		mock.AddPortGroupWithPortID(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	} else {
 		f.hostID, f.sgID, f.mvID = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
@@ -1638,7 +1638,7 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		} else {
 			portGroupID = "iscsi_ports"
 		}
-		mock.AddPortGroup(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+		mock.AddPortGroupWithPortID(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	}
 	return nil
@@ -1714,7 +1714,7 @@ func (f *feature) iHaveANodeWithHostWithInitiatorMappedToMultiplePorts(nodeID st
 func (f *feature) iHaveAFCPortGroup(portGroupID string) error {
 	dirPort := defaultFCDirPort
 	tempPGID := "csi-" + f.service.getClusterPrefix() + "-" + portGroupID
-	mock.AddPortGroup(tempPGID, "Fibre", []string{dirPort})
+	mock.AddPortGroupWithPortID(tempPGID, "Fibre", []string{dirPort})
 	return nil
 }
 
