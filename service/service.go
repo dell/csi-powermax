@@ -188,7 +188,7 @@ type service struct {
 	useIscsi                  bool
 	useNVMeTCP                bool
 	iscsiTargets              map[string][]string
-	nvmeTargets               map[string][]string
+	nvmeTargets               *sync.Map
 
 	// Timeout for storage pool cache
 	storagePoolCacheDuration time.Duration
@@ -218,7 +218,7 @@ func New() Service {
 		loggedInArrays:     map[string]bool{},
 		iscsiTargets:       map[string][]string{},
 		loggedInNVMeArrays: map[string]bool{},
-		nvmeTargets:        map[string][]string{},
+		nvmeTargets:        new(sync.Map),
 	}
 	svc.sgSvc = newStorageGroupService(svc)
 	svc.pmaxTimeoutSeconds = defaultPmaxTimeout

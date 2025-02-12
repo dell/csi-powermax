@@ -465,7 +465,7 @@ func (f *feature) getService() *service {
 	mock.Data.JSONDir = "mock-data"
 	svc.loggedInArrays = map[string]bool{}
 	svc.iscsiTargets = map[string][]string{}
-	svc.nvmeTargets = map[string][]string{}
+	svc.nvmeTargets = new(sync.Map)
 	svc.loggedInNVMeArrays = map[string]bool{}
 	var opts Opts
 	opts.User = "username"
