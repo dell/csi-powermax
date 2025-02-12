@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pmax "github.com/dell/gopowermax/v2"
@@ -27,7 +28,7 @@ import (
 var metroClients sync.Map
 
 const (
-	failoverThereshold   int           = 5
+	failoverThereshold   int32         = 5
 	failureTimeThreshold time.Duration = 2 * time.Minute
 )
 
@@ -46,7 +47,7 @@ type metroClient struct {
 	primaryArray   string
 	secondaryArray string
 	activeArray    string
-	failureCount   int
+	failureCount   int32
 	lastFailure    time.Time
 	mx             sync.Mutex
 }
@@ -84,7 +85,7 @@ func (m *metroClient) healthHandler(failureWeight int) {
 		log.Infof("Last failure was more than %f minutes ago; reseting the failure count", failureTimeThreshold.Minutes())
 		m.failureCount = 1
 	} else {
-		m.failureCount = m.failureCount + failureWeight
+		atomic.AddInt32(&(m.failureCount), int32(failureWeight))
 	}
 }
 
