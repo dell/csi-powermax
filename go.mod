@@ -21,6 +21,7 @@ require (
 	github.com/dell/gonvme v1.10.1
 	github.com/dell/gopowermax/v2 v2.9.1-0.20250212222821-9305d437702c
 	github.com/fsnotify/fsnotify v1.8.0
+	github.com/golang/mock v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/kubernetes-csi/csi-lib-utils v0.11.0
 	github.com/sirupsen/logrus v1.9.3
@@ -50,7 +51,6 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
