@@ -227,8 +227,12 @@ func GetPowerMax(symID string) (*PowerMax, error) {
 	return getPowerMax(symID)
 }
 
+var getPowerMaxClientMux sync.Mutex
+
 // GetPowerMaxClient ...
 func GetPowerMaxClient(primaryArray string, arrays ...string) (pmax.Pmax, error) {
+	getPowerMaxClientMux.Lock()
+	defer getPowerMaxClientMux.Unlock()
 	primaryPowermax, err := getPowerMax(primaryArray)
 	if err != nil {
 		return nil, err
