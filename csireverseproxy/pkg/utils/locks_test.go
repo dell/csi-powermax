@@ -17,9 +17,10 @@ package utils
 
 import (
 	"fmt"
-	"revproxy/v2/pkg/common"
 	"testing"
 	"time"
+
+	"revproxy/v2/pkg/common"
 )
 
 func TestLock(t *testing.T) {
@@ -57,8 +58,11 @@ func TestLock(t *testing.T) {
 
 			// Simulate lock processing asynchronously
 			go func() {
-				time.Sleep(50 * time.Millisecond)
-				lock.WaitChannel <- tt.lockResult
+				// wait for the request to be queued in lock.Lock()
+				req := <-lockRequestsQueue
+				lockMutex.Lock()
+				defer lockMutex.Unlock()
+				req.WaitChannel <- tt.lockResult
 			}()
 
 			err := lock.Lock()

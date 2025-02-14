@@ -111,6 +111,8 @@ func TestCleanupCallback2(t *testing.T) {
 			cleanup := c.cleanupCallback(tt.cleanupKey)
 			cleanup()
 
+			c.cmu.Lock()
+			defer c.cmu.Unlock()
 			_, exists := c.store[tt.cleanupKey]
 			if exists != tt.expectedExists {
 				t.Fatalf("Expected key existence: %v, got: %v", tt.expectedExists, exists)

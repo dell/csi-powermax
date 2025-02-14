@@ -22,7 +22,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -188,7 +188,7 @@ func doHTTPRequest(port, path string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
@@ -259,7 +259,7 @@ func createTempConfig() error {
 	}
 
 	filename := tmpSAConfigFile
-	proxyConfigMap.Port = "8080"
+	proxyConfigMap.Port = "2222"
 	// Create a ManagementServerConfig
 	tempMgmtServerConfig := createTempManagementServers()
 	proxyConfigMap.Config.ManagementServerConfig = tempMgmtServerConfig
@@ -570,7 +570,10 @@ func TestMainFunc(t *testing.T) {
 			setup: func() {
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
 				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
-					runningCh <- "not running"
+					// must defer writing to the channel so all goroutines can finish running,
+					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
+					defer func() { runningCh <- "not running" }()
+
 					return nil, errors.New("error, k8s init failed")
 				}
 			},
@@ -599,7 +602,10 @@ func TestMainFunc(t *testing.T) {
 				}
 
 				runWithLeaderElectionFunc = func(_ *k8sutils.KubernetesClient) (err error) {
-					runningCh <- "not running"
+					// must defer writing to the channel so all goroutines can finish running,
+					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
+					defer func() { runningCh <- "not running" }()
+
 					ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 					defer cancel()
 
@@ -644,7 +650,10 @@ func TestMainFunc(t *testing.T) {
 				}
 
 				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
-					runningCh <- "not running"
+					// must defer writing to the channel so all goroutines can finish running,
+					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
+					defer func() { runningCh <- "not running" }()
+
 					return nil, errors.New("error, k8s init failed")
 				}
 			},
@@ -657,7 +666,10 @@ func TestMainFunc(t *testing.T) {
 			setup: func() {
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
 				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
-					runningCh <- "running"
+					// must defer writing to the channel so all goroutines can finish running,
+					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
+					defer func() { runningCh <- "running" }()
+
 					return &Server{
 						Opts: opts,
 					}, nil
@@ -755,7 +767,6 @@ func TestRun(t *testing.T) {
 		{
 			name: "execute run sucess",
 			setup: func() {
-
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
 				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
 					return &Server{
@@ -780,7 +791,6 @@ func TestRun(t *testing.T) {
 		{
 			name: "execute run start server failure",
 			setup: func() {
-
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
 				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
 					return &k8sutils.K8sUtils{
@@ -801,7 +811,6 @@ func TestRun(t *testing.T) {
 		{
 			name: "execute run k8s init failure",
 			setup: func() {
-
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
 				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
 					return nil, errors.New("error, k8s init failed")
@@ -925,7 +934,7 @@ func TestK8sInitFunc(t *testing.T) {
 
 func TestStartServerFuncFailure(t *testing.T) {
 	opts := getServerOpts()
-	//Invalid config file
+	// Invalid config file
 	opts.ConfigFileName = "invalid.yaml"
 	opts.ConfigDir = "./invalid-dir"
 	_, err := startServerFunc(k8smock.Init(), opts)
