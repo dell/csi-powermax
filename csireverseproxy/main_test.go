@@ -570,7 +570,10 @@ func TestMainFunc(t *testing.T) {
 			setup: func() {
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
 				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
-					runningCh <- "not running"
+					// must defer writing to the channel so all goroutines can finish running,
+					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
+					defer func() { runningCh <- "not running" }()
+
 					return nil, errors.New("error, k8s init failed")
 				}
 			},
@@ -599,7 +602,10 @@ func TestMainFunc(t *testing.T) {
 				}
 
 				runWithLeaderElectionFunc = func(_ *k8sutils.KubernetesClient) (err error) {
-					runningCh <- "not running"
+					// must defer writing to the channel so all goroutines can finish running,
+					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
+					defer func() { runningCh <- "not running" }()
+
 					ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 					defer cancel()
 
@@ -644,7 +650,10 @@ func TestMainFunc(t *testing.T) {
 				}
 
 				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
-					runningCh <- "not running"
+					// must defer writing to the channel so all goroutines can finish running,
+					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
+					defer func() { runningCh <- "not running" }()
+
 					return nil, errors.New("error, k8s init failed")
 				}
 			},
@@ -657,7 +666,10 @@ func TestMainFunc(t *testing.T) {
 			setup: func() {
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
 				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
-					runningCh <- "running"
+					// must defer writing to the channel so all goroutines can finish running,
+					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
+					defer func() { runningCh <- "running" }()
+
 					return &Server{
 						Opts: opts,
 					}, nil
