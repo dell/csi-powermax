@@ -22,7 +22,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -188,7 +188,7 @@ func doHTTPRequest(port, path string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
@@ -755,7 +755,6 @@ func TestRun(t *testing.T) {
 		{
 			name: "execute run sucess",
 			setup: func() {
-
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
 				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
 					return &Server{
@@ -780,7 +779,6 @@ func TestRun(t *testing.T) {
 		{
 			name: "execute run start server failure",
 			setup: func() {
-
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
 				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
 					return &k8sutils.K8sUtils{
@@ -801,7 +799,6 @@ func TestRun(t *testing.T) {
 		{
 			name: "execute run k8s init failure",
 			setup: func() {
-
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
 				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
 					return nil, errors.New("error, k8s init failed")
@@ -925,7 +922,7 @@ func TestK8sInitFunc(t *testing.T) {
 
 func TestStartServerFuncFailure(t *testing.T) {
 	opts := getServerOpts()
-	//Invalid config file
+	// Invalid config file
 	opts.ConfigFileName = "invalid.yaml"
 	opts.ConfigDir = "./invalid-dir"
 	_, err := startServerFunc(k8smock.Init(), opts)
