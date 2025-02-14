@@ -259,7 +259,7 @@ func createTempConfig() error {
 	}
 
 	filename := tmpSAConfigFile
-	proxyConfigMap.Port = "8080"
+	proxyConfigMap.Port = "2222"
 	// Create a ManagementServerConfig
 	tempMgmtServerConfig := createTempManagementServers()
 	proxyConfigMap.Config.ManagementServerConfig = tempMgmtServerConfig
