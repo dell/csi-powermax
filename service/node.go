@@ -1001,7 +1001,11 @@ func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
 		}
 		log.Debugf("Checking if nvme sessions are active on node or not")
 		sessions, _ := s.nvmetcpClient.GetSessions()
-		for _, target := range s.nvmeTargets[symID] {
+		targets, ok := s.nvmeTargets.Load(symID)
+		if !ok {
+			return fmt.Errorf("no active nvme sessions")
+		}
+		for _, target := range targets.([]string) {
 			for _, session := range sessions {
 				log.Debugf("matching %v with %v", target, session)
 				if strings.HasPrefix(target, session.Target) && session.NVMESessionState == gonvme.NVMESessionStateLive {
@@ -2088,7 +2092,11 @@ func (s *service) loginIntoNVMeTCPTargets(array string, targets []maskingViewNVM
 			err = discoveryError
 			loggedInAll = false
 		} else {
-			s.nvmeTargets[array] = append(s.nvmeTargets[array], tgt.target.TargetNqn)
+			nvmeTgts, ok := s.nvmeTargets.Load(array)
+			if !ok {
+				nvmeTgts = []string{}
+			}
+			s.nvmeTargets.Store(array, append(nvmeTgts.([]string), tgt.target.TargetNqn))
 			log.Infof("Successfully logged into target: %s on portal :%s",
 				tgt.target.PortID, tgt.target.Portal)
 		}

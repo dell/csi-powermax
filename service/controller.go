@@ -1358,7 +1358,7 @@ func (s *service) LinkSRDFVolToVolume(ctx context.Context, reqID, symID string, 
 	cleanReq.symmetrixID = symID
 	cleanReq.volumeID = vol.VolumeID
 	cleanReq.requestID = reqID
-	snapCleaner.requestCleanup(&cleanReq)
+	s.snapCleaner.requestCleanup(&cleanReq)
 	return nil
 }
 

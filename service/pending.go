@@ -28,7 +28,36 @@ type volumeIDType string
 var (
 	induceOverloadError bool // for testing only
 	inducePendingError  bool // for testing only
+	overloadMutex       sync.Mutex
 )
+
+// SetInduceOverloadError sets the value of induceOverloadError.
+func SetInduceOverloadError(value bool) {
+	overloadMutex.Lock()
+	defer overloadMutex.Unlock()
+	induceOverloadError = value
+}
+
+// GetInduceOverloadError gets the value of induceOverloadError.
+func GetInduceOverloadError() bool {
+	overloadMutex.Lock()
+	defer overloadMutex.Unlock()
+	return induceOverloadError
+}
+
+// SetInducePendingError sets the value of inducePendingError.
+func SetInducePendingError(value bool) {
+	overloadMutex.Lock()
+	defer overloadMutex.Unlock()
+	inducePendingError = value
+}
+
+// GetInducePendingError gets the value of inducePendingError.
+func GetInducePendingError() bool {
+	overloadMutex.Lock()
+	defer overloadMutex.Unlock()
+	return inducePendingError
+}
 
 // pendingState type limits the number of pending requests by making sure there are no other requests for the same volumeID,
 // otherwise a "pending" error is returned.
@@ -47,11 +76,11 @@ func (volID volumeIDType) checkAndUpdatePendingState(ps *pendingState) error {
 		ps.pendingMap = make(map[volumeIDType]time.Time)
 	}
 	startTime := ps.pendingMap[volID]
-	if startTime.IsZero() == false || inducePendingError {
+	if startTime.IsZero() == false || GetInducePendingError() {
 		log.Infof("volumeID %s pending %s", volID, time.Now().Sub(startTime))
 		return status.Errorf(codes.Unavailable, "pending")
 	}
-	if ps.maxPending > 0 && ps.npending >= ps.maxPending || induceOverloadError {
+	if ps.maxPending > 0 && ps.npending >= ps.maxPending || GetInduceOverloadError() {
 		return status.Errorf(codes.Unavailable, "overload")
 	}
 	ps.pendingMap[volID] = time.Now()

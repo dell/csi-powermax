@@ -45,7 +45,6 @@ var (
 	cleanupStarted      = false
 	symmRepCapabilities = make(map[string]types.SymmetrixCapability)
 	mutex               sync.Mutex
-	snapCleaner         *snapCleanupWorker
 )
 
 // SnapSession is an intermediate structure to share session info
@@ -492,7 +491,7 @@ func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *typ
 	cleanReq.symmetrixID = symID
 	cleanReq.volumeID = vol.VolumeID
 	cleanReq.requestID = reqID
-	snapCleaner.requestCleanup(&cleanReq)
+	s.snapCleaner.requestCleanup(&cleanReq)
 	return nil
 }
 
@@ -570,16 +569,16 @@ func (s *service) startSnapCleanupWorker() error {
 			return err
 		}
 	}
-	if snapCleaner == nil {
-		snapCleaner = new(snapCleanupWorker)
-		snapCleaner.PollingInterval = 3 * time.Minute
-		snapCleaner.Queue = make(snapCleanupQueue, 0)
-		snapCleaner.MaxRetries = 10
+	if s.snapCleaner == nil {
+		s.snapCleaner = new(snapCleanupWorker)
+		s.snapCleaner.PollingInterval = 3 * time.Minute
+		s.snapCleaner.Queue = make(snapCleanupQueue, 0)
+		s.snapCleaner.MaxRetries = 10
 	}
 
 	log.Infof("Starting snapshots cleanup worker thread")
 	if !cleanupStarted {
-		go snapCleanupThread(context.Background(), snapCleaner, s)
+		go snapCleanupThread(context.Background(), s.snapCleaner, s)
 		cleanupStarted = true
 	}
 	return nil
@@ -636,7 +635,7 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 							cleanReq.symmetrixID = symID
 							cleanReq.volumeID = id.Name
 							log.Debugf("Pushing (%s) on vol (%s) to the queue", snapID, id.Name)
-							snapCleaner.requestCleanup(&cleanReq)
+							s.snapCleaner.requestCleanup(&cleanReq)
 						}
 					} else {
 						log.Debugf("Snapshot (%s) is not in a supported format", snap.Name)

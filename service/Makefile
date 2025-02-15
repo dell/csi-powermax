@@ -11,13 +11,13 @@
 # limitations under the License.
 #
 unit-test:
-	go clean -cache
-	go test -v -coverprofile=c.out ./...
+	go test -v -race -coverprofile=c.out ./...
 
 godog:
-	go clean -cache
-	go test -v -coverprofile=c.out -test.run TestGoDog ./...
+	go test -v -race -coverprofile=c.out -test.run TestGoDog ./...
 
 gocover:
 	go tool cover -html=c.out
 
+clean:
+	go clean -cache

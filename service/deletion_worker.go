@@ -37,7 +37,6 @@ const (
 	MaxErrorCount               = 100
 	CacheValidTime              = 30 * time.Minute
 	MinPollingInterval          = 3 * time.Second
-	WaitTillSyncInProgTime      = 20 * time.Second
 	initialStep                 = "initialStep"
 	cleanupSnapshotStep         = "cleanupSnapshotStep"
 	removeVolumesFromSGStep     = "removeVolumesFromSGStep"
@@ -49,6 +48,10 @@ const (
 	deleted                     = "deleted"
 	maxedOutState               = "maxedOut"
 	FinalError                  = "Final error: Max error count reached, device will be removed from Deletion Queue"
+)
+
+var (
+	WaitTillSyncInProgTime = 20 * time.Second
 )
 
 // symDeviceID - holds a hexadecimal device id in string as well as the corresponding integer value
@@ -199,6 +202,17 @@ func (queue *deletionQueue) Print() {
 	defer queue.lock.Unlock()
 	log.Info("Deletion queue")
 	queue.print()
+}
+
+func (queue *deletionQueue) GetDeviceList() []csiDevice {
+	queue.lock.Lock()
+	defer queue.lock.Unlock()
+	log.Info("Deletion queue")
+	result := make([]csiDevice, 0)
+	for _, v := range queue.DeviceList {
+		result = append(result, *v)
+	}
+	return result
 }
 
 func (queue *deletionQueue) print() {

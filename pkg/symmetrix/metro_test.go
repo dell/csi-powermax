@@ -29,9 +29,9 @@ func TestMetroClient_healthHandler(t *testing.T) {
 	tests := []struct {
 		name           string
 		failureWeight  int
-		failureCount   int
+		failureCount   int32
 		lastFailure    time.Time
-		expectedCount  int
+		expectedCount  int32
 		expectedActive string
 	}{
 		{
@@ -155,7 +155,7 @@ func TestMetroClient_getActiveArray(t *testing.T) {
 	tests := []struct {
 		name           string
 		failureWeight  int
-		failureCount   int
+		failureCount   int32
 		lastFailure    time.Time
 		expectedActive string
 		activeArray    string
