@@ -999,6 +999,8 @@ func TestRemoveVolumesFromStorageGroup(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			oldSyncInProgTime := WaitTillSyncInProgTime
+			defer func() { WaitTillSyncInProgTime = oldSyncInProgTime }()
 			WaitTillSyncInProgTime = 1 * time.Millisecond
 			result := tc.deletionQueue.removeVolumesFromStorageGroup(tc.pmaxClient)
 			assert.Equal(t, tc.expectedResult, result)
