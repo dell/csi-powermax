@@ -31,6 +31,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -621,14 +622,116 @@ func TestRegisterAdditionalServers(_ *testing.T) {
 	s.RegisterAdditionalServers(server)
 }
 
-func TestSetArrayConfigEnvs(t *testing.T) {
-	ctx := context.Background()
-	_ = os.Setenv(EnvArrayConfigPath, "value")
-	paramsViper := viper.New()
-	paramsViper.Set(Protocol, "ICSCI")
-	paramsViper.Set(EnvEndpoint, "endpoint")
-	paramsViper.Set(PortGroups, "pg1, pg2, pg3")
-	paramsViper.Set(ManagedArrays, "000000000001,000000000002")
-	err := setArrayConfigEnvs(ctx)
-	assert.Equal(t, nil, err)
+func Test_setArrayConfigEnvs(t *testing.T) {
+	var tempConfigFile string // file is powermax-array-config and holds env vars and their values
+	afterEach := func() {
+		_ = os.Unsetenv(EnvArrayConfigPath)
+		_ = os.Unsetenv(PortGroups)
+		_ = os.Unsetenv(Protocol)
+		_ = os.Unsetenv(EnvEndpoint)
+		_ = os.Unsetenv(ManagedArrays)
+		// delete any temp files created
+		if tempConfigFile != "" {
+			err := os.Remove(tempConfigFile)
+			if err != nil {
+				log.Warnf("Failed to delete temp test array config file. err: %s", err.Error())
+			}
+			tempConfigFile = ""
+		}
+	}
+	type envVars map[string]string
+	tests := []struct {
+		name    string
+		envs    envVars
+		setup   func(envs envVars)
+		wantErr bool
+	}{
+		{
+			name: "set array config envs",
+			envs: envVars{
+				PortGroups:    "iscsi_csm_cicd",
+				Protocol:      "ISCSI",
+				EnvEndpoint:   "https://primary-1.unisphe.re:8443",
+				ManagedArrays: "000120001647",
+			},
+			setup: func(envs envVars) {
+				var err error
+				// create a powermax-array-config config for viper to retrieve
+				tempConfigFile, err = createTempYamlFile(envs)
+				if err != nil {
+					t.Errorf("failed to create necessary temp array config file. err: %s", err.Error())
+				}
+				// set the env var so viper knows which file to retrieve
+				if err = os.Setenv(EnvArrayConfigPath, tempConfigFile); err != nil {
+					t.Errorf("failed to set the config filepath. err: %s", err.Error())
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "EnvArrayConfigPath is invalid",
+			envs: envVars{
+				PortGroups:    "",
+				Protocol:      "",
+				EnvEndpoint:   "",
+				ManagedArrays: "",
+			},
+			setup: func(_ envVars) {
+				if err := os.Setenv(EnvArrayConfigPath, "bad-path"); err != nil {
+					t.Errorf("failed to set the config filepath. err: %s", err.Error())
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "config path unset",
+			envs: envVars{
+				PortGroups:    "",
+				Protocol:      "",
+				EnvEndpoint:   "",
+				ManagedArrays: "",
+			},
+			setup:   func(_ envVars) {}, // do not set config file path
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer afterEach()
+			tt.setup(tt.envs)
+
+			if err := setArrayConfigEnvs(context.Background()); (err != nil) != tt.wantErr {
+				t.Errorf("setArrayConfigEnvs() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			for env, want := range tt.envs {
+				if want != os.Getenv(env) {
+					t.Errorf("failed env var check. have: %s, wanted: %s", os.Getenv(env), want)
+				}
+			}
+		})
+	}
+}
+
+func createTempYamlFile(config interface{}) (string, error) {
+	// Create a temporary file
+	file, err := os.CreateTemp("/tmp", "config-*.yaml")
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	// Marshal the configuration to YAML
+	yamlData, err := yaml.Marshal(config)
+	if err != nil {
+		return "", err
+	}
+
+	// Write the YAML data to the file
+	_, err = file.Write(yamlData)
+	if err != nil {
+		return "", err
+	}
+
+	// Return the path of the temporary file
+	return file.Name(), nil
 }
