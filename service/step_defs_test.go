@@ -1277,6 +1277,10 @@ func (f *feature) iInduceError(errtype string) error {
 		gofsutil.GOFSMock.InduceMultipathCommandError = true
 	case "GOFSInduceGetMountInfoFromDeviceError":
 		gofsutil.GOFSMock.InduceGetMountInfoFromDeviceError = true
+	case "GOFSInduceFilesystemInfoError":
+		gofsutil.GOFSMock.InduceGetMountInfoFromDeviceError = true
+	case "GOFSInduceGetSysBlockDevicesError":
+		gofsutil.GOFSMock.InduceGetSysBlockDevicesError = true
 	case "GOFSInduceDeviceRescanError":
 		gofsutil.GOFSMock.InduceDeviceRescanError = true
 	case "GOFSInduceResizeMultipathError":
@@ -2874,6 +2878,13 @@ func (f *feature) iCallNodeGetCapabilities() error {
 	return nil
 }
 
+func (f *feature) theResponseHasCapabilities(num int) error {
+	if len(f.nodeGetCapabilitiesResponse.Capabilities) != num {
+		return errors.New("Incorrect number of capabilities returned")
+	}
+	return nil
+}
+
 func (f *feature) aValidNodeGetCapabilitiesResponseIsReturned() error {
 	if f.err != nil {
 		return f.err
@@ -3525,6 +3536,20 @@ func (f *feature) thereAreNoArraysLoggedIn() error {
 	return nil
 }
 
+func (f *feature) arraysAreLoggedInWithProtocol(protocol string) error {
+	f.service.SetPmaxTimeoutSeconds(3)
+	if protocol == "FC" {
+		isSymConnFC[f.symmetrixID] = true
+	} else if protocol == "iSCSI" {
+		f.service.loggedInArrays = make(map[string]bool)
+		f.service.loggedInArrays[f.symmetrixID] = true
+	} else if protocol == "NVMe" {
+		f.service.loggedInNVMeArrays = make(map[string]bool)
+		f.service.loggedInNVMeArrays[f.symmetrixID] = true
+	}
+	return nil
+}
+
 func (f *feature) iInvokeEnsureLoggedIntoEveryArray() error {
 	f.service.SetPmaxTimeoutSeconds(3)
 	isSymConnFC = make(map[string]bool) // Ensure none of the other test marked the array as FC
@@ -3710,6 +3735,16 @@ func (f *feature) iSetTransportProtocolTo(protocol string) error {
 
 func (f *feature) iEnableISCSICHAP() error {
 	f.service.opts.EnableCHAP = true
+	return nil
+}
+
+func (f *feature) iSetEnableHealthMonitorToFalse() error {
+	f.service.opts.IsHealthMonitorEnabled = false
+	return nil
+}
+
+func (f *feature) iSetEnableHealthMonitorToTrue() error {
+	f.service.opts.IsHealthMonitorEnabled = true
 	return nil
 }
 
@@ -5082,6 +5117,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call NodeStageVolume with simulator$`, f.iCallNodeStageVolumeWithSimulator)
 	s.Step(`^I call NodeUnstageVolume with simulator$`, f.iCallNodeUnstageVolumeWithSimulator)
 	s.Step(`^I call NodeGetCapabilities$`, f.iCallNodeGetCapabilities)
+	s.Step(`^the response has capabilities (\d+)$`, f.theResponseHasCapabilities)
 	s.Step(`^a valid NodeGetCapabilitiesResponse is returned$`, f.aValidNodeGetCapabilitiesResponseIsReturned)
 	s.Step(`^I call CreateSnapshot$`, f.iCallCreateSnapshot)
 	s.Step(`^I call CreateSnapshot With "([^"]*)"$`, f.iCallCreateSnapshotWith)
@@ -5134,6 +5170,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^there are no arrays logged in$`, f.thereAreNoArraysLoggedIn)
 	s.Step(`^I invoke ensureLoggedIntoEveryArray$`, f.iInvokeEnsureLoggedIntoEveryArray)
 	s.Step(`^(\d+) arrays are logged in$`, f.arraysAreLoggedIn)
+	s.Step(`^arrays are logged in with protocol "([^"]*)"$`, f.arraysAreLoggedInWithProtocol)
 	s.Step(`^I call GetTargetsForMaskingView$`, f.iCallGetTargetsForMaskingView)
 	s.Step(`^the result has "([^"]*)" ports$`, f.theResultHasPorts)
 	s.Step(`^I call validateStoragePoolID (\d+) in parallel$`, f.iCallValidateStoragePoolIDInParallel)
@@ -5156,7 +5193,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^the result is "([^"]*)"$`, f.theResultIs)
 	s.Step(`^a non existent port "([^"]*)"$`, f.aNonExistentPort)
 	s.Step(`^I have a port "([^"]*)" identifier "([^"]*)" type "([^"]*)"$`, f.iHaveAPortIdentifierType)
-	s.Step(`^I have (\d+) sysblock deviceso$`, f.iHaveSysblockDevices)
+	s.Step(`^I have (\d+) sysblock devices$`, f.iHaveSysblockDevices)
 	s.Step(`^I call linearScanToRemoveDevices$`, f.iCallLinearScanToRemoveDevices)
 	s.Step(`^I call verifyAndUpdateInitiatorsInADiffHost for node "([^"]*)"$`, f.iCallverifyAndUpdateInitiatorsInADiffHostForNode)
 	s.Step(`^(\d+) valid initiators are returned$`, f.validInitiatorsAreReturned)
@@ -5189,6 +5226,8 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call runRemoveVolumesFromSGMV$`, f.iCallRunRemoveVolumesFromSGMV)
 	s.Step(`^I call handleRemoveVolumeFromSGMVError$`, f.iCallHandleRemoveVolumeFromSGMVError)
 	s.Step(`^I enable ISCSI CHAP$`, f.iEnableISCSICHAP)
+	s.Step(`^I set Health Monitor Enabled to false$`, f.iSetEnableHealthMonitorToFalse)
+	s.Step(`^I set Health Monitor Enabled to true$`, f.iSetEnableHealthMonitorToTrue)
 	s.Step(`^I wait for the execution to complete$`, f.iWaitForTheExecutionToComplete)
 	s.Step(`^I call getAndConfigureArrayISCSITargets$`, f.iCallGetAndConfigureArrayISCSITargets)
 	s.Step(`^I call getAndConfigureArrayNVMeTCPTargets$`, f.iCallGetAndConfigureArrayNVMeTCPTargets)
