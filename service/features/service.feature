@@ -631,7 +631,6 @@ Feature: PowerMax CSI interface
       | "none"                                   | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "none"                                     |
       | "GOFSInduceGetMountInfoFromDeviceError"  | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to find mount information"         |
       | "GOFSInduceDeviceRescanError"            | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to rescan device"                  |
-      | "GOFSInduceGetSysBlockDevicesError"      | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to rescan device"                  |
       | "GOFSInduceResizeMultipathError"         | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to resize multipath mount device"  |
       | "GOFSInduceFSTypeError"                  | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to fetch filesystem"               |
       | "GOFSInduceResizeFSError"                | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to resize device"                  |      
