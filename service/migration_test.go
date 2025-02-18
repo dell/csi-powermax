@@ -26,22 +26,22 @@ import (
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
 	csimgr "github.com/dell/dell-csi-extensions/migration"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/metadata"
 )
 
 func TestVolumeMigrate(t *testing.T) {
 	LockRequestHandler()
-	volIDInvalid :=s.createCSIVolumeID("","invalidVolume", "0001", "00000")
-	volIDValid :=s.createCSIVolumeID("","validVolume", "0001", "00001")
+	volIDInvalid := s.createCSIVolumeID("", "invalidVolume", "0001", "00000")
+	volIDValid := s.createCSIVolumeID("", "validVolume", "0001", "00001")
 
-	c:=mocks.NewMockPmaxClient(gomock.NewController(t))
+	c := mocks.NewMockPmaxClient(gomock.NewController(t))
 	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
 	c.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), "00000").AnyTimes().Return(nil, errors.New(notFound))
 	c.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), "00001").AnyTimes().Return(&types.Volume{
 		VolumeIdentifier: "csi--validVolume",
-		RDFGroupIDList: []types.RDFGroupID{{RDFGroupNumber: 42, Label: "label"}, {RDFGroupNumber: 42, Label: "label"}},
+		RDFGroupIDList:   []types.RDFGroupID{{RDFGroupNumber: 42, Label: "label"}, {RDFGroupNumber: 42, Label: "label"}},
 	}, nil)
 	c.EXPECT().GetStoragePoolList(gomock.Any(), "0001").AnyTimes().Return(&types.StoragePoolList{StoragePoolIDs: []string{"srp1", "srp2"}}, nil)
 	c.EXPECT().GetRDFGroupByID(gomock.Any(), "0001", "42").AnyTimes().Return(&types.RDFGroup{RdfgNumber: 42, Label: "label"}, nil)
@@ -52,7 +52,6 @@ func TestVolumeMigrate(t *testing.T) {
 	c.EXPECT().ExecuteCreateRDFGroup(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 	c.EXPECT().GetProtectedStorageGroup(gomock.Any(), "0001", gomock.Any()).AnyTimes().Return(nil, errors.New("error"))
 	c.EXPECT().GetStorageGroupIDList(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("error"))
-
 
 	symmetrix.Initialize([]string{"0001"}, c)
 
@@ -65,45 +64,45 @@ func TestVolumeMigrate(t *testing.T) {
 		req := &csimgr.VolumeMigrateRequest{
 			VolumeHandle: "invalid",
 			ScParameters: map[string]string{
-				SymmetrixIDParam: "invalid",
+				SymmetrixIDParam:       "invalid",
 				ApplicationPrefixParam: "testPrefix",
-				StorageGroupParam: "testSG",
+				StorageGroupParam:      "testSG",
 			},
 			ScSourceParameters: map[string]string{
 				FsTypeParam: NFS,
 			},
-			ShouldClone: true,
+			ShouldClone:  true,
 			StorageClass: "powermax",
 			MigrateTypes: &csimgr.VolumeMigrateRequest_Type{
 				Type: csimgr.MigrateTypes_NON_REPL_TO_REPL,
 			},
 		}
-	
+
 		// Call the VolumeMigrate function
 		resp, err := s.VolumeMigrate(ctx, req)
 		assert.Nil(t, resp)
 		assert.Contains(t, err.Error(), "Invalid volume id: ")
 
 		// Invalid Client
-		req.VolumeHandle=s.createCSIVolumeID("", "invalidClient", "0000", "11111")
+		req.VolumeHandle = s.createCSIVolumeID("", "invalidClient", "0000", "11111")
 		_, err = s.VolumeMigrate(ctx, req)
 		assert.Contains(t, err.Error(), "not found")
 
 		// Invalid FS type
-		req.VolumeHandle=volIDInvalid
+		req.VolumeHandle = volIDInvalid
 		_, err = s.VolumeMigrate(ctx, req)
 		assert.Contains(t, err.Error(), "volume migration is not supported on NFS volumes")
 
 		// Invalid volume
-		req.ScSourceParameters=map[string]string{
+		req.ScSourceParameters = map[string]string{
 			FsTypeParam: "",
 		}
 		_, err = s.VolumeMigrate(ctx, req)
 		assert.Contains(t, err.Error(), notFound)
 
 		// Invalid storagepool
-		req.VolumeHandle=volIDValid
-		_, err=s.VolumeMigrate(ctx, req)
+		req.VolumeHandle = volIDValid
+		_, err = s.VolumeMigrate(ctx, req)
 		assert.Contains(t, err.Error(), "A valid SRP parameter is required")
 
 		// Invalid SLO
@@ -113,10 +112,10 @@ func TestVolumeMigrate(t *testing.T) {
 		assert.Contains(t, err.Error(), "invalid Service Level")
 
 		// Invalid migration type
-		req.MigrateTypes=&csimgr.VolumeMigrateRequest_Type{
+		req.MigrateTypes = &csimgr.VolumeMigrateRequest_Type{
 			Type: csimgr.MigrateTypes_UNKNOWN_MIGRATE,
 		}
-		req.ScParameters[ServiceLevelParam]="Bronze"
+		req.ScParameters[ServiceLevelParam] = "Bronze"
 		_, err = s.VolumeMigrate(ctx, req)
 		assert.Contains(t, err.Error(), "Unknown Migration Type")
 	})
@@ -128,10 +127,9 @@ func TestVolumeMigrate(t *testing.T) {
 				SymmetrixIDParam: "0001",
 				StoragePoolParam: "srp1",
 			},
-			ScSourceParameters: map[string]string{
-			},
-			ShouldClone: true,
-			StorageClass: "powermax",
+			ScSourceParameters: map[string]string{},
+			ShouldClone:        true,
+			StorageClass:       "powermax",
 			MigrateTypes: &csimgr.VolumeMigrateRequest_Type{
 				Type: csimgr.MigrateTypes_VERSION_UPGRADE,
 			},
@@ -139,7 +137,6 @@ func TestVolumeMigrate(t *testing.T) {
 
 		_, err := s.VolumeMigrate(ctx, req)
 		assert.Contains(t, err.Error(), "Unimplemented")
-
 	})
 
 	t.Run("Non repl to repl", func(t *testing.T) {
@@ -149,10 +146,9 @@ func TestVolumeMigrate(t *testing.T) {
 				SymmetrixIDParam: "0001",
 				StoragePoolParam: "srp1",
 			},
-			ScSourceParameters: map[string]string{
-			},
-			ShouldClone: true,
-			StorageClass: "powermax",
+			ScSourceParameters: map[string]string{},
+			ShouldClone:        true,
+			StorageClass:       "powermax",
 			MigrateTypes: &csimgr.VolumeMigrateRequest_Type{
 				Type: csimgr.MigrateTypes_NON_REPL_TO_REPL,
 			},
@@ -165,8 +161,8 @@ func TestVolumeMigrate(t *testing.T) {
 
 		// path.Join(s.opts.ReplicationPrefix, RepEnabledParam) is true
 		req.ScParameters[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)] = "true"
-		req.ScParameters[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)]=Sync
-		req.ScParameters[StorageGroupParam]="testSG"
+		req.ScParameters[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)] = Sync
+		req.ScParameters[StorageGroupParam] = "testSG"
 		_, err = s.VolumeMigrate(ctx, req)
 		assert.Contains(t, err.Error(), "VerifyProtectionGroupID failed")
 	})
@@ -178,10 +174,9 @@ func TestVolumeMigrate(t *testing.T) {
 				SymmetrixIDParam: "0001",
 				StoragePoolParam: "srp1",
 			},
-			ScSourceParameters: map[string]string{
-			},
-			ShouldClone: true,
-			StorageClass: "powermax",
+			ScSourceParameters: map[string]string{},
+			ShouldClone:        true,
+			StorageClass:       "powermax",
 			MigrateTypes: &csimgr.VolumeMigrateRequest_Type{
 				Type: csimgr.MigrateTypes_REPL_TO_NON_REPL,
 			},
@@ -194,9 +189,8 @@ func TestVolumeMigrate(t *testing.T) {
 	})
 }
 
-
-func TestArrayMigrate(t *testing.T){
-	c2:=mocks.NewMockPmaxClient(gomock.NewController(t))
+func TestArrayMigrate(t *testing.T) {
+	c2 := mocks.NewMockPmaxClient(gomock.NewController(t))
 	symmetrix.Initialize([]string{"0002"}, c2)
 	c2.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c2)
 	c2.EXPECT().GetMigrationEnvironment(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(1).Return(&types.MigrationEnv{}, nil)
@@ -209,7 +203,7 @@ func TestArrayMigrate(t *testing.T){
 	}))
 
 	t.Run("ActionTypes_MG_MIGRATE", func(t *testing.T) {
-		req:=&csimgr.ArrayMigrateRequest{
+		req := &csimgr.ArrayMigrateRequest{
 			ActionTypes: &csimgr.ArrayMigrateRequest_Action{
 				Action: &csimgr.Action{
 					ActionTypes: csimgr.ActionTypes_MG_MIGRATE,
@@ -227,7 +221,7 @@ func TestArrayMigrate(t *testing.T){
 	})
 
 	t.Run("ActionTypes_MG_COMMIT", func(t *testing.T) {
-		req:=&csimgr.ArrayMigrateRequest{
+		req := &csimgr.ArrayMigrateRequest{
 			ActionTypes: &csimgr.ArrayMigrateRequest_Action{
 				Action: &csimgr.Action{
 					ActionTypes: csimgr.ActionTypes_MG_COMMIT,
@@ -244,18 +238,18 @@ func TestArrayMigrate(t *testing.T){
 		assert.True(t, resp.Success)
 
 		// Invalid params
-		req.Parameters=map[string]string{}
+		req.Parameters = map[string]string{}
 		_, err = s.ArrayMigrate(ctx, req)
 		assert.Contains(t, err.Error(), "Invalid argument")
 
 		// Invalid symID
-		req.Parameters=map[string]string{
+		req.Parameters = map[string]string{
 			RemoteSymIDParam: "srp1",
 		}
 		_, err = s.ArrayMigrate(ctx, req)
 		assert.Contains(t, err.Error(), "A SYMID parameter is required")
 
-		req.Parameters=map[string]string{
+		req.Parameters = map[string]string{
 			SymmetrixIDParam: "srp1",
 			RemoteSymIDParam: "srp1",
 		}
@@ -266,24 +260,22 @@ func TestArrayMigrate(t *testing.T){
 		c2.EXPECT().GetStorageGroupMigration(gomock.Any(), gomock.Any()).MaxTimes(1).Return(nil, errors.New("GetStorageGroupMigration failed"))
 		c2.EXPECT().DeleteMigrationEnvironment(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(1).Return(errors.New("DeleteMigrationEnvironment failed"))
 
-		//GetStorageGroupMigration error
-		req.Parameters=map[string]string{
+		// GetStorageGroupMigration error
+		req.Parameters = map[string]string{
 			SymmetrixIDParam: "0002",
 			RemoteSymIDParam: "srp1",
 		}
-		resp,err = s.ArrayMigrate(ctx, req)
+		resp, err = s.ArrayMigrate(ctx, req)
 		t.Logf("resp: %v, err: %v", resp, err)
 		assert.Contains(t, err.Error(), "GetStorageGroupMigration failed")
 
 		c2.EXPECT().GetStorageGroupMigration(gomock.Any(), gomock.Any()).MaxTimes(1).Return(&types.MigrationStorageGroups{}, nil)
-		req.Parameters=map[string]string{
+		req.Parameters = map[string]string{
 			SymmetrixIDParam: "0002",
 			RemoteSymIDParam: "srp1",
 		}
-		resp,err = s.ArrayMigrate(ctx, req)
+		resp, err = s.ArrayMigrate(ctx, req)
 		t.Logf("resp: %v, err: %v", resp, err)
 		assert.Contains(t, err.Error(), "DeleteMigrationEnvironment failed")
-
 	})
 }
-

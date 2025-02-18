@@ -24,7 +24,7 @@ import (
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
 )
 
 func TestGetPowerMaxClient(t *testing.T) {
