@@ -5016,15 +5016,24 @@ func iActionValue(actionvalue string) *csimgr.ArrayMigrateRequest_Action {
 	}
 }
 
-func (f *feature) iCallArrayMigrate(actionvalue string) error {
+func (f *feature) iCallArrayMigrate(actionvalue string, parameter string) error {
 	header := metadata.New(map[string]string{"csi.requestid": "2"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 
-	req := &csimgr.ArrayMigrateRequest{
-		Parameters: map[string]string{
+	req := &csimgr.ArrayMigrateRequest{}
+	if parameter=="all" {
+		req.Parameters=map[string]string{
 			SymmetrixIDParam: mock.DefaultSymmetrixID,
 			RemoteSymIDParam: mock.DefaultRemoteSymID,
-		},
+		}
+	}else if parameter=="local"{
+		req.Parameters=map[string]string{
+			SymmetrixIDParam: mock.DefaultSymmetrixID,
+		}
+	}else if parameter=="remote"{
+		req.Parameters=map[string]string{
+			RemoteSymIDParam: mock.DefaultRemoteSymID,
+		}
 	}
 	action := iActionValue(actionvalue)
 	if action != nil {
@@ -5288,5 +5297,5 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I start node API server$`, f.iStartNodeAPIServer)
 	s.Step(`^I call IsIOInProgress$`, f.iCallIsIOInProgress)
 	s.Step(`^I call QueryArrayStatus with "([^"]*)" and "([^"]*)"$`, f.iCallQueryArrayStatus)
-	s.Step(`^I call ArrayMigrate with "([^"]*)"$`, f.iCallArrayMigrate)
+	s.Step(`^I call ArrayMigrate with "([^"]*)", parameter "([^"]*)"$`, f.iCallArrayMigrate)
 }
