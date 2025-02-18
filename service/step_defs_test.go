@@ -429,6 +429,24 @@ func (f *feature) aPowerMaxService() error {
 		f.server = nil
 	}
 
+	f.service.snapCleaner = &snapCleanupWorker{
+		Queue: []*snapCleanupRequest{
+			{
+				symmetrixID: "000197900046",
+				snapshotID:  "snap1",
+				volumeID:    "vol1",
+				requestID:   "000197900046",
+				retries:     MaxRetries,
+			},
+			{
+				symmetrixID: "000197900047",
+				snapshotID:  "snap2",
+				volumeID:    "vol2",
+				requestID:   "000197900047",
+				retries:     MaxRetries,
+			},
+		},
+	}
 	// Make sure the snapshot cleanup thread is started.
 	e := f.service.startSnapCleanupWorker()
 	if e != nil && !strings.Contains(e.Error(), "already added to the configuration") {
