@@ -58,14 +58,17 @@ Feature: PowerMax CSI interface
   @v2.11.0
   Scenario: Call QueryArrayStatus
     Given a PowerMax service
+    And I induce error <induced>
     And I call QueryArrayStatus with <url> and <statusType>
     Then the error contains <error>
     Examples:
-      | url                          | statusType | error                          |
-      | "/array-status/symmetrixID1" | "new"      | "none"                         |
-      | "/array-status/symmetrixID2" | "old"      | "none"                         |
-      | "/array-status/symmetrixID3" | "invalid"  | "unexpected end of JSON input" |
-      | ""                           | "none"     | "connection refused"           |
+      | url                          | statusType     | error                                 | induced                              |
+      | "/array-status/symmetrixID1" | "new"          | "none"                                | "none"                               |
+      | "/array-status/symmetrixID2" | "old"          | "none"                                | "none"                               |
+      | "/array-status/symmetrixID3" | "notConnected" | "none"                                | "none"                               |
+      | "/array-status/symmetrixID4" | "invalid"      | "unexpected end of JSON input"        | "none"                               |
+      | "/array-status/symmetrixID5" | "new"          | "unexpected response from the server" | "QueryArrayStatusUnexpectedResponse" |
+      | ""                           | "none"         | "connection refused"                  | "none"                               |
 
   @resiliency
   @v2.11.0

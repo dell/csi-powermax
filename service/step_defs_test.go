@@ -221,6 +221,7 @@ var inducedErrors struct {
 	noMountInfo             bool
 	invalidTopologyPathEnv  bool
 	getRDFInfoFromSGIDError bool
+	unexpectedResponse      bool
 }
 
 type failedSnap struct {
@@ -1390,6 +1391,8 @@ func (f *feature) iInduceError(errtype string) error {
 		inducedErrors.invalidTopologyPathEnv = true
 	case "GetRDFInfoFromSGIDError":
 		inducedErrors.getRDFInfoFromSGIDError = true
+	case "QueryArrayStatusUnexpectedResponse":
+		inducedErrors.unexpectedResponse = true
 	case "StorageGroupMigrationNoError":
 		migration.StorageGroupMigration = func(_ context.Context, _, _, _ string, _ pmax.Pmax) (bool, error) {
 			return true, nil
@@ -4958,6 +4961,9 @@ func (f *feature) iCallQueryArrayStatus(url string, statusType string) {
 		} else if statusType == "old" {
 			status.LastAttempt = time.Now().Add(-time.Hour).Unix()
 			status.LastSuccess = time.Now().Add(-time.Hour).Unix()
+		} else if statusType == "notConnected" {
+			status.LastAttempt = time.Now().Unix() + int64(1*time.Minute)
+			status.LastSuccess = time.Now().Unix()
 		}
 		input, _ := json.Marshal(status)
 		if statusType == "invalid" {
@@ -4966,6 +4972,9 @@ func (f *feature) iCallQueryArrayStatus(url string, statusType string) {
 
 		// responding with some dummy response that is for the case when array is connected and LastSuccess check was just finished
 		http.HandleFunc(url, func(w http.ResponseWriter, _ *http.Request) {
+			if inducedErrors.unexpectedResponse {
+				w.WriteHeader(http.StatusBadRequest)
+			}
 			w.Write(input)
 		})
 
@@ -5021,17 +5030,17 @@ func (f *feature) iCallArrayMigrate(actionvalue string, parameter string) error 
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 
 	req := &csimgr.ArrayMigrateRequest{}
-	if parameter=="all" {
-		req.Parameters=map[string]string{
+	if parameter == "all" {
+		req.Parameters = map[string]string{
 			SymmetrixIDParam: mock.DefaultSymmetrixID,
 			RemoteSymIDParam: mock.DefaultRemoteSymID,
 		}
-	}else if parameter=="local"{
-		req.Parameters=map[string]string{
+	} else if parameter == "local" {
+		req.Parameters = map[string]string{
 			SymmetrixIDParam: mock.DefaultSymmetrixID,
 		}
-	}else if parameter=="remote"{
-		req.Parameters=map[string]string{
+	} else if parameter == "remote" {
+		req.Parameters = map[string]string{
 			RemoteSymIDParam: mock.DefaultRemoteSymID,
 		}
 	}
