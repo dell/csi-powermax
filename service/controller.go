@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -2929,7 +2929,7 @@ func (s *service) getStoragePoolCapacities(ctx context.Context, symmetrixID, sto
 		log.Infof("StoragePoolCapacities(Fba/Ckd) : %#v StoragePoolCapacities(Fba/Ckd) : %#v ", srp.FbaCap, srp.CkdCap)
 		return nil, srp.FbaCap, srp.CkdCap, nil
 	}
-	return nil, nil, nil, status.Errorf(codes.Internal, "Could not retrieve StoragePool %s. Error(%s)", storagePoolID, err.Error())
+	return nil, nil, nil, status.Errorf(codes.Internal, "all capacities for StoragePool '%s' are empty", storagePoolID)
 }
 
 func (s *service) ControllerGetCapabilities(
