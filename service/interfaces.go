@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -84,9 +84,6 @@ func (s *service) initNVMeTCPConnector(chroot string) {
 
 func setupGobrick(_ *service) {
 	gobrick.SetLogger(&customLogger{})
-	//if srv.opts.EnableTracing {
-	//	gobrick.SetTracer(&customTracer{})
-	//}
 }
 
 // DBus is a message bus system which provides a way for applications
@@ -100,7 +97,7 @@ type dBusConn interface {
 
 func (s *service) createDbusConnection() error {
 	if s.dBusConn == nil {
-		conn, err := dbus.New()
+		conn, err := dbusNewConnectionFunc(context.TODO())
 		if err != nil {
 			log.Errorf("Failed to initialize connection to dbus. Error - %s", err.Error())
 			return err
@@ -108,6 +105,10 @@ func (s *service) createDbusConnection() error {
 		s.dBusConn = conn
 	}
 	return nil
+}
+
+var dbusNewConnectionFunc = func(ctx context.Context) (*dbus.Conn, error) {
+	return dbus.NewWithContext(ctx)
 }
 
 func (s *service) closeDbusConnection() {

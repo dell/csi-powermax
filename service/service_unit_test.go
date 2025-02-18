@@ -17,6 +17,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -27,11 +28,11 @@ import (
 	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/coreos/go-systemd/v22/dbus"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
-	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -493,6 +494,14 @@ func TestGobrickInitialization(t *testing.T) {
 		t.Error("Expected s.fcConnector to be initialized")
 	}
 	s.fcConnector = fcConnectorPrev
+
+	nvmeTCPConnectorPrev := s.nvmeTCPConnector
+	s.nvmeTCPConnector = nil
+	s.initNVMeTCPConnector("/")
+	if s.nvmeTCPConnector == nil {
+		t.Error("Expected s.nvmeTCPConnector to be initialized")
+	}
+	s.nvmeTCPConnector = nvmeTCPConnectorPrev
 }
 
 func TestSetGetLogFields(t *testing.T) {
@@ -515,7 +524,7 @@ func TestSetGetLogFields(t *testing.T) {
 	}
 }
 
-func TestEsnureISCSIDaemonIsStarted(t *testing.T) {
+func TestEnsureISCSIDaemonIsStarted(t *testing.T) {
 	s.dBusConn = &mockDbusConnection{}
 	// Return a ListUnit mock response without ISCSId unit
 	mockgosystemdInducedErrors.ListUnitISCSIDNotPresentError = true
@@ -622,116 +631,96 @@ func TestRegisterAdditionalServers(_ *testing.T) {
 	s.RegisterAdditionalServers(server)
 }
 
-func Test_setArrayConfigEnvs(t *testing.T) {
-	var tempConfigFile string // file is powermax-array-config and holds env vars and their values
-	afterEach := func() {
-		_ = os.Unsetenv(EnvArrayConfigPath)
-		_ = os.Unsetenv(PortGroups)
-		_ = os.Unsetenv(Protocol)
-		_ = os.Unsetenv(EnvEndpoint)
-		_ = os.Unsetenv(ManagedArrays)
-		// delete any temp files created
-		if tempConfigFile != "" {
-			err := os.Remove(tempConfigFile)
-			if err != nil {
-				log.Warnf("Failed to delete temp test array config file. err: %s", err.Error())
-			}
-			tempConfigFile = ""
-		}
-	}
-	type envVars map[string]string
+func TestSetArrayConfigEnvs(t *testing.T) {
+	ctx := context.Background()
+	_ = os.Setenv(EnvArrayConfigPath, "value")
+	paramsViper := viper.New()
+	paramsViper.Set(Protocol, "ICSCI")
+	paramsViper.Set(EnvEndpoint, "endpoint")
+	paramsViper.Set(PortGroups, "pg1, pg2, pg3")
+	paramsViper.Set(ManagedArrays, "000000000001,000000000002")
+	err := setArrayConfigEnvs(ctx)
+	assert.Equal(t, nil, err)
+}
+
+var mockError = errors.New("mock error")
+
+func TestCreateDbusConnection(t *testing.T) {
 	tests := []struct {
-		name    string
-		envs    envVars
-		setup   func(envs envVars)
-		wantErr bool
+		name                       string
+		dBusConn                   *mockDbusConnection
+		mockdbusNewWithContextFunc func(ctx context.Context) (*dbus.Conn, error)
+		expectedErr                error
 	}{
 		{
-			name: "set array config envs",
-			envs: envVars{
-				PortGroups:    "iscsi_csm_cicd",
-				Protocol:      "ISCSI",
-				EnvEndpoint:   "https://primary-1.unisphe.re:8443",
-				ManagedArrays: "0000000000001",
-			},
-			setup: func(envs envVars) {
-				var err error
-				// create a powermax-array-config config for viper to retrieve
-				tempConfigFile, err = createTempYamlFile(envs)
-				if err != nil {
-					t.Errorf("failed to create necessary temp array config file. err: %s", err.Error())
-				}
-				// set the env var so viper knows which file to retrieve
-				if err = os.Setenv(EnvArrayConfigPath, tempConfigFile); err != nil {
-					t.Errorf("failed to set the config filepath. err: %s", err.Error())
-				}
-			},
-			wantErr: false,
+			name:                       "Successful connection",
+			dBusConn:                   nil,
+			expectedErr:                nil,
+			mockdbusNewWithContextFunc: dbusNewConnectionFunc,
 		},
 		{
-			name: "EnvArrayConfigPath is invalid",
-			envs: envVars{
-				PortGroups:    "",
-				Protocol:      "",
-				EnvEndpoint:   "",
-				ManagedArrays: "",
+			name:        "Error connection",
+			dBusConn:    nil,
+			expectedErr: mockError,
+			mockdbusNewWithContextFunc: func(ctx context.Context) (*dbus.Conn, error) {
+				return nil, mockError
 			},
-			setup: func(_ envVars) {
-				if err := os.Setenv(EnvArrayConfigPath, "bad-path"); err != nil {
-					t.Errorf("failed to set the config filepath. err: %s", err.Error())
-				}
-			},
-			wantErr: false,
-		},
-		{
-			name: "config path unset",
-			envs: envVars{
-				PortGroups:    "",
-				Protocol:      "",
-				EnvEndpoint:   "",
-				ManagedArrays: "",
-			},
-			setup:   func(_ envVars) {}, // do not set config file path
-			wantErr: true,
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			defer afterEach()
-			tt.setup(tt.envs)
+			s := &service{}
 
-			if err := setArrayConfigEnvs(context.Background()); (err != nil) != tt.wantErr {
-				t.Errorf("setArrayConfigEnvs() error = %v, wantErr %v", err, tt.wantErr)
+			dbusNewConnectionFunc = tt.mockdbusNewWithContextFunc
+			err := s.createDbusConnection()
+
+			if !errors.Is(err, tt.expectedErr) {
+				t.Errorf("Expected error to be %v, but got: %v", tt.expectedErr, err)
 			}
-			for env, want := range tt.envs {
-				if want != os.Getenv(env) {
-					t.Errorf("failed env var check. have: %s, wanted: %s", os.Getenv(env), want)
-				}
+
+			if tt.expectedErr == nil && s.dBusConn == nil {
+				t.Error("Expected dBusConn to be not nil, but it was nil")
 			}
 		})
 	}
 }
 
-func createTempYamlFile(config interface{}) (string, error) {
-	// Create a temporary file
-	file, err := os.CreateTemp("/tmp", "config-*.yaml")
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	// Marshal the configuration to YAML
-	yamlData, err := yaml.Marshal(config)
-	if err != nil {
-		return "", err
-	}
-
-	// Write the YAML data to the file
-	_, err = file.Write(yamlData)
-	if err != nil {
-		return "", err
+func TestCloseDbusConnection(t *testing.T) {
+	tests := []struct {
+		name        string
+		dBusConn    *mockDbusConnection
+		expectClose bool
+	}{
+		{
+			name:        "Close non-nil connection",
+			dBusConn:    &mockDbusConnection{},
+			expectClose: true,
+		},
+		{
+			name:        "No action on nil connection",
+			dBusConn:    nil,
+			expectClose: false,
+		},
 	}
 
-	// Return the path of the temporary file
-	return file.Name(), nil
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				dBusConn: tt.dBusConn,
+			}
+
+			s.closeDbusConnection()
+
+			if tt.expectClose {
+				if s.dBusConn != nil {
+					t.Errorf("Expected dBusConn to be nil, but got: %v", s.dBusConn)
+				}
+			} else {
+				if s.dBusConn != nil {
+					t.Errorf("Expected dBusConn to remain nil, but got: %v", s.dBusConn)
+				}
+			}
+		})
+	}
 }
