@@ -1,5 +1,5 @@
 /*
-Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -652,7 +652,7 @@ func Test_setArrayConfigEnvs(t *testing.T) {
 				PortGroups:    "iscsi_csm_cicd",
 				Protocol:      "ISCSI",
 				EnvEndpoint:   "https://primary-1.unisphe.re:8443",
-				ManagedArrays: "000120001647",
+				ManagedArrays: "0000000000001",
 			},
 			setup: func(envs envVars) {
 				var err error
