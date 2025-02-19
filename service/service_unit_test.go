@@ -649,20 +649,24 @@ func TestCreateDbusConnection(t *testing.T) {
 	tests := []struct {
 		name                       string
 		dBusConn                   *mockDbusConnection
-		mockdbusNewWithContextFunc func(ctx context.Context) (*dbus.Conn, error)
+		mockdbusNewWithContextFunc func() (*dbus.Conn, error)
 		expectedErr                error
 	}{
 		{
-			name:                       "Successful connection",
-			dBusConn:                   nil,
-			expectedErr:                nil,
-			mockdbusNewWithContextFunc: dbusNewConnectionFunc,
+			name:        "Successful connection",
+			dBusConn:    nil,
+			expectedErr: nil,
+			mockdbusNewWithContextFunc: func() (*dbus.Conn, error) {
+				//ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+				//defer cancel()
+				return &dbus.Conn{}, nil
+			},
 		},
 		{
 			name:        "Error connection",
 			dBusConn:    nil,
 			expectedErr: mockError,
-			mockdbusNewWithContextFunc: func(ctx context.Context) (*dbus.Conn, error) {
+			mockdbusNewWithContextFunc: func() (*dbus.Conn, error) {
 				return nil, mockError
 			},
 		},

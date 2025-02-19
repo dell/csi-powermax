@@ -97,7 +97,7 @@ type dBusConn interface {
 
 func (s *service) createDbusConnection() error {
 	if s.dBusConn == nil {
-		conn, err := dbusNewConnectionFunc(context.TODO())
+		conn, err := dbusNewConnectionFunc()
 		if err != nil {
 			log.Errorf("Failed to initialize connection to dbus. Error - %s", err.Error())
 			return err
@@ -107,8 +107,8 @@ func (s *service) createDbusConnection() error {
 	return nil
 }
 
-var dbusNewConnectionFunc = func(ctx context.Context) (*dbus.Conn, error) {
-	return dbus.NewWithContext(ctx)
+var dbusNewConnectionFunc = func() (*dbus.Conn, error) {
+	return dbus.New()
 }
 
 func (s *service) closeDbusConnection() {
