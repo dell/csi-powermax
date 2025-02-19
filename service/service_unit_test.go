@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -29,10 +30,19 @@ import (
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/coreos/go-systemd/v22/dbus"
+	"github.com/dell/csi-powermax/v2/k8smock"
+	"github.com/dell/csi-powermax/v2/k8sutils"
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
+	"github.com/dell/gocsi"
+	pmax "github.com/dell/gopowermax/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -97,6 +107,124 @@ func TestLockCounter(t *testing.T) {
 	}
 	if lockCounter != 500 {
 		t.Errorf("Expected lock counter to be 500 but found: %d", lockCounter)
+	}
+}
+
+func TestNew(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		{
+			name: "Successful creation of service",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := New()
+			assert.NotNil(t, result)
+		})
+	}
+}
+
+func TestBeforeServe(t *testing.T) {
+	tests := []struct {
+		name           string
+		ctx            context.Context
+		plugin         *gocsi.StoragePlugin
+		listener       net.Listener
+		adminClient    pmax.Pmax
+		k8sUtils       k8sutils.UtilsInterface
+		expectedResult error
+	}{
+		{
+			name: "Successful BeforeServe",
+			ctx: context.WithValue(context.Background(), interface{}("os.Environ"), []string{
+				"X_CSI_POWERMAX_ARRAY_CONFIG_PATH=path/to/config",
+				"X_CSI_POWERMAX_PODMON_PORT=65000",
+				"X_CSI_POWERMAX_KUBECONFIG_PATH=path/to/kubeconfig",
+				"X_CSI_MANAGED_ARRAYS=abc,def",
+				"X_CSI_POWERMAX_SIDECAR_PROXY_PORT=8080",
+				"X_CSI_K8S_CLUSTER_PREFIX=csi",
+				"X_CSI_POWERMAX_ENDPOINT=http://127.0.0.1:8080",
+				"X_CSI_POWERMAX_PASSWORD=password",
+				"X_CSI_MODE=controller",
+				"X_CSI_MAX_VOLUMES_PER_NODE=10",
+				"X_CSI_VSPHERE_ENABLED=true",
+				"X_CSI_ENABLE_BLOCK=true",
+				"X_CSI_POWERMAX_DRIVER_NAME=test",
+				"X_CSI_POWERMAX_ISCSI_CHAP_USERNAME=user",
+				"X_CSI_POWERMAX_ISCSI_CHAP_PASSWORD=password",
+				"X_CSI_IG_NODENAME_TEMPLATE=template",
+				"KUBECONFIG=path/to/kubeconfig",
+				"X_CSI_REPLICATION_CONTEXT_PREFIX=contentprefix",
+				"X_CSI_REPLICATION_PREFIX=prefix",
+				"X_CSI_PODMON_API_PORT=65000",
+				"X_CSI_PODMON_ARRAY_CONNECTIVITY_POLL_RATE=1m",
+				"X_CSI_VSPHERE_PORTGROUP=portgroup",
+				"X_CSI_VSPHERE_HOSTNAME=hostname",
+				"X_CSI_VCENTER_HOST=vcenterhost",
+				"X_CSI_VCENTER_USERNAME=user",
+				"X_CSI_VCENTER_PWD=password",
+			}),
+			adminClient: func() pmax.Pmax {
+				return mocks.NewMockPmaxClient(gomock.NewController(t))
+			}(),
+			k8sUtils:       &k8smock.MockUtils{},
+			plugin:         nil,
+			listener:       &net.TCPListener{},
+			expectedResult: nil,
+		},
+		{
+			name: "Error creating k8s utils",
+			ctx: context.WithValue(context.Background(), interface{}("os.Environ"), []string{
+				"X_CSI_K8S_CLUSTER_PREFIX=csi",
+				"X_CSI_MANAGED_ARRAYS=abc,def",
+				"X_CSI_POWERMAX_ENDPOINT=http://127.0.0.1:8080",
+				"X_CSI_POWERMAX_PASSWORD=password",
+				"X_CSI_MODE=controller",
+			}),
+			adminClient: func() pmax.Pmax {
+				return mocks.NewMockPmaxClient(gomock.NewController(t))
+			}(),
+			plugin:         nil,
+			listener:       &net.TCPListener{},
+			expectedResult: errors.New("error creating k8sClient unable to load in-cluster configuration, KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT must be defined"),
+		},
+		{
+			name: "Error creating PowerMax client",
+			ctx: context.WithValue(context.Background(), interface{}("os.Environ"), []string{
+				"X_CSI_K8S_CLUSTER_PREFIX=csi",
+				"X_CSI_MANAGED_ARRAYS=abc,def",
+				"X_CSI_POWERMAX_ENDPOINT=http://127.0.0.1:8080",
+				"X_CSI_POWERMAX_PASSWORD=password",
+				"X_CSI_MODE=controller",
+			}),
+			k8sUtils:       &k8smock.MockUtils{},
+			plugin:         nil,
+			listener:       &net.TCPListener{},
+			expectedResult: status.Error(codes.FailedPrecondition, "unable to create PowerMax client: open tls.crt: no such file or directory"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				opts: Opts{
+					DriverName: "powermax",
+					UseProxy:   true,
+					User:       "username",
+					Password:   "password",
+				},
+				k8sUtils:    tt.k8sUtils,
+				adminClient: tt.adminClient,
+			}
+			oldInducedMockReverseProxy := inducedMockReverseProxy
+			defer func() { inducedMockReverseProxy = oldInducedMockReverseProxy }()
+			inducedMockReverseProxy = true
+			result := s.BeforeServe(tt.ctx, nil, nil)
+			assert.Equal(t, tt.expectedResult, result)
+		})
 	}
 }
 
