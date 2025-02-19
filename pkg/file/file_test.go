@@ -26,7 +26,7 @@ import (
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
 	"github.com/dell/gofsutil"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
