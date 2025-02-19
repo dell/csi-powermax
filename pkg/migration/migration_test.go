@@ -22,8 +22,8 @@ import (
 
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
