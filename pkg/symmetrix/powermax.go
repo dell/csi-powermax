@@ -257,6 +257,15 @@ func GetPowerMaxClient(primaryArray string, arrays ...string) (pmax.Pmax, error)
 	return primaryPowermax.getClient(), nil
 }
 
+// RemoveClient removes the client for the given symmetrix ID from the cache
+// Created for testing purposes
+func RemoveClient(symID string) {
+	_, ok := storageArrays.StorageArrays.Load(symID)
+	if ok {
+		storageArrays.StorageArrays.Delete(symID)
+	}
+}
+
 // Initialize ...
 func Initialize(symIDList []string, client pmax.Pmax) error {
 	for _, symID := range symIDList {

@@ -173,6 +173,15 @@ func (s *service) UnlinkTargets(ctx context.Context, symID, srcDevID string, pma
 	return nil
 }
 
+// RemoveReplicationCapability safely removes the replication capability for the
+// provided symmetrix ID from the cache.
+// Created for testing purposes.
+func RemoveReplicationCapability(symID string) {
+	mutex.Lock()
+	defer mutex.Unlock()
+	delete(symmRepCapabilities, symID)
+}
+
 // This function checks if the PowerMax array has the SnapVX license.
 // It returns an error if the array does not meet the expectations.
 func (s *service) IsSnapshotLicensed(ctx context.Context, symID string, pmaxClient pmax.Pmax) (err error) {
