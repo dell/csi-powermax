@@ -1402,11 +1402,23 @@ func addReplicationParamsToVolumeAttributes(attributes map[string]string, prefix
 	attributes[path.Join(prefix, RemoteRDFGroupParam)] = remoteRDFGrpNo
 }
 
+// Wrapper around RequestLock for use in unit testing to avoid
+// the need to start the lock request queue processer.
+var requestLockFunc = func(lockHandle, reqID string) int {
+	return RequestLock(lockHandle, reqID)
+}
+
+// Wrapper around ReleaseLock for use in unit testing to avoid
+// the need to start the lock request queue processer.
+var releaseLockFunc = func(lockHandle, reqID string, lockNum int) {
+	ReleaseLock(lockHandle, reqID, lockNum)
+}
+
 func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, localProtectionGroupID, _, localRDFGrpNo, repMode, reqID string, pmaxClient pmax.Pmax) (*types.RDFStorageGroup, error) {
 	var lockHandle string
 	lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
-	lockNum := RequestLock(lockHandle, reqID)
-	defer ReleaseLock(lockHandle, reqID, lockNum)
+	lockNum := requestLockFunc(lockHandle, reqID)
+	defer releaseLockFunc(lockHandle, reqID, lockNum)
 	sg, err := pmaxClient.GetProtectedStorageGroup(ctx, symID, localProtectionGroupID)
 	if err != nil || sg == nil {
 		// Verify the creation of new protected storage group is valid
