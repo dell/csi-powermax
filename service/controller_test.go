@@ -51,11 +51,13 @@ const (
 	TB  int64 = GB * 1000
 
 	symIDLocal  = "000120000001"
-	symIDRemote = "000000000002"
+	symIDRemote = "000120000002"
 
-	validLocalDeviceID = "011AB"
+	validLocalDeviceID  = "011AB"
+	validRemoteDeviceID = "011BC"
 
-	validLocalVolumeID = "csi-ABC-pmax-260602731A-ns1-nsx-" + symIDLocal + "-" + validLocalDeviceID
+	validLocalVolumeID  = "csi-ABC-pmax-260602731A-ns1-nsx-" + symIDLocal + "-" + validLocalDeviceID
+	validRemoteVolumeID = "csi-ABC-pmax-260602731A-ns1-nsx-" + symIDRemote + "-" + validRemoteDeviceID
 )
 
 type serviceFields struct {
@@ -145,6 +147,7 @@ func Test_service_createMetroVolume(t *testing.T) {
 	}
 
 	// create a clean test environment for each test
+	// by clearing out any caches
 	afterEach := func(symIDs []string) {
 		pmaxClient = nil
 		for _, symID := range symIDs {
@@ -377,7 +380,7 @@ func Test_service_createMetroVolume(t *testing.T) {
 							Snapshot: &csi.VolumeContentSource_SnapshotSource{
 								// this symmetrix ID will not match the one passed in to the func call
 								// and will trigger an error
-								SnapshotId: "csi-ABC-pmax-260602731A-ns1-nsx-000120000548-011AB",
+								SnapshotId: validRemoteVolumeID,
 							},
 						},
 					},
@@ -397,7 +400,7 @@ func Test_service_createMetroVolume(t *testing.T) {
 				pmaxClient.EXPECT().GetReplicationCapabilities(gomock.Any()).Times(1).Return(&types.SymReplicationCapabilities{
 					SymmetrixCapability: []types.SymmetrixCapability{
 						{
-							SymmetrixID:   "000120000548", // used for checking if snapshot is licensed
+							SymmetrixID:   symIDRemote, // used for checking if snapshot is licensed
 							SnapVxCapable: true,
 						},
 					},
