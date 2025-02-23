@@ -123,6 +123,10 @@ func (g *mockFCGobrick) ConnectRDMVolume(_ context.Context, info gobrick.RDMVolu
 	if mockGobrickInducedErrors.ConnectVolumeError {
 		return dev, fmt.Errorf("induced ConnectVolumeError")
 	}
+
+	if gofsutil.GOFSMockWWNToDevice == nil {
+		gofsutil.GOFSMockWWNToDevice = make(map[string]string)
+	}
 	gofsutil.GOFSMockWWNToDevice[nodePublishWWN] = nodePublishBlockDevicePath
 	return dev, nil
 }

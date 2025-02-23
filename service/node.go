@@ -1010,6 +1010,7 @@ func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
 		for _, target := range targets.([]string) {
 			for _, session := range sessions {
 				log.Debugf("matching %v with %v", target, session)
+				log.Infof("target = %v, session.Target = %v", target, session.Target)
 				if strings.HasPrefix(target, session.Target) && session.NVMESessionState == gonvme.NVMESessionStateLive {
 					if s.useNFS {
 						s.useNFS = false
@@ -1082,12 +1083,17 @@ func (s *service) getIPInterfaces(ctx context.Context, symID string, portGroups 
 		if err != nil {
 			return nil, err
 		}
-		for _, portKey := range portGroup.SymmetrixPortKey {
-			port, err := pmaxClient.GetPort(ctx, symID, portKey.DirectorID, portKey.PortID)
-			if err != nil {
-				return nil, err
+		if portGroup.PortGroupType == s.opts.TransportProtocol {
+
+			for _, portKey := range portGroup.SymmetrixPortKey {
+				port, err := pmaxClient.GetPort(ctx, symID, portKey.DirectorID, portKey.PortID)
+				if err != nil {
+					return nil, err
+				}
+				ipInterfaces = append(ipInterfaces, port.SymmetrixPort.IPAddresses...)
 			}
-			ipInterfaces = append(ipInterfaces, port.SymmetrixPort.IPAddresses...)
+		} else {
+			log.Infof("Skipping port group %s with %s as it is not %s", pg, portGroup.PortGroupProtocol, s.opts.TransportProtocol)
 		}
 	}
 	return ipInterfaces, nil
@@ -2785,7 +2791,7 @@ func (s *service) getISCSITargets(ctx context.Context, symID string, pmaxClient 
 	ips, ok = symToAllISCSITargets.Load(symID)
 	if ok {
 		targets = ips.([]ISCSITargetInfo)
-		log.Infof("Found targets %v in cache", targets)
+		log.Infof("Found ISCSI targets %v in cache", targets)
 	} else {
 		pmaxTargets, err := pmaxClient.GetISCSITargets(ctx, symID)
 		if err != nil {
@@ -2816,12 +2822,12 @@ func (s *service) getNVMeTCPTargets(ctx context.Context, symID string, pmaxClien
 	ips, ok = symToAllNVMeTCPTargets.Load(symID)
 	if ok {
 		targets = ips.([]NVMeTCPTargetInfo)
-		log.Infof("Found targets %v in cache", targets)
+		log.Infof("Found NVMeTCP targets %v in cache", targets)
 	} else {
 		// TODO NVME
 		pmaxTargets, err := pmaxClient.GetNVMeTCPTargets(ctx, symID)
 		if err != nil {
-			return targets, status.Error(codes.Internal, fmt.Sprintf("Could not get iscsi target information: %s", err.Error()))
+			return targets, status.Error(codes.Internal, fmt.Sprintf("Could not get invme target information: %s", err.Error()))
 		}
 		for _, pmaxTarget := range pmaxTargets {
 			for _, ipaddr := range pmaxTarget.PortalIPs {
@@ -2846,9 +2852,11 @@ func (s *service) getArrayTargets(ctx context.Context, targetIdentifiers string,
 	iscsiTargets := make([]ISCSITargetInfo, 0)
 	fcTargets := make([]FCTargetInfo, 0)
 	nvmeTargets := make([]NVMeTCPTargetInfo, 0)
-	var isFC bool
-	var isNVMeTCP bool
+
+	isFC := false
+	isNVMeTCP := false
 	arrayTargets := strings.Split(targetIdentifiers, ",")
+	log.Infof("getAndConfigureTargets : targetIdentifiers  %+v\n", targetIdentifiers)
 	// Remove the last empty element from the slice as there is a trailing ","
 	if len(arrayTargets) == 1 && (arrayTargets[0] == targetIdentifiers) {
 		log.Error("Failed to parse the target identifier string: " + targetIdentifiers)
@@ -2867,65 +2875,78 @@ func (s *service) getArrayTargets(ctx context.Context, targetIdentifiers string,
 				isNVMeTCP = true
 			}
 		}
+
 		if isNVMeTCP {
 			nvmeTargets = s.getAndConfigureArrayNVMeTCPTargets(ctx, arrayTargets, symID, pmaxClient)
 		} else if !isFC {
 			iscsiTargets = s.getAndConfigureArrayISCSITargets(ctx, arrayTargets, symID, pmaxClient)
 		}
 	}
-	log.Infof("Array targets: %s", arrayTargets)
 	return iscsiTargets, fcTargets, nvmeTargets, isFC, isNVMeTCP
 }
 
 func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayTargets []string, symID string, pmaxClient pmax.Pmax) []NVMeTCPTargetInfo {
 	nvmetcpTargets := make([]NVMeTCPTargetInfo, 0)
 	allTargets, _ := s.getNVMeTCPTargets(ctx, symID, pmaxClient)
-	cachedTargets, ok := symToMaskingViewTargets.Load(symID)
+
+	targetsFromCache, ok := symToMaskingViewTargets.Load(symID)
 	if ok {
-		targets := cachedTargets.([]maskingViewNVMeTargetInfo)
-		// Check if the array targets are all present in the cache
-		for _, arrayTarget := range arrayTargets {
-			found := false
-			for _, tgt := range targets {
-				if arrayTarget == tgt.target.TargetNqn {
-					nvmetcpTarget := NVMeTCPTargetInfo{
-						Target: arrayTarget,
-						Portal: tgt.target.Portal,
-					}
-					nvmetcpTargets = append(nvmetcpTargets, nvmetcpTarget)
-					found = true
-				}
-			}
-			if !found {
-				// Some array targets are not present in cache
-				// This mostly means that the Port group was modified post
-				// driver boot. Invalidate the cache
-				symToMaskingViewTargets.Delete(symID)
-				// Look in the cache for all targets on the array
-				isFound := false
-				for _, tgt := range allTargets {
-					if arrayTarget == tgt.Target {
+		found := false
+		switch targetsFromCache.(type) {
+		case []maskingViewNVMeTargetInfo:
+			cachedTargets := targetsFromCache.([]maskingViewNVMeTargetInfo)
+			// Check if the array targets are all present in the cache
+			for _, arrayTarget := range arrayTargets {
+				for _, cachedTgt := range cachedTargets {
+					if arrayTarget == cachedTgt.target.TargetNqn {
 						nvmetcpTarget := NVMeTCPTargetInfo{
 							Target: arrayTarget,
-							Portal: tgt.Portal,
+							Portal: cachedTgt.target.Portal,
 						}
 						nvmetcpTargets = append(nvmetcpTargets, nvmetcpTarget)
-						isFound = true
+						found = true
 					}
 				}
-				if !isFound {
-					// This will be an extremely rare case
-					// A new ISCSI target/portal IP has been configured
-					// on the array and added to the Port Group
-					// after the node driver cache information
-					// Invalidate the cache. Return whatever targets we have found until now
-					symToAllNVMeTCPTargets.Delete(symID)
-					break
+
+				if !found {
+					// Some array targets are not present in cache
+					// This mostly means that the Port group was modified post
+					// driver boot. Invalidate the cache
+					symToMaskingViewTargets.Delete(symID)
+					// Look in the cache for all targets on the array
+					isFound := false
+					for _, tgt := range allTargets {
+						if arrayTarget == tgt.Target {
+							nvmetcpTarget := NVMeTCPTargetInfo{
+								Target: arrayTarget,
+								Portal: tgt.Portal,
+							}
+							nvmetcpTargets = append(nvmetcpTargets, nvmetcpTarget)
+							isFound = true
+						}
+					}
+					if !isFound {
+						// This will be an extremely rare case
+						// A new ISCSI target/portal IP has been configured
+						// on the array and added to the Port Group
+						// after the node driver cache information
+						// Invalidate the cache. Return whatever targets we have found until now
+						symToAllNVMeTCPTargets.Delete(symID)
+						break
+					}
 				}
 			}
+			log.Infof("returned cached information")
+			return nvmetcpTargets
+		default:
+			log.Infof("Invalidate cache as it not the right type.")
+			symToAllNVMeTCPTargets.Delete(symID)
+			log.Infof("Failed to find ISCSI targets in cache.")
+			//symToMaskingViewTargets.Delete(symID)
+			//do nothing, will fall through and rebuild the cache
 		}
-		return nvmetcpTargets
 	}
+	log.Infof("There is no cached info, build it")
 	// There is no cached information
 	_, _, mvName := s.GetNVMETCPHostSGAndMVIDFromNodeID(s.opts.NodeName)
 	// Get the Masking View Targets and configure CHAP if required
@@ -2934,6 +2955,8 @@ func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayT
 	if err != nil {
 		log.Errorf("Failed to get and configure masking view targets. Error: %s", err.Error())
 	}
+	log.Infof("array targets = %+v\n", arrayTargets)
+	log.Infof("nvme targets from getAndConfigureMaskingViewTargets %+v\n", goNVMETCPTargets)
 	for _, arrayTarget := range arrayTargets {
 		found := false
 		for _, gonvmetcpTarget := range goNVMETCPTargets {
@@ -2950,6 +2973,7 @@ func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayT
 			log.Errorf("Internal Error - Target: %s not found on array: %s", arrayTarget, symID)
 		}
 	}
+	log.Infof("New cache information = %+v\n", nvmetcpTargets)
 	return nvmetcpTargets
 }
 
@@ -2963,67 +2987,74 @@ func (s *service) getAndConfigureArrayISCSITargets(ctx context.Context, arrayTar
 	}
 	cachedTargets, ok := symToMaskingViewTargets.Load(symID)
 	if ok {
-		targets := cachedTargets.([]maskingViewTargetInfo)
-		// Enable CHAP if required
-		err = s.setCHAPCredentials(symID, targets, IQNs)
-		if err != nil {
-			// Log the error and continue
-			log.Errorf("Failed to set CHAP credentials for targets: %v. Error: %s", targets, err.Error())
-		} else {
-			// Update the cache if required
-			cacheUpdated := false
-			for i := range targets {
-				if !targets[i].IsCHAPConfigured {
-					targets[i].IsCHAPConfigured = true
-					cacheUpdated = true
-				}
-			}
-			if cacheUpdated {
-				symToMaskingViewTargets.Store(symID, targets)
-			}
-		}
-		// Check if the array targets are all present in the cache
-		for _, arrayTarget := range arrayTargets {
-			found := false
-			for _, tgt := range targets {
-				if arrayTarget == tgt.target.Target {
-					iscsiTarget := ISCSITargetInfo{
-						Target: arrayTarget,
-						Portal: tgt.target.Portal,
+		found := false
+		switch cachedTargets.(type) {
+		case []maskingViewTargetInfo:
+			targets := cachedTargets.([]maskingViewTargetInfo)
+			// Enable CHAP if required
+			err = s.setCHAPCredentials(symID, targets, IQNs)
+			if err != nil {
+				// Log the error and continue
+				log.Errorf("Failed to set CHAP credentials for targets: %v. Error: %s", targets, err.Error())
+			} else {
+				// Update the cache if required
+				cacheUpdated := false
+				for i := range targets {
+					if !targets[i].IsCHAPConfigured {
+						targets[i].IsCHAPConfigured = true
+						cacheUpdated = true
 					}
-					iscsiTargets = append(iscsiTargets, iscsiTarget)
-					found = true
+				}
+				if cacheUpdated {
+					symToMaskingViewTargets.Store(symID, targets)
 				}
 			}
-			if !found {
-				// Some array targets are not present in cache
-				// This mostly means that the Port group was modified post
-				// driver boot. Invalidate the cache
-				symToMaskingViewTargets.Delete(symID)
-				// Look in the cache for all targets on the array
-				isFound := false
-				for _, tgt := range allTargets {
-					if arrayTarget == tgt.Target {
+			// Check if the array targets are all present in the cache
+			for _, arrayTarget := range arrayTargets {
+				for _, tgt := range targets {
+					if arrayTarget == tgt.target.Target {
 						iscsiTarget := ISCSITargetInfo{
 							Target: arrayTarget,
-							Portal: tgt.Portal,
+							Portal: tgt.target.Portal,
 						}
 						iscsiTargets = append(iscsiTargets, iscsiTarget)
-						isFound = true
+						found = true
 					}
 				}
-				if !isFound {
-					// This will be an extremely rare case
-					// A new ISCSI target/portal IP has been configured
-					// on the array and added to the Port Group
-					// after the node driver cache information
-					// Invalidate the cache. Return whatever targets we have found until now
-					symToAllISCSITargets.Delete(symID)
-					break
+				if !found {
+					// Some array targets are not present in cache
+					// This mostly means that the Port group was modified post
+					// driver boot. Invalidate the cache
+					symToMaskingViewTargets.Delete(symID)
+					// Look in the cache for all targets on the array
+					isFound := false
+					for _, tgt := range allTargets {
+						if arrayTarget == tgt.Target {
+							iscsiTarget := ISCSITargetInfo{
+								Target: arrayTarget,
+								Portal: tgt.Portal,
+							}
+							iscsiTargets = append(iscsiTargets, iscsiTarget)
+							isFound = true
+						}
+					}
+					if !isFound {
+						// This will be an extremely rare case
+						// A new ISCSI target/portal IP has been configured
+						// on the array and added to the Port Group
+						// after the node driver cache information
+						// Invalidate the cache. Return whatever targets we have found until now
+						symToAllISCSITargets.Delete(symID)
+						break
+					}
 				}
 			}
+			log.Infof("Found cached targets: %v", targets)
+			return iscsiTargets
+		default:
+			// cache is wrong type, invalidate it and rebuild
+			symToAllISCSITargets.Delete(symID)
 		}
-		return iscsiTargets
 	}
 	// There is no cached information
 	_, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
