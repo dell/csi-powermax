@@ -1778,3 +1778,71 @@ func Test_service_CreateSnapshot(t *testing.T) {
 		})
 	}
 }
+
+func TestIsNodeNVMe(t *testing.T) {
+	tests := []struct {
+		name                string
+		symID               string
+		nodeID              string
+		getMaskingViewError error
+		getHostByIDError    error
+		wantErr             error
+		want                bool
+	}{
+		{
+			name:                "Successful call to GetMaskingViewByID",
+			symID:               "sym1",
+			nodeID:              "node1",
+			getMaskingViewError: nil,
+			getHostByIDError:    nil,
+			wantErr:             nil,
+			want:                true,
+		},
+		{
+			name:                "Successful call to GetHostByID",
+			symID:               "sym1",
+			nodeID:              "node1",
+			getMaskingViewError: errors.New("unable to get masking view"),
+			getHostByIDError:    nil,
+			wantErr:             nil,
+			want:                true,
+		},
+		{
+			name:                "Error getting ID",
+			symID:               "sym1",
+			nodeID:              "node1",
+			getMaskingViewError: errors.New("unable to get masking view"),
+			getHostByIDError:    errors.New("unable to get Host byID"),
+			wantErr:             errors.New("Failed to fetch host id from array for node: node1"),
+			want:                false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				opts: Opts{
+					TransportProtocol: NvmeTCPTransportProtocol,
+					ClusterPrefix:     "testCluster",
+				},
+			}
+			pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+			pmaxClient.EXPECT().GetMaskingViewByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&v100.MaskingView{}, tt.getMaskingViewError)
+			pmaxClient.EXPECT().GetHostByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&v100.Host{
+				HostType: "NVMe/TCP",
+			}, tt.getHostByIDError)
+			got, err := s.IsNodeNVMe(context.Background(), tt.symID, tt.nodeID, pmaxClient)
+
+			if tt.want != got {
+				t.Errorf("service.IsNodeNVMe() = %v, want %v", got, tt.want)
+			}
+
+			if err != nil {
+				assert.Contains(t, err.Error(), tt.wantErr.Error())
+			} else if err != tt.wantErr {
+				t.Errorf("service.IsNodeNVMe() error: %v, wantErr: %v", err, tt.wantErr)
+				return
+			}
+		})
+	}
+}
