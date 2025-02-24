@@ -1294,9 +1294,6 @@ func (s *service) NodeGetInfo(
 			"Unable to get the list of symmetrix ids")
 	}
 	if len(topology) == 0 {
-		// if s.opts.IsVsphereEnabled {
-		// array:vsphere
-		// }
 		log.Errorf("No topology keys could be generated")
 		return nil, status.Error(codes.FailedPrecondition, "no topology keys could be generated")
 	}
@@ -1580,6 +1577,10 @@ func (s *service) nodeStartup(ctx context.Context) error {
 	}
 
 	arrays := s.retryableGetSymmetrixIDList()
+<<<<<<< HEAD
+=======
+
+>>>>>>> a89ba19 (Add more tests to node.go)
 	symmetrixIDs := arrays.SymmetrixIDs
 	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
 
@@ -2217,6 +2218,7 @@ func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error 
 	// for each array known to unisphere, ensure we have performed ISCSI login for our masking views
 	for _, array := range arrays.SymmetrixIDs {
 		pmaxClient, err := s.GetPowerMaxClient(array)
+		log.Infof("got PowerMaxclient %+v", pmaxClient)
 		if err != nil {
 			log.Error(err.Error())
 			continue
@@ -2242,6 +2244,7 @@ func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error 
 			log.Debugf("(ISCSI) No logins were done earlier for %s", array)
 			s.cacheMutex.Unlock()
 			_, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
+			log.Infof("Checking if MV %s exists", mvName)
 			// Get iscsi initiators.
 			IQNs, iSCSIErr := s.iscsiClient.GetInitiators("")
 			if iSCSIErr != nil {
@@ -2255,6 +2258,7 @@ func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error 
 			log.Debugf("(ISCSI) No logins were done earlier for %s", array)
 			s.cacheMutex.Unlock()
 			_, _, mvName := s.GetNVMETCPHostSGAndMVIDFromNodeID(s.opts.NodeName)
+			log.Infof("Checking if MV %s exists", mvName)
 			err = s.performNVMETCPLoginOnSymID(ctx, array, mvName, pmaxClient)
 			if err != nil {
 				return fmt.Errorf("failed to login to (some) %s ISCSI targets. Error: %s", array, err.Error())

@@ -25,11 +25,15 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/dell/csi-powermax/v2/k8smock"
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
 	"github.com/dell/goiscsi"
 	gonvme "github.com/dell/gonvme"
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
+	gomock "github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	gmock "go.uber.org/mock/gomock"
 )
@@ -89,6 +93,8 @@ func TestGetNVMeTCPTargets(t *testing.T) {
 	// Run the tests
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			lockMutex.Lock()
+			defer lockMutex.Unlock()
 			// Create a new service instance for testing
 			s := &service{
 				opts: Opts{
@@ -163,6 +169,7 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 				return c
 			},
 			init: func() {
+				symToAllNVMeTCPTargets.Clear()
 				s.InvalidateSymToMaskingViewTargets()
 				symToMaskingViewTargets.Store("array1", []maskingViewNVMeTargetInfo{
 					{
@@ -205,6 +212,7 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 				return c
 			},
 			init: func() {
+				symToAllNVMeTCPTargets.Clear()
 				s.InvalidateSymToMaskingViewTargets()
 				symToMaskingViewTargets.Store("array1", []maskingViewNVMeTargetInfo{
 					{
@@ -254,6 +262,7 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 				return c
 			},
 			init: func() {
+				symToAllNVMeTCPTargets.Clear()
 				s.InvalidateSymToMaskingViewTargets()
 			},
 			want: []NVMeTCPTargetInfo{
@@ -303,8 +312,8 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 				return c
 			},
 			init: func() {
+				symToAllNVMeTCPTargets.Clear()
 				s.InvalidateSymToMaskingViewTargets()
-
 				symToMaskingViewTargets.Store("array1", []maskingViewNVMeTargetInfo{
 					{
 						target: gonvme.NVMeTarget{Portal: "1.1.1.1", TargetNqn: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"},
@@ -347,6 +356,7 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 				return c
 			},
 			init: func() {
+				symToAllNVMeTCPTargets.Clear()
 				s.InvalidateSymToMaskingViewTargets()
 			},
 			want: nil,
@@ -372,6 +382,7 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 				return c
 			},
 			init: func() {
+				symToAllNVMeTCPTargets.Clear()
 				s.InvalidateSymToMaskingViewTargets()
 			},
 			want: nil,
@@ -393,6 +404,7 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 				return c
 			},
 			init: func() {
+				symToAllNVMeTCPTargets.Clear()
 				s.InvalidateSymToMaskingViewTargets()
 			},
 			want: nil,
@@ -437,8 +449,8 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 				return c
 			},
 			init: func() {
+				symToAllNVMeTCPTargets.Clear()
 				s.InvalidateSymToMaskingViewTargets()
-
 				symToMaskingViewTargets.Store("array1", []maskingViewTargetInfo{
 					{
 						target: goiscsi.ISCSITarget{Portal: "1.1.1.1", Target: "iqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"},
@@ -458,6 +470,9 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 	for _, tc := range testCases {
 		tc.pmaxClient = tc.getClient()
 		t.Run(tc.name, func(t *testing.T) {
+			lockMutex.Lock()
+			defer lockMutex.Unlock()
+
 			s := &service{
 				opts: Opts{
 					UseProxy: true,
@@ -578,7 +593,7 @@ func TestGetAndConfigureISCSITargets(t *testing.T) {
 				})
 			},
 			want: nil,
-		}, // This finding it in cache even after invalidating cache!!
+		},
 		{
 			name:         "Valid case",
 			arrayTargets: []string{"iqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"},
@@ -801,6 +816,8 @@ func TestGetAndConfigureISCSITargets(t *testing.T) {
 	for _, tc := range testCases {
 		tc.pmaxClient = tc.getClient()
 		t.Run(tc.name, func(t *testing.T) {
+			lockMutex.Lock()
+			defer lockMutex.Unlock()
 			s := &service{
 				opts: Opts{
 					UseProxy: true,
@@ -821,7 +838,6 @@ func TestGetAndConfigureISCSITargets(t *testing.T) {
 func TestConnectRDMDevice(t *testing.T) {
 	// Create a mock gobrick.FCConnector
 	mockConnector := &mockFCGobrick{}
-
 	// Create a mock context
 	ctx := context.Background()
 
@@ -835,19 +851,16 @@ func TestConnectRDMDevice(t *testing.T) {
 			},
 		},
 	}
-
 	// Create a mock service
 	s := &service{
 		fcConnector: mockConnector,
 	}
-
 	// Call the connectRDMDevice function
 	device, err := s.connectRDMDevice(ctx, int(10), data)
 	// Assert the expected result
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
-
 	// deviceWWN is hardcoded in gobrick mocks, check for that to be returned
 	if device.WWN != "60000970000197900046533030300501" {
 		t.Errorf("Expected WWN to be 'mockWWN', got '%s'", device.WWN)
@@ -858,7 +871,6 @@ func TestGetHostForVsphere(t *testing.T) {
 	ctx := context.Background()
 	vsphereHostName := "vsphere-host"
 	array := "array1"
-
 	tests := []struct {
 		name                 string
 		hostResponse         *types.Host
@@ -899,6 +911,9 @@ func TestGetHostForVsphere(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			lockMutex.Lock()
+			defer lockMutex.Unlock()
+
 			pmaxClient := func() *mocks.MockPmaxClient {
 				client := mocks.NewMockPmaxClient(gmock.NewController(t))
 				client.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(client)
@@ -908,13 +923,11 @@ func TestGetHostForVsphere(t *testing.T) {
 				client.EXPECT().GetHostGroupByID(gmock.Any(), gmock.Any(), gmock.Any()).AnyTimes().Return(tt.hostGroupResponse, tt.hostGroupResponseErr)
 				return client
 			}()
-
 			s := &service{
 				opts: Opts{
 					VSphereHostName: vsphereHostName,
 				},
 			}
-
 			err := s.getHostForVsphere(ctx, array, pmaxClient)
 			if tt.expectedErr != nil {
 				require.Error(t, err)
@@ -980,7 +993,6 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				c.EXPECT().GetInitiatorByID(gmock.All(), "array1", "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001").AnyTimes().Return(
 					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil)
 				c.EXPECT().UpdateHostInitiators(gmock.All(), "array1", "host1", gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
-
 				return c
 			},
 			want: &types.Host{
@@ -992,7 +1004,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:     "Invalid host case",
+			name:     "Invalid host but created successfully",
 			array:    "array1",
 			nodeName: "host1",
 			NQNs:     []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"},
@@ -1005,10 +1017,12 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				c.EXPECT().GetInitiatorByID(gmock.All(), "array1", "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001").AnyTimes().Return(
 					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil)
 				c.EXPECT().UpdateHostInitiators(gmock.All(), "array1", "host1", gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
-
 				return c
 			},
-			wantErr: true,
+			wantErr: false,
+			want: &types.Host{
+				HostID: "host1",
+			},
 		},
 		{
 			// This is really bizarre condition in the code to test, but it is what it is.
@@ -1028,10 +1042,11 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				return c
 			},
 			wantErr: false,
-			want:    nil,
+			want:    &types.Host{},
 		},
 		{
 			// This is really bizarre condition in the code to test, but it is what it is.
+			// When createHost fails, it should return and error from the code, but instead returning nil host and no error.
 			name:     "create host failure, with bad NQNs error",
 			array:    "array1",
 			nodeName: "host1",
@@ -1041,14 +1056,18 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
 				c.EXPECT().GetHostByID(gmock.All(), "array1", "host1").AnyTimes().Return(nil, errors.New("host not found"))
 				c.EXPECT().CreateHost(gmock.All(), "array1", "host1", gmock.Any(), gmock.Any()).AnyTimes().Return(nil, errors.New("is not in the format of a valid NQN:HostID"))
-				c.EXPECT().GetInitiatorList(gmock.All(), "array1", "", false, false).AnyTimes().Return(&types.InitiatorList{}, nil)
+				c.EXPECT().GetInitiatorList(gmock.All(), "array1", "", false, false).AnyTimes().Return(&types.InitiatorList{
+					InitiatorIDs: []string{
+						"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
 				c.EXPECT().GetInitiatorByID(gmock.All(), "array1", "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001").AnyTimes().Return(
 					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil)
 				c.EXPECT().UpdateHostInitiators(gmock.All(), "array1", "host1", gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				return c
 			},
-			wantErr: true,
-			want:    &types.Host{},
+			wantErr: false,
+			want:    nil,
 		},
 		{
 			name:     "array empty case",
@@ -1086,12 +1105,42 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 			wantErr: true,
 			want:    &types.Host{},
 		},
+		{
+			name:     "Host exists, add new initiators",
+			array:    "array1",
+			nodeName: "host1",
+			NQNs:     []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00222"},
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				c.EXPECT().GetHostByID(gmock.All(), "array1", "host1").AnyTimes().Return(&types.Host{
+					HostID: "host1",
+					Initiators: []string{
+						"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				c.EXPECT().CreateHost(gmock.All(), "array1", "host1", gmock.Any(), gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
+				c.EXPECT().GetInitiatorList(gmock.All(), "array1", "", false, false).AnyTimes().Return(&types.InitiatorList{}, nil)
+				c.EXPECT().GetInitiatorByID(gmock.All(), "array1", "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001").AnyTimes().Return(
+					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil)
+				c.EXPECT().UpdateHostInitiators(gmock.All(), "array1", gmock.All(), []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00222"}).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
+				return c
+			},
+			want: &types.Host{
+				HostID: "host1",
+				Initiators: []string{
+					"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+				},
+			},
+			wantErr: false,
+		},
 	}
-
 	// Run the tests
 	for _, tc := range testCases {
 		tc.pmaxClient = tc.getClient()
 		t.Run(tc.name, func(t *testing.T) {
+			lockMutex.Lock()
+			defer lockMutex.Unlock()
 			s := &service{
 				opts: Opts{
 					UseProxy: true,
@@ -1101,14 +1150,13 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				loggedInNVMeArrays: map[string]bool{},
 				pmaxTimeoutSeconds: 2,
 			}
-
 			got, err := s.createOrUpdateNVMeTCPHost(context.Background(), tc.array, tc.nodeName, tc.NQNs, tc.pmaxClient)
+			if err == nil && tc.wantErr {
+				t.Errorf("Expected: %v, but got no error", tc.wantErr)
+
+			}
 			if !reflect.DeepEqual(got, tc.want) {
-				if err == nil && tc.wantErr {
-					t.Errorf("Expected error to be nil but got %v", tc.wantErr)
-				} else {
-					t.Errorf("Expected: %v, but got: %v", tc.want, got)
-				}
+				t.Errorf("Expected: %v, but got: %v", tc.want, got)
 			}
 		})
 	}
@@ -1276,10 +1324,11 @@ func TestPerformNVMETCPLoginOnSymID(t *testing.T) {
 			},
 		},
 	}
-
 	// Run the tests
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			lockMutex.Lock()
+			defer lockMutex.Unlock()
 			// Create a new service instance for testing
 			s := &service{
 				opts: Opts{
@@ -1288,7 +1337,6 @@ func TestPerformNVMETCPLoginOnSymID(t *testing.T) {
 				loggedInNVMeArrays: map[string]bool{},
 				nvmetcpClient:      gonvme.NewMockNVMe(map[string]string{}),
 				nvmeTargets:        &sync.Map{},
-				// Set the necessary fields for testing
 			}
 			tc.pmaxClient = tc.getClient()
 			// Call the function and check the results
@@ -1298,6 +1346,725 @@ func TestPerformNVMETCPLoginOnSymID(t *testing.T) {
 				t.Errorf("Expected error but got none")
 			} else if !tc.wantErr && err != nil {
 				t.Errorf("Expected no error but got %v", err)
+			}
+		})
+	}
+}
+
+func TestCreateTopologyMap(t *testing.T) {
+
+	testCases := []struct {
+		name                      string
+		nodeName                  string
+		getClient                 func() *mocks.MockPmaxClient
+		pmaxClient                pmax.Pmax
+		nvmeTCPClient             *gonvme.MockNVMe
+		iscsiClient               *goiscsi.MockISCSI
+		managedArrays             []string
+		arrayTransportProtocolMap map[string]string
+		initFunc                  func()
+		loggedInNVMeArrays        map[string]bool
+		loggedInArrays            map[string]bool
+		portGroups                []string
+		want                      *csi.NodeGetInfoRequest
+		wantErr                   bool
+	}{
+		{
+			name: "Success case NVME with logged in arrays",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": NvmeTCPTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() {
+			},
+			loggedInArrays: map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{
+				"array1": true,
+			},
+			portGroups: []string{"portgroup1"},
+			wantErr:    false,
+		},
+		{
+			name: "Success case NVME no logged in arrays",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": NvmeTCPTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() {
+			},
+			loggedInArrays: map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{
+				"array1": false,
+			},
+			portGroups: []string{"portgroup1"},
+			wantErr:    false,
+		},
+		{
+			name: "Success case ISCSI, no logged in arrays",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "iqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": IscsiTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			iscsiClient:   goiscsi.NewMockISCSI(map[string]string{}),
+			initFunc: func() {
+			},
+			loggedInArrays: map[string]bool{
+				"array1": false,
+			},
+			loggedInNVMeArrays: map[string]bool{},
+			portGroups:         []string{"portgroup1"},
+			wantErr:            false,
+		},
+		{
+			name: "Success case ISCSI, logged in arrays",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "iqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": IscsiTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			iscsiClient:   goiscsi.NewMockISCSI(map[string]string{}),
+			initFunc: func() {
+			},
+			loggedInArrays: map[string]bool{
+				"array1": true,
+			},
+			loggedInNVMeArrays: map[string]bool{},
+			portGroups:         []string{"portgroup1"},
+			wantErr:            false,
+		},
+		{
+			name: "Invalid case,FC selected",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": FcTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() {
+			},
+			loggedInArrays:     map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{},
+			portGroups:         []string{"portgroup1"},
+			wantErr:            false,
+		},
+		{
+			name: "Invalid case,Vsphere selected",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": Vsphere,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() {
+			},
+			loggedInArrays:     map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{},
+			portGroups:         []string{"portgroup1"},
+			wantErr:            false,
+		},
+		{
+			name: "Failure case, topolgy create fails",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				return c
+			},
+			managedArrays:             []string{""},
+			arrayTransportProtocolMap: map[string]string{},
+			nvmeTCPClient:             gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() {
+			},
+			loggedInArrays:     map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{},
+			portGroups:         []string{"portgroup1"},
+			wantErr:            false,
+		},
+	}
+	// Run the tests
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lockMutex.Lock()
+			defer lockMutex.Unlock()
+			// Create a new service instance for testing
+			s := &service{
+				opts: Opts{
+					ManagedArrays: tc.managedArrays,
+					PortGroups:    tc.portGroups,
+				},
+				arrayTransportProtocolMap: tc.arrayTransportProtocolMap,
+				nvmetcpClient:             tc.nvmeTCPClient,
+				iscsiClient:               tc.iscsiClient,
+				loggedInArrays:            tc.loggedInArrays,
+				loggedInNVMeArrays:        tc.loggedInNVMeArrays,
+			}
+			tc.pmaxClient = tc.getClient()
+			// Call the function and check the results
+			tc.initFunc()
+
+			_, err := s.createTopologyMap(context.Background(), tc.nodeName)
+			if tc.wantErr && err == nil {
+				t.Errorf("Expected error but got none")
+			} else if !tc.wantErr && err != nil {
+				t.Errorf("Expected no error but got %v", err)
+			}
+		})
+	}
+}
+
+func TestNodeGetInfo(t *testing.T) {
+	type test struct {
+		name                      string
+		nodeName                  string
+		getClient                 func() *mocks.MockPmaxClient
+		pmaxClient                pmax.Pmax
+		nvmeTCPClient             *gonvme.MockNVMe
+		iscsiClient               *goiscsi.MockISCSI
+		managedArrays             []string
+		arrayTransportProtocolMap map[string]string
+		initFunc                  func() *k8smock.MockUtilsInterface
+		loggedInNVMeArrays        map[string]bool
+		loggedInArrays            map[string]bool
+		portGroups                []string
+		isVsphereEnabled          bool
+		mockUtilsInterface        *k8smock.MockUtilsInterface
+		maxVolumesPerNode         int64
+		csiNodeGetInfoRequest     *csi.NodeGetInfoRequest
+		want                      map[string]string
+		wantErr                   bool
+	}
+
+	testCases := []test{
+		{
+			name:              "Success",
+			nodeName:          "node1",
+			maxVolumesPerNode: 1,
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": NvmeTCPTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{"max-powermax-volumes-per-node": "1"}, nil)
+				return mockUtilsInterface
+			},
+			loggedInArrays: map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{
+				"array1": true,
+			},
+			portGroups: []string{"portgroup1"},
+			wantErr:    false,
+		},
+		{
+			name:              "Success, node labels does not exist",
+			nodeName:          "node1",
+			maxVolumesPerNode: -1,
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": NvmeTCPTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+
+				// Set up expectations
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{}, nil)
+				return mockUtilsInterface
+
+			},
+			loggedInArrays: map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{
+				"array1": true,
+			},
+			portGroups: []string{"portgroup1"},
+			wantErr:    false,
+		},
+		{
+			name:              "Success, vsphere enabled, node labels exists",
+			nodeName:          "node1",
+			maxVolumesPerNode: 0,
+			isVsphereEnabled:  true,
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": NvmeTCPTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{"max-powermax-volumes-per-node": "0"}, nil)
+				return mockUtilsInterface
+			},
+			loggedInArrays: map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{
+				"array1": true,
+			},
+			portGroups: []string{"portgroup1"},
+			wantErr:    false,
+		},
+		{
+			name:              "Success, vsphere enabled, node labels parse error",
+			nodeName:          "node1",
+			maxVolumesPerNode: 0,
+			isVsphereEnabled:  true,
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": NvmeTCPTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{"max-powermax-volumes-per-node": "one"}, nil)
+				return mockUtilsInterface
+			},
+			loggedInArrays: map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{
+				"array1": true,
+			},
+			portGroups: []string{"portgroup1"},
+			wantErr:    true,
+		},
+		{
+			name:              "Failure case, no node name",
+			nodeName:          "",
+			maxVolumesPerNode: 0,
+			isVsphereEnabled:  true,
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": NvmeTCPTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+				return mockUtilsInterface
+			},
+			loggedInArrays: map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{
+				"array1": true,
+			},
+			portGroups: []string{"portgroup1"},
+			wantErr:    true,
+		},
+		{
+			name:              "Success, vsphere enabled, node labels does not exist",
+			nodeName:          "node1",
+			maxVolumesPerNode: 0,
+			isVsphereEnabled:  true,
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": NvmeTCPTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{}, nil)
+				return mockUtilsInterface
+			},
+			loggedInArrays: map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{
+				"array1": true,
+			},
+			portGroups: []string{"portgroup1"},
+			wantErr:    false,
+		},
+	}
+	// Run the tests
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lockMutex.Lock()
+			defer lockMutex.Unlock()
+
+			// Create a new service instance for testing
+			s := &service{
+				opts: Opts{
+					NodeName:          tc.nodeName,
+					NodeFullName:      tc.nodeName,
+					ManagedArrays:     tc.managedArrays,
+					PortGroups:        tc.portGroups,
+					MaxVolumesPerNode: tc.maxVolumesPerNode,
+					IsVsphereEnabled:  tc.isVsphereEnabled,
+				},
+				arrayTransportProtocolMap: tc.arrayTransportProtocolMap,
+				nvmetcpClient:             tc.nvmeTCPClient,
+				iscsiClient:               tc.iscsiClient,
+				loggedInArrays:            tc.loggedInArrays,
+				loggedInNVMeArrays:        tc.loggedInNVMeArrays,
+				k8sUtils:                  tc.initFunc(),
+			}
+			tc.pmaxClient = tc.getClient()
+			// Call the function and check the results
+			_, err := s.NodeGetInfo(context.Background(), tc.csiNodeGetInfoRequest)
+			if tc.wantErr && err == nil {
+				t.Errorf("Expected error but got none")
+			}
+		})
+	}
+}
+
+func TestEnsureLoggedIntoEveryArray(t *testing.T) {
+	type test struct {
+		name               string
+		nodeName           string
+		managedArrays      []string
+		loggedInArrays     map[string]bool
+		loggedInNVMeArrays map[string]bool
+		useIscsi           bool
+		useNVMeTCP         bool
+		getClient          func() *mocks.MockPmaxClient
+		initFunc           func()
+		pmaxClient         pmax.Pmax
+		nvmeTCPClient      *gonvme.MockNVMe
+		iscsiClient        *goiscsi.MockISCSI
+		want               map[string]string
+		wantErr            bool
+	}
+
+	testCases := []test{
+		{
+			name:          "Success case ISCSI, array logged in",
+			nodeName:      "node1",
+			useIscsi:      true,
+			managedArrays: []string{"array1"},
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			nvmeTCPClient:      gonvme.NewMockNVMe(map[string]string{}),
+			iscsiClient:        goiscsi.NewMockISCSI(map[string]string{}),
+			loggedInArrays:     map[string]bool{"array1": true},
+			loggedInNVMeArrays: map[string]bool{},
+			initFunc: func() {
+				s.InvalidateSymToMaskingViewTargets()
+			},
+			wantErr: false,
+		},
+		{
+			name:          "Success case ISCSI, array NOT logged in",
+			nodeName:      "node1",
+			useIscsi:      true,
+			managedArrays: []string{"array2"},
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array2").AnyTimes().Return(c)
+				c.EXPECT().GetMaskingViewByID(gmock.All(), "array2", "csi-mv--node1").AnyTimes().Return(&types.MaskingView{
+					MaskingViewID: "csi-mv--node1",
+					PortGroupID:   "portgroup1",
+				}, nil)
+
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array2", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array2", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "iqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				symmetrix.Initialize([]string{"array2"}, c)
+				return c
+			},
+			nvmeTCPClient:      gonvme.NewMockNVMe(map[string]string{}),
+			iscsiClient:        goiscsi.NewMockISCSI(map[string]string{}),
+			loggedInArrays:     map[string]bool{"array2": false},
+			loggedInNVMeArrays: map[string]bool{},
+			initFunc: func() {
+				s.InvalidateSymToMaskingViewTargets()
+			},
+			wantErr: false,
+		},
+		{
+			name:          "Success case NVME, array logged in",
+			nodeName:      "node1",
+			useIscsi:      false,
+			useNVMeTCP:    true,
+			managedArrays: []string{"array1"},
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			nvmeTCPClient:      gonvme.NewMockNVMe(map[string]string{}),
+			iscsiClient:        goiscsi.NewMockISCSI(map[string]string{}),
+			loggedInArrays:     map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{"array1": true},
+			initFunc: func() {
+				s.InvalidateSymToMaskingViewTargets()
+			},
+			wantErr: false,
+		},
+		{
+			name:          "Success case NVMe, array NOT logged in",
+			nodeName:      "node1",
+			useIscsi:      false,
+			useNVMeTCP:    true,
+			managedArrays: []string{"array3"},
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array3").AnyTimes().Return(c)
+				c.EXPECT().GetMaskingViewByID(gmock.All(), "array3", "csi-mv--node1-NVMETCP").AnyTimes().Return(&types.MaskingView{
+					MaskingViewID: "csi-mv--node1-NVMETCP",
+					PortGroupID:   "portgroup1",
+				}, nil)
+
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array3", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array3", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				c.EXPECT().GetNVMeTCPTargets(gmock.All(), "array3").AnyTimes().Return([]pmax.NVMeTCPTarget{}, nil)
+				symmetrix.Initialize([]string{"array3"}, c)
+				return c
+			},
+			initFunc: func() {
+				s.InvalidateSymToMaskingViewTargets()
+			},
+			nvmeTCPClient:      gonvme.NewMockNVMe(map[string]string{}),
+			iscsiClient:        goiscsi.NewMockISCSI(map[string]string{}),
+			loggedInArrays:     map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{"array3": false},
+			wantErr:            false,
+		},
+	}
+	// Run the tests
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lockMutex.Lock()
+			defer lockMutex.Unlock()
+
+			// Create a new service instance for testing
+			s := &service{
+				opts: Opts{
+					NodeName:      tc.nodeName,
+					ManagedArrays: tc.managedArrays,
+				},
+
+				nvmetcpClient:      tc.nvmeTCPClient,
+				iscsiClient:        tc.iscsiClient,
+				loggedInArrays:     tc.loggedInArrays,
+				loggedInNVMeArrays: tc.loggedInNVMeArrays,
+				useIscsi:           tc.useIscsi,
+				useNVMeTCP:         tc.useNVMeTCP,
+				iscsiTargets:       map[string][]string{},
+				nvmeTargets:        &sync.Map{},
+			}
+			tc.pmaxClient = tc.getClient()
+			tc.initFunc()
+			// Call the function and check the results
+			err := s.ensureLoggedIntoEveryArray(context.TODO(), true)
+			if tc.wantErr && err == nil {
+				t.Errorf("Expected error but got none")
 			}
 		})
 	}

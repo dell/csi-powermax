@@ -4439,10 +4439,7 @@ func (f *feature) iAddFCArrayToProtocolMap() error {
 }
 
 func (f *feature) iAddNVMEArrayToProtocolMap() error {
-	arrays, err := f.service.retryableGetSymmetrixIDList()
-	if err != nil {
-		return err
-	}
+	arrays := f.service.retryableGetSymmetrixIDList()
 	if len(arrays.SymmetrixIDs) > 0 {
 		f.fcArray = arrays.SymmetrixIDs[0]
 	}
