@@ -22,6 +22,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +35,7 @@ import (
 	"github.com/dell/csi-powermax/v2/k8sutils"
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
 	"github.com/dell/gocsi"
+	csictx "github.com/dell/gocsi/context"
 	pmax "github.com/dell/gopowermax/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -637,17 +639,21 @@ func TestSetGetLogFields(t *testing.T) {
 		"RequestID": "123",
 		"DeviceID":  "12345",
 	}
-	ctx := setLogFields(nil, fields)
+
+	ctx := setLogFields(context.Background(), fields)
 	fields = getLogFields(ctx)
 	if fields["RequestID"] == nil {
 		t.Error("Expected fields.CSIRequestID to be initialized")
 	}
-	fields = getLogFields(nil)
+
+	fields = getLogFields(context.Background())
 	if fields == nil {
 		t.Error("Expected fields to be initialized")
 	}
-	fields = getLogFields(context.Background())
-	if fields == nil {
+
+	ctx = context.WithValue(ctx, csictx.RequestIDKey, "456")
+	fields = getLogFields(ctx)
+	if fields["RequestID"] == nil {
 		t.Error("Expected fields to be initialized")
 	}
 }
@@ -759,18 +765,6 @@ func TestRegisterAdditionalServers(_ *testing.T) {
 	s.RegisterAdditionalServers(server)
 }
 
-func TestSetArrayConfigEnvs(t *testing.T) {
-	ctx := context.Background()
-	_ = os.Setenv(EnvArrayConfigPath, "value")
-	paramsViper := viper.New()
-	paramsViper.Set(Protocol, "ICSCI")
-	paramsViper.Set(EnvEndpoint, "endpoint")
-	paramsViper.Set(PortGroups, "pg1, pg2, pg3")
-	paramsViper.Set(ManagedArrays, "000000000001,000000000002")
-	err := setArrayConfigEnvs(ctx)
-	assert.Equal(t, nil, err)
-}
-
 var errMockErr = errors.New("mock error")
 
 func TestCreateDbusConnection(t *testing.T) {
@@ -853,4 +847,48 @@ func TestCloseDbusConnection(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSetArrayConfigEnvs(t *testing.T) {
+	ctx := context.Background()
+	fp := filepath.Join(os.TempDir(), "arrayConfig.yaml")
+	file, err := os.Create(fp)
+	assert.Equal(t, nil, err)
+
+	defer func() {
+		os.Remove(fp)
+		file.Close()
+	}()
+
+	_ = os.Setenv(EnvArrayConfigPath, fp)
+	paramsViper := viper.New()
+	paramsViper.SetConfigFile(fp)
+	paramsViper.SetConfigType("yaml")
+	paramsViper.Set(Protocol, "ICSCI")
+	paramsViper.Set(EnvEndpoint, "endpoint")
+	paramsViper.Set(PortGroups, "pg1, pg2, pg3")
+	paramsViper.Set(ManagedArrays, "000000000001,000000000002")
+
+	err = paramsViper.WriteConfig()
+	assert.Equal(t, nil, err)
+
+	// Test case: Successful read of array config file
+	err = setArrayConfigEnvs(ctx)
+	assert.Equal(t, nil, err)
+}
+
+func TestReadConfig(t *testing.T) {
+	fp := filepath.Join(os.TempDir(), "topoConfig.yaml")
+	file, err := os.Create(fp)
+	assert.Equal(t, nil, err)
+
+	defer func() {
+		os.Remove(fp)
+		file.Close()
+	}()
+
+	os.WriteFile(fp, []byte(`{"allowedConnections": 1234}`), 0o777)
+
+	_, err = ReadConfig(fp)
+	assert.Error(t, err)
 }
