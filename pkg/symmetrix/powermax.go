@@ -227,8 +227,12 @@ func GetPowerMax(symID string) (*PowerMax, error) {
 	return getPowerMax(symID)
 }
 
+var getPowerMaxClientMux sync.Mutex
+
 // GetPowerMaxClient ...
 func GetPowerMaxClient(primaryArray string, arrays ...string) (pmax.Pmax, error) {
+	getPowerMaxClientMux.Lock()
+	defer getPowerMaxClientMux.Unlock()
 	primaryPowermax, err := getPowerMax(primaryArray)
 	if err != nil {
 		return nil, err
@@ -251,6 +255,15 @@ func GetPowerMaxClient(primaryArray string, arrays ...string) (pmax.Pmax, error)
 	}
 
 	return primaryPowermax.getClient(), nil
+}
+
+// RemoveClient removes the client for the given symmetrix ID from the cache
+// Created for testing purposes
+func RemoveClient(symID string) {
+	_, ok := storageArrays.StorageArrays.Load(symID)
+	if ok {
+		storageArrays.StorageArrays.Delete(symID)
+	}
 }
 
 // Initialize ...

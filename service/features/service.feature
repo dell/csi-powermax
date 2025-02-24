@@ -242,6 +242,20 @@ Feature: PowerMax CSI interface
       When I call NodeGetInfo
       Then a valid NodeGetInfoResponse is returned
 
+@v2.8.0
+     Scenario Outline: Validate NodeGetInfo for different protocols
+      Given a PowerMax service
+      And I have a Node "node1" with MaskingView
+      And arrays are logged in with protocol <protocol>
+      When I call NodeGetInfo
+      Then a valid NodeGetInfoResponse is returned
+
+      Examples:
+      | protocol                  |
+      | "FC"                      |
+      | "iSCSI"                   |
+      | "NVMe"                    |
+
 @v1.0.0
      Scenario: Call NodeGetInfo without setting Node Name
       Given a PowerMax service
@@ -621,6 +635,7 @@ Feature: PowerMax CSI interface
       | "GOFSInduceFSTypeError"                  | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to fetch filesystem"               |
       | "GOFSInduceResizeFSError"                | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to resize device"                  |      
       | "NoVolumeID"                             | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Invalid volume id"                                |
+      
 
 @v1.4.0
   Scenario: Node Expand with a failed NodeProbe
@@ -759,7 +774,7 @@ Feature: PowerMax CSI interface
         | "none"                                   | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
         | "GOFSInduceGetMountInfoFromDeviceError"  | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
         | "NoVolumeID"                             | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "Invalid volume id"      |
-	    | "NoMountInfo"                            | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"                | "none"                   |
+	  | "NoMountInfo"                            | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"                | "none"                   |
 
 @v2.3.0
   Scenario Outline: Test valid Topology ReadConfig in BeforeServe

@@ -73,6 +73,37 @@ Feature: PowerMax CSI interface
 
 @nodePublish
 @v1.0.0
+  Scenario Outline: Node stage block volume no error , different transport protocols from examples
+    Given a PowerMax service
+    And I set transport protocol to <transport>
+    And I have a Node "node1" with MaskingView
+    And a controller published volume
+    And a capability with voltype "block" access "single-writer" fstype "none"
+    And get Node Publish Volume Request
+    When I call NodeStageVolume
+    Then the error contains <errormsg>
+
+    Examples:
+    | transport |  errormsg        |                                                  
+    | "FC"      | "none"           |
+    | "ISCSI"   | "none"           |
+    | "NVME"    | "none"           |
+
+@nodePublish
+@v1.0.0
+   Scenario Outline: Node Get Capabilities
+    Given a PowerMax service
+    And I set Health Monitor Enabled to <enable>
+    When I call NodeGetCapabilities
+    Then the response has capabilities <count>
+
+    Examples:
+    | enable                  |     count       |
+    | false                   |       3         |
+    | true                    |       5         |
+
+@nodePublish
+@v1.0.0
   Scenario Outline: Node stage volume with vSphere enabled
     Given a PowerMax service
     And I call set attribute IsVsphereEnabled "true"

@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -1358,7 +1358,7 @@ func (s *service) LinkSRDFVolToVolume(ctx context.Context, reqID, symID string, 
 	cleanReq.symmetrixID = symID
 	cleanReq.volumeID = vol.VolumeID
 	cleanReq.requestID = reqID
-	snapCleaner.requestCleanup(&cleanReq)
+	s.snapCleaner.requestCleanup(&cleanReq)
 	return nil
 }
 
@@ -1402,11 +1402,23 @@ func addReplicationParamsToVolumeAttributes(attributes map[string]string, prefix
 	attributes[path.Join(prefix, RemoteRDFGroupParam)] = remoteRDFGrpNo
 }
 
+// Wrapper around RequestLock for use in unit testing to avoid
+// the need to start the lock request queue processer.
+var requestLockFunc = func(lockHandle, reqID string) int {
+	return RequestLock(lockHandle, reqID)
+}
+
+// Wrapper around ReleaseLock for use in unit testing to avoid
+// the need to start the lock request queue processer.
+var releaseLockFunc = func(lockHandle, reqID string, lockNum int) {
+	ReleaseLock(lockHandle, reqID, lockNum)
+}
+
 func (s *service) getOrCreateProtectedStorageGroup(ctx context.Context, symID, localProtectionGroupID, _, localRDFGrpNo, repMode, reqID string, pmaxClient pmax.Pmax) (*types.RDFStorageGroup, error) {
 	var lockHandle string
 	lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
-	lockNum := RequestLock(lockHandle, reqID)
-	defer ReleaseLock(lockHandle, reqID, lockNum)
+	lockNum := requestLockFunc(lockHandle, reqID)
+	defer releaseLockFunc(lockHandle, reqID, lockNum)
 	sg, err := pmaxClient.GetProtectedStorageGroup(ctx, symID, localProtectionGroupID)
 	if err != nil || sg == nil {
 		// Verify the creation of new protected storage group is valid
@@ -2929,7 +2941,7 @@ func (s *service) getStoragePoolCapacities(ctx context.Context, symmetrixID, sto
 		log.Infof("StoragePoolCapacities(Fba/Ckd) : %#v StoragePoolCapacities(Fba/Ckd) : %#v ", srp.FbaCap, srp.CkdCap)
 		return nil, srp.FbaCap, srp.CkdCap, nil
 	}
-	return nil, nil, nil, status.Errorf(codes.Internal, "Could not retrieve StoragePool %s. Error(%s)", storagePoolID, err.Error())
+	return nil, nil, nil, status.Errorf(codes.Internal, "all capacities for StoragePool '%s' are empty", storagePoolID)
 }
 
 func (s *service) ControllerGetCapabilities(

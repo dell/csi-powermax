@@ -30,11 +30,17 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// pollingFrequency in seconds
-var pollingFrequencyInSeconds int64
+func (s *service) newProbeStatus() {
+	s.probeStatusMutex.Lock()
+	defer s.probeStatusMutex.Unlock()
+	s.probeStatus = new(sync.Map)
+}
 
-// probeStatus map[string]ArrayConnectivityStatus
-var probeStatus *sync.Map
+func (s *service) storeProbeStatus(k, v any) {
+	s.probeStatusMutex.Lock()
+	defer s.probeStatusMutex.Unlock()
+	s.probeStatus.Store(k, v)
+}
 
 // startAPIService reads nodes to array status periodically
 func (s *service) startAPIService(ctx context.Context) {
@@ -42,7 +48,7 @@ func (s *service) startAPIService(ctx context.Context) {
 		log.Info("podmon is not enabled")
 		return
 	}
-	pollingFrequencyInSeconds = s.SetPollingFrequency(ctx)
+	s.SetPollingFrequency(ctx)
 	s.startNodeToArrayConnectivityCheck(ctx)
 	s.apiRouter(ctx)
 }
@@ -54,8 +60,8 @@ func (s *service) apiRouter(_ context.Context) {
 	router := mux.NewRouter()
 	// route to connectivity status
 	// connectivityStatus is the handlers
-	router.HandleFunc(ArrayStatus, connectivityStatus).Methods("GET")
-	router.HandleFunc(ArrayStatus+"/"+"{symID}", getArrayConnectivityStatus).Methods("GET")
+	router.HandleFunc(ArrayStatus, s.connectivityStatus).Methods("GET")
+	router.HandleFunc(ArrayStatus+"/"+"{symID}", s.getArrayConnectivityStatus).Methods("GET")
 	// start http server to serve requests
 	server := &http.Server{
 		Addr:         s.opts.PodmonPort,
@@ -71,10 +77,10 @@ func (s *service) apiRouter(_ context.Context) {
 }
 
 // connectivityStatus handler returns array connectivity status
-func connectivityStatus(w http.ResponseWriter, _ *http.Request) {
-	log.Infof("connectivityStatus called, status is %v \n", probeStatus)
+func (s *service) connectivityStatus(w http.ResponseWriter, _ *http.Request) {
+	log.Infof("connectivityStatus called, status is %v \n", s.probeStatus)
 	// w.Header().Set("Content-Type", "application/json")
-	if probeStatus == nil {
+	if s.probeStatus == nil {
 		log.Errorf("error probeStatus map in cache is empty")
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
@@ -82,9 +88,9 @@ func connectivityStatus(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	// convert struct to JSON
-	log.Debugf("ProbeStatus fetched from the cache has %+v", probeStatus)
+	log.Debugf("ProbeStatus fetched from the cache has %+v", s.probeStatus)
 
-	jsonResponse, err := MarshalSyncMapToJSON(probeStatus)
+	jsonResponse, err := MarshalSyncMapToJSON(s.probeStatus)
 	if err != nil {
 		log.Errorf("error %s during marshaling to json", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -121,10 +127,10 @@ func MarshalSyncMapToJSON(m *sync.Map) ([]byte, error) {
 }
 
 // getArrayConnectivityStatus handler lists status of the requested array
-func getArrayConnectivityStatus(w http.ResponseWriter, r *http.Request) {
+func (s *service) getArrayConnectivityStatus(w http.ResponseWriter, r *http.Request) {
 	symID := mux.Vars(r)["symID"]
 	log.Infof("GetArrayConnectivityStatus called for array %s \n", symID)
-	status, found := probeStatus.Load(symID)
+	status, found := s.probeStatus.Load(symID)
 	if !found {
 		// specify status code
 		w.WriteHeader(http.StatusNotFound)
@@ -152,7 +158,7 @@ func getArrayConnectivityStatus(w http.ResponseWriter, r *http.Request) {
 // startNodeToArrayConnectivityCheck starts connectivityTest as one goroutine for each array
 func (s *service) startNodeToArrayConnectivityCheck(ctx context.Context) {
 	log.Debug("startNodeToArrayConnectivityCheck called")
-	probeStatus = new(sync.Map)
+	s.probeStatus = new(sync.Map)
 	pMaxArrays, err := s.retryableGetSymmetrixIDList()
 	if err != nil {
 		log.Errorf("startNodeToArrayConnectivityCheck failed to get symID list %s ", err.Error())
@@ -160,7 +166,7 @@ func (s *service) startNodeToArrayConnectivityCheck(ctx context.Context) {
 		for _, arr := range pMaxArrays.SymmetrixIDs {
 			go s.testConnectivityAndUpdateStatus(ctx, arr, Timeout)
 		}
-		log.Infof("startNodeToArrayConnectivityCheck is running probes at pollingFrequency %d ", pollingFrequencyInSeconds/2)
+		log.Infof("startNodeToArrayConnectivityCheck is running probes at pollingFrequency %d ", s.GetPollingFrequency()/2)
 	}
 }
 
@@ -179,7 +185,7 @@ func (s *service) testConnectivityAndUpdateStatus(ctx context.Context, symID str
 		// add timeout to context
 		timeOutCtx, cancel := context.WithTimeout(ctx, timeout)
 		log.Debugf("Running probe for array %s at time %v \n", symID, time.Now())
-		if existingStatus, ok := probeStatus.Load(symID); !ok {
+		if existingStatus, ok := s.probeStatus.Load(symID); !ok {
 			log.Debugf("%s not in probeStatus ", symID)
 		} else {
 			if status, ok = existingStatus.(ArrayConnectivityStatus); !ok {
@@ -198,9 +204,9 @@ func (s *service) testConnectivityAndUpdateStatus(ctx context.Context, symID str
 		}
 		status.LastAttempt = time.Now().Unix()
 		log.Debugf("array %s , storing status %+v", symID, status)
-		probeStatus.Store(symID, status)
+		s.storeProbeStatus(symID, status)
 		cancel()
 		// sleep for half the pollingFrequency and run check again
-		time.Sleep(time.Second * time.Duration(pollingFrequencyInSeconds/2))
+		time.Sleep(time.Second * time.Duration(s.GetPollingFrequency()/2))
 	}
 }
