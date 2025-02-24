@@ -28,7 +28,7 @@ import (
 func TestMetroClient_healthHandler(t *testing.T) {
 	tests := []struct {
 		name           string
-		failureWeight  int
+		failureWeight  int32
 		failureCount   int32
 		lastFailure    time.Time
 		expectedCount  int32

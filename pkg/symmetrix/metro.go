@@ -76,7 +76,7 @@ func (m *metroClient) setErrorWatcher(powermaxClient pmax.Pmax) {
 	}
 }
 
-func (m *metroClient) healthHandler(failureWeight int) {
+func (m *metroClient) healthHandler(failureWeight int32) {
 	m.mx.Lock()
 	defer m.mx.Unlock()
 	timeSinceLastFailure := time.Since(m.lastFailure)
@@ -85,7 +85,7 @@ func (m *metroClient) healthHandler(failureWeight int) {
 		log.Infof("Last failure was more than %f minutes ago; reseting the failure count", failureTimeThreshold.Minutes())
 		m.failureCount = 1
 	} else {
-		atomic.AddInt32(&(m.failureCount), int32(failureWeight))
+		atomic.AddInt32(&(m.failureCount), failureWeight)
 	}
 }
 
@@ -105,7 +105,7 @@ func (m *metroClient) getIdentifier() string {
 
 type transport struct {
 	http.RoundTripper
-	healthHandler func(int)
+	healthHandler func(int32)
 }
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
