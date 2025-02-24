@@ -1718,6 +1718,47 @@ func Test_service_CreateSnapshot(t *testing.T) {
 			wantErr:    true,
 			wantErrMsg: "snapshot on a NFS volume is not supported",
 		},
+		{
+			name: "when array is not licensed",
+			fields: serviceFields{
+				opts: Opts{
+					ClusterPrefix: clusterPrefix,
+					UseProxy:      true,
+				},
+			},
+			args: args{
+				ctx: context.Background(),
+				req: &csi.CreateSnapshotRequest{
+					Name:           localVolumeName,
+					SourceVolumeId: validReplicatedVolume,
+					Parameters: map[string]string{
+						SymmetrixIDParam: symIDRemote,
+					},
+				},
+			},
+			before: func() {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+
+				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				c.EXPECT().WithSymmetrixID(symIDRemote).AnyTimes().Return(c)
+				c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+				c.EXPECT().GetFileSystemByID(gomock.Any(), symIDRemote, gomock.Any()).Times(1).Return(nil, errors.New("not a filesystem"))
+				// return error when checking if snapshot is licensed
+				c.EXPECT().IsAllowedArray(gomock.Any()).Times(1).Return(false, errors.New("not licensed"))
+
+				err := symmetrix.Initialize([]string{symIDLocal, symIDRemote}, c)
+				if err != nil {
+					t.Fatalf("failed to initialize the powermax client for the test: %s", err)
+				}
+			},
+			after: func() {
+				cleanClientCache([]string{symIDLocal, symIDRemote})
+			},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "not licensed",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1842,6 +1883,218 @@ func TestIsNodeNVMe(t *testing.T) {
 			} else if !errors.Is(err, tt.wantErr) {
 				t.Errorf("service.IsNodeNVMe() error: %v, wantErr: %v", err, tt.wantErr)
 				return
+			}
+		})
+	}
+}
+
+func Test_service_DeleteSnapshot(t *testing.T) {
+	// keeps a list of steps that should be run after each test
+	// in order to clean and restore the test environment.
+	// Typically used to clear pmax client and replication capability caches.
+	var deferredCleanUpFuncs []func()
+	addCleanUpStep := func(f func()) {
+		deferredCleanUpFuncs = append(deferredCleanUpFuncs, f)
+	}
+
+	// Run all the clean up steps queued in deferredCleanUpFuncs after each test
+	afterEach := func() {
+		for _, f := range deferredCleanUpFuncs {
+			f()
+		}
+	}
+
+	type args struct {
+		ctx context.Context
+		req *csi.DeleteSnapshotRequest
+	}
+	tests := []struct {
+		name       string
+		fields     serviceFields
+		args       args
+		before     func()
+		want       *csi.DeleteSnapshotResponse
+		wantErr    bool
+		wantErrMsg string
+	}{
+		{
+			name:   "when the powermax client is not initialized",
+			fields: serviceFields{},
+			args: args{
+				ctx: context.Background(),
+				req: &csi.DeleteSnapshotRequest{
+					SnapshotId: validLocalVolumeID,
+				},
+			},
+			before:     func() {}, // don't initialized the client
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "array: " + symIDLocal + " not found",
+		},
+		{
+			name:   "when the powermax array is not licensed",
+			fields: serviceFields{},
+			args: args{
+				ctx: context.Background(),
+				req: &csi.DeleteSnapshotRequest{
+					SnapshotId: validLocalVolumeID,
+				},
+			},
+			before: func() {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+
+				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+				// return error when checking if snapshot is licensed
+				c.EXPECT().IsAllowedArray(gomock.Any()).Times(1).Return(false, errors.New("not licensed"))
+
+				// make sure to push a step to clean the client cache if calling Initialize.
+				addCleanUpStep(func() { symmetrix.RemoveClient(symIDLocal) })
+				err := symmetrix.Initialize([]string{symIDLocal}, c)
+				if err != nil {
+					t.Fatalf("failed to initialize the powermax client for the test: %s", err)
+				}
+			},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "not licensed",
+		},
+		{
+			name:   "when the snapshot is not found on the array",
+			fields: serviceFields{},
+			args: args{
+				ctx: context.Background(),
+				req: &csi.DeleteSnapshotRequest{
+					SnapshotId: validLocalVolumeID,
+				},
+			},
+			before: func() {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+
+				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+				c.EXPECT().IsAllowedArray(gomock.Any()).Times(1).Return(true, nil)
+				c.EXPECT().GetReplicationCapabilities(gomock.Any()).Times(1).Return(&types.SymReplicationCapabilities{
+					SymmetrixCapability: []types.SymmetrixCapability{
+						{
+							SymmetrixID:   symIDLocal,
+							SnapVxCapable: true,
+						},
+					},
+				}, nil)
+				// add a step to clean the replication capabilities cache
+				addCleanUpStep(func() { RemoveReplicationCapability(symIDLocal) })
+
+				// return a "not found" error when querying for snapshot info
+				c.EXPECT().GetSnapshotInfo(gomock.Any(), symIDLocal, gomock.Any(), gomock.Any()).Times(1).Return(nil, errors.New("not found"))
+
+				addCleanUpStep(func() { symmetrix.RemoveClient(symIDLocal) })
+				err := symmetrix.Initialize([]string{symIDLocal}, c)
+				if err != nil {
+					t.Fatalf("failed to initialize the powermax client for the test: %s", err)
+				}
+			},
+			want:       &csi.DeleteSnapshotResponse{},
+			wantErr:    false,
+			wantErrMsg: "",
+		},
+		{
+			name:   "when the snapshot query fails",
+			fields: serviceFields{},
+			args: args{
+				ctx: context.Background(),
+				req: &csi.DeleteSnapshotRequest{
+					SnapshotId: validLocalVolumeID,
+				},
+			},
+			before: func() {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+
+				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+				c.EXPECT().IsAllowedArray(gomock.Any()).Times(1).Return(true, nil)
+				c.EXPECT().GetReplicationCapabilities(gomock.Any()).Times(1).Return(&types.SymReplicationCapabilities{
+					SymmetrixCapability: []types.SymmetrixCapability{
+						{
+							SymmetrixID:   symIDLocal,
+							SnapVxCapable: true,
+						},
+					},
+				}, nil)
+				addCleanUpStep(func() { RemoveReplicationCapability(symIDLocal) })
+
+				// return any error other than "not found"
+				c.EXPECT().GetSnapshotInfo(gomock.Any(), symIDLocal, gomock.Any(), gomock.Any()).Times(1).Return(nil, errors.New("query error"))
+
+				addCleanUpStep(func() { symmetrix.RemoveClient(symIDLocal) })
+				err := symmetrix.Initialize([]string{symIDLocal}, c)
+				if err != nil {
+					t.Fatalf("failed to initialize the powermax client for the test: %s", err)
+				}
+			},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "GetSnapshotInfo() failed with error",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				opts:                      tt.fields.opts,
+				mode:                      tt.fields.mode,
+				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
+				adminClient:               tt.fields.adminClient,
+				deletionWorker:            tt.fields.deletionWorker,
+				iscsiClient:               tt.fields.iscsiClient,
+				nvmetcpClient:             tt.fields.nvmetcpClient,
+				system:                    tt.fields.system,
+				privDir:                   tt.fields.privDir,
+				loggedInArrays:            tt.fields.loggedInArrays,
+				loggedInNVMeArrays:        tt.fields.loggedInNVMeArrays,
+				mutex:                     sync.Mutex{},
+				cacheMutex:                sync.Mutex{},
+				nodeProbeMutex:            sync.Mutex{},
+				probeStatus:               tt.fields.probeStatus,
+				probeStatusMutex:          sync.Mutex{},
+				pollingFrequencyMutex:     sync.Mutex{},
+				pollingFrequencyInSeconds: tt.fields.pollingFrequencyInSeconds,
+				nodeIsInitialized:         tt.fields.nodeIsInitialized,
+				useNFS:                    tt.fields.useNFS,
+				useFC:                     tt.fields.useFC,
+				useIscsi:                  tt.fields.useIscsi,
+				useNVMeTCP:                tt.fields.useNVMeTCP,
+				iscsiTargets:              tt.fields.iscsiTargets,
+				nvmeTargets:               tt.fields.nvmeTargets,
+				storagePoolCacheDuration:  tt.fields.storagePoolCacheDuration,
+				waitGroup:                 sync.WaitGroup{},
+				fcConnector:               tt.fields.fcConnector,
+				iscsiConnector:            tt.fields.iscsiConnector,
+				nvmeTCPConnector:          tt.fields.nvmeTCPConnector,
+				dBusConn:                  tt.fields.dBusConn,
+				sgSvc:                     tt.fields.sgSvc,
+				arrayTransportProtocolMap: tt.fields.arrayTransportProtocolMap,
+				topologyConfig:            tt.fields.topologyConfig,
+				allowedTopologyKeys:       tt.fields.allowedTopologyKeys,
+				deniedTopologyKeys:        tt.fields.deniedTopologyKeys,
+				k8sUtils:                  tt.fields.k8sUtils,
+				snapCleaner:               tt.fields.snapCleaner,
+			}
+			defer afterEach() // clean up any caches between tests to ensure a clean test environment for each test
+			tt.before()
+
+			got, err := s.DeleteSnapshot(tt.args.ctx, tt.args.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("service.DeleteSnapshot() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErrMsg != "" {
+				assert.Contains(t, err.Error(), tt.wantErrMsg)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("service.DeleteSnapshot() = %v, want %v", got, tt.want)
 			}
 		})
 	}
