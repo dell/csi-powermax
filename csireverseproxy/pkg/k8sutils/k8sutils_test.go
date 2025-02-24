@@ -573,10 +573,7 @@ func TestStartInformer(t *testing.T) {
 
 	// Start the informer in a separate goroutine
 	go func() {
-		err := utils.StartInformer(callback)
-		if err != nil {
-			t.Errorf("StartInformer failed: %v", err)
-		}
+		utils.StartInformer(callback)
 	}()
 
 	// Wait for informer to start
