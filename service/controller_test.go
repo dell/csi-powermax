@@ -1827,8 +1827,8 @@ func TestIsNodeNVMe(t *testing.T) {
 				},
 			}
 			pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
-			pmaxClient.EXPECT().GetMaskingViewByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&v100.MaskingView{}, tt.getMaskingViewError)
-			pmaxClient.EXPECT().GetHostByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&v100.Host{
+			pmaxClient.EXPECT().GetMaskingViewByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.MaskingView{}, tt.getMaskingViewError)
+			pmaxClient.EXPECT().GetHostByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Host{
 				HostType: "NVMe/TCP",
 			}, tt.getHostByIDError)
 			got, err := s.IsNodeNVMe(context.Background(), tt.symID, tt.nodeID, pmaxClient)
@@ -1839,7 +1839,7 @@ func TestIsNodeNVMe(t *testing.T) {
 
 			if err != nil {
 				assert.Contains(t, err.Error(), tt.wantErr.Error())
-			} else if err != tt.wantErr {
+			} else if !errors.Is(err, tt.wantErr) {
 				t.Errorf("service.IsNodeNVMe() error: %v, wantErr: %v", err, tt.wantErr)
 				return
 			}
