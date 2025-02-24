@@ -92,7 +92,7 @@ func NewVMHost(insecure bool, hostURLparam, user, pass string) (*VMHost, error) 
 func (vmh *VMHost) getMACAddressOfVM(vm *object.VirtualMachine) (string, error) {
 	vmDeviceList, err := vm.Device(context.TODO())
 	if err != nil {
-		return "", errors.New("Cannot read VM VirtualDevices")
+		return "", errors.New("cannot read VM VirtualDevices")
 	}
 	return vmDeviceList.PrimaryMacAddress(), nil
 }
@@ -107,7 +107,7 @@ func getLocalMAC() (string, error) {
 			return v.HardwareAddr.String(), nil
 		}
 	}
-	return "", errors.New("No network interface found")
+	return "", errors.New("no network interface found")
 }
 
 ///////////////////////////////////////////////////////////////////
@@ -122,20 +122,23 @@ func (vmh *VMHost) findVM(targetMACAddress string) (vm *object.VirtualMachine, e
 	f := find.NewFinder(vmh.client.Client, true)
 	allDatacenters, err := f.DatacenterList(vmh.Ctx, "*")
 	if err != nil {
-		return nil, errors.New("Could not get List of Datacenters")
+		return nil, errors.New("could not get List of Datacenters")
 	}
+
 	for _, datacenter := range allDatacenters {
 		f.SetDatacenter(datacenter)
 		allVMs, err := f.VirtualMachineList(vmh.Ctx, "*")
 		if err != nil {
-			return nil, errors.New("Could not get List of VMs")
+			return nil, errors.New("could not get List of VMs")
 		}
+
 		for _, vm := range allVMs {
 			VMMac, err := vmh.getMACAddressOfVM(vm)
-			VMMac = strings.ToUpper(VMMac)
 			if err != nil {
 				log.Debugf("Could not get MAC Address of VM (%v), datacenter (%v)", vm, datacenter)
 			}
+
+			VMMac = strings.ToUpper(VMMac)
 			if VMMac == targetMACAddress && err == nil {
 				log.Debugf("Found VM: %v , mac(%s)", vm, VMMac)
 				return vm, nil
@@ -176,6 +179,7 @@ func (vmh *VMHost) getAvailableSCSIController() (*types.VirtualSCSIController, e
 			return scsiDevice, nil
 		}
 	}
+
 	return nil, nil
 }
 
@@ -210,7 +214,7 @@ func (vmh *VMHost) GetSCSILuns() ([]*types.ScsiLun, error) {
 
 	scsiLuns := make([]*types.ScsiLun, 0)
 	for _, sl := range hss.StorageDeviceInfo.ScsiLun {
-		scsiLuns = append(scsiLuns, sl.(types.BaseScsiLun).GetScsiLun())
+		scsiLuns = append(scsiLuns, sl.GetScsiLun())
 	}
 
 	return scsiLuns, nil
@@ -374,17 +378,16 @@ func (vmh *VMHost) removeLunDevice(devices object.VirtualDeviceList, mapSDI map[
 	return nil
 }
 
-// RescanAllHba rediscovers new devices added to the ESX
-// This method is referenced from https://github.com/codedellemc/govmax/blob/master/api/v1/vmomi.go
-func (vmh *VMHost) RescanAllHba(hostSystem *object.HostSystem) error {
-	storageSystem, err := hostSystem.ConfigManager().StorageSystem(vmh.Ctx)
+// RescanAllHba rescans all HBA devices to discover newly added devices.
+func (vmh *VMHost) RescanAllHba(host *object.HostSystem) error {
+	storageSystem, err := host.ConfigManager().StorageSystem(vmh.Ctx)
 	if err != nil {
 		return err
 	}
 
-	err = storageSystem.RescanAllHba(vmh.Ctx)
-	if err != nil {
+	if err := storageSystem.RescanAllHba(vmh.Ctx); err != nil {
 		return err
 	}
+
 	return nil
 }
