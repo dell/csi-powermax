@@ -489,7 +489,7 @@ func TestUpdateStatus(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			tt.device.updateStatus(tt.state, tt.errorMsg)
 		})
 	}
@@ -759,7 +759,6 @@ func TestRemoveVolumesFromStorageGroup(t *testing.T) {
 				pmaxClient.EXPECT().RemoveVolumesFromProtectedStorageGroup(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.StorageGroup{}, nil)
 				pmaxClient.EXPECT().ExecuteReplicationActionOnSG(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 				return pmaxClient
-
 			}(),
 			expectedResult: true,
 		},
@@ -792,7 +791,6 @@ func TestRemoveVolumesFromStorageGroup(t *testing.T) {
 				}, nil)
 				pmaxClient.EXPECT().GetStorageGroupRDFInfo(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("error"))
 				return pmaxClient
-
 			}(),
 			expectedResult: false,
 		},
@@ -825,7 +823,6 @@ func TestRemoveVolumesFromStorageGroup(t *testing.T) {
 				}, nil)
 				pmaxClient.EXPECT().GetStorageGroupRDFInfo(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("No SRDF records found"))
 				return pmaxClient
-
 			}(),
 			expectedResult: true,
 		},
@@ -863,7 +860,6 @@ func TestRemoveVolumesFromStorageGroup(t *testing.T) {
 					},
 				}, nil)
 				return pmaxClient
-
 			}(),
 			expectedResult: true,
 		},
@@ -889,10 +885,9 @@ func TestRemoveVolumesFromStorageGroup(t *testing.T) {
 				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
 				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volume{
 					VolumeID:           "vol-123",
-					StorageGroupIDList: []string{}, //empty list
+					StorageGroupIDList: []string{}, // empty list
 				}, nil)
 				return pmaxClient
-
 			}(),
 			expectedResult: false,
 		},
@@ -918,11 +913,10 @@ func TestRemoveVolumesFromStorageGroup(t *testing.T) {
 				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
 				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volume{
 					VolumeID:           "vol-123",
-					StorageGroupIDList: []string{}, //empty list
+					StorageGroupIDList: []string{}, // empty list
 					SnapSource:         true,
 				}, nil)
 				return pmaxClient
-
 			}(),
 			expectedResult: false,
 		},
@@ -999,9 +993,9 @@ func TestRemoveVolumesFromStorageGroup(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			oldSyncInProgTime := WaitTillSyncInProgTime
-			defer func() { WaitTillSyncInProgTime = oldSyncInProgTime }()
-			WaitTillSyncInProgTime = 1 * time.Millisecond
+			oldSyncInProgTime := waitTillSyncInProgTime
+			defer func() { waitTillSyncInProgTime = oldSyncInProgTime }()
+			waitTillSyncInProgTime = 1 * time.Millisecond
 			result := tc.deletionQueue.removeVolumesFromStorageGroup(tc.pmaxClient)
 			assert.Equal(t, tc.expectedResult, result)
 		})

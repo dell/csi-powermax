@@ -768,10 +768,9 @@ func Test_service_createMetroVolume(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("service.createMetroVolume() error = %v, wantErr %v", err, tt.wantErr)
 				return
-			} else {
-				if tt.wantErrMsg != "" {
-					assert.Contains(t, err.Error(), tt.wantErrMsg)
-				}
+			}
+			if tt.wantErrMsg != "" {
+				assert.Contains(t, err.Error(), tt.wantErrMsg)
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("service.createMetroVolume() = %v, want %v", got, tt.want)

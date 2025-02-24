@@ -50,9 +50,7 @@ const (
 	FinalError                  = "Final error: Max error count reached, device will be removed from Deletion Queue"
 )
 
-var (
-	WaitTillSyncInProgTime = 20 * time.Second
-)
+var waitTillSyncInProgTime = 20 * time.Second
 
 // symDeviceID - holds a hexadecimal device id in string as well as the corresponding integer value
 type symDeviceID struct {
@@ -498,7 +496,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 						log.Error(errorMsg(err))
 						return false
 					}
-					time.Sleep(WaitTillSyncInProgTime)
+					time.Sleep(waitTillSyncInProgTime)
 				}
 			}
 			// build remoteSGID

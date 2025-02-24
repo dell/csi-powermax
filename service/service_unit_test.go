@@ -771,7 +771,7 @@ func TestSetArrayConfigEnvs(t *testing.T) {
 	assert.Equal(t, nil, err)
 }
 
-var mockError = errors.New("mock error")
+var errMockErr = errors.New("mock error")
 
 func TestCreateDbusConnection(t *testing.T) {
 	tests := []struct {
@@ -785,17 +785,15 @@ func TestCreateDbusConnection(t *testing.T) {
 			dBusConn:    nil,
 			expectedErr: nil,
 			mockdbusNewWithContextFunc: func() (*dbus.Conn, error) {
-				//ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-				//defer cancel()
 				return &dbus.Conn{}, nil
 			},
 		},
 		{
 			name:        "Error connection",
 			dBusConn:    nil,
-			expectedErr: mockError,
+			expectedErr: errMockErr,
 			mockdbusNewWithContextFunc: func() (*dbus.Conn, error) {
-				return nil, mockError
+				return nil, errMockErr
 			},
 		},
 	}

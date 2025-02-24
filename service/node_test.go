@@ -15,7 +15,6 @@ import (
 )
 
 func TestGetNVMeTCPTargets(t *testing.T) {
-
 	// Define test cases
 	testCases := []struct {
 		name       string
@@ -93,7 +92,6 @@ func TestGetNVMeTCPTargets(t *testing.T) {
 }
 
 func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
-
 	// Define test cases
 	testCases := []struct {
 		name         string
