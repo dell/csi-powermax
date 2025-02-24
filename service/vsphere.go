@@ -340,26 +340,35 @@ func (vmh *VMHost) DetachRDM(vm *object.VirtualMachine, deviceNAA string) error 
 	}
 
 	for _, device := range devices {
-		device2 := device.(types.BaseVirtualDevice).GetVirtualDevice()
-		if device2.Backing != nil {
-			elem := reflect.ValueOf(device2.Backing).Elem()
-			lunUUID := elem.FieldByName("LunUuid")
-			if lunUUID.Kind() == reflect.Invalid {
-				continue
-			}
-			if sd, ok := mapSDI[lunUUID.String()]; ok && strings.Contains(sd.CanonicalName, deviceNAA) {
-				deviceName := devices.Name(device)
-				newDevice := devices.Find(deviceName)
-				if newDevice == nil {
-					return fmt.Errorf("device '%s' not found", deviceName)
-				}
-				if err = vm.RemoveDevice(context.TODO(), false, newDevice); err != nil {
-					return err
-				}
-				break
-			}
+		virtDevice := device.GetVirtualDevice()
+		err = vmh.removeLunDevice(devices, mapSDI, deviceNAA, vm, virtDevice, device)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (vmh *VMHost) removeLunDevice(devices object.VirtualDeviceList, mapSDI map[string]*types.ScsiLun, deviceNAA string, vm *object.VirtualMachine, virtDevice *types.VirtualDevice, device types.BaseVirtualDevice) error {
+	if virtDevice.Backing != nil {
+		elem := reflect.ValueOf(virtDevice.Backing).Elem()
+		lunUUID := elem.FieldByName("LunUuid")
+		if lunUUID.Kind() == reflect.Invalid {
+			return nil
 		}
 
+		if sd, ok := mapSDI[lunUUID.String()]; ok && strings.Contains(sd.CanonicalName, deviceNAA) {
+			deviceName := devices.Name(device)
+			newDevice := devices.Find(deviceName)
+			if newDevice == nil {
+				return fmt.Errorf("device '%s' not found", deviceName)
+			}
+
+			if err := vm.RemoveDevice(context.TODO(), false, newDevice); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil

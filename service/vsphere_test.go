@@ -1,9 +1,7 @@
 package service
 
 import (
-	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -188,296 +186,74 @@ func TestCreateController(t *testing.T) {
 	})
 }
 
-func reconfigureVMWithSCSIDisk(ctx context.Context, vm *object.VirtualMachine, disk *types.VirtualDisk) error {
-	spec := types.VirtualMachineConfigSpec{
-		DeviceChange: []types.BaseVirtualDeviceConfigSpec{
-			&types.VirtualDeviceConfigSpec{
-				Operation: types.VirtualDeviceConfigSpecOperationAdd,
-				Device:    disk,
+func TestRemoveLunDevice(t *testing.T) {
+	simulator.Test(func(ctx context.Context, c *vim25.Client) {
+		mockVMHost := &VMHost{
+			client: &govmomi.Client{
+				Client: c,
 			},
-		},
-	}
+			Ctx: ctx,
+			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+		}
 
-	task, err := vm.Reconfigure(ctx, spec)
-	if err != nil {
-		return fmt.Errorf("failed to reconfigure virtual machine: %v", err)
-	}
+		// Retrieve valud SCSI LUNs from simulator.
+		scsiLuns, err := mockVMHost.GetSCSILuns()
+		assert.NoError(t, err)
 
-	err = task.Wait(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to wait for reconfiguration task: %v", err)
-	}
+		// Contruct a map of SCSI LUNs as expected by the function.
+		mapSDI := make(map[string]*types.ScsiLun)
+		for _, d := range scsiLuns {
+			mapSDI[d.Uuid] = d
+		}
 
-	return nil
-}
+		// Retrieve device list.
+		devices, err := mockVMHost.VM.Device(ctx)
+		assert.NoError(t, err)
 
-func reconfigureVM(ctx context.Context, vm *object.VirtualMachine, spec types.VirtualMachineConfigSpec) error {
-	task, err := vm.Reconfigure(ctx, spec)
-	if err != nil {
-		return fmt.Errorf("failed to reconfigure virtual machine: %v", err)
-	}
+		t.Run("Success: Remove Device", func(t *testing.T) {
+			virtDevice := &types.VirtualDevice{}
+			device := &types.VirtualDevice{}
 
-	err = task.Wait(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to wait for reconfiguration task: %v", err)
-	}
+			devices = append(devices, &types.VirtualDevice{
+				DeviceInfo: &types.Description{
+					Label: "test device",
+				},
+			})
+			mapSDI["lunUUID"] = &types.ScsiLun{
+				CanonicalName: "deviceNAA",
+			}
 
-	return nil
-}
+			rdmBacking := types.VirtualDiskRawDiskMappingVer1BackingInfo{
+				LunUuid: "lunUUID",
+			}
 
-func TestAttachRDMNew(t *testing.T) {
-	// simulator.Test(func(ctx context.Context, c *vim25.Client) {
-	// 	vmh := simulator.Map.Any("VirtualMachine").(*simulator.VirtualMachine)
-	// 	vmh.Name = "test-vm"
+			virtDevice.Backing = &rdmBacking
 
-	// 	vm := object.NewVirtualMachine(c, vmh.Reference())
+			err := mockVMHost.removeLunDevice(devices, mapSDI, "deviceNAA", mockVMHost.VM, virtDevice, device)
+			assert.NoError(t, err)
+		})
 
-	// 	ds := simulator.Map.Any("Datastore").(*simulator.Datastore)
+		t.Run("Failed: Unable to find device", func(t *testing.T) {
+			virtDevice := &types.VirtualDevice{}
+			device := &types.VirtualDevice{}
 
-	// 	devices, err := vm.Device(ctx)
-	// 	if err != nil {
-	// 		t.Fatal(err)
-	// 	}
+			devices = append(devices, &types.VirtualDevice{
+				DeviceInfo: &types.Description{
+					Label: "test device",
+				},
+			})
+			mapSDI["lunUUID"] = &types.ScsiLun{
+				CanonicalName: "deviceNAA",
+			}
 
-	// 	controller, err := devices.FindDiskController("")
-	// 	if err != nil {
-	// 		t.Fatal(err)
-	// 	}
+			rdmBacking := types.VirtualDiskRawDiskMappingVer1BackingInfo{
+				LunUuid: "lunUUID",
+			}
 
-	// 	capacityInBytes := int64(512 * 1024)
-	// 	capacityInKB := int64(0)
+			virtDevice.Backing = &rdmBacking
 
-	// 	disk := devices.CreateDisk(controller, ds.Reference(), "")
-	// 	disk.CapacityInBytes = capacityInBytes
-	// 	disk.CapacityInKB = capacityInKB
-
-	// 	err = vm.AddDevice(ctx, disk)
-	// 	if err != nil {
-	// 		t.Fatal(err)
-	// 	}
-
-	// 	newDevices, err := vm.Device(ctx)
-	// 	if err != nil {
-	// 		t.Fatal(err)
-	// 	}
-	// 	disks := newDevices.SelectByType((*types.VirtualDisk)(nil))
-	// 	if len(disks) == 0 {
-	// 		t.Fatalf("len(disks)=%d", len(disks))
-	// 	}
-
-	// 	mockVMHost := &VMHost{
-	// 		client: &govmomi.Client{
-	// 			Client: c,
-	// 		},
-	// 		Ctx: ctx,
-	// 		VM:  vm,
-	// 	}
-
-	// reconfigureVMWithSCSIDisk(ctx, vm, &types.VirtualDisk{
-	// 	CapacityInKB: int64(1024),
-	// 	VirtualDevice: types.VirtualDevice{
-	// 		Backing: &types.VirtualDiskFlatVer2BackingInfo{
-	// 			DiskMode:        string(types.VirtualDiskModePersistent),
-	// 			ThinProvisioned: types.NewBool(true),
-	// 		},
-	// 	},
-	// })
-
-	// err = reconfigureVM(ctx, vm, spec)
-	// assert.NoError(t, err)
-
-	// // Power on the VM
-	// state, err := mockVMHost.VM.PowerState(ctx)
-	// assert.NoError(t, err)
-
-	// if state != types.VirtualMachinePowerStatePoweredOn {
-	// 	task, err := mockVMHost.VM.PowerOn(ctx)
-	// 	assert.NoError(t, err)
-
-	// 	err = task.Wait(ctx)
-	// 	assert.NoError(t, err)
-	// }
-
-	// // Create a new disk to attach
-	// disk := types.VirtualDisk{
-	// 	CapacityInKB: int64(1024),
-	// 	VirtualDevice: types.VirtualDeviceConfigSpec{
-	// 		Backing: &types.VirtualDiskFlatVer2BackingInfo{
-	// 			DiskMode:        string(types.VirtualDiskModePersistent),
-	// 			ThinProvisioned: types.NewBool(true),
-	// 		},
-	// 	},
-	// }
-	// mockVMHost.VM.AttachDisk(ctx, disk)
-
-	// var rdmBacking types.VirtualDiskFlatVer2BackingInfo
-	// rdmBacking.FileName = ""
-	// rdmBacking.DiskMode = "independent_persistent"
-
-	// var rdmDisk types.VirtualDisk
-	// rdmDisk.Backing = &rdmBacking
-	// rdmDisk.CapacityInKB = 1024
-
-	// controller, err := mockVMHost.getAvailableSCSIController()
-	// assert.NoError(t, err)
-
-	// if controller == nil {
-	// 	controllers, err := mockVMHost.getSCSIControllers()
-	// 	assert.NoError(t, err)
-
-	// 	if len(controllers) == 0 {
-	// 		assert.NoError(t, err)
-	// 	}
-
-	// 	if len(controllers) == 4 {
-	// 		assert.NoError(t, err)
-	// 	}
-
-	// 	err = mockVMHost.createController(&controllers[0])
-	// 	assert.NoError(t, err)
-
-	// 	controller, err = mockVMHost.getAvailableSCSIController()
-	// 	assert.NoError(t, err)
-	// }
-
-	// rdmDisk.ControllerKey = controller.VirtualController.Key
-	// var x int32 = -1
-	// rdmDisk.UnitNumber = &x
-
-	// err = mockVMHost.VM.AddDevice(ctx, &rdmDisk)
-	// assert.NoError(t, err)
-
-	// 	deviceNAA := "mpx.vmhba0:C0:T0:L0"
-	// 	err = mockVMHost.AttachRDM(mockVMHost.VM, deviceNAA)
-	// 	assert.NoError(t, err)
-
-	// 	fmt.Printf("CPU reservation: %d\n", *vmh.Config.CpuAllocation.Reservation)
-	// })
-
-	useHTTP = true
-	m := simulator.ESX()
-	defer m.Remove()
-
-	err := m.Create()
-	if err != nil {
-		t.Errorf("Expected nil error, got %v", err)
-	}
-
-	s := m.Service.NewServer()
-	defer s.Close()
-
-	// forwardUrl := s.URL
-
-	// server := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	// 	client := &http.Client{}
-
-	// 	// Create a new HTTP request with the same method, URL, and headers
-	// 	req, err := http.NewRequest(r.Method, forwardUrl.String(), r.Body)
-	// 	if err != nil {
-	// 		http.Error(w, err.Error(), http.StatusInternalServerError)
-	// 		return
-	// 	}
-
-	// 	// Set the headers from the original request
-	// 	for key, values := range r.Header {
-	// 		for _, value := range values {
-	// 			req.Header.Add(key, value)
-	// 		}
-	// 	}
-
-	// 	// Forward the request
-	// 	resp, err := client.Do(req)
-	// 	if err != nil {
-	// 		http.Error(w, err.Error(), http.StatusInternalServerError)
-	// 		return
-	// 	}
-	// 	defer resp.Body.Close()
-
-	// 	// Write the response to the original response writer
-	// 	for key, values := range resp.Header {
-	// 		for _, value := range values {
-	// 			w.Header().Add(key, value)
-	// 		}
-	// 	}
-
-	// 	w.WriteHeader(resp.StatusCode)
-	// 	_, err = io.Copy(w, resp.Body)
-	// 	if err != nil {
-	// 		http.Error(w, err.Error(), http.StatusInternalServerError)
-	// 		return
-	// 	}
-	// }))
-
-	// s.Server.URL = server.URL
-
-	user := s.URL.User.Username()
-	pass, _ := s.URL.User.Password()
-
-	// s.URL, err = url.Parse(server.URL)
-	assert.NoError(t, err)
-
-	host, err := NewVMHost(true, s.URL.Host, user, pass)
-	assert.NoError(t, err)
-
-	fmt.Printf("host: %v\n", host)
-
-	deviceNAA := "mpx.vmhba0:C0:T0:L0"
-	err = host.AttachRDM(host.VM, deviceNAA)
-	assert.NoError(t, err)
-}
-
-func fakeServer(t *testing.T, h http.Handler) *httptest.Server {
-	s := httptest.NewServer(h)
-	t.Cleanup(func() {
-		s.Close()
+			err = mockVMHost.removeLunDevice(object.VirtualDeviceList{}, mapSDI, "deviceNAA", mockVMHost.VM, virtDevice, device)
+			assert.Error(t, err, errors.New("device 'device-0' not found"))
+		})
 	})
-	return s
 }
-
-// func TestVmCreation(t *testing.T) {
-// 	// Connect to the vCenter server
-// 	client, err := vim25.NewClient(context.TODO())
-// 	if err != nil {
-// 		fmt.Println("Failed to create client:", err)
-// 		return
-// 	}
-
-// 	// Find the datacenter
-// 	finder := find.NewFinder(client, true)
-// 	datacenter, err := finder.DatacenterOrDefault(context.TODO(), "")
-// 	if err != nil {
-// 		fmt.Println("Failed to find datacenter:", err)
-// 		return
-// 	}
-// 	finder.SetDatacenter(datacenter)
-
-// 	// Create a new virtual disk
-// 	diskSpec := types.VirtualDisk{
-// 		VirtualDevice: types.VirtualDevice{
-// 			Key: 1,
-// 		},
-// 		CapacityInKB: int64(10 * 1024 * 1024),
-// 	}
-
-// 	// Create a new VM configuration
-// 	vmConfig := types.VirtualMachineConfigSpec{
-// 		Name:     "example-vm",
-// 		MemoryMB: int64(1024),
-// 		NumCPUs:  int32(1),
-// 		DeviceChange: []types.BaseVirtualDeviceConfigSpec{
-// 			&types.VirtualDeviceConfigSpec{
-// 				Operation: types.VirtualDeviceConfigSpecOperationAdd,
-// 				Device:    &diskSpec,
-// 			},
-// 		},
-// 	}
-
-// 	// Create the VM
-// 	vm, err := datacenter.CreateVM(context.TODO(), vmConfig, nil, nil)
-// 	if err != nil {
-// 		fmt.Println("Failed to create VM:", err)
-// 		return
-// 	}
-
-// 	fmt.Println("VM created successfully:", vm.Reference().Value)
-// }
