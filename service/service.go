@@ -16,7 +16,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -70,11 +69,7 @@ const (
 	DefaultPodmonPollRate      = 60
 	ReplicationContextPrefix   = "powermax"
 	ReplicationPrefix          = "replication.storage.dell.com"
-	PortGroups                 = "X_CSI_POWERMAX_PORTGROUPS"
-	Protocol                   = "X_CSI_TRANSPORT_PROTOCOL"
-	// PmaxEndPoint               = "X_CSI_POWERMAX_ENDPOINT"
-	ManagedArrays   = "X_CSI_MANAGED_ARRAYS"
-	defaultCertFile = "tls.crt"
+	defaultCertFile            = "tls.crt"
 )
 
 type contextKey string           // specific string type used for context keys
@@ -320,10 +315,6 @@ func (s *service) BeforeServe(
 
 		log.WithFields(fields).Infof("configured %s", s.getDriverName())
 	}()
-	// setting array related data to envs. by reading it from config-map - Needs refactoring
-	if err := setArrayConfigEnvs(ctx); err != nil {
-		log.Errorf("Failed to set array config envs: %v", err)
-	}
 
 	configFilePath, ok := csictx.LookupEnv(ctx, EnvConfigFilePath)
 	if !ok {
@@ -894,48 +885,4 @@ func (s *service) SetPollingFrequency(ctx context.Context) int64 {
 	}
 	log.Debugf("use default pollingFrequency as %d seconds", DefaultPodmonPollRate)
 	return DefaultPodmonPollRate
-}
-
-func setArrayConfigEnvs(ctx context.Context) error {
-	log.Info("---------inside setArrayConfig function----------")
-	// set additional driver configs moved from envs.
-	configFilePath, ok := csictx.LookupEnv(ctx, EnvArrayConfigPath)
-	if !ok {
-		return errors.New("unable to read X_CSI_POWERMAX_ARRAY_CONFIG_PATH from env")
-	}
-
-	paramsViper := viper.New()
-	paramsViper.SetConfigFile(configFilePath)
-	paramsViper.SetConfigType("yaml")
-
-	err := paramsViper.ReadInConfig()
-	// if unable to read configuration file, set defaults
-	if err != nil {
-		log.WithError(err).Error("unable to read array config file")
-		setLogFormatAndLevel(&log.TextFormatter{
-			DisableColors: true,
-			FullTimestamp: true,
-		}, log.DebugLevel)
-	}
-	portgroups := paramsViper.GetString(PortGroups)
-	if portgroups != "" {
-		log.Info("Read PortGroups from config file:", portgroups)
-		_ = os.Setenv(PortGroups, portgroups)
-	}
-	protocol := paramsViper.GetString(Protocol)
-	if protocol != "" {
-		log.Info("Read protocol from config file:", protocol)
-		_ = os.Setenv(Protocol, protocol)
-	}
-	endpoint := paramsViper.GetString(EnvEndpoint)
-	if endpoint != "" {
-		log.Info("Read endpoint from config file:", endpoint)
-		_ = os.Setenv(EnvEndpoint, endpoint)
-	}
-	managedArrays := paramsViper.GetString(ManagedArrays)
-	if managedArrays != "" {
-		log.Info("Managed arrays from config file:", managedArrays)
-		_ = os.Setenv(ManagedArrays, managedArrays)
-	}
-	return nil
 }
