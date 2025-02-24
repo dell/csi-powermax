@@ -17,8 +17,9 @@ package servermock
 import (
 	"net/http"
 	"net/http/httptest"
-	"revproxy/v2/pkg/utils"
 	"testing"
+
+	"revproxy/v2/pkg/utils"
 )
 
 func TestGetHandler(t *testing.T) {

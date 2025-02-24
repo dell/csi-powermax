@@ -113,10 +113,12 @@ func TestGetActiveHTTPClient(t *testing.T) {
 	primary := &Proxy{ReverseProxy: &httputil.ReverseProxy{Transport: &http.Transport{}}}
 	backup := &Proxy{ReverseProxy: &httputil.ReverseProxy{Transport: &http.Transport{}}}
 
-	e := &envoy{primaryHTTP: primaryHTTPClient,
-		backupHTTP: backupHTTPClient,
-		primary:    primary,
-		backup:     backup}
+	e := &envoy{
+		primaryHTTP: primaryHTTPClient,
+		backupHTTP:  backupHTTPClient,
+		primary:     primary,
+		backup:      backup,
+	}
 
 	if e.GetActiveHTTPClient() != primaryHTTPClient {
 		t.Errorf("Expected primary HTTP client to be active")

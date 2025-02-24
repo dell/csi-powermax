@@ -127,7 +127,6 @@ func (c *KubernetesClient) GetSecret(namespace, secretName string) (*corev1.Secr
 func (c *KubernetesClient) InitMethods() {
 	if c.RestForConfigFunc == nil {
 		c.RestForConfigFunc = func() (*rest.Config, error) { return rest.InClusterConfig() }
-
 	}
 	if c.NewForConfigFunc == nil {
 		c.NewForConfigFunc = func(config *rest.Config) (kubernetes.Interface, error) {

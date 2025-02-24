@@ -20,10 +20,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"revproxy/v2/pkg/common"
 	"sync"
 	"testing"
 	"time"
+
+	"revproxy/v2/pkg/common"
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -37,7 +38,6 @@ import (
 const kubeconfigFileDir = "../../test-config/tmp"
 
 func InitMockK8sUtils(namespace, certDirectory string, inCluster bool, resyncPeriod time.Duration, kubeClient *KubernetesClient) (*K8sUtils, error) {
-
 	kubeClient.Clientset = fake.NewSimpleClientset()
 
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient.Clientset, resyncPeriod, informers.WithNamespace(namespace))
@@ -75,7 +75,6 @@ func TestInitMethods(t *testing.T) {
 }
 
 func TestInit(t *testing.T) {
-
 	// Create temp kubeconfig
 	kubeDir := filepath.Join(kubeconfigFileDir, ".kube")
 	kubeFile := filepath.Join(kubeDir, "config")
@@ -103,7 +102,7 @@ func TestInit(t *testing.T) {
 	}{
 		{
 			name:        "Test utils not nil",
-			client:      KubernetesClient{}, //Does not matter for this test
+			client:      KubernetesClient{}, // Does not matter for this test
 			inCluster:   true,
 			utils:       &K8sUtils{},
 			createError: nil,
@@ -221,7 +220,6 @@ func TestInit(t *testing.T) {
 					t.Errorf("expected k8sUtils to be non-nil but got nil")
 				}
 			}
-
 		})
 	}
 }
@@ -393,7 +391,7 @@ func TestGetCredentialsFromSecretName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cred, err := tt.utils.GetCredentialsFromSecretName(tt.secretName)
 
-			//Create the secret
+			// Create the secret
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetCredentialsFromSecretName error = %v, wantErr %v", err, tt.wantErr)
@@ -451,7 +449,6 @@ func TestGetCertFileFromSecret(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up any necessary test fixtures
 			err := os.MkdirAll("/tmp/certs", 0o700)
@@ -517,7 +514,6 @@ func TestGetCertFileFromSecretName(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up any necessary test fixtures
 			err := os.MkdirAll("/tmp/certs", 0o700)
@@ -539,7 +535,7 @@ func TestGetCertFileFromSecretName(t *testing.T) {
 				t.Errorf("GetCertFileFromSecretName = want cert %v, got %v", tt.wantCert, cert)
 			}
 
-			//Cleanup
+			// Cleanup
 			os.RemoveAll("/tmp/certs")
 		})
 	}
@@ -651,7 +647,7 @@ preferences: {}
 users:
 - name: admin`
 
-	//filename := filepath.Join(dir, filepath.Base(path))
+	// filename := filepath.Join(dir, filepath.Base(path))
 	err := os.WriteFile(kubeFilePath, []byte(kubeconfig), 0o600)
 	return err
 }
