@@ -195,8 +195,12 @@ var (
 	pmaxCache map[string]*pmaxCachedInformation
 
 	// Quickly fail if there is too much load
-	controllerPendingState pendingState
-	snapshotPendingState   pendingState
+	controllerPendingState = pendingState{
+		pendingMutex: &sync.Mutex{},
+	}
+	snapshotPendingState = pendingState{
+		pendingMutex: &sync.Mutex{},
+	}
 
 	// Retry delay for retrying GetMaskingViewConnections
 	getMVConnectionsDelay = 30 * time.Second

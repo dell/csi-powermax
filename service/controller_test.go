@@ -1903,6 +1903,8 @@ func Test_service_DeleteSnapshot(t *testing.T) {
 		for _, f := range deferredCleanUpFuncs {
 			f()
 		}
+		// purge for next round of tests
+		deferredCleanUpFuncs = []func(){}
 	}
 
 	type args struct {
@@ -1911,7 +1913,6 @@ func Test_service_DeleteSnapshot(t *testing.T) {
 	}
 	tests := []struct {
 		name       string
-		fields     serviceFields
 		args       args
 		before     func()
 		want       *csi.DeleteSnapshotResponse
@@ -1919,8 +1920,7 @@ func Test_service_DeleteSnapshot(t *testing.T) {
 		wantErrMsg string
 	}{
 		{
-			name:   "when the powermax client is not initialized",
-			fields: serviceFields{},
+			name: "when the powermax client is not initialized",
 			args: args{
 				ctx: context.Background(),
 				req: &csi.DeleteSnapshotRequest{
@@ -1933,8 +1933,7 @@ func Test_service_DeleteSnapshot(t *testing.T) {
 			wantErrMsg: "array: " + symIDLocal + " not found",
 		},
 		{
-			name:   "when the powermax array is not licensed",
-			fields: serviceFields{},
+			name: "when the powermax array is not licensed",
 			args: args{
 				ctx: context.Background(),
 				req: &csi.DeleteSnapshotRequest{
@@ -1962,8 +1961,7 @@ func Test_service_DeleteSnapshot(t *testing.T) {
 			wantErrMsg: "not licensed",
 		},
 		{
-			name:   "when the snapshot is not found on the array",
-			fields: serviceFields{},
+			name: "when the snapshot is not found on the array",
 			args: args{
 				ctx: context.Background(),
 				req: &csi.DeleteSnapshotRequest{
@@ -2002,8 +2000,7 @@ func Test_service_DeleteSnapshot(t *testing.T) {
 			wantErrMsg: "",
 		},
 		{
-			name:   "when the snapshot query fails",
-			fields: serviceFields{},
+			name: "when the snapshot query fails",
 			args: args{
 				ctx: context.Background(),
 				req: &csi.DeleteSnapshotRequest{
@@ -2043,46 +2040,7 @@ func Test_service_DeleteSnapshot(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &service{
-				opts:                      tt.fields.opts,
-				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
-				adminClient:               tt.fields.adminClient,
-				deletionWorker:            tt.fields.deletionWorker,
-				iscsiClient:               tt.fields.iscsiClient,
-				nvmetcpClient:             tt.fields.nvmetcpClient,
-				system:                    tt.fields.system,
-				privDir:                   tt.fields.privDir,
-				loggedInArrays:            tt.fields.loggedInArrays,
-				loggedInNVMeArrays:        tt.fields.loggedInNVMeArrays,
-				mutex:                     sync.Mutex{},
-				cacheMutex:                sync.Mutex{},
-				nodeProbeMutex:            sync.Mutex{},
-				probeStatus:               tt.fields.probeStatus,
-				probeStatusMutex:          sync.Mutex{},
-				pollingFrequencyMutex:     sync.Mutex{},
-				pollingFrequencyInSeconds: tt.fields.pollingFrequencyInSeconds,
-				nodeIsInitialized:         tt.fields.nodeIsInitialized,
-				useNFS:                    tt.fields.useNFS,
-				useFC:                     tt.fields.useFC,
-				useIscsi:                  tt.fields.useIscsi,
-				useNVMeTCP:                tt.fields.useNVMeTCP,
-				iscsiTargets:              tt.fields.iscsiTargets,
-				nvmeTargets:               tt.fields.nvmeTargets,
-				storagePoolCacheDuration:  tt.fields.storagePoolCacheDuration,
-				waitGroup:                 sync.WaitGroup{},
-				fcConnector:               tt.fields.fcConnector,
-				iscsiConnector:            tt.fields.iscsiConnector,
-				nvmeTCPConnector:          tt.fields.nvmeTCPConnector,
-				dBusConn:                  tt.fields.dBusConn,
-				sgSvc:                     tt.fields.sgSvc,
-				arrayTransportProtocolMap: tt.fields.arrayTransportProtocolMap,
-				topologyConfig:            tt.fields.topologyConfig,
-				allowedTopologyKeys:       tt.fields.allowedTopologyKeys,
-				deniedTopologyKeys:        tt.fields.deniedTopologyKeys,
-				k8sUtils:                  tt.fields.k8sUtils,
-				snapCleaner:               tt.fields.snapCleaner,
-			}
+			s := &service{}
 			defer afterEach() // clean up any caches between tests to ensure a clean test environment for each test
 			tt.before()
 
@@ -2096,6 +2054,286 @@ func Test_service_DeleteSnapshot(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("service.DeleteSnapshot() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_service_verifyProtectionGroupID(t *testing.T) {
+	localRDFGroupNum := "1"
+	type args struct {
+		ctx           context.Context
+		symID         string
+		localRdfGrpNo string
+		repMode       string
+		pmaxClient    pmax.Pmax
+	}
+	tests := []struct {
+		name       string
+		args       args
+		wantErr    bool
+		wantErrMsg string
+	}{
+		{
+			name: "sync RDF group is already used by async or metro",
+			args: args{
+				ctx:           context.Background(),
+				symID:         symIDLocal,
+				localRdfGrpNo: localRDFGroupNum,
+				repMode:       Sync,
+				pmaxClient: func() pmax.Pmax {
+					client := mocks.NewMockPmaxClient(gomock.NewController(t))
+
+					client.EXPECT().GetStorageGroupIDList(gomock.Any(), symIDLocal, "", false).Times(1).Return(
+						&types.StorageGroupIDList{
+							StorageGroupIDs: []string{
+								// building a bad Storage Group ID
+								"-" + localRDFGroupNum + "-" + Async,
+							},
+						}, nil)
+
+					return client
+				}(),
+			},
+			wantErr:    true,
+			wantErrMsg: "is already part of another Async/Metro mode ReplicationGroup",
+		},
+		{
+			name: "metro RDF group is already used for sync/async",
+			args: args{
+				ctx:           context.Background(),
+				symID:         symIDLocal,
+				localRdfGrpNo: localRDFGroupNum,
+				repMode:       Metro,
+				pmaxClient: func() pmax.Pmax {
+					client := mocks.NewMockPmaxClient(gomock.NewController(t))
+
+					client.EXPECT().GetStorageGroupIDList(gomock.Any(), symIDLocal, "", false).Times(1).Return(
+						&types.StorageGroupIDList{
+							StorageGroupIDs: []string{
+								// building a bad Storage Group ID
+								"-" + localRDFGroupNum + "-" + Async,
+							},
+						}, nil)
+
+					return client
+				}(),
+			},
+			wantErr:    true,
+			wantErrMsg: "is already part of another Async/Sync mode ReplicationGroup",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{}
+
+			err := s.verifyProtectionGroupID(tt.args.ctx, tt.args.symID, tt.args.localRdfGrpNo, tt.args.repMode, tt.args.pmaxClient)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("service.verifyProtectionGroupID() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErrMsg != "" {
+				assert.Contains(t, err.Error(), tt.wantErrMsg)
+			}
+		})
+	}
+}
+
+func Test_service_ControllerPublishVolume(t *testing.T) {
+	// capture state of controllerPendingState before this test
+	// so we can restore it after each test and after the test suite
+	ctrlPendingStateDefault := controllerPendingState
+
+	// keeps a list of steps that should be run after each test
+	// in order to clean and restore the test environment.
+	// Typically used to clear pmax client and replication capability caches.
+	var deferredCleanUpFuncs []func()
+	addCleanUpStep := func(f func()) {
+		deferredCleanUpFuncs = append(deferredCleanUpFuncs, f)
+	}
+
+	// Run all the clean up steps queued in deferredCleanUpFuncs after each test
+	afterEach := func() {
+		for _, f := range deferredCleanUpFuncs {
+			f()
+		}
+		// purge cleanup funcs for next test
+		deferredCleanUpFuncs = []func(){}
+
+		// restore default state of controllerPendingState
+		controllerPendingState = ctrlPendingStateDefault
+	}
+
+	type args struct {
+		ctx context.Context
+		req *csi.ControllerPublishVolumeRequest
+	}
+	tests := []struct {
+		name       string
+		args       args
+		before     func()
+		want       *csi.ControllerPublishVolumeResponse
+		wantErr    bool
+		wantErrMsg string
+	}{
+		{
+			name: "fail to parse the volume ID",
+			args: args{
+				ctx: context.Background(),
+				req: &csi.ControllerPublishVolumeRequest{
+					VolumeId: "a-bad-id", // bad volume ID
+				},
+			},
+			before:     func() {},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "Invalid volume id",
+		},
+		{
+			name: "fail to initialize the powermax client",
+			args: args{
+				ctx: context.Background(),
+				req: &csi.ControllerPublishVolumeRequest{
+					VolumeId: validLocalVolumeID,
+				},
+			},
+			before:     func() {},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "not found",
+		},
+		{
+			name: "publish is already pending",
+			args: args{
+				ctx: context.Background(),
+				req: &csi.ControllerPublishVolumeRequest{
+					VolumeId: validLocalVolumeID,
+				},
+			},
+			before: func() {
+				// setup gopowermax client for test
+				c := mocks.NewMockPmaxClient(gomock.NewController(t))
+
+				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+				// clear client cache when done with test
+				addCleanUpStep(func() { symmetrix.RemoveClient(symIDLocal) })
+				err := symmetrix.Initialize([]string{symIDLocal}, c)
+				if err != nil {
+					t.Fatal("failed to initialize test client")
+				}
+
+				// create controllerPendingState
+				controllerPendingState = pendingState{
+					maxPending:   1,
+					npending:     0,
+					pendingMutex: &sync.Mutex{},
+					pendingMap:   make(map[volumeIDType]time.Time),
+				}
+				volID := volumeIDType(validLocalVolumeID)
+				controllerPendingState.pendingMap[volID] = time.Now() // store a non-zero time to induce a "pending" error
+			},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "pending",
+		},
+		{
+			name: "access type is NFS and NFS export creation fails",
+			args: args{
+				ctx: context.Background(),
+				req: &csi.ControllerPublishVolumeRequest{
+					VolumeId: validLocalVolumeID,
+					NodeId:   "worker-1",
+					VolumeCapability: &csi.VolumeCapability{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{
+								FsType: NFS,
+							},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			before: func() {
+				// setup gopowermax client for test
+				c := mocks.NewMockPmaxClient(gomock.NewController(t))
+
+				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+				c.EXPECT().GetFileSystemByID(gomock.Any(), symIDLocal, gomock.Any()).Times(1).Return(
+					&types.FileSystem{}, errors.New("failed to fetch file system"),
+				)
+
+				// clear client cache when done with test
+				addCleanUpStep(func() { symmetrix.RemoveClient(symIDLocal) })
+				err := symmetrix.Initialize([]string{symIDLocal}, c)
+				if err != nil {
+					t.Fatal("failed to initialize test client")
+				}
+			},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "failed to fetch file system",
+		},
+		{
+			name: "static provisioning of a file system",
+			args: args{
+				ctx: context.Background(),
+				req: &csi.ControllerPublishVolumeRequest{
+					VolumeId: validLocalVolumeID,
+					NodeId:   "worker-1",
+					VolumeCapability: &csi.VolumeCapability{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{
+								FsType: "",
+							},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			before: func() {
+				// setup gopowermax client for test
+				c := mocks.NewMockPmaxClient(gomock.NewController(t))
+
+				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+				c.EXPECT().GetFileSystemByID(gomock.Any(), symIDLocal, gomock.Any()).Times(1).Return(
+					&types.FileSystem{}, nil, // successfully returning a file system to simulate static provisioning
+				)
+
+				// clear client cache when done with test
+				addCleanUpStep(func() { symmetrix.RemoveClient(symIDLocal) })
+				err := symmetrix.Initialize([]string{symIDLocal}, c)
+				if err != nil {
+					t.Fatal("failed to initialize test client")
+				}
+			},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "static provisioning on a file system is not supported.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{}
+			defer afterEach()
+			tt.before()
+
+			got, err := s.ControllerPublishVolume(tt.args.ctx, tt.args.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("service.ControllerPublishVolume() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErrMsg != "" {
+				assert.Contains(t, err.Error(), tt.wantErrMsg)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("service.ControllerPublishVolume() = %v, want %v", got, tt.want)
 			}
 		})
 	}

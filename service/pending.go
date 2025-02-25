@@ -65,7 +65,7 @@ func GetInducePendingError() bool {
 type pendingState struct {
 	maxPending   int
 	npending     int
-	pendingMutex sync.Mutex
+	pendingMutex *sync.Mutex
 	pendingMap   map[volumeIDType]time.Time
 }
 
