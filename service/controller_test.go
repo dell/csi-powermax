@@ -2359,3 +2359,64 @@ func Test_service_GetVSphereFCHostSGAndMVIDFromNodeID(t *testing.T) {
 		assert.Equal(t, wantMvid, mvid)
 	})
 }
+
+
+func Test_service_ControllerUnpublishVolume(t *testing.T) {
+	LockRequestHandler()
+	ctx := context.Background()
+	volIDInvalid := s.createCSIVolumeID("", "invalidVolume", "0001", "00000")
+	volIDRemote := s.createCSIVolumeID("", "validVolume", "0001:0001", "1:0")
+
+	c := mocks.NewMockPmaxClient(gomock.NewController(t))
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Not("1")).AnyTimes().Return(nil, errors.New(notFound))
+	c.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), "1").AnyTimes().Return(&types.Volume{
+		VolumeIdentifier: "csi--validVolume",
+		RDFGroupIDList:   []types.RDFGroupID{{RDFGroupNumber: 42, Label: "label"}, {RDFGroupNumber: 42, Label: "label"}},
+	}, nil)
+
+	symmetrix.Initialize([]string{"0001"}, c)
+	defer symmetrix.RemoveClient("0001")
+
+	t.Run("invalid requests", func(t *testing.T) {
+		// invalid client
+		req := &csi.ControllerUnpublishVolumeRequest{
+			VolumeId: s.createCSIVolumeID("", "invalidClient", "0000", "11111"),
+			NodeId:   "test-node-id",
+		}
+
+		_, err := s.ControllerUnpublishVolume(ctx, req)
+		assert.Contains(t, err.Error(), "not found")
+
+		//getVolumeByID
+		req.VolumeId=volIDInvalid
+		c.EXPECT().GetFileSystemByID(ctx, gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("error"))
+		_, err = s.ControllerUnpublishVolume(ctx, req)
+		assert.Contains(t, err.Error(), "Could not retrieve fileSystem")
+
+		//getVolumeByID -- service
+		req.VolumeId=s.createCSIVolumeID("", "failvalidVolume", "0001", "1")
+		resp, err := s.ControllerUnpublishVolume(ctx, req)
+		assert.Nil(t, err)
+		assert.Empty(t, resp)
+	})
+
+	t.Run("remote volume", func(t *testing.T) {
+		req := &csi.ControllerUnpublishVolumeRequest{
+			VolumeId: volIDRemote,
+			NodeId:   "test-node-id",
+		}
+
+		c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+		resp, err:= s.ControllerUnpublishVolume(ctx, req)
+		assert.Empty(t, resp)
+		assert.Nil(t, err)
+
+
+		req.VolumeId = s.createCSIVolumeID("", "validVolume", "0001:0001", "1:1")
+		resp, err = s.ControllerUnpublishVolume(ctx, req)
+		assert.Nil(t, err)
+		assert.Empty(t, resp)
+	})
+}

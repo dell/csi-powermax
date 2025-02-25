@@ -54,6 +54,7 @@ func TestVolumeMigrate(t *testing.T) {
 	c.EXPECT().GetStorageGroupIDList(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("error"))
 
 	symmetrix.Initialize([]string{"0001"}, c)
+	defer symmetrix.RemoveClient("0001")
 
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.New(map[string]string{
 		"csi.requestid": "123",
@@ -192,6 +193,7 @@ func TestVolumeMigrate(t *testing.T) {
 func TestArrayMigrate(t *testing.T) {
 	c2 := mocks.NewMockPmaxClient(gomock.NewController(t))
 	symmetrix.Initialize([]string{"0002"}, c2)
+	defer symmetrix.RemoveClient("0002")
 	c2.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c2)
 	c2.EXPECT().GetMigrationEnvironment(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(1).Return(&types.MigrationEnv{}, nil)
 	c2.EXPECT().GetStorageGroupIDList(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.StorageGroupIDList{}, nil)
