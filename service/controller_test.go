@@ -2360,7 +2360,6 @@ func Test_service_GetVSphereFCHostSGAndMVIDFromNodeID(t *testing.T) {
 	})
 }
 
-
 func Test_service_ControllerUnpublishVolume(t *testing.T) {
 	LockRequestHandler()
 	ctx := context.Background()
@@ -2389,13 +2388,13 @@ func Test_service_ControllerUnpublishVolume(t *testing.T) {
 		assert.Contains(t, err.Error(), "not found")
 
 		//getVolumeByID
-		req.VolumeId=volIDInvalid
+		req.VolumeId = volIDInvalid
 		c.EXPECT().GetFileSystemByID(ctx, gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("error"))
 		_, err = s.ControllerUnpublishVolume(ctx, req)
 		assert.Contains(t, err.Error(), "Could not retrieve fileSystem")
 
 		//getVolumeByID -- service
-		req.VolumeId=s.createCSIVolumeID("", "failvalidVolume", "0001", "1")
+		req.VolumeId = s.createCSIVolumeID("", "failvalidVolume", "0001", "1")
 		resp, err := s.ControllerUnpublishVolume(ctx, req)
 		assert.Nil(t, err)
 		assert.Empty(t, resp)
@@ -2409,10 +2408,9 @@ func Test_service_ControllerUnpublishVolume(t *testing.T) {
 
 		c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
 
-		resp, err:= s.ControllerUnpublishVolume(ctx, req)
+		resp, err := s.ControllerUnpublishVolume(ctx, req)
 		assert.Empty(t, resp)
 		assert.Nil(t, err)
-
 
 		req.VolumeId = s.createCSIVolumeID("", "validVolume", "0001:0001", "1:1")
 		resp, err = s.ControllerUnpublishVolume(ctx, req)
