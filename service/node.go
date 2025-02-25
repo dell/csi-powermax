@@ -1574,10 +1574,6 @@ func (s *service) nodeStartup(ctx context.Context) error {
 	}
 
 	arrays := s.retryableGetSymmetrixIDList()
-<<<<<<< HEAD
-=======
-
->>>>>>> a89ba19 (Add more tests to node.go)
 	symmetrixIDs := arrays.SymmetrixIDs
 	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
 
