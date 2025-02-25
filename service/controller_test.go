@@ -2101,12 +2101,11 @@ func Test_service_DeleteSnapshot(t *testing.T) {
 	}
 }
 
-
 func Test_service_GetVSphereFCHostSGAndMVIDFromNodeID(t *testing.T) {
 	s := &service{
 		opts: Opts{
 			IsVsphereEnabled: true,
-			VSphereHostName: "vsphere-host-name",
+			VSphereHostName:  "vsphere-host-name",
 		},
 	}
 
