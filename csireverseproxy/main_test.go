@@ -430,7 +430,7 @@ func TestServer_EventHandler(t *testing.T) {
 
 func TestServer_SAEventHandler(t *testing.T) {
 	k8sUtils := k8smock.Init()
-	oldProxySecret := server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	oldProxySecret := server.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      proxySecretName,
@@ -443,7 +443,7 @@ func TestServer_SAEventHandler(t *testing.T) {
 		Type: "Generic",
 	}
 	server.EventHandler(k8sUtils, newSecret)
-	newProxySecret := server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	newProxySecret := server.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	if reflect.DeepEqual(oldProxySecret, newProxySecret) {
 		t.Errorf("cert file should change after update")
 	} else {
@@ -461,7 +461,7 @@ func TestServer_SAEventHandler(t *testing.T) {
 		Type: "Generic",
 	}
 	server.EventHandler(k8sUtils, newSecret)
-	oldProxySecret = server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	oldProxySecret = server.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	if reflect.DeepEqual(oldProxySecret, newProxySecret) {
 		t.Errorf("cert file should change after update")
 	} else {
