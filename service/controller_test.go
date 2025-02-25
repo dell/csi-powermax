@@ -2100,3 +2100,25 @@ func Test_service_DeleteSnapshot(t *testing.T) {
 		})
 	}
 }
+
+
+func Test_service_GetVSphereFCHostSGAndMVIDFromNodeID(t *testing.T) {
+	s := &service{
+		opts: Opts{
+			IsVsphereEnabled: true,
+			VSphereHostName: "vsphere-host-name",
+		},
+	}
+
+	t.Run("success", func(t *testing.T) {
+		host, sg, mvid := s.GetVSphereFCHostSGAndMVIDFromNodeID()
+
+		wantHost := s.opts.VSphereHostName
+		wantSg := CsiNoSrpSGPrefix + s.getClusterPrefix() + "-" + Vsphere
+		wantMvid := CsiMVPrefix + s.getClusterPrefix() + "-" + Vsphere
+
+		assert.Equal(t, wantHost, host)
+		assert.Equal(t, wantSg, sg)
+		assert.Equal(t, wantMvid, mvid)
+	})
+}
