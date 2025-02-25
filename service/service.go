@@ -77,7 +77,8 @@ const (
 	defaultCertFile = "tls.crt"
 )
 
-type contextKey string           // specific string type used for context keys
+type contextKey string // specific string type used for context keys
+
 var inducedMockReverseProxy bool // for testing only
 
 // Manifest is the SP's manifest.
@@ -874,17 +875,16 @@ func setLogFields(ctx context.Context, fields log.Fields) context.Context {
 }
 
 func getLogFields(ctx context.Context) log.Fields {
-	if ctx == nil {
-		return log.Fields{}
-	}
 	fields, ok := ctx.Value(contextKey(logFields)).(log.Fields)
 	if !ok {
 		fields = log.Fields{}
 	}
+
 	csiReqID, ok := ctx.Value(csictx.RequestIDKey).(string)
 	if !ok {
 		return fields
 	}
+
 	fields["RequestID"] = csiReqID
 	return fields
 }
