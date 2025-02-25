@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
@@ -114,6 +115,28 @@ func TestCaseUnlinkTarget(t *testing.T) {
 				return client
 			}(),
 			expected: errors.New("failed to unlink snapshot. error: error"),
+		},
+		{
+			name: "Error - unable to identify snapshot name/src device id",
+			tgtVol: &types.Volume{
+				VolumeID: "vol-12345",
+			},
+			symID:  "123",
+			snapID: "",
+			pmaxClient: func() pmax.Pmax {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().GetVolumeSnapInfo(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(&types.SnapshotVolumeGeneration{
+					VolumeSnapshotLink: []types.VolumeSnapshotLink{
+						{
+							SnapshotName: "",
+							Defined:      true,
+							LinkSource:   "source-123",
+						},
+					},
+				}, nil)
+				return client
+			}(),
+			expected: errors.New("unable to identify snapshot name/src device id"),
 		},
 	}
 
@@ -292,6 +315,29 @@ func TestUnlinkTargetsAndTerminateSnapshot(t *testing.T) {
 			}(),
 			expected: nil,
 		},
+		{
+			name: "Successful unlink",
+			srcVol: &types.Volume{
+				VolumeID: "vol-12345",
+			},
+			symID: "123",
+			pmaxClient: func() pmax.Pmax {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().GetVolumeSnapInfo(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.SnapshotVolumeGeneration{
+					VolumeSnapshotSource: []types.VolumeSnapshotSource{
+						{
+							SnapshotName:  "DEL-snapshot-123",
+							Generation:    1,
+							LinkedVolumes: []types.LinkedVolumes{},
+						},
+					},
+				}, nil)
+				client.EXPECT().ModifySnapshotS(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+				client.EXPECT().DeleteSnapshotS(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(errors.New("error calling delete snapshot"))
+				return client
+			}(),
+			expected: errors.New("failed to terminate the snapshot. error: error calling delete snapshot"),
+		},
 	}
 
 	for _, tc := range tests {
@@ -431,6 +477,31 @@ func TestCleanupSnapshots(t *testing.T) {
 			pmaxClient: func() pmax.Pmax {
 				client := mocks.NewMockPmaxClient(gomock.NewController(t))
 				client.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("error"))
+				return client
+			}(),
+			expected: false,
+		},
+		{
+			name: "Set volume to disassociated storage group step",
+			deviceList: []*csiDevice{
+				{
+					SymDeviceID: symDeviceID{
+						DeviceID: "vol-123",
+					},
+					Status: deletionRequestStatus{
+						State: deletionStateCleanupSnaps,
+					},
+				},
+			},
+			symID: "symID1",
+			pmaxClient: func() pmax.Pmax {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volume{
+					VolumeID:           "vol-123",
+					SnapTarget:         false,
+					SnapSource:         false,
+					StorageGroupIDList: []string{"sg-1"},
+				}, nil)
 				return client
 			}(),
 			expected: false,
@@ -596,7 +667,7 @@ func TestDeleteVolumes(t *testing.T) {
 			expectedResult: false,
 		},
 		{
-			name: "Error due to volume being deleted not the same as originally requested",
+			name: "Volume being deleted not the same as originally requested",
 			deletionQueue: &deletionQueue{
 				DeviceList: []*csiDevice{
 					{
@@ -622,12 +693,13 @@ func TestDeleteVolumes(t *testing.T) {
 				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
 				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volume{
 					VolumeID:           "vol-123",
-					StorageGroupIDList: []string{"sg-1"},
+					StorageGroupIDList: []string{},
 					VolumeIdentifier:   "vol-identifier-2",
 				}, nil)
+				pmaxClient.EXPECT().DeleteVolume(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 				return pmaxClient
 			}(),
-			expectedResult: false,
+			expectedResult: true,
 		},
 	}
 
@@ -647,22 +719,43 @@ func TestCaseGetDevice(t *testing.T) {
 }
 
 func TestCaseGetDeviceRanges(t *testing.T) {
-	sdID1 := symDeviceID{
-		DeviceID: "1234",
-		IntVal:   1,
-	}
-	sdID2 := symDeviceID{
-		DeviceID: "2345",
-		IntVal:   2,
-	}
-	expectedOutput := []deviceRange{
+	tests := []struct {
+		name           string
+		devices        []symDeviceID
+		expectedOutput []deviceRange
+	}{
 		{
-			Start: sdID1,
-			End:   sdID2,
+			name: "Valid device ranges",
+			devices: []symDeviceID{
+				{DeviceID: "1234", IntVal: 1},
+				{DeviceID: "2345", IntVal: 2},
+			},
+			expectedOutput: []deviceRange{
+				{
+					Start: symDeviceID{
+						DeviceID: "1234",
+						IntVal:   1,
+					},
+					End: symDeviceID{
+						DeviceID: "2345",
+						IntVal:   2,
+					},
+				},
+			},
+		},
+		{
+			name:           "Empty devices",
+			devices:        []symDeviceID{},
+			expectedOutput: []deviceRange{},
 		},
 	}
-	devicerang := getDeviceRanges([]symDeviceID{{DeviceID: "1234", IntVal: 1}, {DeviceID: "2345", IntVal: 2}})
-	assert.Equal(t, expectedOutput, devicerang)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getDeviceRanges(tt.devices)
+			assert.Equal(t, tt.expectedOutput, result)
+		})
+	}
 }
 
 func TestCaseQueueDeviceForDeletion(t *testing.T) {
@@ -959,7 +1052,7 @@ func TestRemoveVolumesFromStorageGroup(t *testing.T) {
 			expectedResult: false,
 		},
 		{
-			name: "Unable to remove due to masking views",
+			name: "Unable to remove due to masking views when volume in a storage group",
 			deletionQueue: &deletionQueue{
 				DeviceList: []*csiDevice{
 					{
@@ -998,6 +1091,240 @@ func TestRemoveVolumesFromStorageGroup(t *testing.T) {
 			waitTillSyncInProgTime = 1 * time.Millisecond
 			result := tc.deletionQueue.removeVolumesFromStorageGroup(tc.pmaxClient)
 			assert.Equal(t, tc.expectedResult, result)
+		})
+	}
+}
+
+func TestDeletionRequestHandler(t *testing.T) {
+	tests := []struct {
+		name                     string
+		symmetrixIDs             []string
+		deletionRequest          deletionRequest
+		pmaxClient               pmax.Pmax
+		skipClientInitialization bool
+		expectedResult           csiDevice
+		expectedError            error
+	}{
+		{
+			name: "Valid deletion request",
+			symmetrixIDs: []string{
+				"sym1",
+			},
+			deletionRequest: deletionRequest{
+				DeviceID:     "123",
+				VolumeHandle: "vol1_DEL",
+				SymID:        "sym1",
+				errChan:      make(chan error, 1),
+			},
+			pmaxClient: func() pmax.Pmax {
+				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volume{
+					VolumeID:           "vol-123",
+					StorageGroupIDList: []string{"csi-rep-sg-namespace-rdf-metro"},
+				}, nil)
+				pmaxClient.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(pmaxClient)
+				return pmaxClient
+			}(),
+			expectedResult: csiDevice{
+				SymID: "sym1",
+				Status: deletionRequestStatus{
+					State: deletionStateDisAssociateSG,
+				},
+				SymDeviceID: symDeviceID{
+					DeviceID: "123",
+					IntVal:   123,
+				},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "Valid deletion request - No SG and not using SnapSource or SnapTarget",
+			symmetrixIDs: []string{
+				"sym1",
+			},
+			deletionRequest: deletionRequest{
+				DeviceID:     "123",
+				VolumeHandle: "vol1_DEL",
+				SymID:        "sym1",
+				errChan:      make(chan error, 1),
+			},
+			pmaxClient: func() pmax.Pmax {
+				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volume{
+					VolumeID:           "vol-123",
+					StorageGroupIDList: []string{},
+				}, nil)
+				pmaxClient.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(pmaxClient)
+				return pmaxClient
+			}(),
+			expectedResult: csiDevice{
+				SymID: "sym1",
+				Status: deletionRequestStatus{
+					State: deletionStateDeleteVol,
+				},
+				SymDeviceID: symDeviceID{
+					DeviceID: "123",
+					IntVal:   123,
+				},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "Valid deletion request - No SG but using SnapSource",
+			symmetrixIDs: []string{
+				"sym1",
+			},
+			deletionRequest: deletionRequest{
+				DeviceID:     "123",
+				VolumeHandle: "vol1_DEL",
+				SymID:        "sym1",
+				errChan:      make(chan error, 1),
+			},
+			pmaxClient: func() pmax.Pmax {
+				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volume{
+					VolumeID:           "vol-123",
+					StorageGroupIDList: []string{},
+					SnapSource:         true,
+				}, nil)
+				pmaxClient.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(pmaxClient)
+				return pmaxClient
+			}(),
+			expectedResult: csiDevice{
+				SymID: "sym1",
+				Status: deletionRequestStatus{
+					State: deletionStateCleanupSnaps,
+				},
+				SymDeviceID: symDeviceID{
+					DeviceID: "123",
+					IntVal:   123,
+				},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "Invalid deletion request - sym id not managed by deletion worker",
+			symmetrixIDs: []string{
+				"sym1",
+			},
+			deletionRequest: deletionRequest{
+				DeviceID:     "dev1",
+				VolumeHandle: "vol1",
+				SymID:        "sym2",
+				errChan:      make(chan error, 1),
+			},
+			expectedError: errors.New("unable to process device deletion request as sym id is not managed by deletion worker"),
+		},
+		{
+			name: "PowerMax client not registered with symID",
+			symmetrixIDs: []string{
+				"sym1",
+			},
+			deletionRequest: deletionRequest{
+				DeviceID:     "dev1",
+				VolumeHandle: "vol1",
+				SymID:        "sym1",
+				errChan:      make(chan error, 1),
+			},
+			skipClientInitialization: true,
+			expectedError:            errors.New("unable to process device deletion request as sym id is not managed by deletion worker"),
+		},
+		{
+			name: "Error calling GetVolumeByID",
+			symmetrixIDs: []string{
+				"sym1",
+			},
+			deletionRequest: deletionRequest{
+				DeviceID:     "123",
+				VolumeHandle: "vol1_DEL",
+				SymID:        "sym1",
+				errChan:      make(chan error, 1),
+			},
+			pmaxClient: func() pmax.Pmax {
+				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("error calling GetVolumeByID"))
+				pmaxClient.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(pmaxClient)
+				return pmaxClient
+			}(),
+			expectedError: errors.New("error calling GetVolumeByID"),
+		},
+		{
+			name: "Not a valid delete request",
+			symmetrixIDs: []string{
+				"sym1",
+			},
+			deletionRequest: deletionRequest{
+				DeviceID:     "123",
+				VolumeHandle: "vol1",
+				SymID:        "sym1",
+				errChan:      make(chan error, 1),
+			},
+			pmaxClient: func() pmax.Pmax {
+				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volume{
+					VolumeID:           "vol-123",
+					StorageGroupIDList: []string{"csi-rep-sg-namespace-rdf-metro"},
+				}, nil)
+				pmaxClient.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(pmaxClient)
+				return pmaxClient
+			}(),
+			expectedError: errors.New("device has not been marked for deletion"),
+		},
+		{
+			name: "Not a valid device id",
+			symmetrixIDs: []string{
+				"sym1",
+			},
+			deletionRequest: deletionRequest{
+				DeviceID:     "abc-def",
+				VolumeHandle: "vol1_DEL",
+				SymID:        "sym1",
+				errChan:      make(chan error, 1),
+			},
+			pmaxClient: func() pmax.Pmax {
+				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volume{
+					VolumeID:           "vol-123",
+					StorageGroupIDList: []string{"csi-rep-sg-namespace-rdf-metro"},
+				}, nil)
+				pmaxClient.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(pmaxClient)
+				return pmaxClient
+			}(),
+			expectedError: errors.New("strconv.ParseInt: parsing \"abc-def\": invalid syntax"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			worker := &deletionWorker{
+				SymmetrixIDs:        tt.symmetrixIDs,
+				DeletionRequestChan: make(chan deletionRequest, DeletionQueueLength),
+				DeletionQueueChan:   make(chan csiDevice, DeletionQueueLength),
+			}
+
+			if !tt.skipClientInitialization {
+				defer symmetrix.RemoveClient(tt.symmetrixIDs[0])
+				err := symmetrix.Initialize(tt.symmetrixIDs, tt.pmaxClient)
+				assert.Nil(t, err)
+			}
+
+			go worker.deletionRequestHandler()
+
+			worker.DeletionRequestChan <- tt.deletionRequest
+
+			if tt.expectedError == nil {
+				device := <-worker.DeletionQueueChan
+				assert.Equal(t, tt.expectedResult.SymDeviceID.DeviceID, device.SymDeviceID.DeviceID)
+				assert.Equal(t, tt.expectedResult.SymID, device.SymID)
+				assert.Equal(t, tt.expectedResult.Status.State, device.Status.State)
+			}
+
+			err := <-tt.deletionRequest.errChan
+			if tt.expectedError == nil {
+				assert.Nil(t, err)
+			} else {
+				assert.Equal(t, tt.expectedError.Error(), err.Error())
+			}
 		})
 	}
 }
