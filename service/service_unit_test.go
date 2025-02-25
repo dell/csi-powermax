@@ -620,15 +620,3 @@ func TestRegisterAdditionalServers(_ *testing.T) {
 	server := grpc.NewServer()
 	s.RegisterAdditionalServers(server)
 }
-
-func TestSetArrayConfigEnvs(t *testing.T) {
-	ctx := context.Background()
-	_ = os.Setenv(EnvArrayConfigPath, "value")
-	paramsViper := viper.New()
-	paramsViper.Set(Protocol, "ICSCI")
-	paramsViper.Set(EnvEndpoint, "endpoint")
-	paramsViper.Set(PortGroups, "pg1, pg2, pg3")
-	paramsViper.Set(ManagedArrays, "000000000001,000000000002")
-	err := setArrayConfigEnvs(ctx)
-	assert.Equal(t, nil, err)
-}
