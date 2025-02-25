@@ -332,7 +332,6 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 }
 
 func run(ctx context.Context) error {
-
 	signal.Ignore()
 
 	// Get the server opts
@@ -378,7 +377,7 @@ func main() {
 }
 
 var runWithLeaderElectionFunc = func(kubeClient *k8sutils.KubernetesClient) (err error) {
-	//var err error
+	// var err error
 	lei := leaderelection.NewLeaderElection(kubeClient.Clientset, "csi-powermax-reverse-proxy-dellemc-com", runFunc)
 	lei.WithNamespace(getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace))
 	if err = lei.Run(); err != nil {
