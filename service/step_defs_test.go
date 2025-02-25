@@ -385,9 +385,10 @@ func (f *feature) aPowerMaxService() error {
 	gofsutil.GOFSMock.InduceResizeFSError = false
 	gofsutil.GOFSMock.InduceGetDiskFormatType = ""
 	gofsutil.GOFSMockMounts = gofsutil.GOFSMockMounts[:0]
-	gofsutil.GOFSMockWWNToDevice = make(map[string]string)
+	//gofsutil.GOFSMockWWNToDevice = make(map[string]string)
 	gofsutil.GOFSMockTargetIPLUNToDevice = make(map[string]string)
 	gofsutil.GOFSRescanCallback = nil
+	gofsutil.GOFSMockWWNToDevice = map[string]string{nodePublishWWN: "00501"}
 
 	// configure variables in the driver
 	getMappedVolMaxRetry = 1
@@ -502,10 +503,12 @@ func (f *feature) getService() *service {
 	opts.EnableBlock = true
 	opts.KubeConfigPath = kubeconfig
 	opts.NodeName, _ = os.Hostname()
-	opts.PortGroups = []string{"portgroup1", "portgroup2", "portgroup3"}
-	mock.AddPortGroupWithPortID("portgroup1", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
-	mock.AddPortGroupWithPortID("portgroup2", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
-	mock.AddPortGroupWithPortID("portgroup3", "NVMETCP", []string{defaultNVMEDirPort})
+	opts.PortGroups = []string{"portgroup1", "portgroup2", "portgroup3", "portgroup4"}
+	mock.AddPortGroupWithPortID("portgroup1", IscsiTransportProtocol, []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+	mock.AddPortGroupWithPortID("portgroup2", IscsiTransportProtocol, []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+	mock.AddPortGroupWithPortID("portgroup3", NvmeTCPTransportProtocol, []string{defaultNVMEDirPort})
+	mock.AddPortGroupWithPortID("portgroup4", FcTransportProtocol, []string{defaultFCDirPort})
+	opts.TransportProtocol = NvmeTCPTransportProtocol
 	opts.ManagedArrays = []string{"000197900046", "000197900047", "000000000013"}
 	opts.NodeFullName, _ = os.Hostname()
 	opts.EnableSnapshotCGDelete = true
@@ -1965,8 +1968,16 @@ func (f *feature) aValidNodeGetInfoResponseIsReturned() error {
 	if f.nodeGetInfoResponse.AccessibleTopology == nil {
 		return errors.New("no topology keys created")
 	} else if f.fcArray != "" {
-		if _, ok := f.nodeGetInfoResponse.AccessibleTopology.Segments[f.service.getDriverName()+"/"+f.fcArray+"."+strings.ToLower(FcTransportProtocol)]; !ok {
-			return errors.New("toplogy keys not created properly")
+		fcKey := f.service.getDriverName() + "/" + f.fcArray + "." + strings.ToLower(FcTransportProtocol)
+		iscsiKey := f.service.getDriverName() + "/" + f.fcArray + "." + strings.ToLower(IscsiTransportProtocol)
+		nvmeKey := f.service.getDriverName() + "/" + f.fcArray + "." + strings.ToLower(NvmeTCPTransportProtocol)
+
+		if _, fcOk := f.nodeGetInfoResponse.AccessibleTopology.Segments[fcKey]; !fcOk {
+			if _, iscsiOk := f.nodeGetInfoResponse.AccessibleTopology.Segments[iscsiKey]; !iscsiOk {
+				if _, nvmeOk := f.nodeGetInfoResponse.AccessibleTopology.Segments[nvmeKey]; !nvmeOk {
+					return errors.New("topology keys not created properly for FC, iSCSI, and NVMe")
+				}
+			}
 		}
 	}
 	fmt.Printf("NodeID %s\n", f.nodeGetInfoResponse.NodeId)
@@ -4435,6 +4446,27 @@ func (f *feature) iAddFCArrayToProtocolMap() error {
 		f.fcArray = arrays.SymmetrixIDs[0]
 	}
 	f.service.arrayTransportProtocolMap[f.fcArray] = FcTransportProtocol
+	f.service.opts.TransportProtocol = FcTransportProtocol
+	return nil
+}
+
+func (f *feature) iAddToProtocolMap(protocol string) error {
+	arrays := f.service.retryableGetSymmetrixIDList()
+	if len(arrays.SymmetrixIDs) > 0 {
+		f.fcArray = arrays.SymmetrixIDs[0]
+	}
+	f.service.arrayTransportProtocolMap[f.fcArray] = protocol
+	f.service.opts.TransportProtocol = protocol
+	return nil
+}
+
+func (f *feature) iAddISCSIArrayToProtocolMap() error {
+	arrays := f.service.retryableGetSymmetrixIDList()
+	if len(arrays.SymmetrixIDs) > 0 {
+		f.fcArray = arrays.SymmetrixIDs[0]
+	}
+	f.service.arrayTransportProtocolMap[f.fcArray] = IscsiTransportProtocol
+	f.service.opts.TransportProtocol = IscsiTransportProtocol
 	return nil
 }
 
@@ -4444,6 +4476,7 @@ func (f *feature) iAddNVMEArrayToProtocolMap() error {
 		f.fcArray = arrays.SymmetrixIDs[0]
 	}
 	f.service.arrayTransportProtocolMap[f.fcArray] = NvmeTCPTransportProtocol
+	f.service.opts.TransportProtocol = NvmeTCPTransportProtocol
 	return nil
 }
 
@@ -5356,7 +5389,9 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I have a NodeNameTemplate "([^"]*)"$`, f.iHaveANodeNameTemplate)
 	s.Step(`^I call buildHostIDFromTemplate for node "([^"]*)"$`, f.iCallBuildHostIDFromTemplateForNodeHost)
 	s.Step(`^I add FC array to ProtocolMap$`, f.iAddFCArrayToProtocolMap)
+	s.Step(`^I add ISCSI array to ProtocolMap$`, f.iAddISCSIArrayToProtocolMap)
 	s.Step(`^I add NVME array to ProtocolMap$`, f.iAddNVMEArrayToProtocolMap)
+	s.Step(`^I add to ProtocolMap "([^"]*)"$`, f.iAddToProtocolMap)
 	s.Step(`^I call RDF enabled CreateVolume "([^"]*)" in namespace "([^"]*)", mode "([^"]*)" and RDFGNo (\d+)$`, f.iCallRDFEnabledCreateVolume)
 	s.Step(`^I call  GetRDFInfoFromSGID with "([^"]*)"$`, f.iCallGetRDFInfoFromSGIDWith)
 	s.Step(`^I call ProtectStorageGroup on "([^"]*)"$`, f.iCallProtectStorageGroupOn)

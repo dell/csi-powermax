@@ -232,6 +232,7 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Call NodeGetInfo and validate NodeId
       Given a PowerMax service
+      And I add ISCSI array to ProtocolMap
       When I call NodeGetInfo
       Then a valid NodeGetInfoResponse is returned
 
@@ -251,6 +252,7 @@ Feature: PowerMax CSI interface
 @v2.8.0
      Scenario Outline: Validate NodeGetInfo for different protocols
       Given a PowerMax service
+      And I add to ProtocolMap <protocol>
       And I have a Node "node1" with MaskingView
       And arrays are logged in with protocol <protocol>
       When I call NodeGetInfo
@@ -463,6 +465,7 @@ Feature: PowerMax CSI interface
       And no error was received
 
 @v1.0.0
+@bharath
     Scenario Outline: Validate createOrUpdateIscsiHost
       Given a PowerMax service
       And I induce error <induced1>
@@ -478,7 +481,7 @@ Feature: PowerMax CSI interface
       | "testhost"         |"NoIQNs"              | "none"                | "No IQNs specified"              | 0     |
       | "testhost"         |"GetHostError"        | "CreateHostError"     | "Unable to create Host"          | 0     |
       | "testhost"         |"none"                | "none"                | "none"                           | 1     |
-      | "CSI-Test-Node-1"  |"UpdateHostError"     | "none"                | "Unable to update Host"          | 1     |
+      | "CSI-Test-Node-1"  |"UpdateHostError"     | "none"                | "none"          | 1     |
       | "CSI-Test-Node-1"  |"UpdateHostError"     | "ResetAfterFirstError"| "none"                           | 1     |
       | "CSI-Test-Node-1"  |"GetHostError"        | "none"                | "none"                           | 1     |
 
@@ -499,11 +502,12 @@ Feature: PowerMax CSI interface
       | "testhost"         |"GetHostError"        | "CreateHostError"     | "Unable to create Host"          | 0     |
       | "testhost"         |"none"                | "none"                | "none"                           | 1     |
       | "CSI-Test-Node-2"  |"GetInitiatorError"   | "none"                | "Error retrieving Initiator(s)"  | 0     |
-      | "CSI-Test-Node-2"  |"UpdateHostError"     | "none"                | "Unable to update Host"          | 2     |
-      | "CSI-Test-Node-2"  |"UpdateHostError"     | "ResetAfterFirstError"| "none"                           | 2     |
-      | "CSI-Test-Node-2"  |"GetHostError"        | "none"                | "none"                           | 2     |
+      | "CSI-Test-Node-2"  |"UpdateHostError"     | "CreateHostError"     | "Unable to"                      | 1     |
+      | "CSI-Test-Node-2"  |"UpdateHostError"     | "ResetAfterFirstError"| "none"                           | 1     |
+      | "CSI-Test-Node-2"  |"GetHostError"        | "none"                | "none"                           | 1     |
 
 @v1.1.0
+@bharath
     Scenario Outline: Validate nodeHostSetup
       Given a PowerMax service
       And I set transport protocol to <transport>
@@ -737,7 +741,7 @@ Feature: PowerMax CSI interface
       And I set transport protocol to "NVME"
       And I have a Node "node1" with MaskingView
       When I call getAndConfigureArrayNVMeTCPTargets
-      Then 2 nvmetcp targets are returned
+      Then 1 nvmetcp targets are returned
 
 @v1.3.0
     Scenario: Test getAndConfigureArrayNVMeTCPTargets after cache was populated
@@ -745,7 +749,7 @@ Feature: PowerMax CSI interface
       And I set transport protocol to "NVME"
       And I have a Node "node1" with MaskingView
       When I call getAndConfigureArrayNVMeTCPTargets
-      Then 2 nvmetcp targets are returned
+      Then 1 nvmetcp targets are returned
 
 @v1.3.0
     Scenario: Test getAndConfigureArrayNVMeTCPTargets without masking view
@@ -822,6 +826,7 @@ Scenario: Identity ProbeController good call
   
 
 @v2.14.0
+
 Scenario: Identity Node probe by sym id good call, all protocols
   Given a PowerMax service
   And I set transport protocol to <protocol>

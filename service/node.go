@@ -592,6 +592,7 @@ func (s *service) detachRDM(volID, volumeWWN string) error {
 // by no more /dev/disk/by-id entry, retrying if necessary.
 func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error {
 	var deviceName, symlinkPath, devicePath string
+	log.Infof("Disconnecting volume %s devID %s", volumeWWN, devID)
 	for i := 0; i < 3; i++ {
 		symlinkPath, devicePath, _ = gofsutil.WWNToDevicePathX(context.Background(), volumeWWN)
 		if devicePath == "" {
@@ -1084,7 +1085,8 @@ func (s *service) getIPInterfaces(ctx context.Context, symID string, portGroups 
 		if err != nil {
 			return nil, err
 		}
-		if portGroup.PortGroupType == s.opts.TransportProtocol {
+
+		if strings.Contains(strings.ToLower(portGroup.PortGroupType), strings.ToLower(s.opts.TransportProtocol)) {
 
 			for _, portKey := range portGroup.SymmetrixPortKey {
 				port, err := pmaxClient.GetPort(ctx, symID, portKey.DirectorID, portKey.PortID)
@@ -1094,7 +1096,7 @@ func (s *service) getIPInterfaces(ctx context.Context, symID string, portGroups 
 				ipInterfaces = append(ipInterfaces, port.SymmetrixPort.IPAddresses...)
 			}
 		} else {
-			log.Infof("Skipping port group %s with %s as it is not %s", pg, portGroup.PortGroupProtocol, s.opts.TransportProtocol)
+			log.Infof("Skipping port group %s with %s as it is not %s", pg, portGroup.PortGroupType, s.opts.TransportProtocol)
 		}
 	}
 	return ipInterfaces, nil
@@ -1858,7 +1860,7 @@ func (s *service) setupArrayForFC(ctx context.Context, array string, portWWNs []
 // setupArrayForIscsi is called to set up a node for iscsi operation.
 func (s *service) setupArrayForIscsi(ctx context.Context, array string, IQNs []string, pmaxClient pmax.Pmax) error {
 	hostName, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
-	log.Infof("setting up array %s for Iscsi, host name: %s masking view ID: %s", array, hostName, mvName)
+	log.Infof("setting up array %s for Iscsi, host name: %s masking view ID: %s %v", array, hostName, mvName, IQNs)
 
 	// Create or update the IscsiHost and Initiators
 	_, err := s.createOrUpdateIscsiHost(ctx, array, hostName, IQNs, pmaxClient)
@@ -2435,7 +2437,6 @@ func (s *service) createOrUpdateFCHost(ctx context.Context, array string, nodeNa
 
 	// See if the host is present
 	host, err := pmaxClient.GetHostByID(ctx, array, nodeName)
-	log.Debug(fmt.Sprintf("GetHostById returned: %v, %v", host, err))
 	if err != nil {
 		// host does not exist, create it
 		log.Infof("Array %s FC Host %s does not exist. Creating it.", array, nodeName)
@@ -2473,7 +2474,6 @@ func (s *service) createOrUpdateIscsiHost(ctx context.Context, array string, nod
 
 	host, err := pmaxClient.GetHostByID(ctx, array, nodeName)
 	log.Infof("GetHostById returned: %v, %v", host, err)
-
 	if err != nil {
 		// host does not exist, create it
 		log.Infof("ISCSI Host %s does not exist. Creating it.", nodeName)
