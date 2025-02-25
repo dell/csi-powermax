@@ -1,8 +1,6 @@
 module github.com/dell/csi-powermax/v2
 
-go 1.23.0
-
-toolchain go1.23.4
+go 1.24.0
 
 require (
 	github.com/akutz/goof v0.1.2
@@ -19,7 +17,7 @@ require (
 	github.com/dell/gofsutil v1.18.0
 	github.com/dell/goiscsi v1.11.0
 	github.com/dell/gonvme v1.10.1
-	github.com/dell/gopowermax/v2 v2.9.1-0.20250218220907-bf05e7e5d465
+	github.com/dell/gopowermax/v2 v2.9.1-0.20250225182852-b34eb3bfbbd8
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/golang/mock v1.6.0
 	github.com/gorilla/mux v1.8.1
