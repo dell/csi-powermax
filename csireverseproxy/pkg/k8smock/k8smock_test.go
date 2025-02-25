@@ -202,7 +202,6 @@ func TestGetCredentialsFromSecretName(t *testing.T) {
 	secret, err := mockUtils.CreateNewCredentialSecret("test-secret")
 	if err != nil {
 		t.Errorf("unexpected error creating test secret: %v", err)
-
 	}
 	expectCred := &common.Credentials{
 		UserName: "test-username",
@@ -245,7 +244,6 @@ func TestGetCredentialsFromSecret(t *testing.T) {
 	secret, err := mockUtils.CreateNewCredentialSecret("test-secret")
 	if err != nil {
 		t.Errorf("unexpected error creating test secret: %v", err)
-
 	}
 	// Test case: mockUtils is nil
 	var nilMockUtils *MockUtils
@@ -274,7 +272,7 @@ func TestGetCredentialsFromSecret(t *testing.T) {
 		t.Errorf("expected '%v', got %v", expectCred, cred)
 	}
 
-	//Test case: secret exists but does not container username or password
+	// Test case: secret exists but does not container username or password
 	badSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "bad-secret",
@@ -291,5 +289,4 @@ func TestGetCredentialsFromSecret(t *testing.T) {
 	if err != nil && err.Error() != "username not found in secret data" {
 		t.Errorf("expected %v got %v", "username not found in secret data", err)
 	}
-
 }

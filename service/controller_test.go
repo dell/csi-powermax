@@ -769,9 +769,11 @@ func Test_service_createMetroVolume(t *testing.T) {
 				t.Errorf("service.createMetroVolume() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
+
 			if tt.wantErrMsg != "" {
 				assert.Contains(t, err.Error(), tt.wantErrMsg)
 			}
+
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("service.createMetroVolume() = %v, want %v", got, tt.want)
 			}
@@ -2099,12 +2101,11 @@ func Test_service_DeleteSnapshot(t *testing.T) {
 	}
 }
 
-
 func Test_service_GetVSphereFCHostSGAndMVIDFromNodeID(t *testing.T) {
 	s := &service{
 		opts: Opts{
 			IsVsphereEnabled: true,
-			VSphereHostName: "vsphere-host-name",
+			VSphereHostName:  "vsphere-host-name",
 		},
 	}
 

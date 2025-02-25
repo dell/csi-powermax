@@ -23,8 +23,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"revproxy/v2/pkg/common"
 	"testing"
+
+	"revproxy/v2/pkg/common"
 )
 
 func TestWriteHTTPError(t *testing.T) {
@@ -168,7 +169,6 @@ func TestRemoveTempFiles(t *testing.T) {
 
 	// Call the function
 	err = RemoveTempFiles()
-
 	// Check the result
 	if err != nil {
 		t.Errorf("RemoveTempFiles() returned an error: %s", err.Error())
