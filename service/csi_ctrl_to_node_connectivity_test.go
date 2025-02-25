@@ -32,7 +32,7 @@ func TestQueryArrayStatus(t *testing.T) {
 	}{
 		{
 			name: "Failed: Context Timeout",
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				time.Sleep(10 * time.Second)
 				w.WriteHeader(http.StatusBadRequest)
 			})),

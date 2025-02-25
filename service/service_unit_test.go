@@ -887,7 +887,7 @@ func TestReadConfig(t *testing.T) {
 		file.Close()
 	}()
 
-	os.WriteFile(fp, []byte(`{"allowedConnections": 1234}`), 0o777)
+	os.WriteFile(fp, []byte(`{"allowedConnections": 1234}`), 0o600)
 
 	_, err = ReadConfig(fp)
 	assert.Error(t, err)
