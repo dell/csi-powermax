@@ -39,7 +39,7 @@ import (
 	"github.com/coreos/go-systemd/v22/dbus"
 	"github.com/dell/gobrick"
 	csictx "github.com/dell/gocsi/context"
-	"github.com/dell/gofsutil"
+	gofsutil "github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
 	log "github.com/sirupsen/logrus"
 
@@ -464,6 +464,7 @@ func (s *service) NodeUnstageVolume(
 	if stageTgt == "" {
 		return nil, status.Error(codes.InvalidArgument, "A Staging Target argument is required")
 	}
+
 	err = gofsutil.Unmount(context.Background(), stageTgt)
 	if err != nil {
 		log.Infof("NodeUnstageVolume error unmount stage target %s: %s", stageTgt, err.Error())
@@ -590,14 +591,13 @@ func (s *service) detachRDM(volID, volumeWWN string) error {
 // disconnectVolume disconnects a volume from a node and will verify it is disconnected
 // by no more /dev/disk/by-id entry, retrying if necessary.
 func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error {
+	var deviceName, symlinkPath, devicePath string
 	for i := 0; i < 3; i++ {
-		var deviceName, symlinkPath, devicePath string
 		symlinkPath, devicePath, _ = gofsutil.WWNToDevicePathX(context.Background(), volumeWWN)
 		if devicePath == "" {
-			if i == 0 {
-				log.Infof("NodeUnstage Note- Didn't find device path for volume %s", volumeWWN)
-			}
-			return nil
+			log.Infof("NodeUnstage  Didn't find device path for volume %s. Retry in %s", volumeWWN, disconnectVolumeRetryTime.String())
+			time.Sleep(disconnectVolumeRetryTime)
+			continue
 		}
 		devicePathComponents := strings.Split(devicePath, "/")
 		deviceName = devicePathComponents[len(devicePathComponents)-1]
@@ -629,18 +629,19 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		time.Sleep(disconnectVolumeRetryTime)
 
 		// Check that the /sys/block/DeviceName actually exists
-		if _, err := ioutil.ReadDir(sysBlock + deviceName); err != nil {
+		if _, err := os.ReadDir(sysBlock + deviceName); err != nil {
 			// If not, make sure the symlink is removed
 			os.Remove(symlinkPath) // #nosec G20
 		}
+
+		// Recheck volume disconnected
+		devicePath, _ = gofsutil.WWNToDevicePath(context.Background(), volumeWWN)
+		if devicePath == "" {
+			return nil
+		}
 	}
 
-	// Recheck volume disconnected
-	devPath, _ := gofsutil.WWNToDevicePath(context.Background(), volumeWWN)
-	if devPath == "" {
-		return nil
-	}
-	return status.Errorf(codes.Internal, "disconnectVolume exceeded retry limit WWN %s devPath %s", volumeWWN, devPath)
+	return status.Errorf(codes.Internal, "disconnectVolume exceeded retry limit WWN %s devPath %s", volumeWWN, devicePath)
 }
 
 // NodePublishVolume handles the CSI request to publish a volume to a target directory.
@@ -1108,7 +1109,7 @@ func (s *service) isISCSIConnected(err error) bool {
 	return false
 }
 
-func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[string]string, error) {
+func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[string]string {
 	topology := map[string]string{}
 	iscsiArrays := make([]string, 0)
 	nvmeTCPArrays := make([]string, 0)
@@ -1139,7 +1140,6 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[s
 		}
 
 		if protocol == NvmeTCPTransportProtocol {
-
 			if s.loggedInNVMeArrays != nil {
 				if isLoggedIn, ok := s.loggedInNVMeArrays[id]; ok && isLoggedIn {
 					nvmeTCPArrays = append(nvmeTCPArrays, id)
@@ -1221,7 +1221,7 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[s
 		}
 	}
 
-	return topology, nil
+	return topology
 }
 
 // checkIfArrayProtocolValid returns true if the  pair (array and protocol) is applicable for the given node based on config
@@ -1287,12 +1287,7 @@ func (s *service) NodeGetInfo(
 			"Unable to get Node Name from the environment")
 	}
 
-	topology, err := s.createTopologyMap(ctx, s.opts.NodeName)
-	if err != nil {
-		log.Errorf("Unable to get the list of symmetrix ids. (%s)", err.Error())
-		return nil, status.Error(codes.FailedPrecondition,
-			"Unable to get the list of symmetrix ids")
-	}
+	topology := s.createTopologyMap(ctx, s.opts.NodeName)
 	if len(topology) == 0 {
 		log.Errorf("No topology keys could be generated")
 		return nil, status.Error(codes.FailedPrecondition, "no topology keys could be generated")
