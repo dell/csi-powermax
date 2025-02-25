@@ -64,9 +64,11 @@ var (
 	multipathMutex              sync.Mutex
 	deviceDeleteMutex           sync.Mutex
 	disconnectVolumeRetryTime   = 1 * time.Second
-	nodePendingState            pendingState
-	sysBlock                    = "/sys/block" // changed for unit testing
-	dev                         = "/dev/"
+	nodePendingState            = pendingState{
+		pendingMutex: &sync.Mutex{},
+	}
+	sysBlock = "/sys/block" // changed for unit testing
+	dev      = "/dev/"
 )
 
 type maskingViewTargetInfo struct {

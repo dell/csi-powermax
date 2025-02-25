@@ -569,7 +569,8 @@ func TestPending(t *testing.T) {
 	}
 	for _, test := range tests {
 		pendState := &pendingState{
-			maxPending: test.maxpending,
+			maxPending:   test.maxpending,
+			pendingMutex: &sync.Mutex{},
 		}
 		for i := 0; i < test.npending; i++ {
 			id := strconv.Itoa(i)
