@@ -159,15 +159,12 @@ func (s *service) getArrayConnectivityStatus(w http.ResponseWriter, r *http.Requ
 func (s *service) startNodeToArrayConnectivityCheck(ctx context.Context) {
 	log.Debug("startNodeToArrayConnectivityCheck called")
 	s.probeStatus = new(sync.Map)
-	pMaxArrays, err := s.retryableGetSymmetrixIDList()
-	if err != nil {
-		log.Errorf("startNodeToArrayConnectivityCheck failed to get symID list %s ", err.Error())
-	} else {
-		for _, arr := range pMaxArrays.SymmetrixIDs {
-			go s.testConnectivityAndUpdateStatus(ctx, arr, Timeout)
-		}
-		log.Infof("startNodeToArrayConnectivityCheck is running probes at pollingFrequency %d ", s.GetPollingFrequency()/2)
+	pMaxArrays := s.retryableGetSymmetrixIDList()
+	for _, arr := range pMaxArrays.SymmetrixIDs {
+		go s.testConnectivityAndUpdateStatus(ctx, arr, Timeout)
 	}
+
+	log.Infof("startNodeToArrayConnectivityCheck is running probes at pollingFrequency %d ", s.GetPollingFrequency()/2)
 }
 
 // testConnectivityAndUpdateStatus runs probe to test connectivity from node to array

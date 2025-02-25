@@ -1107,10 +1107,7 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[s
 	var protocol string
 	var ok bool
 
-	arrays, err := s.retryableGetSymmetrixIDList()
-	if err != nil {
-		return nil, err
-	}
+	arrays := s.retryableGetSymmetrixIDList()
 
 	for _, id := range arrays.SymmetrixIDs {
 		pmaxClient, err := s.GetPowerMaxClient(id)
@@ -1574,11 +1571,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		log.Debug("vmHost created successfully")
 	}
 
-	arrays, err := s.retryableGetSymmetrixIDList()
-	if err != nil {
-		log.Error("Failed to fetch array list. Continuing without initializing node")
-		return err
-	}
+	arrays := s.retryableGetSymmetrixIDList()
 	symmetrixIDs := arrays.SymmetrixIDs
 	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
 
@@ -2210,13 +2203,9 @@ func (s *service) ensureISCSIDaemonStarted() error {
 
 func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error {
 	arrays := &types.SymmetrixIDList{}
-	var err error
 
 	// Get the list of arrays
-	arrays, err = s.retryableGetSymmetrixIDList()
-	if err != nil {
-		return err
-	}
+	arrays = s.retryableGetSymmetrixIDList()
 	// for each array known to unisphere, ensure we have performed ISCSI login for our masking views
 	for _, array := range arrays.SymmetrixIDs {
 		pmaxClient, err := s.GetPowerMaxClient(array)
@@ -2588,26 +2577,10 @@ func (s *service) retryableUpdateHostInitiators(ctx context.Context, array strin
 }
 
 // retryableGetSymmetrixIDList returns the list of arrays
-func (s *service) retryableGetSymmetrixIDList() (*types.SymmetrixIDList, error) {
-	/*var arrays *types.SymmetrixIDList
-	var err error
-	deadline := time.Now().Add(time.Duration(s.GetPmaxTimeoutSeconds()) * time.Second)
-	for tries := 0; time.Now().Before(deadline); tries++ {
-		arrays, err = pmaxClient.GetSymmetrixIDList()
-		if err != nil {
-			// Retry on this error
-			log.Error("failed to retrieve list of arrays; retrying...")
-			time.Sleep(time.Second << uint(tries)) // incremental back-off
-			continue
-		}
-		break
-	}
-	if err != nil {
-		return &types.SymmetrixIDList{}, fmt.Errorf("Unable to retrieve Array List, timed out")
-	}*/
+func (s *service) retryableGetSymmetrixIDList() *types.SymmetrixIDList {
 	return &types.SymmetrixIDList{
 		SymmetrixIDs: s.opts.ManagedArrays,
-	}, nil
+	}
 }
 
 // NodeExpandVolume helps extending a volume size on a node

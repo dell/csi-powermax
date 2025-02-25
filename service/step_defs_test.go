@@ -460,10 +460,7 @@ func (f *feature) aPowerMaxService() error {
 	// Make sure the deletion worker is started.
 	// f.service.startDeletionWorker(false)
 	f.checkGoRoutines("end aPowerMaxService")
-	symIDs, err := f.service.retryableGetSymmetrixIDList()
-	if err != nil {
-		return err
-	}
+	symIDs := f.service.retryableGetSymmetrixIDList()
 	f.service.NewDeletionWorker(f.service.opts.ClusterPrefix, symIDs.SymmetrixIDs)
 	f.errType = ""
 	return nil
@@ -3248,10 +3245,7 @@ func (f *feature) iRepopulateTheDeletionQueues() error {
 
 func (f *feature) iRestartTheDeletionWorker() error {
 	f.service.deletionWorker = nil
-	symIDs, err := f.service.retryableGetSymmetrixIDList()
-	if err != nil {
-		return err
-	}
+	symIDs := f.service.retryableGetSymmetrixIDList()
 	f.service.NewDeletionWorker(f.service.opts.ClusterPrefix, symIDs.SymmetrixIDs)
 	return nil
 }
@@ -4358,10 +4352,7 @@ func (f *feature) iCallBuildHostIDFromTemplateForNodeHost(node string) error {
 }
 
 func (f *feature) iAddFCArrayToProtocolMap() error {
-	arrays, err := f.service.retryableGetSymmetrixIDList()
-	if err != nil {
-		return err
-	}
+	arrays := f.service.retryableGetSymmetrixIDList()
 	if len(arrays.SymmetrixIDs) > 0 {
 		f.fcArray = arrays.SymmetrixIDs[0]
 	}
