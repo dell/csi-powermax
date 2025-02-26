@@ -834,10 +834,12 @@ func (worker *deletionWorker) populateDeletionQueue() {
 			}
 			// Put volume on the queue if appropriate
 			if strings.HasPrefix(volume.VolumeIdentifier, volDeletePrefix) {
-				err = worker.QueueDeviceForDeletion(id, volume.VolumeIdentifier, symID)
-				if err != nil {
-					log.Errorf("Error in queuing device for deletion. Error: %s", err.Error())
-				}
+				go func() {
+					err := worker.QueueDeviceForDeletion(id, volume.VolumeIdentifier, symID)
+					if err != nil {
+						log.Errorf("Error in queuing device for deletion. Error: %s", err.Error())
+					}
+				}()
 			} else {
 				log.Warningf("(Device ID: %s, SymID: %s): skipping as it is not tagged for deletion",
 					volume.VolumeID, symID)
@@ -866,7 +868,7 @@ func (s *service) NewDeletionWorker(clusterPrefix string, symIDs []string) {
 		log.Infof("Configuring deletion worker with Cluster Prefix: %s, Sym IDs: %v",
 			clusterPrefix, symIDs)
 		go delWorker.deletionRequestHandler()
-		go delWorker.populateDeletionQueue()
+		delWorker.populateDeletionQueue()
 		go delWorker.deletionWorker()
 		s.deletionWorker = delWorker
 	}
