@@ -99,6 +99,7 @@ const (
 	altSnapID                  = "555-555"
 	defaultStorageGroup        = "DefaultStorageGroup"
 	defaultIscsiInitiator      = "iqn.1993-08.org.debian:01:5ae293b352a2"
+	AlternateIscsiInitator     = "iqn.2015-10.com.dell:dellemc-foobar-123-a-7ceb34a0"
 	defaultNvmeInitiator       = "nqn.1988-11.com.dell.mock:00:e6e2d5b871f1403E169D0"
 	defaultFcInitiator         = "0x10000090fa6603b7"
 	defaultArrayTargetIQN      = "iqn.1992-04.com.emc:600009700bcbb70e3287017400000001"
@@ -1672,6 +1673,9 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		initiators := []string{initiator}
 		initID := defaultISCSIDirPort1 + ":" + initiator
 		mock.AddInitiator(initID, initiator, "GigE", []string{defaultISCSIDirPort1}, "")
+		initiator2 := AlternateIscsiInitator
+		initID2 := defaultISCSIDirPort2 + ":" + initiator2
+		mock.AddInitiator(initID2, initiator, "GigE", []string{defaultISCSIDirPort2}, "")
 		mock.AddHost(f.hostID, "iSCSI", initiators)
 		mock.AddStorageGroup(f.sgID, "", "")
 		portGroupID := ""

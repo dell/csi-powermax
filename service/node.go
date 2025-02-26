@@ -904,7 +904,7 @@ func (s *service) nodeProbe(ctx context.Context) error {
 }
 
 func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
-	log.Debugf("Entering nodeProbe for array %s", symID)
+	log.Debugf("Entering nodeProbeBySymID for array %s", symID)
 	defer log.Debugf("Exiting nodeProbe for array %s", symID)
 
 	if s.opts.NodeName == "" {
