@@ -3644,10 +3644,10 @@ func (f *feature) arraysAreLoggedInWithProtocol(protocol string) error {
 		isSymConnFC.Store(f.symmetrixID, true)
 	} else if protocol == "iSCSI" {
 		f.service.loggedInArrays = make(map[string]bool)
-		f.service.loggedInArrays[f.symmetrixID] = true
+		f.service.UpdateLoggedInArrays(f.symmetrixID, true)
 	} else if protocol == "NVMe" {
 		f.service.loggedInNVMeArrays = make(map[string]bool)
-		f.service.loggedInNVMeArrays[f.symmetrixID] = true
+		f.service.UpdateLoggedInNVMeArrays(f.symmetrixID, true)
 	}
 	return nil
 }

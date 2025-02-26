@@ -588,17 +588,17 @@ func (s *service) detachRDM(volID, volumeWWN string) error {
 	return nil
 }
 
-// disconnectVolume disconnects a volume from a node and will verify it is disconnected
+// / disconnectVolume disconnects a volume from a node and will verify it is disconnected
 // by no more /dev/disk/by-id entry, retrying if necessary.
 func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error {
-	var deviceName, symlinkPath, devicePath string
-	log.Infof("Disconnecting volume %s devID %s", volumeWWN, devID)
 	for i := 0; i < 3; i++ {
+		var deviceName, symlinkPath, devicePath string
 		symlinkPath, devicePath, _ = gofsutil.WWNToDevicePathX(context.Background(), volumeWWN)
 		if devicePath == "" {
-			log.Infof("NodeUnstage  Didn't find device path for volume %s. Retry in %s", volumeWWN, disconnectVolumeRetryTime.String())
-			time.Sleep(disconnectVolumeRetryTime)
-			continue
+			if i == 0 {
+				log.Infof("NodeUnstage Note- Didn't find device path for volume %s", volumeWWN)
+			}
+			return nil
 		}
 		devicePathComponents := strings.Split(devicePath, "/")
 		deviceName = devicePathComponents[len(devicePathComponents)-1]
@@ -630,19 +630,18 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		time.Sleep(disconnectVolumeRetryTime)
 
 		// Check that the /sys/block/DeviceName actually exists
-		if _, err := os.ReadDir(sysBlock + deviceName); err != nil {
+		if _, err := ioutil.ReadDir(sysBlock + deviceName); err != nil {
 			// If not, make sure the symlink is removed
 			os.Remove(symlinkPath) // #nosec G20
 		}
-
-		// Recheck volume disconnected
-		devicePath, _ = gofsutil.WWNToDevicePath(context.Background(), volumeWWN)
-		if devicePath == "" {
-			return nil
-		}
 	}
 
-	return status.Errorf(codes.Internal, "disconnectVolume exceeded retry limit WWN %s devPath %s", volumeWWN, devicePath)
+	// Recheck volume disconnected
+	devPath, _ := gofsutil.WWNToDevicePath(context.Background(), volumeWWN)
+	if devPath == "" {
+		return nil
+	}
+	return status.Errorf(codes.Internal, "disconnectVolume exceeded retry limit WWN %s devPath %s", volumeWWN, devPath)
 }
 
 // NodePublishVolume handles the CSI request to publish a volume to a target directory.
@@ -1137,11 +1136,9 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 		}
 
 		if protocol == NvmeTCPTransportProtocol {
-			if s.loggedInNVMeArrays != nil {
-				if isLoggedIn, ok := s.loggedInNVMeArrays[id]; ok && isLoggedIn {
-					nvmeTCPArrays = append(nvmeTCPArrays, id)
-					continue
-				}
+			if isLoggedIn, ok := s.GetLoggedInNVMeArrays(id); ok && isLoggedIn {
+				nvmeTCPArrays = append(nvmeTCPArrays, id)
+				continue
 			}
 
 			for _, ip := range ipInterfaces {
@@ -1158,15 +1155,9 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 				}
 			}
 		} else {
-			if s.loggedInArrays != nil {
-				s.cacheMutex.Lock()
-				isLoggedIn, ok := s.loggedInArrays[id]
-				s.cacheMutex.Unlock()
-				if ok && isLoggedIn {
-					iscsiArrays = append(iscsiArrays, id)
-					continue
-				}
-
+			if isLoggedIn, ok := s.GetLoggedInArrays(id); ok && isLoggedIn {
+				iscsiArrays = append(iscsiArrays, id)
+				continue
 			}
 
 			for _, ip := range ipInterfaces {
@@ -1187,7 +1178,6 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 				}
 			}
 		}
-
 	}
 
 	for array, protocol := range s.arrayTransportProtocolMap {
@@ -2067,11 +2057,22 @@ func (s *service) loginIntoISCSITargets(array string, targets []maskingViewTarge
 	}
 	// If we successfully logged into all targets, then marked the array as logged in
 	if loggedInAll {
-		s.cacheMutex.Lock()
-		s.loggedInArrays[array] = true
-		s.cacheMutex.Unlock()
+		s.UpdateLoggedInArrays(array, true)
 	}
 	return err
+}
+
+func (s *service) UpdateLoggedInArrays(array string, value bool) {
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+	s.loggedInArrays[array] = value
+}
+
+func (s *service) GetLoggedInArrays(array string) (isLoggedIn bool, ok bool) {
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+	isLoggedIn, ok = s.loggedInArrays[array]
+	return isLoggedIn, ok
 }
 
 // loginIntoNVMeTargets - for a given array id and list of masking view targets
@@ -2101,11 +2102,22 @@ func (s *service) loginIntoNVMeTCPTargets(array string, targets []maskingViewNVM
 
 	// If we successfully logged into all targets, then marked the array as logged in
 	if loggedInAll {
-		s.cacheMutex.Lock()
-		s.loggedInNVMeArrays[array] = true
-		s.cacheMutex.Unlock()
+		s.UpdateLoggedInNVMeArrays(array, true)
 	}
 	return err
+}
+
+func (s *service) UpdateLoggedInNVMeArrays(array string, value bool) {
+	s.cacheMutex.Lock()
+	s.loggedInNVMeArrays[array] = value
+	s.cacheMutex.Unlock()
+}
+
+func (s *service) GetLoggedInNVMeArrays(array string) (isLoggedIn bool, ok bool) {
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+	isLoggedIn, ok = s.loggedInNVMeArrays[array]
+	return isLoggedIn, ok
 }
 
 // setCHAPCredentials - Sets the CHAP credentials for a list of masking view targets
@@ -2218,28 +2230,23 @@ func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error 
 			log.Error(err.Error())
 			continue
 		}
-		s.cacheMutex.Lock()
 		if _, ok := isSymConnFC.Load(array); ok {
 			// Check if we have marked this array as FC earlier
-			s.cacheMutex.Unlock()
 			continue
 		}
 
-		if s.loggedInArrays[array] {
+		if isLoggedIn, ok := s.GetLoggedInArrays(array); ok && isLoggedIn {
 			// we have already logged into this array
 			log.Debugf("(ISCSI) Already logged into the array: %s", array)
-			s.cacheMutex.Unlock()
 			break
 		}
-		if s.loggedInNVMeArrays[array] {
+		if isLoggedIn, ok := s.GetLoggedInNVMeArrays(array); ok && isLoggedIn {
 			// we have already logged into this array
 			log.Debugf("(NVME) Already logged into the array: %s", array)
-			s.cacheMutex.Unlock()
 			break
 		}
 		if s.useIscsi {
 			log.Debugf("(ISCSI) No logins were done earlier for %s", array)
-			s.cacheMutex.Unlock()
 			_, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
 			log.Infof("Checking if MV %s exists", mvName)
 			// Get iscsi initiators.
