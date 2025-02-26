@@ -1224,7 +1224,7 @@ func TestPerformNVMETCPLoginOnSymID(t *testing.T) {
 			getClient: func() *mocks.MockPmaxClient {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
 				c.EXPECT().GetMaskingViewByID(gmock.All(), "array1", "csi-mv---NVMETCP").AnyTimes().Return(nil,
-					errors.New(fmt.Sprintf("Masking View %s does not exist for array %s, skipping login", "csi-mv---NVMETCP", "array1")))
+					fmt.Errorf("Masking View %s does not exist for array %s, skipping login", "csi-mv---NVMETCP", "array1"))
 				return c
 			},
 			initFunc: func() {
@@ -1250,7 +1250,7 @@ func TestPerformNVMETCPLoginOnSymID(t *testing.T) {
 			getClient: func() *mocks.MockPmaxClient {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
 				c.EXPECT().GetMaskingViewByID(gmock.All(), "array1", "csi-mv---NVMETCP").AnyTimes().Return(nil,
-					errors.New(fmt.Sprintf("Masking View %s not found for array %s, skipping login", "csi-mv---NVMETCP", "array1")))
+					fmt.Errorf("Masking View %s not found for array %s, skipping login", "csi-mv---NVMETCP", "array1"))
 				return c
 			},
 			initFunc: func() {
@@ -2062,7 +2062,7 @@ func TestDisconnectVolume(t *testing.T) {
 			symID:     "symID2",
 			devID:     "devID2",
 			volumeWWN: "60000970000197900046533030300005",
-			initMocksFunc: func(tc tests) {
+			initMocksFunc: func(_ tests) {
 				gofsutil.UseMockFS()
 			},
 			expectedErr:    true,
@@ -2387,7 +2387,7 @@ func TestGetVolumeStats(t *testing.T) {
 }
 
 // This test passes on it own, but causes panic in other tests. Need to investigate
-func DONOTRUN_TestEnsureLoggedIntoEveryArray(t *testing.T) {
+func DONOTRUNTestEnsureLoggedIntoEveryArray(t *testing.T) {
 	type test struct {
 		name               string
 		nodeName           string
