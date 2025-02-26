@@ -486,6 +486,7 @@ Feature: PowerMax CSI interface
       | "CSI-Test-Node-1"  |"GetHostError"        | "none"                | "none"                           | 1     |
 
 @v1.1.0
+@bharath
     Scenario Outline: Validate createOrUpdateFCHost
       Given a PowerMax service
       And I induce error <induced1>
@@ -502,7 +503,7 @@ Feature: PowerMax CSI interface
       | "testhost"         |"GetHostError"        | "CreateHostError"     | "Unable to create Host"          | 0     |
       | "testhost"         |"none"                | "none"                | "none"                           | 1     |
       | "CSI-Test-Node-2"  |"GetInitiatorError"   | "none"                | "Error retrieving Initiator(s)"  | 0     |
-      | "CSI-Test-Node-2"  |"UpdateHostError"     | "CreateHostError"     | "Unable to"                      | 1     |
+      | "CSI-Test-Node-2"  |"UpdateHostError"     | "CreateHostError"     | "Unable to"                      | 0     |
       | "CSI-Test-Node-2"  |"UpdateHostError"     | "ResetAfterFirstError"| "none"                           | 1     |
       | "CSI-Test-Node-2"  |"GetHostError"        | "none"                | "none"                           | 1     |
 

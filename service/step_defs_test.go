@@ -385,7 +385,6 @@ func (f *feature) aPowerMaxService() error {
 	gofsutil.GOFSMock.InduceResizeFSError = false
 	gofsutil.GOFSMock.InduceGetDiskFormatType = ""
 	gofsutil.GOFSMockMounts = gofsutil.GOFSMockMounts[:0]
-	//gofsutil.GOFSMockWWNToDevice = make(map[string]string)
 	gofsutil.GOFSMockTargetIPLUNToDevice = make(map[string]string)
 	gofsutil.GOFSRescanCallback = nil
 	gofsutil.GOFSMockWWNToDevice = map[string]string{nodePublishWWN: "00501"}
@@ -508,7 +507,7 @@ func (f *feature) getService() *service {
 	mock.AddPortGroupWithPortID("portgroup2", IscsiTransportProtocol, []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 	mock.AddPortGroupWithPortID("portgroup3", NvmeTCPTransportProtocol, []string{defaultNVMEDirPort})
 	mock.AddPortGroupWithPortID("portgroup4", FcTransportProtocol, []string{defaultFCDirPort})
-	opts.TransportProtocol = NvmeTCPTransportProtocol
+
 	opts.ManagedArrays = []string{"000197900046", "000197900047", "000000000013"}
 	opts.NodeFullName, _ = os.Hostname()
 	opts.EnableSnapshotCGDelete = true
@@ -3642,8 +3641,10 @@ func (f *feature) thereAreNoArraysLoggedIn() error {
 
 func (f *feature) arraysAreLoggedInWithProtocol(protocol string) error {
 	f.service.SetPmaxTimeoutSeconds(3)
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
 	if protocol == "FC" {
-		isSymConnFC[f.symmetrixID] = true
+		isSymConnFC.Store(f.symmetrixID, true)
 	} else if protocol == "iSCSI" {
 		f.service.loggedInArrays = make(map[string]bool)
 		f.service.loggedInArrays[f.symmetrixID] = true
@@ -3656,7 +3657,8 @@ func (f *feature) arraysAreLoggedInWithProtocol(protocol string) error {
 
 func (f *feature) iInvokeEnsureLoggedIntoEveryArray() error {
 	f.service.SetPmaxTimeoutSeconds(3)
-	isSymConnFC = make(map[string]bool) // Ensure none of the other test marked the array as FC
+	isSymConnFC.Clear()
+	// Ensure none of the other test marked the array as FC
 	f.err = f.service.ensureLoggedIntoEveryArray(context.Background(), false)
 	return nil
 }
