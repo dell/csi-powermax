@@ -1078,7 +1078,7 @@ func (s *service) NodeGetCapabilities(
 	}, nil
 }
 
-func (s *service) getIPInterfaces(ctx context.Context, symID string, portGroups []string, pmaxClient pmax.Pmax) ([]string, error) {
+func (s *service)  getIPInterfaces(ctx context.Context, symID string, portGroups []string, pmaxClient pmax.Pmax) ([]string, error) {
 	ipInterfaces := make([]string, 0)
 	for _, pg := range portGroups {
 		portGroup, err := pmaxClient.GetPortGroupByID(ctx, symID, pg)
@@ -1086,16 +1086,12 @@ func (s *service) getIPInterfaces(ctx context.Context, symID string, portGroups 
 			return nil, err
 		}
 
-		if strings.Contains(strings.ToLower(portGroup.PortGroupType), strings.ToLower(s.opts.TransportProtocol)) {
-			for _, portKey := range portGroup.SymmetrixPortKey {
-				port, err := pmaxClient.GetPort(ctx, symID, portKey.DirectorID, portKey.PortID)
-				if err != nil {
-					return nil, err
-				}
-				ipInterfaces = append(ipInterfaces, port.SymmetrixPort.IPAddresses...)
+		for _, portKey := range portGroup.SymmetrixPortKey {
+			port, err := pmaxClient.GetPort(ctx, symID, portKey.DirectorID, portKey.PortID)
+			if err != nil {
+				return nil, err
 			}
-		} else {
-			log.Infof("Skipping port group %s with %s as it is not %s", pg, portGroup.PortGroupType, s.opts.TransportProtocol)
+			ipInterfaces = append(ipInterfaces, port.SymmetrixPort.IPAddresses...)
 		}
 	}
 	return ipInterfaces, nil

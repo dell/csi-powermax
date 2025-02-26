@@ -908,8 +908,8 @@ func TestGetHostForVsphere(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pmaxClient := func() *mocks.MockPmaxClient {
 				client := mocks.NewMockPmaxClient(gmock.NewController(t))
-				client.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(client)
-				client.EXPECT().WithSymmetrixID(symIDRemote).AnyTimes().Return(client)
+				// client.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(client)
+				// client.EXPECT().WithSymmetrixID(symIDRemote).AnyTimes().Return(client)
 				client.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
 				client.EXPECT().GetHostByID(gmock.Any(), gmock.Any(), gmock.Any()).AnyTimes().Return(tt.hostResponse, tt.hostResponseError)
 				client.EXPECT().GetHostGroupByID(gmock.Any(), gmock.Any(), gmock.Any()).AnyTimes().Return(tt.hostGroupResponse, tt.hostGroupResponseErr)
@@ -973,7 +973,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 			NQNs:     []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"},
 			getClient: func() *mocks.MockPmaxClient {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
-				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				// c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
 				c.EXPECT().GetHostByID(gmock.All(), "array1", "host1").AnyTimes().Return(&types.Host{
 					HostID: "host1",
 					Initiators: []string{
@@ -1002,7 +1002,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 			NQNs:     []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"},
 			getClient: func() *mocks.MockPmaxClient {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
-				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				// c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
 				c.EXPECT().GetHostByID(gmock.All(), "array1", "host1").AnyTimes().Return(nil, errors.New("host not found"))
 				c.EXPECT().CreateHost(gmock.All(), "array1", "host1", gmock.Any(), gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				c.EXPECT().GetInitiatorList(gmock.All(), "array1", "", false, false).AnyTimes().Return(&types.InitiatorList{}, nil)
@@ -1024,7 +1024,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 			NQNs:     []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"},
 			getClient: func() *mocks.MockPmaxClient {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
-				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				// c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
 				c.EXPECT().GetHostByID(gmock.All(), "array1", "host1").AnyTimes().Return(nil, errors.New("host not found"))
 				c.EXPECT().CreateHost(gmock.All(), "array1", "host1", gmock.Any(), gmock.Any()).AnyTimes().Return(nil, errors.New("create host failed"))
 				c.EXPECT().GetInitiatorList(gmock.All(), "array1", "", false, false).AnyTimes().Return(&types.InitiatorList{}, nil)
@@ -1045,7 +1045,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 			NQNs:     []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"},
 			getClient: func() *mocks.MockPmaxClient {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
-				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				// c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
 				c.EXPECT().GetHostByID(gmock.All(), "array1", "host1").AnyTimes().Return(nil, errors.New("host not found"))
 				c.EXPECT().CreateHost(gmock.All(), "array1", "host1", gmock.Any(), gmock.Any()).AnyTimes().Return(nil, errors.New("is not in the format of a valid NQN:HostID"))
 				c.EXPECT().GetInitiatorList(gmock.All(), "array1", "", false, false).AnyTimes().Return(&types.InitiatorList{
@@ -1104,7 +1104,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 			NQNs:     []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00222"},
 			getClient: func() *mocks.MockPmaxClient {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
-				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
+				// c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
 				c.EXPECT().GetHostByID(gmock.All(), "array1", "host1").AnyTimes().Return(&types.Host{
 					HostID: "host1",
 					Initiators: []string{
@@ -2288,30 +2288,6 @@ func TestGetIPIntefaces(t *testing.T) {
 			},
 			want: nil,
 		},
-		{
-			name:              "Error case, wrong protocol",
-			arrayTargets:      []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"},
-			symID:             "array1",
-			portGroups:        []string{"portgroup1"},
-			transportProtocol: "FC",
-			getClient: func() *mocks.MockPmaxClient {
-				c := mocks.NewMockPmaxClient(gmock.NewController(t))
-				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
-					PortGroupType: "NVMETCP",
-					SymmetrixPortKey: []types.PortKey{
-						{
-							DirectorID: "director1",
-							PortID:     "port1",
-						},
-					},
-				}, nil)
-				return c
-			},
-			init: func() {
-				symToAllNVMeTCPTargets.Clear()
-			},
-			want: nil,
-		},
 	}
 
 	// Run the tests
@@ -2365,7 +2341,7 @@ func TestGetVolumeStats(t *testing.T) {
 }
 
 // This test passes on it own, but causes panic in other tests. Need to investigate
-func DONOTRUNTestEnsureLoggedIntoEveryArray(t *testing.T) {
+func DONOTTestEnsureLoggedIntoEveryArray(t *testing.T) {
 	type test struct {
 		name               string
 		nodeName           string
