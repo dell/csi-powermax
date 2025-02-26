@@ -542,13 +542,14 @@ Feature: PowerMax CSI interface
       And I have a Node "node1" with MaskingView
       And there are no arrays logged in
       And I induce error <induced1>
+      And I invalidate symToMaskingViewTarget cache
       When I invoke ensureLoggedIntoEveryArray
       Then the error contains <errormsg>
       And <count> arrays are logged in
 
       Examples:
       | induced1               | errormsg                           | count |
-#      | "GetSymmetrixError"    | "Unable to retrieve Array List"   | 0     |
+#     | "GetSymmetrixError"    | "Unable to retrieve Array List"    | 0     |
       | "GOISCSIDiscoveryError"| "failed to login"                  | 0     |
       | "none"                 | "none"                             | 3     |
 
