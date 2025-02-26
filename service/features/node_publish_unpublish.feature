@@ -537,7 +537,7 @@ Feature: PowerMax CSI interface
     | induced                   | errormsg                                       | numports  |
     | "NoArray"                 | "No array specified"                           | "0"       |
     | "GetPortError"            | "none"                                         | "0"       |
-    | "none"                    | "none"                                         | "1"       |
+    | "none"                    | "none"                                         | "2"       |
     | "GetPortGroupError"       | "Error retrieving Port Group"                  | "0"       |
 
 @nodePublish

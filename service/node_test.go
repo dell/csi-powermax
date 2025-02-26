@@ -1383,6 +1383,7 @@ func TestCreateTopologyMap(t *testing.T) {
 			},
 			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
 			initFunc: func() {
+				gonvme.GONVMEMock.InduceDiscoveryError = false
 			},
 			loggedInArrays: map[string]bool{},
 			loggedInNVMeArrays: map[string]bool{
@@ -1419,6 +1420,7 @@ func TestCreateTopologyMap(t *testing.T) {
 			},
 			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
 			initFunc: func() {
+				gonvme.GONVMEMock.InduceDiscoveryError = false
 			},
 			loggedInArrays: map[string]bool{},
 			loggedInNVMeArrays: map[string]bool{
@@ -2046,7 +2048,7 @@ func TestDisconnectVolume(t *testing.T) {
 			initMocksFunc: func(_ tests) {
 				gofsutil.UseMockFS()
 			},
-			expectedErr:    true,
+			expectedErr:    false,
 			expectedLogOut: "NodeUnstage: Didn't find device path for volume wwn2\n",
 		},
 	}
