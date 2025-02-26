@@ -1078,7 +1078,7 @@ func (s *service) NodeGetCapabilities(
 	}, nil
 }
 
-func (s *service)  getIPInterfaces(ctx context.Context, symID string, portGroups []string, pmaxClient pmax.Pmax) ([]string, error) {
+func (s *service) getIPInterfaces(ctx context.Context, symID string, portGroups []string, pmaxClient pmax.Pmax) ([]string, error) {
 	ipInterfaces := make([]string, 0)
 	for _, pg := range portGroups {
 		portGroup, err := pmaxClient.GetPortGroupByID(ctx, symID, pg)
