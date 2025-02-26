@@ -278,9 +278,6 @@ func (f *feature) aPowerMaxService() error {
 		pmaxCache = make(map[string]*pmaxCachedInformation)
 	}
 
-	// symToAllNVMeTCPTargets.Clear()
-	// symToAllISCSITargets.Clear()
-	// symToMaskingViewTargets.Clear()
 	nodeCache = sync.Map{}
 	f.err = nil
 	f.symmetrixID = mock.DefaultSymmetrixID
@@ -1643,7 +1640,7 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		mock.AddInitiator(initID, initiator, "Fibre", []string{defaultFCDirPort}, "")
 		mock.AddHost(f.hostID, "Fibre", initiators)
 		mock.AddStorageGroup(f.sgID, "", "")
-		mock.Filters.GetNVMePorts = false
+		mock.SafeSetInducedError(mock.Filters, "GetNVMePorts", false)
 		portGroupID := ""
 		if f.selectedPortGroup != "" {
 			portGroupID = f.selectedPortGroup
@@ -1666,7 +1663,7 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		} else {
 			portGroupID = "nvmetcp_ports"
 		}
-		mock.Filters.GetNVMePorts = true
+		mock.SafeSetInducedError(mock.Filters, "GetNVMePorts", true)
 		mock.AddPortGroupWithPortID(portGroupID, "NVMETCP", []string{defaultNVMEDirPort})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	} else {
@@ -1677,13 +1674,13 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		mock.AddInitiator(initID, initiator, "GigE", []string{defaultISCSIDirPort1}, "")
 		mock.AddHost(f.hostID, "iSCSI", initiators)
 		mock.AddStorageGroup(f.sgID, "", "")
-		mock.Filters.GetNVMePorts = false
 		portGroupID := ""
 		if f.selectedPortGroup != "" {
 			portGroupID = f.selectedPortGroup
 		} else {
 			portGroupID = "iscsi_ports"
 		}
+		mock.SafeSetInducedError(mock.Filters, "GetNVMePorts", false)
 		mock.AddPortGroupWithPortID(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	}

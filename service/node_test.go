@@ -95,8 +95,6 @@ func TestGetNVMeTCPTargets(t *testing.T) {
 	// Run the tests
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lockMutex.Lock()
-			defer lockMutex.Unlock()
 			// Create a new service instance for testing
 			s := &service{
 				opts: Opts{
@@ -472,9 +470,6 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 	for _, tc := range testCases {
 		tc.pmaxClient = tc.getClient()
 		t.Run(tc.name, func(t *testing.T) {
-			lockMutex.Lock()
-			defer lockMutex.Unlock()
-
 			s := &service{
 				opts: Opts{
 					UseProxy: true,
@@ -818,8 +813,6 @@ func TestGetAndConfigureISCSITargets(t *testing.T) {
 	for _, tc := range testCases {
 		tc.pmaxClient = tc.getClient()
 		t.Run(tc.name, func(t *testing.T) {
-			lockMutex.Lock()
-			defer lockMutex.Unlock()
 			s := &service{
 				opts: Opts{
 					UseProxy: true,
@@ -913,9 +906,6 @@ func TestGetHostForVsphere(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			lockMutex.Lock()
-			defer lockMutex.Unlock()
-
 			pmaxClient := func() *mocks.MockPmaxClient {
 				client := mocks.NewMockPmaxClient(gmock.NewController(t))
 				client.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(client)
@@ -1141,8 +1131,6 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 	for _, tc := range testCases {
 		tc.pmaxClient = tc.getClient()
 		t.Run(tc.name, func(t *testing.T) {
-			lockMutex.Lock()
-			defer lockMutex.Unlock()
 			s := &service{
 				opts: Opts{
 					UseProxy: true,
@@ -1328,8 +1316,6 @@ func TestPerformNVMETCPLoginOnSymID(t *testing.T) {
 	// Run the tests
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lockMutex.Lock()
-			defer lockMutex.Unlock()
 			// Create a new service instance for testing
 			s := &service{
 				opts: Opts{
@@ -1634,8 +1620,6 @@ func TestCreateTopologyMap(t *testing.T) {
 	// Run the tests
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lockMutex.Lock()
-			defer lockMutex.Unlock()
 			// Create a new service instance for testing
 			s := &service{
 				opts: Opts{
@@ -1924,9 +1908,6 @@ func TestNodeGetInfo(t *testing.T) {
 	// Run the tests
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lockMutex.Lock()
-			defer lockMutex.Unlock()
-
 			// Create a new service instance for testing
 			s := &service{
 				opts: Opts{
@@ -2337,9 +2318,6 @@ func TestGetIPIntefaces(t *testing.T) {
 	for _, tc := range testCases {
 		tc.pmaxClient = tc.getClient()
 		t.Run(tc.name, func(t *testing.T) {
-			lockMutex.Lock()
-			defer lockMutex.Unlock()
-
 			s := &service{
 				opts: Opts{
 					UseProxy:          true,
@@ -2588,9 +2566,6 @@ func DONOTRUNTestEnsureLoggedIntoEveryArray(t *testing.T) {
 	// Run the tests
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			lockMutex.Lock()
-			defer lockMutex.Unlock()
-
 			// Create a new service instance for testing
 			s := &service{
 				opts: Opts{

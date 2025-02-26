@@ -465,7 +465,6 @@ Feature: PowerMax CSI interface
       And no error was received
 
 @v1.0.0
-@bharath
     Scenario Outline: Validate createOrUpdateIscsiHost
       Given a PowerMax service
       And I induce error <induced1>
@@ -481,12 +480,11 @@ Feature: PowerMax CSI interface
       | "testhost"         |"NoIQNs"              | "none"                | "No IQNs specified"              | 0     |
       | "testhost"         |"GetHostError"        | "CreateHostError"     | "Unable to create Host"          | 0     |
       | "testhost"         |"none"                | "none"                | "none"                           | 1     |
-      | "CSI-Test-Node-1"  |"UpdateHostError"     | "none"                | "none"          | 1     |
+      | "CSI-Test-Node-1"  |"UpdateHostError"     | "none"                | "none"                           | 1     |
       | "CSI-Test-Node-1"  |"UpdateHostError"     | "ResetAfterFirstError"| "none"                           | 1     |
       | "CSI-Test-Node-1"  |"GetHostError"        | "none"                | "none"                           | 1     |
 
 @v1.1.0
-@bharath
     Scenario Outline: Validate createOrUpdateFCHost
       Given a PowerMax service
       And I induce error <induced1>
@@ -508,7 +506,6 @@ Feature: PowerMax CSI interface
       | "CSI-Test-Node-2"  |"GetHostError"        | "none"                | "none"                           | 1     |
 
 @v1.1.0
-@bharath
     Scenario Outline: Validate nodeHostSetup
       Given a PowerMax service
       And I set transport protocol to <transport>
