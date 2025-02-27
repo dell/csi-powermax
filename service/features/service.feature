@@ -822,24 +822,6 @@ Scenario: Identity ProbeController good call
   When I call ProbeController
   Then a valid ProbeControllerResponse is returned
   
-  
-
-@v2.14.0
-
-Scenario: Identity Node probe by sym id good call, all protocols
-  Given a PowerMax service
-  And I set transport protocol to <protocol>
-  And I have a Node <node> with MaskingView
-  And I invoke nodeHostSetup with a "node" service
-  When I call ProbeNodeBySymID <symid>  
-  Then no error was received
-  Examples:
-    | symid                 | protocol    | node    |
-    | "000197900046"        | "FC"        | "node1" |
-    | "000197900046"        | "ISCSI"     | "node2" |
-    | "000197900046"        | "NVMETCP"   | "node3" |
-
-
 @v2.9.0
 Scenario: Identity GetReplicationCapabilities good call
   Given a PowerMax service
@@ -897,3 +879,17 @@ Scenario: Create a fileSystem volume with error
   And I induce error "GetFileSystemError"
   And I call fileSystem CreateVolume "volume1"
   Then the error contains "induced error"
+
+@v2.14.0
+Scenario: Identity Node probe by sym id good call, all protocols
+  Given a PowerMax service
+  And I set transport protocol to <protocol>
+  And I have a Node <node> with MaskingView
+  And I invoke nodeHostSetup with a "node" service
+  When I call ProbeNodeBySymID <symid>  
+  Then no error was received
+  Examples:
+    | symid                 | protocol    | node    |
+    | "000197900046"        | "FC"        | "node1" |   
+    | "000197900046"        | "NVMETCP"   | "node3" |
+    | "000197900046"        | "ISCSI"     | "node2" |
