@@ -56,20 +56,21 @@ Feature: PowerMax CSI interface
     | transport | error                                   | errormsg                                                          |
     | "FC"      | "InduceOverloadError"                   | "overload"                                                        |
     | "FC"      | "TargetNotCreatedForNodePublish"        | "none"                                                            |
-    | "FC"      | "BadVolumeIdentifier"                   | "bad volume identifier" |
+    | "FC"      | "BadVolumeIdentifier"                   | "bad volume identifier"                                           |
     | "FC"      | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"                     |
     | "FC"      | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
     | "FC"      | "GobrickConnectError"                   | "induced ConnectVolumeError"                                      |
-    | "ISCSI"   | "TargetNotCreatedForNodePublish"        | "none"                                                            |
-    | "ISCSI"   | "BadVolumeIdentifier"                   | "bad volume identifier" |
+    | "ISCSI"   | "TargetNotCreatedForNodePublish"        | "none"         |
+    | "ISCSI"   | "BadVolumeIdentifier"                   | "bad volume identifier"                                           |
     | "ISCSI"   | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"                     |
     | "ISCSI"   | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
-    | "ISCSI"   | "GobrickConnectError"                   | "induced ConnectVolumeError"                                      |
-    | "NVME"    | "TargetNotCreatedForNodePublish"        | "none"                                                            |
+    | "ISCSI"   | "GobrickConnectError"                   | "Unable to find device after multiple discovery attempts"         |
+    | "NVME"    | "TargetNotCreatedForNodePublish"        | "none"                                            |
     | "NVME"    | "BadVolumeIdentifier"                   | "bad volume identifier"                                           |
     | "NVME"    | "UnspecifiedNodeName"                   | "Error getting NodeName from the environment"                     |
     | "NVME"    | "NodePublishNoTargetPath"               | "Target Path is required"                                         |
-    | "NVME"    | "GobrickConnectError"                   | "induced ConnectVolumeError"                                      |
+    | "NVME"    | "GobrickConnectError"                   | "Unable to find device after multiple discovery attempts"         |
+
 
 @nodePublish
 @v1.0.0
@@ -88,6 +89,25 @@ Feature: PowerMax CSI interface
     | "FC"      | "none"           |
     | "ISCSI"   | "none"           |
     | "NVME"    | "none"           |
+
+@nodePublish
+@v1.0.0
+  Scenario Outline: Node stage block volume no error (local and remote arrays specified), different transport protocols from examples
+    Given a PowerMax service
+    And I set transport protocol to <transport>
+    And I have a Node "node1" with MaskingView
+    And a controller published volume
+    And a capability with voltype "block" access "single-writer" fstype "none"  
+    And I call Node Publish Volume Request with Local and Remote Array
+    When I call NodeStageVolume
+    Then the error contains <errormsg>
+
+    Examples:
+    | transport |  errormsg        |                                                  
+    | "FC"      | "none"           |
+    | "ISCSI"   | "none"           |
+    | "NVME"    | "none"           |
+
 
 @nodePublish
 @v1.0.0
@@ -506,19 +526,21 @@ Feature: PowerMax CSI interface
 @v1.0.0
   Scenario Outline: GetTargetsForMaskingView with various induced error
     Given a PowerMax service
-    And I request a PortGroup
-    And I have a Node "node1" with MaskingView
+    And I set transport protocol to <protocol>
+    And I have a Node "node1" with MaskingView    
     And I induce error <induced>
     And I call GetTargetsForMaskingView
     Then the error contains <errormsg>
     And the result has <numports> ports
 
     Examples:
-    | induced                   | errormsg                                       | numports  |
-    | "NoArray"                 | "No array specified"                           | "0"       |
-    | "GetPortError"            | "none"                                         | "0"       |
-    | "none"                    | "none"                                         | "2"       |
-    | "GetPortGroupError"       | "Error retrieving Port Group"                  | "0"       |
+    | induced                   | errormsg                                       | numports  | protocol |
+    | "NoArray"                 | "No array specified"                           | "0"       | "ISCSI"  |
+    | "GetPortError"            | "none"                                         | "0"       | "ISCSI"  |
+    | "none"                    | "none"                                         | "2"       | "ISCSI"  |
+    | "none"                    | "none"                                         | "1"       | "FC"     |
+    | "none"                    | "none"                                         | "1"       | "NVME"   |
+    | "GetPortGroupError"       | "Error retrieving Port Group"                  | "0"       | "ISCSI"  |
 
 @nodePublish
 @v1.0.0

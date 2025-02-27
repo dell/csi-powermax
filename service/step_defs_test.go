@@ -75,6 +75,7 @@ const (
 	datadir2                   = "test/tmp/datadir2"
 	volume1                    = "CSIXX-Int409498632-000197900046-00501"
 	volume2                    = "CSIXX-Int409498632-000197900046-00502"
+	volumeWithRemote1          = "CSIXX-Int409498632-000197900046:000197900046-00501:00502"
 	volume0                    = "CSI-notfound-000197900046-00500"
 	nodePublishBlockDevice     = "sdc"
 	altPublishBlockDevice      = "sdd"
@@ -88,16 +89,21 @@ const (
 	nodePublishPrivateDir      = "test/tmp"
 	nodePublishWWN             = "60000970000197900046533030300501"
 	nodePublishAltWWN          = "60000970000197900046533030300502"
+	remoteNodePublishWWN       = "60000970000197900046533030300501"
+	remoteNodePublishAltWWN    = "60000970000197900046533030300502"
 	nodePublishLUNID           = "3"
+	remoteNodePublishLUNID     = "4"
 	iSCSIEtcDir                = "test/etc/iscsi"
 	iSCSIEtcFile               = "initiatorname.iscsi"
 	goodSnapID                 = "444-444"
 	altSnapID                  = "555-555"
 	defaultStorageGroup        = "DefaultStorageGroup"
 	defaultIscsiInitiator      = "iqn.1993-08.org.debian:01:5ae293b352a2"
-	defaultNvmeInitiator       = "nqn.2019-08.org.emc:sn.0x10000090fa6603b7"
+	alternateIscsiInitator     = "iqn.2015-10.com.dell:dellemc-foobar-123-a-7ceb34a0"
+	defaultNvmeInitiator       = "nqn.1988-11.com.dell.mock:00:e6e2d5b871f1403E169D0"
 	defaultFcInitiator         = "0x10000090fa6603b7"
 	defaultArrayTargetIQN      = "iqn.1992-04.com.emc:600009700bcbb70e3287017400000001"
+	defaultAraryTargetNQN      = "nqn.1988-11.com.dell.mock:00:e6e2d5b871f1403E169D0"
 	defaultFcInitiatorWWN      = "10000090fa6603b7"
 	defaultFcStoragePortWWN    = "5000000000000001"
 	portalIP                   = "1.2.3.4"
@@ -105,7 +111,7 @@ const (
 	defaultFCDirPort           = "FA-1D:4"
 	defaultISCSIDirPort1       = "SE1-E:6"
 	defaultISCSIDirPort2       = "SE2-E:4"
-	defaultNVMEDirPort         = "N:2"
+	defaultNVMEDirPort         = "OR-1C:6"
 	MaxRetries                 = 10
 	Namespace                  = "namespace-test"
 	kubeconfig                 = "/etc/kubernetes/admin.conf"
@@ -272,6 +278,7 @@ func (f *feature) aPowerMaxService() error {
 	if pmaxCache != nil {
 		pmaxCache = make(map[string]*pmaxCachedInformation)
 	}
+
 	nodeCache = sync.Map{}
 	f.err = nil
 	f.symmetrixID = mock.DefaultSymmetrixID
@@ -376,9 +383,9 @@ func (f *feature) aPowerMaxService() error {
 	gofsutil.GOFSMock.InduceResizeFSError = false
 	gofsutil.GOFSMock.InduceGetDiskFormatType = ""
 	gofsutil.GOFSMockMounts = gofsutil.GOFSMockMounts[:0]
-	gofsutil.GOFSMockWWNToDevice = make(map[string]string)
 	gofsutil.GOFSMockTargetIPLUNToDevice = make(map[string]string)
 	gofsutil.GOFSRescanCallback = nil
+	gofsutil.GOFSMockWWNToDevice = map[string]string{nodePublishWWN: "00501"}
 
 	// configure variables in the driver
 	getMappedVolMaxRetry = 1
@@ -493,9 +500,12 @@ func (f *feature) getService() *service {
 	opts.EnableBlock = true
 	opts.KubeConfigPath = kubeconfig
 	opts.NodeName, _ = os.Hostname()
-	opts.PortGroups = []string{"portgroup1", "portgroup2"}
-	mock.AddPortGroupWithPortID("portgroup1", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
-	mock.AddPortGroupWithPortID("portgroup2", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+	opts.PortGroups = []string{"portgroup1", "portgroup2", "portgroup3", "portgroup4"}
+	mock.AddPortGroupWithPortID("portgroup1", IscsiTransportProtocol, []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+	mock.AddPortGroupWithPortID("portgroup2", IscsiTransportProtocol, []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+	mock.AddPortGroupWithPortID("portgroup3", NvmeTCPTransportProtocol, []string{defaultNVMEDirPort})
+	mock.AddPortGroupWithPortID("portgroup4", FcTransportProtocol, []string{defaultFCDirPort})
+
 	opts.ManagedArrays = []string{"000197900046", "000197900047", "000000000013"}
 	opts.NodeFullName, _ = os.Hostname()
 	opts.EnableSnapshotCGDelete = true
@@ -641,6 +651,15 @@ func (f *feature) iCallProbeController() error {
 	f.checkGoRoutines("before probe")
 	f.probeControllerResponse, f.err = f.service.ProbeController(ctx, req)
 	f.checkGoRoutines("after probe")
+	return nil
+}
+
+func (f *feature) iCallProbeNodeBySymID(symID string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	f.checkGoRoutines("before node probe")
+	f.err = f.service.nodeProbeBySymID(ctx, symID)
+	f.checkGoRoutines("after node probe")
 	return nil
 }
 
@@ -1622,6 +1641,7 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		mock.AddInitiator(initID, initiator, "Fibre", []string{defaultFCDirPort}, "")
 		mock.AddHost(f.hostID, "Fibre", initiators)
 		mock.AddStorageGroup(f.sgID, "", "")
+		mock.SafeSetInducedError(mock.Filters, "GetNVMePorts", false)
 		portGroupID := ""
 		if f.selectedPortGroup != "" {
 			portGroupID = f.selectedPortGroup
@@ -1630,28 +1650,34 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		}
 		mock.AddPortGroupWithPortID(portGroupID, "Fibre", []string{defaultFCDirPort})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
-	} else if transportProtocol == "NVME" {
+	} else if transportProtocol == "NVME" || transportProtocol == "NVMETCP" {
 		f.hostID, f.sgID, f.mvID = f.service.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
 		initiator := defaultNvmeInitiator
 		initiators := []string{initiator}
-		initID := defaultISCSIDirPort1 + ":" + initiator
-		mock.AddInitiator(initID, initiator, "GigE", []string{defaultNVMEDirPort}, "")
-		mock.AddHost(f.hostID, "iSCSI", initiators)
+		initID := defaultNVMEDirPort + ":" + initiator
+		mock.AddInitiator(initID, initiator, "OSHostAndRDF", []string{defaultNVMEDirPort}, "")
+		mock.AddHost(f.hostID, "OSHostAndRDF", initiators)
 		mock.AddStorageGroup(f.sgID, "", "")
 		portGroupID := ""
 		if f.selectedPortGroup != "" {
 			portGroupID = f.selectedPortGroup
 		} else {
-			portGroupID = "iscsi_ports"
+			portGroupID = "nvmetcp_ports"
 		}
-		mock.AddPortGroupWithPortID(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+		mock.SafeSetInducedError(mock.Filters, "GetNVMePorts", true)
+		mock.AddPortGroupWithPortID(portGroupID, "NVMETCP", []string{defaultNVMEDirPort})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	} else {
 		f.hostID, f.sgID, f.mvID = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
-		initiator := defaultIscsiInitiator
-		initiators := []string{initiator}
-		initID := defaultISCSIDirPort1 + ":" + initiator
-		mock.AddInitiator(initID, initiator, "GigE", []string{defaultISCSIDirPort1}, "")
+		initiator1 := defaultIscsiInitiator
+		initID := defaultISCSIDirPort1 + ":" + initiator1
+		mock.AddInitiator(initID, initiator1, "GigE", []string{defaultISCSIDirPort1}, "")
+
+		initiator2 := alternateIscsiInitator
+		initID2 := defaultISCSIDirPort2 + ":" + initiator2
+		mock.AddInitiator(initID2, initiator2, "GigE", []string{defaultISCSIDirPort2}, "")
+
+		initiators := []string{initiator1, initiator2}
 		mock.AddHost(f.hostID, "iSCSI", initiators)
 		mock.AddStorageGroup(f.sgID, "", "")
 		portGroupID := ""
@@ -1660,6 +1686,7 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		} else {
 			portGroupID = "iscsi_ports"
 		}
+		mock.SafeSetInducedError(mock.Filters, "GetNVMePorts", false)
 		mock.AddPortGroupWithPortID(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	}
@@ -1943,8 +1970,16 @@ func (f *feature) aValidNodeGetInfoResponseIsReturned() error {
 	if f.nodeGetInfoResponse.AccessibleTopology == nil {
 		return errors.New("no topology keys created")
 	} else if f.fcArray != "" {
-		if _, ok := f.nodeGetInfoResponse.AccessibleTopology.Segments[f.service.getDriverName()+"/"+f.fcArray+"."+strings.ToLower(FcTransportProtocol)]; !ok {
-			return errors.New("toplogy keys not created properly")
+		fcKey := f.service.getDriverName() + "/" + f.fcArray + "." + strings.ToLower(FcTransportProtocol)
+		iscsiKey := f.service.getDriverName() + "/" + f.fcArray + "." + strings.ToLower(IscsiTransportProtocol)
+		nvmeKey := f.service.getDriverName() + "/" + f.fcArray + "." + strings.ToLower(NvmeTCPTransportProtocol)
+
+		if _, fcOk := f.nodeGetInfoResponse.AccessibleTopology.Segments[fcKey]; !fcOk {
+			if _, iscsiOk := f.nodeGetInfoResponse.AccessibleTopology.Segments[iscsiKey]; !iscsiOk {
+				if _, nvmeOk := f.nodeGetInfoResponse.AccessibleTopology.Segments[nvmeKey]; !nvmeOk {
+					return errors.New("topology keys not created properly for FC, iSCSI, and NVMe")
+				}
+			}
 		}
 	}
 	fmt.Printf("NodeID %s\n", f.nodeGetInfoResponse.NodeId)
@@ -2541,8 +2576,10 @@ func (f *feature) getPortIdentifiers(portCount int) string {
 	portIDs := ""
 	if f.service.opts.TransportProtocol == FcTransportProtocol {
 		portIDs = strings.Repeat(fmt.Sprintf("%s,", defaultFcInitiator), portCount)
-	} else {
+	} else if f.service.opts.TransportProtocol == IscsiTransportProtocol {
 		portIDs = strings.Repeat(fmt.Sprintf("%s,", defaultArrayTargetIQN), portCount)
+	} else {
+		portIDs = strings.Repeat(fmt.Sprintf("%s,", defaultAraryTargetNQN), portCount)
 	}
 	return portIDs
 }
@@ -2561,12 +2598,66 @@ func (f *feature) getNodePublishVolumeRequest() error {
 	req.PublishContext = make(map[string]string)
 	req.PublishContext[PublishContextDeviceWWN] = nodePublishWWN
 	req.PublishContext[PublishContextLUNAddress] = nodePublishLUNID
+
 	keyCount := 2  // holds the count of port identifiers set are there
 	portCount := 3 // holds the count of port identifiers present in one set of key count
 	req.PublishContext[PortIdentifierKeyCount] = strconv.Itoa(keyCount)
 	for i := 1; i <= keyCount; i++ {
 		portIdentifierKey := fmt.Sprintf("%s_%d", PortIdentifiers, i)
 		req.PublishContext[portIdentifierKey] = f.getPortIdentifiers(portCount)
+	}
+
+	block := f.capability.GetBlock()
+	if block != nil {
+		req.TargetPath = datafile
+	}
+	mount := f.capability.GetMount()
+	if mount != nil {
+		req.TargetPath = datadir
+	}
+	req.StagingTargetPath = nodePublishPrivateDir
+	req.VolumeContext = make(map[string]string)
+	req.VolumeContext["VolumeId"] = req.VolumeId
+	f.nodePublishVolumeRequest = req
+	return nil
+}
+
+func (f *feature) iCallNodePublishVolumeRequestWithLocalAndRemoteArray() error {
+	req := new(csi.NodePublishVolumeRequest)
+	req.VolumeId = volumeWithRemote1
+	volName, _, devID, remoteArrayID, _, err := f.service.parseCsiID(volumeWithRemote1)
+	if err != nil {
+		return errors.New("couldn't parse volumeWithRemote1")
+	}
+
+	mock.AddOneVolumeToStorageGroup(devID, volName, f.sgID, 1000)
+	req.Readonly = false
+	req.VolumeCapability = f.capability
+	req.PublishContext = make(map[string]string)
+	req.PublishContext[PublishContextDeviceWWN] = nodePublishWWN
+	req.PublishContext[PublishContextLUNAddress] = nodePublishLUNID
+
+	if remoteArrayID != "" {
+		req.PublishContext[RemotePublishContextDeviceWWN] = remoteNodePublishWWN
+		req.PublishContext[RemotePublishContextLUNAddress] = remoteNodePublishLUNID
+	}
+	keyCount := 2  // holds the count of port identifiers set are there
+	portCount := 3 // holds the count of port identifiers present in one set of key count
+	req.PublishContext[PortIdentifierKeyCount] = strconv.Itoa(keyCount)
+	for i := 1; i <= keyCount; i++ {
+		portIdentifierKey := fmt.Sprintf("%s_%d", PortIdentifiers, i)
+		req.PublishContext[portIdentifierKey] = f.getPortIdentifiers(portCount)
+	}
+
+	if remoteArrayID != "" {
+		keyCount = 2  // holds the count of port identifiers set are there
+		portCount = 3 // holds the count of port identifiers present in one set of key count
+		req.PublishContext[RemotePortIdentifierKeyCount] = strconv.Itoa(keyCount)
+		for i := 1; i <= keyCount; i++ {
+			remotePortIdentifierKey := fmt.Sprintf("%s_%d", RemotePortIdentifiers, i)
+			req.PublishContext[remotePortIdentifierKey] = f.getPortIdentifiers(portCount)
+		}
+
 	}
 	block := f.capability.GetBlock()
 	if block != nil {
@@ -3363,7 +3454,7 @@ func (f *feature) iInvokeNodeHostSetupWithAService(mode string) error {
 	iscsiInitiators := []string{defaultIscsiInitiator}
 	fcInitiators := []string{defaultFcInitiator}
 	// NVME
-	nvmetcpinitiators := []string{defaultIscsiInitiator}
+	nvmetcpinitiators := []string{defaultNvmeInitiator}
 	symmetrixIDs := []string{f.symmetrixID}
 	f.service.mode = mode
 	// reset default protocol
@@ -3553,21 +3644,24 @@ func (f *feature) thereAreNoArraysLoggedIn() error {
 
 func (f *feature) arraysAreLoggedInWithProtocol(protocol string) error {
 	f.service.SetPmaxTimeoutSeconds(3)
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
 	if protocol == "FC" {
-		isSymConnFC[f.symmetrixID] = true
+		isSymConnFC.Store(f.symmetrixID, true)
 	} else if protocol == "iSCSI" {
 		f.service.loggedInArrays = make(map[string]bool)
-		f.service.loggedInArrays[f.symmetrixID] = true
+		f.service.UpdateLoggedInArrays(f.symmetrixID, true)
 	} else if protocol == "NVMe" {
 		f.service.loggedInNVMeArrays = make(map[string]bool)
-		f.service.loggedInNVMeArrays[f.symmetrixID] = true
+		f.service.UpdateLoggedInNVMeArrays(f.symmetrixID, true)
 	}
 	return nil
 }
 
 func (f *feature) iInvokeEnsureLoggedIntoEveryArray() error {
 	f.service.SetPmaxTimeoutSeconds(3)
-	isSymConnFC = make(map[string]bool) // Ensure none of the other test marked the array as FC
+	isSymConnFC.Clear()
+	// Ensure none of the other test marked the array as FC
 	f.err = f.service.ensureLoggedIntoEveryArray(context.Background(), false)
 	return nil
 }
@@ -3739,7 +3833,7 @@ func (f *feature) iSetTransportProtocolTo(protocol string) error {
 		f.service.useNVMeTCP = false
 		f.service.useFC = false
 		f.service.useIscsi = true
-	case "NVME":
+	case "NVME", "NVMETCP":
 		f.service.useNVMeTCP = true
 		f.service.useFC = false
 		f.service.useIscsi = false
@@ -4278,9 +4372,9 @@ func (f *feature) iCallGetAndConfigureArrayISCSITargets() error {
 
 func (f *feature) iCallGetAndConfigureArrayNVMeTCPTargets() error {
 	arrayTargets := make([]string, 0)
-	arrayTargets = append(arrayTargets, defaultArrayTargetIQN)
+	arrayTargets = append(arrayTargets, defaultAraryTargetNQN)
 	f.nvmetcpTargetInfo = f.service.getAndConfigureArrayNVMeTCPTargets(context.Background(), arrayTargets, mock.DefaultRemoteSymID, f.service.adminClient)
-	fmt.Println(f.iscsiTargetInfo)
+	fmt.Println(f.nvmetcpTargetInfo)
 	return nil
 }
 
@@ -4357,6 +4451,37 @@ func (f *feature) iAddFCArrayToProtocolMap() error {
 		f.fcArray = arrays.SymmetrixIDs[0]
 	}
 	f.service.arrayTransportProtocolMap[f.fcArray] = FcTransportProtocol
+	f.service.opts.TransportProtocol = FcTransportProtocol
+	return nil
+}
+
+func (f *feature) iAddToProtocolMap(protocol string) error {
+	arrays := f.service.retryableGetSymmetrixIDList()
+	if len(arrays.SymmetrixIDs) > 0 {
+		f.fcArray = arrays.SymmetrixIDs[0]
+	}
+	f.service.arrayTransportProtocolMap[f.fcArray] = protocol
+	f.service.opts.TransportProtocol = protocol
+	return nil
+}
+
+func (f *feature) iAddISCSIArrayToProtocolMap() error {
+	arrays := f.service.retryableGetSymmetrixIDList()
+	if len(arrays.SymmetrixIDs) > 0 {
+		f.fcArray = arrays.SymmetrixIDs[0]
+	}
+	f.service.arrayTransportProtocolMap[f.fcArray] = IscsiTransportProtocol
+	f.service.opts.TransportProtocol = IscsiTransportProtocol
+	return nil
+}
+
+func (f *feature) iAddNVMEArrayToProtocolMap() error {
+	arrays := f.service.retryableGetSymmetrixIDList()
+	if len(arrays.SymmetrixIDs) > 0 {
+		f.fcArray = arrays.SymmetrixIDs[0]
+	}
+	f.service.arrayTransportProtocolMap[f.fcArray] = NvmeTCPTransportProtocol
+	f.service.opts.TransportProtocol = NvmeTCPTransportProtocol
 	return nil
 }
 
@@ -5132,6 +5257,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^a controller published multipath volume$`, f.aControllerPublishedMultipathVolume)
 	s.Step(`^I call NodePublishVolume$`, f.iCallNodePublishVolume)
 	s.Step(`^get Node Publish Volume Request$`, f.getNodePublishVolumeRequest)
+	s.Step(`^I call Node Publish Volume Request with Local and Remote Array$`, f.iCallNodePublishVolumeRequestWithLocalAndRemoteArray)
 	s.Step(`^I mark request read only$`, f.iMarkRequestReadOnly)
 	s.Step(`^I call NodeUnpublishVolume$`, f.iCallNodeUnpublishVolume)
 	s.Step(`^there are no remaining mounts$`, f.thereAreNoRemainingMounts)
@@ -5268,6 +5394,9 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I have a NodeNameTemplate "([^"]*)"$`, f.iHaveANodeNameTemplate)
 	s.Step(`^I call buildHostIDFromTemplate for node "([^"]*)"$`, f.iCallBuildHostIDFromTemplateForNodeHost)
 	s.Step(`^I add FC array to ProtocolMap$`, f.iAddFCArrayToProtocolMap)
+	s.Step(`^I add ISCSI array to ProtocolMap$`, f.iAddISCSIArrayToProtocolMap)
+	s.Step(`^I add NVME array to ProtocolMap$`, f.iAddNVMEArrayToProtocolMap)
+	s.Step(`^I add to ProtocolMap "([^"]*)"$`, f.iAddToProtocolMap)
 	s.Step(`^I call RDF enabled CreateVolume "([^"]*)" in namespace "([^"]*)", mode "([^"]*)" and RDFGNo (\d+)$`, f.iCallRDFEnabledCreateVolume)
 	s.Step(`^I call  GetRDFInfoFromSGID with "([^"]*)"$`, f.iCallGetRDFInfoFromSGIDWith)
 	s.Step(`^I call ProtectStorageGroup on "([^"]*)"$`, f.iCallProtectStorageGroupOn)
@@ -5295,6 +5424,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call GetReplicationCapabilities$`, f.iCallGetReplicationCapabilities)
 	s.Step(`^a valid GetReplicationCapabilities is returned$`, f.aValidGetReplicationCapabilitiesIsReturned)
 	s.Step(`^I call ProbeController$`, f.iCallProbeController)
+	s.Step(`^I call ProbeNodeBySymID "([^"]*)"$`, f.iCallProbeNodeBySymID)
 	s.Step(`^a valid ProbeControllerResponse is returned$`, f.aValidProbeControllerResponseIsReturned)
 	s.Step(`^a valid vmHost is returned$`, f.aValidVMHostIsReturned)
 	s.Step(`^I enable vSphere$`, f.iEnableVSphere)
