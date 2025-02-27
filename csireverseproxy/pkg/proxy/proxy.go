@@ -535,12 +535,14 @@ func (revProxy *Proxy) ServeVolumePerformance(res http.ResponseWriter, req *http
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(reqParam); err != nil {
 		log.Errorf("Decoding fails for metrics req for volume: %s", err.Error())
+		utils.WriteHTTPError(res, "failed to decode request", http.StatusInternalServerError)
 		return
 	}
 
 	resp, err := revProxy.getResponseIfAuthorised(res, req, reqParam.SystemID)
 	if err != nil {
-		log.Errorf("Authorisation step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
+		// error response written as part of call to getResponseIfAuthorised
+		log.Errorf("Authorization step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
 		return
 	}
 
@@ -548,6 +550,7 @@ func (revProxy *Proxy) ServeVolumePerformance(res http.ResponseWriter, req *http
 	err = utils.IsValidResponse(resp)
 	if err != nil {
 		log.Errorf("Get performance metrics step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
+		utils.WriteHTTPError(res, err.Error(), resp.StatusCode)
 	} else {
 		metricsIterator := new(types.VolumeMetricsIterator)
 		if err := json.NewDecoder(resp.Body).Decode(metricsIterator); err != nil {
@@ -564,12 +567,14 @@ func (revProxy *Proxy) ServeFSPerformance(res http.ResponseWriter, req *http.Req
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(reqParam); err != nil {
 		log.Errorf("Decoding fails for metrics req for volume: %s", err.Error())
+		utils.WriteHTTPError(res, "failed to decode request", http.StatusInternalServerError)
 		return
 	}
 
 	resp, err := revProxy.getResponseIfAuthorised(res, req, reqParam.SystemID)
 	if err != nil {
-		log.Errorf("Authorisation step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
+		// error response written as part of call to getResponseIfAuthorised
+		log.Errorf("Authorization step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
 		return
 	}
 
@@ -577,6 +582,7 @@ func (revProxy *Proxy) ServeFSPerformance(res http.ResponseWriter, req *http.Req
 	err = utils.IsValidResponse(resp)
 	if err != nil {
 		log.Errorf("Get performance metrics step fails for: (%s) symID with error (%s)", reqParam.SystemID, err.Error())
+		utils.WriteHTTPError(res, err.Error(), resp.StatusCode)
 	} else {
 		metricsIterator := new(types.FileSystemMetricsIterator)
 		if err := json.NewDecoder(resp.Body).Decode(metricsIterator); err != nil {

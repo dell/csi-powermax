@@ -29,6 +29,7 @@ import (
 	"revproxy/v2/pkg/utils"
 
 	types "github.com/dell/gopowermax/v2/types/v100"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/gorilla/mux"
 )
@@ -250,7 +251,6 @@ func TestGetRouter_ServeVolume(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
 				}
-
 			})),
 		},
 		{
@@ -285,7 +285,6 @@ func TestGetRouter_ServeVolume(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
 				}
-
 			})),
 		},
 		{
@@ -318,7 +317,6 @@ func TestGetRouter_ServeVolume(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
 				}
-
 			})),
 		},
 		{
@@ -478,7 +476,6 @@ func TestGetRouter_ServeReverseProxy(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
 				}
-
 			})),
 		},
 		{
@@ -567,7 +564,6 @@ func TestGetRouter_ServeVersions(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
 				}
-
 			})),
 		},
 		{
@@ -600,7 +596,6 @@ func TestGetRouter_ServeVersions(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
 				}
-
 			})),
 		},
 		{
@@ -717,7 +712,6 @@ func TestGetRouter_ServePerformance(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
 				}
-
 			})),
 		},
 		{
@@ -774,6 +768,7 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 		proxy  func(*httptest.Server) *Proxy
 		req    []func() *http.Request
 		server *httptest.Server
+		expect *httptest.ResponseRecorder
 	}{
 		{
 			name: "Success: ServeVolumePerformance - /performance/Volume/metrics",
@@ -809,8 +804,11 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
 				}
-
 			})),
+			expect: &httptest.ResponseRecorder{
+				Code: http.StatusOK,
+				Body: bytes.NewBuffer([]byte(`"id":"00000000-1111-2abc-def3-44gh55ij66kl_0"`)),
+			},
 		},
 		{
 			name: "Fail: ServeVolumePerformance - Empty Body",
@@ -846,8 +844,11 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
 				}
-
 			})),
+			expect: &httptest.ResponseRecorder{
+				Code: http.StatusInternalServerError,
+				Body: bytes.NewBuffer([]byte(`failed to decode request`)),
+			},
 		},
 		{
 			name: "Fail: ServeVolumePerformance - Invalid SystemID",
@@ -884,8 +885,11 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
 				}
-
 			})),
+			expect: &httptest.ResponseRecorder{
+				Code: http.StatusInternalServerError,
+				Body: bytes.NewBuffer([]byte(`failed to find array id in the configuration`)),
+			},
 		},
 		{
 			name: "Fail: ServeVolumePerformance - Bad Response",
@@ -919,6 +923,10 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
 			})),
+			expect: &httptest.ResponseRecorder{
+				Code: http.StatusUnauthorized,
+				Body: bytes.NewBuffer([]byte(`Not Authorised`)),
+			},
 		},
 		{
 			name: "Fail: ServeVolumePerformance - Empty Response",
@@ -955,6 +963,10 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 					t.Errorf("expected nil error, got %v", err)
 				}
 			})),
+			expect: &httptest.ResponseRecorder{
+				Code: http.StatusBadRequest,
+				Body: bytes.NewBuffer([]byte(``)),
+			},
 		},
 	}
 
@@ -971,7 +983,12 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 			router := proxy.GetRouter()
 			for _, reqFunc := range tc.req {
 				req := reqFunc()
-				router.ServeHTTP(httptest.NewRecorder(), req)
+				resp := httptest.NewRecorder()
+				router.ServeHTTP(resp, req)
+
+				assert.Equal(t, tc.expect.Code, resp.Code)
+				assert.True(t, bytes.Contains(resp.Body.Bytes(), tc.expect.Body.Bytes()),
+					fmt.Sprintf("expected: %s, \ngot: %s", tc.expect.Body.Bytes(), resp.Body.Bytes()))
 			}
 		})
 	}
@@ -983,6 +1000,7 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 		proxy  func(*httptest.Server) *Proxy
 		req    []func() *http.Request
 		server *httptest.Server
+		expect *httptest.ResponseRecorder
 	}{
 		{
 			name: "Success: ServeFSPerformance - /performance/file/filesystem/metrics",
@@ -1018,8 +1036,11 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
 				}
-
 			})),
+			expect: &httptest.ResponseRecorder{
+				Code: http.StatusOK,
+				Body: bytes.NewBuffer([]byte(`"id":"00000000-1111-2abc-def3-44gh55ij66kl_0"`)),
+			},
 		},
 		{
 			name: "Fail: ServeFSPerformance - Empty Body",
@@ -1051,6 +1072,10 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 				},
 			},
 			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+			expect: &httptest.ResponseRecorder{
+				Code: http.StatusInternalServerError,
+				Body: bytes.NewBuffer([]byte(`failed to decode request`)),
+			},
 		},
 		{
 			name: "Fail: ServeFSPerformance - Invalid SystemID",
@@ -1083,6 +1108,10 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 				},
 			},
 			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+			expect: &httptest.ResponseRecorder{
+				Code: http.StatusInternalServerError,
+				Body: bytes.NewBuffer([]byte(`failed to find array id in the configuration`)),
+			},
 		},
 		{
 			name: "Fail: ServeFSPerformance - Bad Response",
@@ -1116,6 +1145,10 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
 			})),
+			expect: &httptest.ResponseRecorder{
+				Code: http.StatusUnauthorized,
+				Body: bytes.NewBuffer([]byte(`Not Authorise`)),
+			},
 		},
 		{
 			name: "Fail: ServeFSPerformance - Empty Response",
@@ -1152,6 +1185,10 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 					t.Errorf("expected nil error, got %v", err)
 				}
 			})),
+			expect: &httptest.ResponseRecorder{
+				Code: http.StatusBadRequest,
+				Body: bytes.NewBuffer([]byte(``)),
+			},
 		},
 	}
 
@@ -1168,7 +1205,14 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 			router := proxy.GetRouter()
 			for _, reqFunc := range tc.req {
 				req := reqFunc()
-				router.ServeHTTP(httptest.NewRecorder(), req)
+				resp := httptest.NewRecorder()
+				router.ServeHTTP(resp, req)
+
+				if resp != nil && tc.expect != nil {
+					assert.Equal(t, tc.expect.Code, resp.Code)
+					assert.True(t, bytes.Contains(resp.Body.Bytes(), tc.expect.Body.Bytes()),
+						fmt.Sprintf("expected: %s, \ngot: %s", tc.expect.Body.Bytes(), resp.Body.Bytes()))
+				}
 			}
 		})
 	}
@@ -1230,7 +1274,6 @@ func TestGetRouter_ServeIterator(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
 				}
-
 			})),
 		},
 		{
