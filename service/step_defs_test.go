@@ -1675,7 +1675,7 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 
 		initiator2 := alternateIscsiInitator
 		initID2 := defaultISCSIDirPort2 + ":" + initiator2
-		mock.AddInitiator(initID2, initiator2, "GigE", []string{alternateIscsiInitator}, "")
+		mock.AddInitiator(initID2, initiator2, "GigE", []string{defaultISCSIDirPort2}, "")
 
 		initiators := []string{initiator1, initiator2}
 		mock.AddHost(f.hostID, "iSCSI", initiators)
