@@ -1,3 +1,18 @@
+/*
+Copyright © 2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 package service
 
 import (
@@ -148,35 +163,6 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 				},
 			},
 		},
-		/*{
-			name:         "Error case: no matching targets",
-			arrayTargets: []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"},
-			symID:        "array1",
-			getClient: func() *mocks.MockPmaxClient {
-				c := mocks.NewMockPmaxClient(gmock.NewController(t))
-				c.EXPECT().GetMaskingViewByID(gmock.All(), "array1", "csi-mv---NVMETCP").AnyTimes().Return(&types.MaskingView{
-					MaskingViewID: "csi-mv---NVMETCP",
-					PortGroupID:   "portgroup1",
-				}, nil)
-				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
-					SymmetrixPortKey: []types.PortKey{
-						{
-							DirectorID: "director1",
-							PortID:     "port1",
-						},
-					},
-				}, nil)
-				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
-					SymmetrixPort: types.SymmetrixPortType{
-						IPAddresses: []string{"1.1.1.1"},
-						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
-					},
-				}, nil)
-				c.EXPECT().GetNVMeTCPTargets(gmock.All(), "array1").AnyTimes().Return([]pmax.NVMeTCPTarget{}, fmt.Errorf("No matching targets"))
-				return c
-			},
-			want: nil,
-		},*/ //This finding it in cache even after invalidating cache!!
 		{
 			name:         "Error case: no matching port",
 			arrayTargets: []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"},
