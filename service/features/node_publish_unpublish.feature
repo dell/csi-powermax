@@ -526,19 +526,21 @@ Feature: PowerMax CSI interface
 @v1.0.0
   Scenario Outline: GetTargetsForMaskingView with various induced error
     Given a PowerMax service
-    And I request a PortGroup
-    And I have a Node "node1" with MaskingView
+    And I set transport protocol to <protocol>
+    And I have a Node "node1" with MaskingView    
     And I induce error <induced>
     And I call GetTargetsForMaskingView
     Then the error contains <errormsg>
     And the result has <numports> ports
 
     Examples:
-    | induced                   | errormsg                                       | numports  |
-    | "NoArray"                 | "No array specified"                           | "0"       |
-    | "GetPortError"            | "none"                                         | "0"       |
-    | "none"                    | "none"                                         | "1"       |
-    | "GetPortGroupError"       | "Error retrieving Port Group"                  | "0"       |
+    | induced                   | errormsg                                       | numports  | protocol |
+    | "NoArray"                 | "No array specified"                           | "0"       | "ISCSI"  |
+    | "GetPortError"            | "none"                                         | "0"       | "ISCSI"  |
+    | "none"                    | "none"                                         | "2"       | "ISCSI"  |
+    | "none"                    | "none"                                         | "1"       | "FC"     |
+    | "none"                    | "none"                                         | "1"       | "NVME"   |
+    | "GetPortGroupError"       | "Error retrieving Port Group"                  | "0"       | "ISCSI"  |
 
 @nodePublish
 @v1.0.0
