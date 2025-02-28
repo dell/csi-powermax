@@ -106,9 +106,14 @@ func TestGetCertFileFromSecretName(t *testing.T) {
 			var err error
 
 			if tt.createSecret {
-				secret, err = tt.mockUtils.CreateNewCertSecret(tt.secretName)
+				_, err = tt.mockUtils.CreateNewCertSecret(tt.secretName)
 				if err != nil {
 					t.Errorf("Failed to create cert secret. (%s)", err.Error())
+					return
+				}
+				secret, err = tt.mockUtils.GetSecretFromSecretName(tt.secretName)
+				if err != nil {
+					t.Errorf("failed to get secret: err: %s", err.Error())
 					return
 				}
 			} else {
@@ -163,10 +168,14 @@ func TestGetCertFileFromSecret(t *testing.T) {
 			var err error
 
 			if tt.createSecret {
-				secret, err = tt.mockUtils.CreateNewCertSecret(tt.secretName)
+				_, err = tt.mockUtils.CreateNewCertSecret(tt.secretName)
 				if err != nil {
 					t.Errorf("Failed to create cert secret. (%s)", err.Error())
 					return
+				}
+				secret, err = tt.mockUtils.GetSecretFromSecretName(tt.secretName)
+				if err != nil {
+					t.Errorf("failed to get secret. err: %s", err.Error())
 				}
 			} else {
 				secret = nil
@@ -199,7 +208,7 @@ func TestGetCredentialsFromSecretName(t *testing.T) {
 	}
 
 	// Test case: secret exists
-	secret, err := mockUtils.CreateNewCredentialSecret("test-secret")
+	_, err = mockUtils.CreateNewCredentialSecret("test-secret")
 	if err != nil {
 		t.Errorf("unexpected error creating test secret: %v", err)
 	}
@@ -208,7 +217,7 @@ func TestGetCredentialsFromSecretName(t *testing.T) {
 		Password: "test-password",
 	}
 
-	cred, err := mockUtils.GetCredentialsFromSecretName(secret.Name)
+	cred, err := mockUtils.GetCredentialsFromSecretName("test-secret")
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -219,7 +228,7 @@ func TestGetCredentialsFromSecretName(t *testing.T) {
 	// Test case: secret exists, username password speficied literally
 	mockUtils.Username = []byte("test-username")
 	mockUtils.Password = []byte("test-password")
-	secret, err = mockUtils.CreateNewCredentialSecret("test-secret-2")
+	_, err = mockUtils.CreateNewCredentialSecret("test-secret-2")
 	if err != nil {
 		t.Errorf("unexpected error creating test secret: %v", err)
 	}
@@ -229,7 +238,7 @@ func TestGetCredentialsFromSecretName(t *testing.T) {
 		Password: "test-password",
 	}
 
-	cred, err = mockUtils.GetCredentialsFromSecretName(secret.Name)
+	cred, err = mockUtils.GetCredentialsFromSecretName("test-secret-2")
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -241,10 +250,15 @@ func TestGetCredentialsFromSecretName(t *testing.T) {
 func TestGetCredentialsFromSecret(t *testing.T) {
 	mockUtils := Init()
 
-	secret, err := mockUtils.CreateNewCredentialSecret("test-secret")
+	_, err := mockUtils.CreateNewCredentialSecret("test-secret")
 	if err != nil {
 		t.Errorf("unexpected error creating test secret: %v", err)
 	}
+	secret, err := mockUtils.GetSecretFromSecretName("test-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// Test case: mockUtils is nil
 	var nilMockUtils *MockUtils
 	_, err = nilMockUtils.GetCredentialsFromSecret(secret)

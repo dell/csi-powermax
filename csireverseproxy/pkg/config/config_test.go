@@ -279,14 +279,26 @@ func TestProxyConfig_UpdateCertsAndCredentials(t *testing.T) {
 
 	serverSecret.Data["username"] = []byte("new-username")
 	proxySecret.Data["username"] = []byte("new-username")
-	certSecret, _ := k8sUtils.CreateNewCertSecret("secret-cert")
+	_, _ = k8sUtils.CreateNewCertSecret("secret-cert")
+	certSecret, err := k8sUtils.GetSecretFromSecretName("secret-cert")
+	if err != nil {
+		t.Fatalf("failed to get cert secret: %s", err.Error())
+	}
 	config.UpdateCertsAndCredentials(k8sUtils, serverSecret)
 	config.UpdateCertsAndCredentials(k8sUtils, proxySecret)
 	config.UpdateCertsAndCredentials(k8sUtils, certSecret)
 
-	primaryUnisphereSecret2, _ := k8sUtils.CreateNewCredentialSecret("primary-unisphere-secret-2")
+	_, _ = k8sUtils.CreateNewCredentialSecret("primary-unisphere-secret-2")
+	primaryUnisphereSecret2, err := k8sUtils.GetSecretFromSecretName("primary-unisphere-secret-2")
+	if err != nil {
+		t.Fatal(err)
+	}
 	primaryUnisphereSecret2.Data["username"] = []byte("new-username")
-	primaryUnisphereCert2, _ := k8sUtils.CreateNewCertSecret("primary-unisphere-cert-2")
+	_, _ = k8sUtils.CreateNewCertSecret("primary-unisphere-cert-2")
+	primaryUnisphereCert2, err := k8sUtils.GetSecretFromSecretName("primary-unisphere-cert-2")
+	if err != nil {
+		t.Fatal(err)
+	}
 	config.UpdateCertsAndCredentials(k8sUtils, primaryUnisphereSecret2)
 	config.UpdateCertsAndCredentials(k8sUtils, primaryUnisphereCert2)
 

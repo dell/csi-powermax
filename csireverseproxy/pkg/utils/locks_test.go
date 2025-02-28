@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"revproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
 )
 
 func TestLock(t *testing.T) {

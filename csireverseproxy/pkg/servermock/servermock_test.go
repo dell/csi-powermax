@@ -19,7 +19,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"revproxy/v2/pkg/utils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 )
 
 func TestGetHandler(t *testing.T) {
