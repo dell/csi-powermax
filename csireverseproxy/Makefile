@@ -27,16 +27,9 @@ check:
 build:	check
 	CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build
 
-build-base-image: download-csm-common
-	$(eval include csm-common.mk)
-	@echo "Building base image from $(DEFAULT_BASEIMAGE) and loading dependencies..."
-	./buildubimicro.sh $(DEFAULT_BASEIMAGE)
-	@echo "Base image build: SUCCESS"
-	$(eval BASEIMAGE=csipowermax-ubimicro:latest)
-
-docker: build build-base-image
+docker: build
 	go run ../core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk build-base-image docker
+	make -f docker.mk docker
 
 docker-no-cache:
 	make -f docker.mk docker-no-cache
@@ -49,4 +42,3 @@ unit-test:
 
 download-csm-common:
 	curl -O -L https://raw.githubusercontent.com/dell/csm/main/config/csm-common.mk
-
