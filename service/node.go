@@ -40,7 +40,7 @@ import (
 	"github.com/coreos/go-systemd/v22/dbus"
 	"github.com/dell/gobrick"
 	csictx "github.com/dell/gocsi/context"
-	"github.com/dell/gofsutil"
+	gofsutil "github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
 	log "github.com/sirupsen/logrus"
 
@@ -65,9 +65,11 @@ var (
 	multipathMutex              sync.Mutex
 	deviceDeleteMutex           sync.Mutex
 	disconnectVolumeRetryTime   = 1 * time.Second
-	nodePendingState            pendingState
-	sysBlock                    = "/sys/block" // changed for unit testing
-	dev                         = "/dev/"
+	nodePendingState            = pendingState{
+		pendingMutex: &sync.Mutex{},
+	}
+	sysBlock = "/sys/block" // changed for unit testing
+	dev      = "/dev/"
 )
 
 type maskingViewTargetInfo struct {
@@ -92,7 +94,7 @@ var symToAllISCSITargets sync.Map
 var symToMaskingViewTargets sync.Map
 
 // Map to store if sym has fc connectivity or not
-var isSymConnFC = make(map[string]bool)
+var isSymConnFC sync.Map
 
 // InvalidateSymToMaskingViewTargets - invalidates the cache
 // Only used for testing
@@ -463,6 +465,7 @@ func (s *service) NodeUnstageVolume(
 	if stageTgt == "" {
 		return nil, status.Error(codes.InvalidArgument, "A Staging Target argument is required")
 	}
+
 	err = gofsutil.Unmount(context.Background(), stageTgt)
 	if err != nil {
 		log.Infof("NodeUnstageVolume error unmount stage target %s: %s", stageTgt, err.Error())
@@ -586,7 +589,7 @@ func (s *service) detachRDM(volID, volumeWWN string) error {
 	return nil
 }
 
-// disconnectVolume disconnects a volume from a node and will verify it is disconnected
+// / disconnectVolume disconnects a volume from a node and will verify it is disconnected
 // by no more /dev/disk/by-id entry, retrying if necessary.
 func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error {
 	for i := 0; i < 3; i++ {
@@ -902,7 +905,7 @@ func (s *service) nodeProbe(ctx context.Context) error {
 }
 
 func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
-	log.Debugf("Entering nodeProbe for array %s", symID)
+	log.Debugf("Entering nodeProbeBySymID for array %s", symID)
 	defer log.Debugf("Exiting nodeProbe for array %s", symID)
 
 	if s.opts.NodeName == "" {
@@ -1002,9 +1005,14 @@ func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
 		}
 		log.Debugf("Checking if nvme sessions are active on node or not")
 		sessions, _ := s.nvmetcpClient.GetSessions()
-		for _, target := range s.nvmeTargets[symID] {
+		targets, ok := s.nvmeTargets.Load(symID)
+		if !ok {
+			return fmt.Errorf("no active nvme sessions")
+		}
+		for _, target := range targets.([]string) {
 			for _, session := range sessions {
 				log.Debugf("matching %v with %v", target, session)
+				log.Infof("target = %v, session.Target = %v", target, session.Target)
 				if strings.HasPrefix(target, session.Target) && session.NVMESessionState == gonvme.NVMESessionStateLive {
 					if s.useNFS {
 						s.useNFS = false
@@ -1077,6 +1085,7 @@ func (s *service) getIPInterfaces(ctx context.Context, symID string, portGroups 
 		if err != nil {
 			return nil, err
 		}
+
 		for _, portKey := range portGroup.SymmetrixPortKey {
 			port, err := pmaxClient.GetPort(ctx, symID, portKey.DirectorID, portKey.PortID)
 			if err != nil {
@@ -1106,17 +1115,14 @@ func (s *service) reachableEndPoint(endpoint string) bool {
 	return err == nil
 }
 
-func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[string]string, error) {
+func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[string]string {
 	topology := map[string]string{}
 	iscsiArrays := make([]string, 0)
 	nvmeTCPArrays := make([]string, 0)
 	var protocol string
 	var ok bool
 
-	arrays, err := s.retryableGetSymmetrixIDList()
-	if err != nil {
-		return nil, err
-	}
+	arrays := s.retryableGetSymmetrixIDList()
 
 	for _, id := range arrays.SymmetrixIDs {
 		pmaxClient, err := s.GetPowerMaxClient(id)
@@ -1140,12 +1146,9 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[s
 		}
 
 		if protocol == NvmeTCPTransportProtocol {
-
-			if s.loggedInNVMeArrays != nil {
-				if isLoggedIn, ok := s.loggedInNVMeArrays[id]; ok && isLoggedIn {
-					nvmeTCPArrays = append(nvmeTCPArrays, id)
-					continue
-				}
+			if isLoggedIn, ok := s.GetLoggedInNVMeArrays(id); ok && isLoggedIn {
+				nvmeTCPArrays = append(nvmeTCPArrays, id)
+				continue
 			}
 
 			for ip := range ipInterfaces {
@@ -1162,11 +1165,9 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[s
 				}
 			}
 		} else {
-			if s.loggedInArrays != nil {
-				if isLoggedIn, ok := s.loggedInArrays[id]; ok && isLoggedIn {
-					iscsiArrays = append(iscsiArrays, id)
-					continue
-				}
+			if isLoggedIn, ok := s.GetLoggedInArrays(id); ok && isLoggedIn {
+				iscsiArrays = append(iscsiArrays, id)
+				continue
 			}
 
 			for ip, port := range ipInterfaces {
@@ -1215,7 +1216,8 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) (map[s
 		}
 	}
 
-	return topology, nil
+	log.Infof("Topology for node (%s) : %+v", nodeName, topology)
+	return topology
 }
 
 // checkIfArrayProtocolValid returns true if the  pair (array and protocol) is applicable for the given node based on config
@@ -1281,16 +1283,8 @@ func (s *service) NodeGetInfo(
 			"Unable to get Node Name from the environment")
 	}
 
-	topology, err := s.createTopologyMap(ctx, s.opts.NodeName)
-	if err != nil {
-		log.Errorf("Unable to get the list of symmetrix ids. (%s)", err.Error())
-		return nil, status.Error(codes.FailedPrecondition,
-			"Unable to get the list of symmetrix ids")
-	}
+	topology := s.createTopologyMap(ctx, s.opts.NodeName)
 	if len(topology) == 0 {
-		// if s.opts.IsVsphereEnabled {
-		// array:vsphere
-		// }
 		log.Errorf("No topology keys could be generated")
 		return nil, status.Error(codes.FailedPrecondition, "no topology keys could be generated")
 	}
@@ -1573,11 +1567,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		log.Debug("vmHost created successfully")
 	}
 
-	arrays, err := s.retryableGetSymmetrixIDList()
-	if err != nil {
-		log.Error("Failed to fetch array list. Continuing without initializing node")
-		return err
-	}
+	arrays := s.retryableGetSymmetrixIDList()
 	symmetrixIDs := arrays.SymmetrixIDs
 	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
 
@@ -1815,7 +1805,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			}
 			s.initFCConnector(nodeChroot)
 			s.arrayTransportProtocolMap[symID] = FcTransportProtocol
-			isSymConnFC[symID] = true
+			isSymConnFC.Store(symID, true)
 		} else if s.useIscsi {
 			// resetOtherProtocols
 			s.useNVMeTCP = false
@@ -1860,7 +1850,7 @@ func (s *service) setupArrayForFC(ctx context.Context, array string, portWWNs []
 // setupArrayForIscsi is called to set up a node for iscsi operation.
 func (s *service) setupArrayForIscsi(ctx context.Context, array string, IQNs []string, pmaxClient pmax.Pmax) error {
 	hostName, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
-	log.Infof("setting up array %s for Iscsi, host name: %s masking view ID: %s", array, hostName, mvName)
+	log.Infof("setting up array %s for Iscsi, host name: %s masking view ID: %s %v", array, hostName, mvName, IQNs)
 
 	// Create or update the IscsiHost and Initiators
 	_, err := s.createOrUpdateIscsiHost(ctx, array, hostName, IQNs, pmaxClient)
@@ -1875,7 +1865,7 @@ func (s *service) setupArrayForIscsi(ctx context.Context, array string, IQNs []s
 // setupArrayForIscsi is called to set up a node for iscsi operation.
 func (s *service) setupArrayForNVMeTCP(ctx context.Context, array string, NQNs []string, pmaxClient pmax.Pmax) error {
 	hostName, _, mvName := s.GetNVMETCPHostSGAndMVIDFromNodeID(s.opts.NodeName)
-	log.Infof("setting up array %s for NVMeTCP, host name: %s masking view ID: %s", array, hostName, mvName)
+	log.Infof("setting up array %s for NVMeTCP, host name: %s masking view ID: %s %v", array, hostName, mvName, NQNs)
 
 	// Discover targets on the host
 	err := s.setupNVMeTCPTargetDiscovery(ctx, array, pmaxClient)
@@ -1908,6 +1898,7 @@ func (s *service) updateNQNWithHostID(ctx context.Context, symID string, NQNs []
 		log.Error("Failed to fetch initiator list for the SYM :" + symID)
 		return nil, err
 	}
+	log.Infof("Host Initiators: %+v", hostInitiators)
 
 	for _, hostInitiator := range hostInitiators.InitiatorIDs {
 		// hostInitiator = OR-1C:001:nqn.2014-08.org.nvmexpress:uuid:csi_master:76B04D56EAB26A2E1509A7E98D3DFDB6
@@ -1926,6 +1917,7 @@ func (s *service) updateNQNWithHostID(ctx context.Context, symID string, NQNs []
 			}
 		}
 	}
+	log.Infof("Updated NQNs are: %+v", updatesHostNQNs)
 	return updatesHostNQNs, nil
 }
 
@@ -2069,11 +2061,22 @@ func (s *service) loginIntoISCSITargets(array string, targets []maskingViewTarge
 	}
 	// If we successfully logged into all targets, then marked the array as logged in
 	if loggedInAll {
-		s.cacheMutex.Lock()
-		s.loggedInArrays[array] = true
-		s.cacheMutex.Unlock()
+		s.UpdateLoggedInArrays(array, true)
 	}
 	return err
+}
+
+func (s *service) UpdateLoggedInArrays(array string, value bool) {
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+	s.loggedInArrays[array] = value
+}
+
+func (s *service) GetLoggedInArrays(array string) (isLoggedIn bool, ok bool) {
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+	isLoggedIn, ok = s.loggedInArrays[array]
+	return isLoggedIn, ok
 }
 
 // loginIntoNVMeTargets - for a given array id and list of masking view targets
@@ -2091,7 +2094,11 @@ func (s *service) loginIntoNVMeTCPTargets(array string, targets []maskingViewNVM
 			err = discoveryError
 			loggedInAll = false
 		} else {
-			s.nvmeTargets[array] = append(s.nvmeTargets[array], tgt.target.TargetNqn)
+			nvmeTgts, ok := s.nvmeTargets.Load(array)
+			if !ok {
+				nvmeTgts = []string{}
+			}
+			s.nvmeTargets.Store(array, append(nvmeTgts.([]string), tgt.target.TargetNqn))
 			log.Infof("Successfully logged into target: %s on portal :%s",
 				tgt.target.PortID, tgt.target.Portal)
 		}
@@ -2099,11 +2106,22 @@ func (s *service) loginIntoNVMeTCPTargets(array string, targets []maskingViewNVM
 
 	// If we successfully logged into all targets, then marked the array as logged in
 	if loggedInAll {
-		s.cacheMutex.Lock()
-		s.loggedInNVMeArrays[array] = true
-		s.cacheMutex.Unlock()
+		s.UpdateLoggedInNVMeArrays(array, true)
 	}
 	return err
+}
+
+func (s *service) UpdateLoggedInNVMeArrays(array string, value bool) {
+	s.cacheMutex.Lock()
+	s.loggedInNVMeArrays[array] = value
+	s.cacheMutex.Unlock()
+}
+
+func (s *service) GetLoggedInNVMeArrays(array string) (isLoggedIn bool, ok bool) {
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+	isLoggedIn, ok = s.loggedInNVMeArrays[array]
+	return isLoggedIn, ok
 }
 
 // setCHAPCredentials - Sets the CHAP credentials for a list of masking view targets
@@ -2205,41 +2223,36 @@ func (s *service) ensureISCSIDaemonStarted() error {
 
 func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error {
 	arrays := &types.SymmetrixIDList{}
-	var err error
 
 	// Get the list of arrays
-	arrays, err = s.retryableGetSymmetrixIDList()
-	if err != nil {
-		return err
-	}
+	arrays = s.retryableGetSymmetrixIDList()
 	// for each array known to unisphere, ensure we have performed ISCSI login for our masking views
 	for _, array := range arrays.SymmetrixIDs {
 		pmaxClient, err := s.GetPowerMaxClient(array)
+		log.Infof("got PowerMaxclient %+v", pmaxClient)
 		if err != nil {
 			log.Error(err.Error())
 			continue
 		}
-		if isSymConnFC[array] {
+		if _, ok := isSymConnFC.Load(array); ok {
 			// Check if we have marked this array as FC earlier
 			continue
 		}
-		s.cacheMutex.Lock()
-		if s.loggedInArrays[array] {
+
+		if isLoggedIn, ok := s.GetLoggedInArrays(array); ok && isLoggedIn {
 			// we have already logged into this array
 			log.Debugf("(ISCSI) Already logged into the array: %s", array)
-			s.cacheMutex.Unlock()
 			break
 		}
-		if s.loggedInNVMeArrays[array] {
+		if isLoggedIn, ok := s.GetLoggedInNVMeArrays(array); ok && isLoggedIn {
 			// we have already logged into this array
 			log.Debugf("(NVME) Already logged into the array: %s", array)
-			s.cacheMutex.Unlock()
 			break
 		}
 		if s.useIscsi {
 			log.Debugf("(ISCSI) No logins were done earlier for %s", array)
-			s.cacheMutex.Unlock()
 			_, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
+			log.Infof("Checking if MV %s exists", mvName)
 			// Get iscsi initiators.
 			IQNs, iSCSIErr := s.iscsiClient.GetInitiators("")
 			if iSCSIErr != nil {
@@ -2253,6 +2266,7 @@ func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error 
 			log.Debugf("(ISCSI) No logins were done earlier for %s", array)
 			s.cacheMutex.Unlock()
 			_, _, mvName := s.GetNVMETCPHostSGAndMVIDFromNodeID(s.opts.NodeName)
+			log.Infof("Checking if MV %s exists", mvName)
 			err = s.performNVMETCPLoginOnSymID(ctx, array, mvName, pmaxClient)
 			if err != nil {
 				return fmt.Errorf("failed to login to (some) %s ISCSI targets. Error: %s", array, err.Error())
@@ -2434,7 +2448,6 @@ func (s *service) createOrUpdateFCHost(ctx context.Context, array string, nodeNa
 
 	// See if the host is present
 	host, err := pmaxClient.GetHostByID(ctx, array, nodeName)
-	log.Debug(fmt.Sprintf("GetHostById returned: %v, %v", host, err))
 	if err != nil {
 		// host does not exist, create it
 		log.Infof("Array %s FC Host %s does not exist. Creating it.", array, nodeName)
@@ -2472,7 +2485,6 @@ func (s *service) createOrUpdateIscsiHost(ctx context.Context, array string, nod
 
 	host, err := pmaxClient.GetHostByID(ctx, array, nodeName)
 	log.Infof("GetHostById returned: %v, %v", host, err)
-
 	if err != nil {
 		// host does not exist, create it
 		log.Infof("ISCSI Host %s does not exist. Creating it.", nodeName)
@@ -2583,26 +2595,10 @@ func (s *service) retryableUpdateHostInitiators(ctx context.Context, array strin
 }
 
 // retryableGetSymmetrixIDList returns the list of arrays
-func (s *service) retryableGetSymmetrixIDList() (*types.SymmetrixIDList, error) {
-	/*var arrays *types.SymmetrixIDList
-	var err error
-	deadline := time.Now().Add(time.Duration(s.GetPmaxTimeoutSeconds()) * time.Second)
-	for tries := 0; time.Now().Before(deadline); tries++ {
-		arrays, err = pmaxClient.GetSymmetrixIDList()
-		if err != nil {
-			// Retry on this error
-			log.Error("failed to retrieve list of arrays; retrying...")
-			time.Sleep(time.Second << uint(tries)) // incremental back-off
-			continue
-		}
-		break
-	}
-	if err != nil {
-		return &types.SymmetrixIDList{}, fmt.Errorf("Unable to retrieve Array List, timed out")
-	}*/
+func (s *service) retryableGetSymmetrixIDList() *types.SymmetrixIDList {
 	return &types.SymmetrixIDList{
 		SymmetrixIDs: s.opts.ManagedArrays,
-	}, nil
+	}
 }
 
 // NodeExpandVolume helps extending a volume size on a node
@@ -2805,7 +2801,7 @@ func (s *service) getISCSITargets(ctx context.Context, symID string, pmaxClient 
 	ips, ok = symToAllISCSITargets.Load(symID)
 	if ok {
 		targets = ips.([]ISCSITargetInfo)
-		log.Infof("Found targets %v in cache", targets)
+		log.Infof("Found ISCSI targets %v in cache", targets)
 	} else {
 		pmaxTargets, err := pmaxClient.GetISCSITargets(ctx, symID)
 		if err != nil {
@@ -2836,12 +2832,12 @@ func (s *service) getNVMeTCPTargets(ctx context.Context, symID string, pmaxClien
 	ips, ok = symToAllNVMeTCPTargets.Load(symID)
 	if ok {
 		targets = ips.([]NVMeTCPTargetInfo)
-		log.Infof("Found targets %v in cache", targets)
+		log.Infof("Found NVMeTCP targets %v in cache", targets)
 	} else {
 		// TODO NVME
 		pmaxTargets, err := pmaxClient.GetNVMeTCPTargets(ctx, symID)
 		if err != nil {
-			return targets, status.Error(codes.Internal, fmt.Sprintf("Could not get iscsi target information: %s", err.Error()))
+			return targets, status.Error(codes.Internal, fmt.Sprintf("Could not get invme target information: %s", err.Error()))
 		}
 		for _, pmaxTarget := range pmaxTargets {
 			for _, ipaddr := range pmaxTarget.PortalIPs {
@@ -2866,9 +2862,11 @@ func (s *service) getArrayTargets(ctx context.Context, targetIdentifiers string,
 	iscsiTargets := make([]ISCSITargetInfo, 0)
 	fcTargets := make([]FCTargetInfo, 0)
 	nvmeTargets := make([]NVMeTCPTargetInfo, 0)
-	var isFC bool
-	var isNVMeTCP bool
+
+	isFC := false
+	isNVMeTCP := false
 	arrayTargets := strings.Split(targetIdentifiers, ",")
+	log.Infof("getAndConfigureTargets : targetIdentifiers  %+v\n", targetIdentifiers)
 	// Remove the last empty element from the slice as there is a trailing ","
 	if len(arrayTargets) == 1 && (arrayTargets[0] == targetIdentifiers) {
 		log.Error("Failed to parse the target identifier string: " + targetIdentifiers)
@@ -2887,65 +2885,78 @@ func (s *service) getArrayTargets(ctx context.Context, targetIdentifiers string,
 				isNVMeTCP = true
 			}
 		}
+
 		if isNVMeTCP {
 			nvmeTargets = s.getAndConfigureArrayNVMeTCPTargets(ctx, arrayTargets, symID, pmaxClient)
 		} else if !isFC {
 			iscsiTargets = s.getAndConfigureArrayISCSITargets(ctx, arrayTargets, symID, pmaxClient)
 		}
 	}
-	log.Infof("Array targets: %s", arrayTargets)
 	return iscsiTargets, fcTargets, nvmeTargets, isFC, isNVMeTCP
 }
 
 func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayTargets []string, symID string, pmaxClient pmax.Pmax) []NVMeTCPTargetInfo {
 	nvmetcpTargets := make([]NVMeTCPTargetInfo, 0)
 	allTargets, _ := s.getNVMeTCPTargets(ctx, symID, pmaxClient)
-	cachedTargets, ok := symToMaskingViewTargets.Load(symID)
+
+	targetsFromCache, ok := symToMaskingViewTargets.Load(symID)
 	if ok {
-		targets := cachedTargets.([]maskingViewNVMeTargetInfo)
-		// Check if the array targets are all present in the cache
-		for _, arrayTarget := range arrayTargets {
-			found := false
-			for _, tgt := range targets {
-				if arrayTarget == tgt.target.TargetNqn {
-					nvmetcpTarget := NVMeTCPTargetInfo{
-						Target: arrayTarget,
-						Portal: tgt.target.Portal,
-					}
-					nvmetcpTargets = append(nvmetcpTargets, nvmetcpTarget)
-					found = true
-				}
-			}
-			if !found {
-				// Some array targets are not present in cache
-				// This mostly means that the Port group was modified post
-				// driver boot. Invalidate the cache
-				symToMaskingViewTargets.Delete(symID)
-				// Look in the cache for all targets on the array
-				isFound := false
-				for _, tgt := range allTargets {
-					if arrayTarget == tgt.Target {
+		found := false
+		switch targetsFromCache.(type) {
+		case []maskingViewNVMeTargetInfo:
+			cachedTargets := targetsFromCache.([]maskingViewNVMeTargetInfo)
+			// Check if the array targets are all present in the cache
+			for _, arrayTarget := range arrayTargets {
+				for _, cachedTgt := range cachedTargets {
+					if arrayTarget == cachedTgt.target.TargetNqn {
 						nvmetcpTarget := NVMeTCPTargetInfo{
 							Target: arrayTarget,
-							Portal: tgt.Portal,
+							Portal: cachedTgt.target.Portal,
 						}
 						nvmetcpTargets = append(nvmetcpTargets, nvmetcpTarget)
-						isFound = true
+						found = true
 					}
 				}
-				if !isFound {
-					// This will be an extremely rare case
-					// A new ISCSI target/portal IP has been configured
-					// on the array and added to the Port Group
-					// after the node driver cache information
-					// Invalidate the cache. Return whatever targets we have found until now
-					symToAllNVMeTCPTargets.Delete(symID)
-					break
+
+				if !found {
+					// Some array targets are not present in cache
+					// This mostly means that the Port group was modified post
+					// driver boot. Invalidate the cache
+					symToMaskingViewTargets.Delete(symID)
+					// Look in the cache for all targets on the array
+					isFound := false
+					for _, tgt := range allTargets {
+						if arrayTarget == tgt.Target {
+							nvmetcpTarget := NVMeTCPTargetInfo{
+								Target: arrayTarget,
+								Portal: tgt.Portal,
+							}
+							nvmetcpTargets = append(nvmetcpTargets, nvmetcpTarget)
+							isFound = true
+						}
+					}
+					if !isFound {
+						// This will be an extremely rare case
+						// A new ISCSI target/portal IP has been configured
+						// on the array and added to the Port Group
+						// after the node driver cache information
+						// Invalidate the cache. Return whatever targets we have found until now
+						symToAllNVMeTCPTargets.Delete(symID)
+						break
+					}
 				}
 			}
+			log.Infof("returned cached information")
+			return nvmetcpTargets
+		default:
+			log.Infof("Invalidate cache as it not the right type.")
+			symToAllNVMeTCPTargets.Delete(symID)
+			log.Infof("Failed to find ISCSI targets in cache.")
+			// symToMaskingViewTargets.Delete(symID)
+			// do nothing, will fall through and rebuild the cache
 		}
-		return nvmetcpTargets
 	}
+	log.Infof("There is no cached info, build it")
 	// There is no cached information
 	_, _, mvName := s.GetNVMETCPHostSGAndMVIDFromNodeID(s.opts.NodeName)
 	// Get the Masking View Targets and configure CHAP if required
@@ -2954,6 +2965,8 @@ func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayT
 	if err != nil {
 		log.Errorf("Failed to get and configure masking view targets. Error: %s", err.Error())
 	}
+	log.Infof("array targets = %+v\n", arrayTargets)
+	log.Infof("nvme targets from getAndConfigureMaskingViewTargets %+v\n", goNVMETCPTargets)
 	for _, arrayTarget := range arrayTargets {
 		found := false
 		for _, gonvmetcpTarget := range goNVMETCPTargets {
@@ -2970,6 +2983,7 @@ func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayT
 			log.Errorf("Internal Error - Target: %s not found on array: %s", arrayTarget, symID)
 		}
 	}
+	log.Infof("New cache information = %+v\n", nvmetcpTargets)
 	return nvmetcpTargets
 }
 
@@ -2983,67 +2997,74 @@ func (s *service) getAndConfigureArrayISCSITargets(ctx context.Context, arrayTar
 	}
 	cachedTargets, ok := symToMaskingViewTargets.Load(symID)
 	if ok {
-		targets := cachedTargets.([]maskingViewTargetInfo)
-		// Enable CHAP if required
-		err = s.setCHAPCredentials(symID, targets, IQNs)
-		if err != nil {
-			// Log the error and continue
-			log.Errorf("Failed to set CHAP credentials for targets: %v. Error: %s", targets, err.Error())
-		} else {
-			// Update the cache if required
-			cacheUpdated := false
-			for i := range targets {
-				if !targets[i].IsCHAPConfigured {
-					targets[i].IsCHAPConfigured = true
-					cacheUpdated = true
-				}
-			}
-			if cacheUpdated {
-				symToMaskingViewTargets.Store(symID, targets)
-			}
-		}
-		// Check if the array targets are all present in the cache
-		for _, arrayTarget := range arrayTargets {
-			found := false
-			for _, tgt := range targets {
-				if arrayTarget == tgt.target.Target {
-					iscsiTarget := ISCSITargetInfo{
-						Target: arrayTarget,
-						Portal: tgt.target.Portal,
+		found := false
+		switch cachedTargets.(type) {
+		case []maskingViewTargetInfo:
+			targets := cachedTargets.([]maskingViewTargetInfo)
+			// Enable CHAP if required
+			err = s.setCHAPCredentials(symID, targets, IQNs)
+			if err != nil {
+				// Log the error and continue
+				log.Errorf("Failed to set CHAP credentials for targets: %v. Error: %s", targets, err.Error())
+			} else {
+				// Update the cache if required
+				cacheUpdated := false
+				for i := range targets {
+					if !targets[i].IsCHAPConfigured {
+						targets[i].IsCHAPConfigured = true
+						cacheUpdated = true
 					}
-					iscsiTargets = append(iscsiTargets, iscsiTarget)
-					found = true
+				}
+				if cacheUpdated {
+					symToMaskingViewTargets.Store(symID, targets)
 				}
 			}
-			if !found {
-				// Some array targets are not present in cache
-				// This mostly means that the Port group was modified post
-				// driver boot. Invalidate the cache
-				symToMaskingViewTargets.Delete(symID)
-				// Look in the cache for all targets on the array
-				isFound := false
-				for _, tgt := range allTargets {
-					if arrayTarget == tgt.Target {
+			// Check if the array targets are all present in the cache
+			for _, arrayTarget := range arrayTargets {
+				for _, tgt := range targets {
+					if arrayTarget == tgt.target.Target {
 						iscsiTarget := ISCSITargetInfo{
 							Target: arrayTarget,
-							Portal: tgt.Portal,
+							Portal: tgt.target.Portal,
 						}
 						iscsiTargets = append(iscsiTargets, iscsiTarget)
-						isFound = true
+						found = true
 					}
 				}
-				if !isFound {
-					// This will be an extremely rare case
-					// A new ISCSI target/portal IP has been configured
-					// on the array and added to the Port Group
-					// after the node driver cache information
-					// Invalidate the cache. Return whatever targets we have found until now
-					symToAllISCSITargets.Delete(symID)
-					break
+				if !found {
+					// Some array targets are not present in cache
+					// This mostly means that the Port group was modified post
+					// driver boot. Invalidate the cache
+					symToMaskingViewTargets.Delete(symID)
+					// Look in the cache for all targets on the array
+					isFound := false
+					for _, tgt := range allTargets {
+						if arrayTarget == tgt.Target {
+							iscsiTarget := ISCSITargetInfo{
+								Target: arrayTarget,
+								Portal: tgt.Portal,
+							}
+							iscsiTargets = append(iscsiTargets, iscsiTarget)
+							isFound = true
+						}
+					}
+					if !isFound {
+						// This will be an extremely rare case
+						// A new ISCSI target/portal IP has been configured
+						// on the array and added to the Port Group
+						// after the node driver cache information
+						// Invalidate the cache. Return whatever targets we have found until now
+						symToAllISCSITargets.Delete(symID)
+						break
+					}
 				}
 			}
+			log.Infof("Found cached targets: %v", targets)
+			return iscsiTargets
+		default:
+			// cache is wrong type, invalidate it and rebuild
+			symToAllISCSITargets.Delete(symID)
 		}
-		return iscsiTargets
 	}
 	// There is no cached information
 	_, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
