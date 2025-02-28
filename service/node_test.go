@@ -1454,7 +1454,7 @@ func TestCreateTopologyMap(t *testing.T) {
 			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
 			iscsiClient:   goiscsi.NewMockISCSI(map[string]string{}),
 			initFunc: func() {
-				listener, _ = net.Listen("tcp", ":9090")
+				listener, _ = net.Listen("tcp", "127.0.0.1:9090")
 			},
 			loggedInArrays: map[string]bool{
 				"array3": false,
