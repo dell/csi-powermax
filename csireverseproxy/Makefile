@@ -1,4 +1,4 @@
-# Copyright © 2020-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2020-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,8 +11,6 @@
 # limitations under the License.
 #
 include overrides.mk
-
-coverpackages= revproxy/v2,revproxy/v2/pkg/config,revproxy/v2/pkg/proxy
 
 run:
 	@./run.sh
@@ -29,16 +27,9 @@ check:
 build:	check
 	CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build
 
-build-base-image: download-csm-common
-	$(eval include csm-common.mk)
-	@echo "Building base image from $(DEFAULT_BASEIMAGE) and loading dependencies..."
-	./buildubimicro.sh $(DEFAULT_BASEIMAGE)
-	@echo "Base image build: SUCCESS"
-	$(eval BASEIMAGE=csipowermax-ubimicro:latest)
-
-docker: build build-base-image
+docker: build
 	go run ../core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk build-base-image docker
+	make -f docker.mk docker
 
 docker-no-cache:
 	make -f docker.mk docker-no-cache
@@ -47,8 +38,7 @@ docker-push: docker
 	make -f docker.mk push
 
 unit-test:
-	go test -v -coverprofile c.out -coverpkg $(coverpackages) ./...
+	go test -v -coverprofile c1.out ./...
 
 download-csm-common:
 	curl -O -L https://raw.githubusercontent.com/dell/csm/main/config/csm-common.mk
-

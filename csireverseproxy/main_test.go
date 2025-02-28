@@ -1,5 +1,5 @@
 /*
- Copyright © 2021-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -16,17 +16,20 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -35,13 +38,20 @@ import (
 	"revproxy/v2/pkg/common"
 	"revproxy/v2/pkg/config"
 	"revproxy/v2/pkg/k8smock"
+	"revproxy/v2/pkg/k8sutils"
 	"revproxy/v2/pkg/servermock"
 	"revproxy/v2/pkg/utils"
 
+	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
+	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
 
 	"gopkg.in/yaml.v2"
 )
@@ -68,6 +78,7 @@ const (
 	primaryCertSecretName     = "cert-secret-4"
 	backupCertSecretName      = "cert-secret-9"
 	proxySecretName           = "proxy-secret-1"
+	proxySecretName2          = "proxy-secret-2"
 	storageArrayID            = "000000000001"
 	primaryPort               = "9104"
 	backupPort                = "9109"
@@ -86,6 +97,7 @@ func startTestServer() error {
 		return nil
 	}
 	k8sUtils := k8smock.Init()
+	os.Setenv(common.EnvInClusterConfig, "true")
 	serverOpts := getServerOpts()
 	serverOpts.ConfigDir = common.TempConfigDir
 	// Create test proxy config and start the server
@@ -95,6 +107,15 @@ func startTestServer() error {
 		return err
 	}
 	_, err = k8sUtils.CreateNewCredentialSecret(proxySecretName)
+	if err != nil {
+		return err
+	}
+
+	_, err = k8sUtils.CreateNewCredentialSecret(proxySecretName2)
+	if err != nil {
+		return err
+	}
+	_, err = k8sUtils.CreateNewCredentialSecret(primaryCertSecretName)
 	if err != nil {
 		return err
 	}
@@ -167,7 +188,7 @@ func doHTTPRequest(port, path string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
@@ -210,7 +231,7 @@ func stopServers() {
 func readYAMLConfig(filename, fileDir string) (config.ProxyConfigMap, error) {
 	configmap := config.ProxyConfigMap{}
 	file := filepath.Join(fileDir, filename)
-	yamlFile, err := ioutil.ReadFile(file)
+	yamlFile, err := os.ReadFile(file)
 	if err != nil {
 		return configmap, err
 	}
@@ -227,7 +248,7 @@ func writeYAMLConfig(val interface{}, fileName, fileDir string) error {
 		return err
 	}
 	filepath := filepath.Join(fileDir, fileName)
-	return ioutil.WriteFile(filepath, file, 0o777)
+	return os.WriteFile(filepath, file, 0o777)
 }
 
 func createTempConfig() error {
@@ -238,7 +259,7 @@ func createTempConfig() error {
 	}
 
 	filename := tmpSAConfigFile
-	proxyConfigMap.Port = "8080"
+	proxyConfigMap.Port = "2222"
 	// Create a ManagementServerConfig
 	tempMgmtServerConfig := createTempManagementServers()
 	proxyConfigMap.Config.ManagementServerConfig = tempMgmtServerConfig
@@ -283,6 +304,7 @@ func createTempManagementServers() []config.ManagementServerConfig {
 	if !skipBackupCertValidation {
 		backupMgmntServer.CertSecret = backupCertSecretName
 	}
+
 	tempMgmtServerConfig := []config.ManagementServerConfig{primaryMgmntServer, backupMgmntServer}
 	return tempMgmtServerConfig
 }
@@ -336,6 +358,68 @@ func TestServer_Start(t *testing.T) {
 	}
 }
 
+// Tests the configmap handler, needs a running server
+func TestSignalHandlerOnConfigChange(t *testing.T) {
+	log.Infof("Start CMHandlerTest")
+	defer log.Infof("End CMHandlerTest")
+
+	cm, err := readYAMLConfig(tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Error("Failed to read config")
+		return
+	}
+
+	cm.LogLevel = "Debug"
+	cm.LogFormat = "json"
+	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Error("Failed to write config")
+		return
+	}
+
+	log.Infof("Start CMHandlerTest - update secret to 2")
+	cm.Config.ManagementServerConfig[0].ArrayCredentialSecret = "proxy-secret-2"
+	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update config map file. (%s)", err.Error())
+	}
+	// sleep for 1 seconds to allow the configmap to be updated
+	time.Sleep(1 * time.Second)
+
+	log.Infof("Start CMHandlerTest - update secret to 1")
+
+	cm.Config.ManagementServerConfig[0].ArrayCredentialSecret = "proxy-secret-1"
+	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update config map file. (%s)", err.Error())
+	}
+	// sleep for 1 seconds to allow the configmap to be updated
+	time.Sleep(1 * time.Second)
+
+	// Failure case, lets create a new mgmt server with bad URL.
+	badManagementServer := config.ManagementServerConfig{
+		ArrayCredentialSecret:     proxySecretName,
+		URL:                       "://example.com/@",
+		SkipCertificateValidation: true,
+	}
+
+	originalConfig := cm.Config.ManagementServerConfig
+	cm.Config.ManagementServerConfig = append(cm.Config.ManagementServerConfig, badManagementServer)
+	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update config map file. (%s)", err.Error())
+	}
+
+	// sleep for 1 seconds to allow the configmap to be updated
+	time.Sleep(1 * time.Second)
+	// Revert to original config for safety
+	cm.Config.ManagementServerConfig = originalConfig
+	err = writeYAMLConfig(cm, tmpSAConfigFile, common.TempConfigDir)
+	if err != nil {
+		t.Errorf("Failed to update config map file. (%s)", err.Error())
+	}
+}
+
 func TestServer_EventHandler(t *testing.T) {
 	k8sUtils := k8smock.Init()
 	_, err := k8sUtils.CreateNewCertSecret(primaryCertSecretName)
@@ -346,7 +430,7 @@ func TestServer_EventHandler(t *testing.T) {
 
 func TestServer_SAEventHandler(t *testing.T) {
 	k8sUtils := k8smock.Init()
-	oldProxySecret := server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	oldProxySecret := server.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      proxySecretName,
@@ -359,7 +443,7 @@ func TestServer_SAEventHandler(t *testing.T) {
 		Type: "Generic",
 	}
 	server.EventHandler(k8sUtils, newSecret)
-	newProxySecret := server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	newProxySecret := server.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	if reflect.DeepEqual(oldProxySecret, newProxySecret) {
 		t.Errorf("cert file should change after update")
 	} else {
@@ -377,7 +461,7 @@ func TestServer_SAEventHandler(t *testing.T) {
 		Type: "Generic",
 	}
 	server.EventHandler(k8sUtils, newSecret)
-	oldProxySecret = server.config.GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	oldProxySecret = server.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	if reflect.DeepEqual(oldProxySecret, newProxySecret) {
 		t.Errorf("cert file should change after update")
 	} else {
@@ -458,4 +542,403 @@ func TestSAHTTPRequest(t *testing.T) {
 		return
 	}
 	fmt.Printf("RESPONSE_BODY: %s\n", resp)
+}
+
+func TestMainFunc(t *testing.T) {
+	defaultRunFunc := runFunc
+	defaultGetKubeClientSetFunc := k8sInitFunc
+	defaultRunLeaderElectionFunc := runWithLeaderElectionFunc
+	defaultStartServerFunc := startServerFunc
+
+	afterEach := func() {
+		runFunc = defaultRunFunc
+		k8sInitFunc = defaultGetKubeClientSetFunc
+		runWithLeaderElectionFunc = defaultRunLeaderElectionFunc
+		startServerFunc = defaultStartServerFunc
+	}
+
+	runningCh := make(chan string)
+	tests := []struct {
+		name    string
+		setup   func()
+		want    string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "execute main without leader election k8s init func failure",
+			setup: func() {
+				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
+				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+					// must defer writing to the channel so all goroutines can finish running,
+					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
+					defer func() { runningCh <- "not running" }()
+
+					return nil, errors.New("error, k8s init failed")
+				}
+			},
+			want:    "not running",
+			wantErr: true,
+			errMsg:  "should not be running",
+		},
+		{
+			name: "execute main() with leader election failure",
+			setup: func() {
+				t.Setenv(common.EnvIsLeaderElectionEnabled, "true")
+				t.Setenv(common.EnvWatchNameSpace, common.DefaultNameSpace)
+
+				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+					return &Server{
+						Opts: opts,
+					}, nil
+				}
+
+				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+					return &k8sutils.K8sUtils{
+						KubernetesClient: k8sutils.KubernetesClient{
+							Clientset: fake.NewSimpleClientset(),
+						},
+					}, nil
+				}
+
+				runWithLeaderElectionFunc = func(_ *k8sutils.KubernetesClient) (err error) {
+					// must defer writing to the channel so all goroutines can finish running,
+					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
+					defer func() { runningCh <- "not running" }()
+
+					ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+					defer cancel()
+
+					// Simulate leader election failure by setting lease duration > renew
+					lei := leaderelection.NewLeaderElection(fake.NewSimpleClientset(), "csi-powermax-reverse-proxy-dellemc-com", runFunc)
+					lei.WithRenewDeadline(10 * time.Second)
+					lei.WithLeaseDuration(5 * time.Second)
+					lei.WithContext(ctx)
+					lei.WithNamespace(getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace))
+
+					// leader election Run() panics on failure, catch the panic and return an error
+					defer func() {
+						if r := recover(); r != nil {
+							log.Errorf("Leader election panicked: %v", r)
+							err = fmt.Errorf("%v, leader election failed due to panic: %v", err, r)
+						}
+					}()
+
+					err = lei.Run()
+					if err != nil {
+						t.Errorf("leader election failed as expected")
+					} else {
+						t.Errorf("expected leader election failure but got none")
+					}
+					return err
+				}
+			},
+			want:    "not running",
+			wantErr: true,
+			errMsg:  "should not be running",
+		},
+		{
+			name: "execute main() with leader election k8s init func failure",
+			setup: func() {
+				t.Setenv(common.EnvIsLeaderElectionEnabled, "true")
+				t.Setenv(common.EnvWatchNameSpace, common.DefaultNameSpace)
+
+				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+					return &Server{
+						Opts: opts,
+					}, nil
+				}
+
+				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+					// must defer writing to the channel so all goroutines can finish running,
+					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
+					defer func() { runningCh <- "not running" }()
+
+					return nil, errors.New("error, k8s init failed")
+				}
+			},
+			want:    "not running",
+			wantErr: true,
+			errMsg:  "should not be running",
+		},
+		{
+			name: "execute main() without leader election",
+			setup: func() {
+				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
+				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+					// must defer writing to the channel so all goroutines can finish running,
+					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
+					defer func() { runningCh <- "running" }()
+
+					return &Server{
+						Opts: opts,
+					}, nil
+				}
+				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+					return &k8sutils.K8sUtils{
+						KubernetesClient: k8sutils.KubernetesClient{
+							Clientset: fake.NewSimpleClientset(),
+						},
+					}, nil
+				}
+			},
+			want:    "running",
+			wantErr: false,
+		},
+		{
+			name: "execute main() with leader election",
+			setup: func() {
+				runFunc = func(_ context.Context) {
+					runningCh <- "running"
+				}
+
+				t.Setenv(common.EnvIsLeaderElectionEnabled, "true")
+				t.Setenv(common.EnvWatchNameSpace, common.DefaultNameSpace)
+
+				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+					return &Server{
+						Opts: opts,
+					}, nil
+				}
+
+				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+					return &k8sutils.K8sUtils{
+						KubernetesClient: k8sutils.KubernetesClient{
+							Clientset: fake.NewSimpleClientset(),
+						},
+					}, nil
+				}
+			},
+			want:    "running",
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer afterEach()
+			tt.setup()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			go main()
+
+			select {
+			case running := <-runningCh:
+				switch running {
+				case "running":
+					if tt.want != "running" {
+						t.Errorf("main() = %v, want %v", running, tt.want)
+					}
+
+				case "not running":
+					if tt.want != "not running" {
+						t.Errorf("main() = %v, want %v", running, tt.want)
+					}
+				}
+			case <-ctx.Done():
+				t.Errorf("timed out waiting for driver to run")
+			}
+		})
+	}
+}
+
+func TestRun(t *testing.T) {
+	defaultRunFunc := runFunc
+	defaultGetKubeClientSetFunc := k8sInitFunc
+	defaultRunLeaderElectionFunc := runWithLeaderElectionFunc
+	defaultStartServerFunc := startServerFunc
+
+	afterEach := func() {
+		runFunc = defaultRunFunc
+		k8sInitFunc = defaultGetKubeClientSetFunc
+		runWithLeaderElectionFunc = defaultRunLeaderElectionFunc
+		startServerFunc = defaultStartServerFunc
+	}
+
+	runningCh := make(chan string)
+	tests := []struct {
+		name    string
+		setup   func()
+		want    string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "execute run sucess",
+			setup: func() {
+				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
+				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+					return &Server{
+						Opts: opts,
+					}, nil
+				}
+				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+					return &k8sutils.K8sUtils{
+						KubernetesClient: k8sutils.KubernetesClient{
+							Clientset: fake.NewSimpleClientset(),
+						},
+					}, nil
+				}
+				runFunc = func(_ context.Context) {
+					runningCh <- "running"
+				}
+			},
+			want:    "running",
+			wantErr: false,
+			errMsg:  "",
+		},
+		{
+			name: "execute run start server failure",
+			setup: func() {
+				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
+				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+					return &k8sutils.K8sUtils{
+						KubernetesClient: k8sutils.KubernetesClient{
+							Clientset: fake.NewSimpleClientset(),
+						},
+					}, nil
+				}
+				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+					runningCh <- "should not be running"
+					return nil, errors.New("error, start server failed")
+				}
+			},
+			want:    "should not be running",
+			wantErr: true,
+			errMsg:  "error, start server failed",
+		},
+		{
+			name: "execute run k8s init failure",
+			setup: func() {
+				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
+				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+					return nil, errors.New("error, k8s init failed")
+				}
+			},
+			want:    "",
+			wantErr: true,
+			errMsg:  "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer afterEach()
+
+			tt.setup()
+
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*20)
+			defer cancel()
+
+			errCh := make(chan error)
+			go func() {
+				errCh <- run(ctx)
+			}()
+
+			select {
+			case running := <-runningCh:
+				if running != tt.want {
+					t.Errorf("Run() = %v, want %v", running, tt.want)
+				}
+			case e := <-errCh:
+				if (e != nil) != tt.wantErr {
+					t.Errorf("Run() error = %v, wantErr %v", e, tt.wantErr)
+				}
+			case <-ctx.Done():
+				t.Errorf("Run() timed out")
+			}
+		})
+	}
+}
+
+func TestUpdateRevProxyLogParams(t *testing.T) {
+	tests := []struct {
+		name      string
+		format    string
+		logLevel  string
+		expectLog log.Level
+	}{
+		{"Default values", "", "", log.DebugLevel},
+		{"Valid JSON format", "json", "info", log.InfoLevel},
+		{"Valid Text format", "text", "warn", log.WarnLevel},
+		{"Invalid format defaults to text", "xml", "error", log.ErrorLevel},
+		{"Invalid log level defaults to debug", "json", "invalid", log.DebugLevel},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Capture log output
+			var logOutput strings.Builder
+			logrus.SetOutput(&logOutput)
+
+			updateRevProxyLogParams(tt.format, tt.logLevel)
+
+			// Validate log level
+			assert.Equal(t, tt.expectLog, logrus.GetLevel())
+		})
+	}
+}
+
+func TestK8sInitFunc(t *testing.T) {
+	tests := []struct {
+		name        string
+		kubeClient  *k8sutils.KubernetesClient
+		expectError bool
+		expectNil   bool
+	}{
+		{
+			name: "Successful Initialization",
+			kubeClient: &k8sutils.KubernetesClient{
+				Clientset:         fake.NewSimpleClientset(),
+				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
+				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+					return fake.NewSimpleClientset(), nil
+				},
+				GetPathFromEnvFunc: func() string { return "./" },
+			},
+			expectError: false,
+			expectNil:   false,
+		},
+		{
+			name: "Failed Initialization",
+			kubeClient: &k8sutils.KubernetesClient{
+				Clientset:         fake.NewSimpleClientset(),
+				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
+				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+					return nil, errors.New("error")
+				},
+				GetPathFromEnvFunc: func() string { return "./" },
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resyncPeriod := 10 * time.Second
+			k8sUtils, err := k8sInitFunc("default", "/tmp/certs", true, resyncPeriod, tt.kubeClient)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			if tt.expectNil {
+				assert.Nil(t, k8sUtils)
+			} else {
+				assert.NotNil(t, k8sUtils)
+			}
+		})
+	}
+}
+
+func TestStartServerFuncFailure(t *testing.T) {
+	opts := getServerOpts()
+	// Invalid config file
+	opts.ConfigFileName = "invalid.yaml"
+	opts.ConfigDir = "./invalid-dir"
+	_, err := startServerFunc(k8smock.Init(), opts)
+	if err == nil {
+		t.Errorf("expecting server to not start, but it was started")
+	}
 }

@@ -43,7 +43,7 @@ install:
 docker:
 	go generate
 	go run core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk build-base-image docker
+	make -f docker.mk docker
 	# build the reverseproxy container as part of this target
 	( cd csireverseproxy; make docker )
 
@@ -52,7 +52,7 @@ docker:
 docker-no-cache:
 	go generate
 	go run core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk build-base-image docker-no-cache
+	make -f docker.mk docker-no-cache
 	# build the reverseproxy container as part of this target
 	( cd csireverseproxy; make docker-no-cache )
 
@@ -71,9 +71,6 @@ bdd-test: golint check
 # Linux only; populate env.sh with the hardware parameters
 integration-test:
 	( cd test/integration; sh run.sh )
-
-release:
-	BUILD_TYPE="R" $(MAKE) clean build docker push
 
 version:
 	go generate
@@ -103,3 +100,20 @@ GOLINT=$(GOBIN)/golint
 else
 GOLINT=$(shell which golint)
 endif
+
+.PHONY: actions action-help
+actions: ## Run all GitHub Action checks that run on a pull request creation
+	@echo "Running all GitHub Action checks for pull request events..."
+	@act -l | grep -v ^Stage | grep pull_request | grep -v image_security_scan | awk '{print $$2}' | while read WF; do \
+		echo "Running workflow: $${WF}"; \
+		act pull_request --no-cache-server --platform ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --job "$${WF}"; \
+	done
+
+action-help: ## Echo instructions to run one specific workflow locally
+	@echo "GitHub Workflows can be run locally with the following command:"
+	@echo "act pull_request --no-cache-server --platform ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --job <jobid>"
+	@echo ""
+	@echo "Where '<jobid>' is a Job ID returned by the command:"
+	@echo "act -l"
+	@echo ""
+	@echo "NOTE: if act is not installed, it can be downloaded from https://github.com/nektos/act"
