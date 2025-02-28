@@ -1,0 +1,11 @@
+port: 2222
+config:
+  storageArrays:
+    - storageArrayId: "000000000003"
+      primaryURL: https://primary-1.unisphe.re:8443
+      proxyCredentialSecrets:
+        - primary-unisphere-secret-1
+  managementServers:
+    - url: https://primary-1.unisphe.re:8443
+      arrayCredentialSecret: primary-unisphere-secret-1
+      skipCertificateValidation: true

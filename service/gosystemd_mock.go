@@ -39,7 +39,9 @@ func mockgosystemdReset() {
 	mockgosystemdInducedErrors.JobFailure = false
 }
 
-type mockDbusConnection struct{}
+type mockDbusConnection struct {
+	err error
+}
 
 func (c *mockDbusConnection) Close() {
 	// Do nothing
