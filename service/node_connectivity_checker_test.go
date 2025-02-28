@@ -50,8 +50,8 @@ func TestApiRouter(t *testing.T) {
 		t.Errorf("Error while probing array status %v", err)
 	}
 	// fill some invalid dummy data in the cache and try to fetch
-	probeStatus = new(sync.Map)
-	probeStatus.Store("SymID2", "status")
+	s.newProbeStatus()
+	s.probeStatus.Store("SymID2", "status")
 
 	resp5, err := http.Get("http://localhost:8083/array-status")
 	if err != nil || resp5.StatusCode != 500 {
@@ -62,8 +62,8 @@ func TestApiRouter(t *testing.T) {
 	var status ArrayConnectivityStatus
 	status.LastSuccess = time.Now().Unix()
 	status.LastAttempt = time.Now().Unix()
-	probeStatus = new(sync.Map)
-	probeStatus.Store("SymID", status)
+	s.newProbeStatus()
+	s.probeStatus.Store("SymID", status)
 
 	// array status
 	resp2, err := http.Get("http://localhost:8083/array-status")
@@ -76,7 +76,7 @@ func TestApiRouter(t *testing.T) {
 		t.Errorf("Error while probing array status %v", err)
 	}
 	value := make(chan int)
-	probeStatus.Store("SymID3", value)
+	s.probeStatus.Store("SymID3", value)
 	resp9, err := http.Get("http://localhost:8083/array-status/SymID3")
 	if err != nil || resp9.StatusCode != 500 {
 		t.Errorf("Error while probing array status %v", err)
@@ -129,99 +129,8 @@ func TestStartAPIServiceNoPodmon(_ *testing.T) {
 	s.startAPIService(context.Background())
 }
 
-// Run the following tests exclusively as they involve multiple sockets
-/*
-func TestQueryArrayStatus(t *testing.T) {
-	var status ArrayConnectivityStatus
-	status.LastAttempt = time.Now().Unix()
-	status.LastSuccess = time.Now().Unix()
-	input, _ := json.Marshal(status)
-	// responding with some dummy response that is for the case when array is connected and LastSuccess check was just finished
-	http.HandleFunc("/array/id1", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write(input)
-	})
-
-	server := &http.Server{Addr: ":49160"} // #nosec G112
-	fmt.Printf("Starting server at port 49160 \n")
-	go func() {
-		err := server.ListenAndServe()
-		if err != nil {
-			fmt.Println(err)
-		}
-	}()
-	check, err := s.QueryArrayStatus(context.Background(), "http://localhost:49160/array/id1")
-	if !check || err != nil {
-		t.Errorf("err: %s , expected check to be true but is %t", err.Error(), check)
-	}
-	server.Shutdown(context.Background())
-}
-
-func TestQASOnDisconnectedArr(t *testing.T) {
-	var status ArrayConnectivityStatus
-	status.LastAttempt = time.Now().Unix()
-	status.LastSuccess = time.Now().Unix() - 100
-	input, _ := json.Marshal(status)
-	// responding with some dummy response that is for the case when array is connected and LastSuccess check was just finished
-	http.HandleFunc("/array/id2", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write(input)
-	})
-
-	server := &http.Server{Addr: ":49159"} // #nosec G112
-	fmt.Printf("Starting server at port 49159 \n")
-	go func() {
-		err := server.ListenAndServe()
-		if err != nil {
-			fmt.Println(err)
-		}
-	}()
-	check, err := s.QueryArrayStatus(context.Background(), "http://localhost:49159/array/id2")
-	if err != nil || check {
-		t.Errorf("err: %s , expected check to be false but is %t", err.Error(), check)
-	}
-	server.Shutdown(context.Background())
-}
-
-func TestQASWithDiffErr(t *testing.T) {
-	var status ArrayConnectivityStatus
-	status.LastAttempt = time.Now().Unix() - 200
-	status.LastSuccess = time.Now().Unix() - 200
-	input, _ := json.Marshal(status)
-	// Responding with a dummy response for the case when the array check was done a while ago
-	http.HandleFunc("/array/id3", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write(input)
-	})
-
-	http.HandleFunc("/array/id4", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("invalid type response"))
-	})
-	server := &http.Server{Addr: ":49157"} // #nosec G112
-	fmt.Printf("Starting server at port 49157 \n")
-	go func() {
-		err := server.ListenAndServe()
-		if err != nil {
-			fmt.Println(err)
-		}
-	}()
-	check, err := s.QueryArrayStatus(context.Background(), "http://localhost:49157/array/id3")
-	if err != nil || check {
-		t.Errorf("err: %s , expected check to be false but is %t", err.Error(), check)
-	}
-
-	check, err = s.QueryArrayStatus(context.Background(), "http://localhost:49157/array/id4")
-	if err == nil || check {
-		t.Errorf("err: %s , expected check to be false but is %t", err.Error(), check)
-	}
-
-	check, err = s.QueryArrayStatus(context.Background(), "http://localhost:49157/array/id5")
-	if err == nil || check {
-		t.Errorf("err: %s , expected check to be false but is %t", err.Error(), check)
-	}
-	server.Shutdown(context.Background())
-}*/
-
 func TestConnectivityStatus(t *testing.T) {
 	// Initialize the probeStatus variable
-	probeStatus = new(sync.Map)
 
 	// Create a valid ArrayConnectivityStatus instance
 	status := ArrayConnectivityStatus{
@@ -230,7 +139,7 @@ func TestConnectivityStatus(t *testing.T) {
 	}
 
 	// Store valid data in probeStatus
-	probeStatus.Store("SymID", status)
+	s.probeStatus.Store("SymID", status)
 
 	// Test cases
 	tests := []struct {
@@ -245,7 +154,7 @@ func TestConnectivityStatus(t *testing.T) {
 		},
 		{
 			name:         "Valid probeStatus",
-			probeStatus:  probeStatus,
+			probeStatus:  s.probeStatus,
 			expectedCode: http.StatusOK,
 		},
 	}
@@ -253,14 +162,21 @@ func TestConnectivityStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set the global probeStatus for the test
-			probeStatus = tt.probeStatus
+			s.newProbeStatus()
+
+			if tt.probeStatus != nil {
+				tt.probeStatus.Range(func(key, value interface{}) bool {
+					s.probeStatus.Store(key, value)
+					return true
+				})
+			}
 
 			// Create a response recorder
 			recorder := httptest.NewRecorder()
 			req := httptest.NewRequest("GET", "/connectivityStatus", nil)
 
 			// Call the function
-			connectivityStatus(recorder, req)
+			s.connectivityStatus(recorder, req)
 
 			// Check the response code
 			if recorder.Code != tt.expectedCode {
