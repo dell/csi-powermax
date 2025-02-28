@@ -218,7 +218,8 @@ func (pc *ProxyConfig) GetManagedArraysAndServers() map[string]StorageArrayServe
 func (pc *ProxyConfig) IsSecretConfiguredForCerts(secretName string) bool {
 	found := false
 	for _, server := range pc.managementServers {
-		if server.CredentialSecret == secretName {
+		if server.CertSecret == secretName {
+			log.Infof("Found secret configured %s", server.CertSecret)
 			found = true
 			break
 		}
