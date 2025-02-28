@@ -149,7 +149,6 @@ func CleanupMapEntries(duration time.Duration) {
 				lockMutex.Lock()
 				// Don't hold the mutex for more than 20 milliseconds
 				now := time.Now()
-				log.Debugf("CleanupMapEntries: Current number of entries in lock map: %d", len(fifolocks))
 				for resourceID, lockInfo := range fifolocks {
 					if time.Since(now) > 20*time.Millisecond {
 						log.Debugf("CleanupMapEntries: Held the lock mutex for 20 milliseconds. Releasing it now")

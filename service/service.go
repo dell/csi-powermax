@@ -72,7 +72,8 @@ const (
 	defaultCertFile            = "tls.crt"
 )
 
-type contextKey string           // specific string type used for context keys
+type contextKey string // specific string type used for context keys
+
 var inducedMockReverseProxy bool // for testing only
 
 // Manifest is the SP's manifest.
@@ -166,20 +167,24 @@ type service struct {
 	iscsiClient    goiscsi.ISCSIinterface
 	nvmetcpClient  gonvme.NVMEinterface
 	// replace this with Unisphere system if needed
-	system             *interface{}
-	privDir            string
-	loggedInArrays     map[string]bool
-	loggedInNVMeArrays map[string]bool
-	mutex              sync.Mutex
-	cacheMutex         sync.Mutex
-	nodeProbeMutex     sync.Mutex
-	nodeIsInitialized  bool
-	useNFS             bool
-	useFC              bool
-	useIscsi           bool
-	useNVMeTCP         bool
-	iscsiTargets       map[string][]string
-	nvmeTargets        map[string][]string
+	system                    *interface{}
+	privDir                   string
+	loggedInArrays            map[string]bool
+	loggedInNVMeArrays        map[string]bool
+	mutex                     sync.Mutex
+	cacheMutex                sync.Mutex
+	nodeProbeMutex            sync.Mutex
+	probeStatus               *sync.Map
+	probeStatusMutex          sync.Mutex
+	pollingFrequencyMutex     sync.Mutex
+	pollingFrequencyInSeconds int64
+	nodeIsInitialized         bool
+	useNFS                    bool
+	useFC                     bool
+	useIscsi                  bool
+	useNVMeTCP                bool
+	iscsiTargets              map[string][]string
+	nvmeTargets               *sync.Map
 
 	// Timeout for storage pool cache
 	storagePoolCacheDuration time.Duration
@@ -199,7 +204,8 @@ type service struct {
 	allowedTopologyKeys       map[string][]string // map of nodes to allowed topology keys
 	deniedTopologyKeys        map[string][]string // map of nodes to denied topology keys
 
-	k8sUtils k8sutils.UtilsInterface
+	k8sUtils    k8sutils.UtilsInterface
+	snapCleaner *snapCleanupWorker
 }
 
 // New returns a new Service.
@@ -208,10 +214,11 @@ func New() Service {
 		loggedInArrays:     map[string]bool{},
 		iscsiTargets:       map[string][]string{},
 		loggedInNVMeArrays: map[string]bool{},
-		nvmeTargets:        map[string][]string{},
+		nvmeTargets:        new(sync.Map),
 	}
 	svc.sgSvc = newStorageGroupService(svc)
 	svc.pmaxTimeoutSeconds = defaultPmaxTimeout
+	svc.probeStatus = new(sync.Map)
 	return svc
 }
 
@@ -615,8 +622,8 @@ func (s *service) BeforeServe(
 	// Start the snapshot housekeeping worker thread
 	if !strings.EqualFold(s.mode, "node") {
 		s.startSnapCleanupWorker() // #nosec G20
-		if snapCleaner == nil {
-			snapCleaner = new(snapCleanupWorker)
+		if s.snapCleaner == nil {
+			s.snapCleaner = new(snapCleanupWorker)
 		}
 	}
 
@@ -859,17 +866,16 @@ func setLogFields(ctx context.Context, fields log.Fields) context.Context {
 }
 
 func getLogFields(ctx context.Context) log.Fields {
-	if ctx == nil {
-		return log.Fields{}
-	}
 	fields, ok := ctx.Value(contextKey(logFields)).(log.Fields)
 	if !ok {
 		fields = log.Fields{}
 	}
+
 	csiReqID, ok := ctx.Value(csictx.RequestIDKey).(string)
 	if !ok {
 		return fields
 	}
+
 	fields["RequestID"] = csiReqID
 	return fields
 }
@@ -877,12 +883,23 @@ func getLogFields(ctx context.Context) log.Fields {
 // SetPollingFrequency reads the pollingFrequency from Env, sets default vale if ENV not found
 func (s *service) SetPollingFrequency(ctx context.Context) int64 {
 	var pollingFrequency int64
+	s.pollingFrequencyMutex.Lock()
+	defer s.pollingFrequencyMutex.Unlock()
 	if pollRateEnv, ok := csictx.LookupEnv(ctx, EnvPodmonArrayConnectivityPollRate); ok {
 		if pollingFrequency, _ = strconv.ParseInt(pollRateEnv, 10, 32); pollingFrequency != 0 {
 			log.Debugf("use pollingFrequency as %d seconds", pollingFrequency)
-			return pollingFrequency
+			s.pollingFrequencyInSeconds = pollingFrequency
+			return s.pollingFrequencyInSeconds
 		}
 	}
 	log.Debugf("use default pollingFrequency as %d seconds", DefaultPodmonPollRate)
-	return DefaultPodmonPollRate
+	s.pollingFrequencyInSeconds = DefaultPodmonPollRate
+	return s.pollingFrequencyInSeconds
+}
+
+// GetPollingFrequency returns the pollingFrequency
+func (s *service) GetPollingFrequency() int64 {
+	s.pollingFrequencyMutex.Lock()
+	defer s.pollingFrequencyMutex.Unlock()
+	return s.pollingFrequencyInSeconds
 }
