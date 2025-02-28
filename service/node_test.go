@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"reflect"
 	"strings"
@@ -1332,6 +1333,7 @@ func TestPerformNVMETCPLoginOnSymID(t *testing.T) {
 }
 
 func TestCreateTopologyMap(t *testing.T) {
+	var listener net.Listener
 	testCases := []struct {
 		name                      string
 		nodeName                  string
@@ -1426,8 +1428,8 @@ func TestCreateTopologyMap(t *testing.T) {
 			name: "Success case ISCSI, no logged in arrays",
 			getClient: func() *mocks.MockPmaxClient {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
-				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
-				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
+				c.EXPECT().WithSymmetrixID("array3").AnyTimes().Return(c)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array3", "portgroup1").AnyTimes().Return(&types.PortGroup{
 					SymmetrixPortKey: []types.PortKey{
 						{
 							DirectorID: "director1",
@@ -1435,25 +1437,27 @@ func TestCreateTopologyMap(t *testing.T) {
 						},
 					},
 				}, nil)
-				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
+				c.EXPECT().GetPort(gmock.All(), "array3", gmock.Any(), gmock.Any()).AnyTimes().Return(&types.Port{
 					SymmetrixPort: types.SymmetrixPortType{
-						IPAddresses: []string{"1.1.1.1"},
+						IPAddresses: []string{"127.0.0.1"},
 						Identifier:  "iqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+						TCPPort:     9090,
 					},
 				}, nil)
-				symmetrix.Initialize([]string{"array1"}, c)
+				symmetrix.Initialize([]string{"array3"}, c)
 				return c
 			},
-			managedArrays: []string{"array1"},
+			managedArrays: []string{"array3"},
 			arrayTransportProtocolMap: map[string]string{
-				"array1": IscsiTransportProtocol,
+				"array3": IscsiTransportProtocol,
 			},
 			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
 			iscsiClient:   goiscsi.NewMockISCSI(map[string]string{}),
 			initFunc: func() {
+				listener, _ = net.Listen("tcp", "127.0.0.1:9090")
 			},
 			loggedInArrays: map[string]bool{
-				"array1": false,
+				"array3": false,
 			},
 			loggedInNVMeArrays: map[string]bool{},
 			portGroups:         []string{"portgroup1"},
@@ -1636,6 +1640,9 @@ func TestCreateTopologyMap(t *testing.T) {
 				t.Errorf("Expected error but got none")
 			} else if len(topo) == 0 && !tc.wantErr {
 				t.Errorf("Expected no error but got no topology map")
+			}
+			if listener != nil {
+				listener.Close()
 			}
 		})
 	}
@@ -2332,5 +2339,25 @@ func TestGetVolumeStats(t *testing.T) {
 	_, _, _, _, _, _, err = getVolumeStats(context.Background(), mnt.Path)
 	if err == nil {
 		t.Errorf("Expected: error, but got: %v", err)
+	}
+}
+
+func TestReachableEndPoint(t *testing.T) {
+	type args struct {
+		endpoint string
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{"Unreachable IP", args{endpoint: "10.255.1.2:100"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := s.reachableEndPoint(tt.args.endpoint); got != tt.want {
+				t.Errorf("reachableEndPoint() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
