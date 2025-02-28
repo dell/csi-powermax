@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"os"
 	"path"
 	"regexp"
@@ -1077,8 +1078,8 @@ func (s *service) NodeGetCapabilities(
 	}, nil
 }
 
-func (s *service) getIPInterfaces(ctx context.Context, symID string, portGroups []string, pmaxClient pmax.Pmax) ([]string, error) {
-	ipInterfaces := make([]string, 0)
+func (s *service) getIPInterfaces(ctx context.Context, symID string, portGroups []string, pmaxClient pmax.Pmax) (map[string]int32, error) {
+	ipInterfaces := make(map[string]int32)
 	for _, pg := range portGroups {
 		portGroup, err := pmaxClient.GetPortGroupByID(ctx, symID, pg)
 		if err != nil {
@@ -1090,7 +1091,9 @@ func (s *service) getIPInterfaces(ctx context.Context, symID string, portGroups 
 			if err != nil {
 				return nil, err
 			}
-			ipInterfaces = append(ipInterfaces, port.SymmetrixPort.IPAddresses...)
+			for _, ip := range port.SymmetrixPort.IPAddresses {
+				ipInterfaces[ip] = port.SymmetrixPort.TCPPort
+			}
 		}
 	}
 	return ipInterfaces, nil
@@ -1103,6 +1106,13 @@ func (s *service) isISCSIConnected(err error) bool {
 		return true
 	}
 	return false
+}
+
+// reachableEndPoint checks if this endpoint is reachable or not
+func (s *service) reachableEndPoint(endpoint string) bool {
+	// this endpoint has IP:PORT
+	_, err := net.DialTimeout("tcp", endpoint, 2*time.Second)
+	return err == nil
 }
 
 func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[string]string {
@@ -1141,7 +1151,7 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 				continue
 			}
 
-			for _, ip := range ipInterfaces {
+			for ip := range ipInterfaces {
 				isArrayConnected := false
 				_, err := s.nvmetcpClient.DiscoverNVMeTCPTargets(ip, true)
 				if err != nil {
@@ -1160,22 +1170,18 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 				continue
 			}
 
-			for _, ip := range ipInterfaces {
-				isArrayConnected := false
-				_, err := s.iscsiClient.DiscoverTargets(ip, false)
-				if err != nil {
-					if s.isISCSIConnected(err) {
-						isArrayConnected = true
-					} else {
+			for ip, port := range ipInterfaces {
+				// first check if this portal is reachable from this machine or not
+				if s.reachableEndPoint(fmt.Sprintf("%s:%d", ip, port)) {
+					_, err := s.iscsiClient.DiscoverTargets(ip, false)
+					if err != nil && !s.isISCSIConnected(err) {
 						log.Errorf("Failed to connect to the IP interface(%s) of array(%s)", ip, id)
+						continue
 					}
-				} else {
-					isArrayConnected = true
-				}
-				if isArrayConnected {
 					iscsiArrays = append(iscsiArrays, id)
 					break
 				}
+				log.Infof("IP interface(%s) of array(%s) is not reachable from the node", ip, id)
 			}
 		}
 	}
@@ -1198,7 +1204,6 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(IscsiTransportProtocol)] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(NFS)] = s.getDriverName()
-
 		}
 	}
 
@@ -1208,7 +1213,6 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(NvmeTCPTransportProtocol)] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(NFS)] = s.getDriverName()
-
 		}
 	}
 
@@ -2011,7 +2015,7 @@ func (s *service) setupNVMeTCPTargetDiscovery(ctx context.Context, array string,
 	if len(ipInterfaces) == 0 {
 		return fmt.Errorf("couldn't find any ip interfaces on any of the port-groups %s", s.opts.PortGroups)
 	}
-	for _, ip := range ipInterfaces {
+	for ip := range ipInterfaces {
 		// Attempt target discovery from host
 		log.Debugf("Discovering NVMe targets on %s", ip)
 		_, discoveryError := s.nvmetcpClient.DiscoverNVMeTCPTargets(ip, true)
