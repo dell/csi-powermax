@@ -1,8 +1,6 @@
 module github.com/dell/csi-powermax/v2
 
-go 1.23.0
-
-toolchain go1.23.4
+go 1.23.5
 
 require (
 	github.com/akutz/goof v0.1.2
@@ -17,18 +15,20 @@ require (
 	github.com/dell/gobrick v1.13.1
 	github.com/dell/gocsi v1.13.0
 	github.com/dell/gofsutil v1.18.0
-	github.com/dell/goiscsi v1.11.0
+	github.com/dell/goiscsi v1.11.1-0.20250227093735-d591593ee572
 	github.com/dell/gonvme v1.10.1
-	github.com/dell/gopowermax/v2 v2.9.0
+	github.com/dell/gopowermax/v2 v2.9.1-0.20250225194839-14832df3370b
 	github.com/fsnotify/fsnotify v1.8.0
+	github.com/golang/mock v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/kubernetes-csi/csi-lib-utils v0.11.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.10.0
-	github.com/vmware/govmomi v0.47.1
-	golang.org/x/net v0.34.0
-	google.golang.org/grpc v1.69.4
+	github.com/vmware/govmomi v0.48.1
+	go.uber.org/mock v0.5.0
+	golang.org/x/net v0.35.0
+	google.golang.org/grpc v1.70.0
 	google.golang.org/protobuf v1.36.3
 	k8s.io/api v0.32.1
 	k8s.io/apimachinery v0.32.1
@@ -50,7 +50,6 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
@@ -88,10 +87,10 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 	golang.org/x/oauth2 v0.25.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/term v0.28.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/sync v0.11.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/term v0.29.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241209162323-e6fa225c2576 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241223144023-3abc09e42ca8 // indirect
