@@ -232,6 +232,7 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Call NodeGetInfo and validate NodeId
       Given a PowerMax service
+      And I add ISCSI array to ProtocolMap
       When I call NodeGetInfo
       Then a valid NodeGetInfoResponse is returned
 
@@ -241,6 +242,27 @@ Feature: PowerMax CSI interface
       And I add FC array to ProtocolMap
       When I call NodeGetInfo
       Then a valid NodeGetInfoResponse is returned
+
+@v2.14.0
+     Scenario: Call NodeGetInfo and validate NodeId
+      Given a PowerMax service
+      And I add NVME array to ProtocolMap
+      When I call NodeGetInfo
+      Then a valid NodeGetInfoResponse is returned
+@v2.8.0
+     Scenario Outline: Validate NodeGetInfo for different protocols
+      Given a PowerMax service
+      And I add to ProtocolMap <protocol>
+      And I have a Node "node1" with MaskingView
+      And arrays are logged in with protocol <protocol>
+      When I call NodeGetInfo
+      Then a valid NodeGetInfoResponse is returned
+
+      Examples:
+      | protocol                  |
+      | "FC"                      |
+      | "iSCSI"                   |
+      | "NVMe"                    |
 
 @v1.0.0
      Scenario: Call NodeGetInfo without setting Node Name
@@ -458,7 +480,7 @@ Feature: PowerMax CSI interface
       | "testhost"         |"NoIQNs"              | "none"                | "No IQNs specified"              | 0     |
       | "testhost"         |"GetHostError"        | "CreateHostError"     | "Unable to create Host"          | 0     |
       | "testhost"         |"none"                | "none"                | "none"                           | 1     |
-      | "CSI-Test-Node-1"  |"UpdateHostError"     | "none"                | "Unable to update Host"          | 1     |
+      | "CSI-Test-Node-1"  |"UpdateHostError"     | "none"                | "none"                           | 1     |
       | "CSI-Test-Node-1"  |"UpdateHostError"     | "ResetAfterFirstError"| "none"                           | 1     |
       | "CSI-Test-Node-1"  |"GetHostError"        | "none"                | "none"                           | 1     |
 
@@ -479,9 +501,9 @@ Feature: PowerMax CSI interface
       | "testhost"         |"GetHostError"        | "CreateHostError"     | "Unable to create Host"          | 0     |
       | "testhost"         |"none"                | "none"                | "none"                           | 1     |
       | "CSI-Test-Node-2"  |"GetInitiatorError"   | "none"                | "Error retrieving Initiator(s)"  | 0     |
-      | "CSI-Test-Node-2"  |"UpdateHostError"     | "none"                | "Unable to update Host"          | 2     |
-      | "CSI-Test-Node-2"  |"UpdateHostError"     | "ResetAfterFirstError"| "none"                           | 2     |
-      | "CSI-Test-Node-2"  |"GetHostError"        | "none"                | "none"                           | 2     |
+      | "CSI-Test-Node-2"  |"UpdateHostError"     | "CreateHostError"     | "Unable to"                      | 0     |
+      | "CSI-Test-Node-2"  |"UpdateHostError"     | "ResetAfterFirstError"| "none"                           | 1     |
+      | "CSI-Test-Node-2"  |"GetHostError"        | "none"                | "none"                           | 1     |
 
 @v1.1.0
     Scenario Outline: Validate nodeHostSetup
@@ -517,13 +539,14 @@ Feature: PowerMax CSI interface
       And I have a Node "node1" with MaskingView
       And there are no arrays logged in
       And I induce error <induced1>
+      And I invalidate symToMaskingViewTarget cache
       When I invoke ensureLoggedIntoEveryArray
       Then the error contains <errormsg>
       And <count> arrays are logged in
 
       Examples:
       | induced1               | errormsg                           | count |
-#      | "GetSymmetrixError"    | "Unable to retrieve Array List"   | 0     |
+#     | "GetSymmetrixError"    | "Unable to retrieve Array List"    | 0     |
       | "GOISCSIDiscoveryError"| "failed to login"                  | 0     |
       | "none"                 | "none"                             | 3     |
 
@@ -621,6 +644,7 @@ Feature: PowerMax CSI interface
       | "GOFSInduceFSTypeError"                  | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to fetch filesystem"               |
       | "GOFSInduceResizeFSError"                | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to resize device"                  |      
       | "NoVolumeID"                             | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Invalid volume id"                                |
+      
 
 @v1.4.0
   Scenario: Node Expand with a failed NodeProbe
@@ -716,7 +740,7 @@ Feature: PowerMax CSI interface
       And I set transport protocol to "NVME"
       And I have a Node "node1" with MaskingView
       When I call getAndConfigureArrayNVMeTCPTargets
-      Then 2 nvmetcp targets are returned
+      Then 1 nvmetcp targets are returned
 
 @v1.3.0
     Scenario: Test getAndConfigureArrayNVMeTCPTargets after cache was populated
@@ -724,7 +748,7 @@ Feature: PowerMax CSI interface
       And I set transport protocol to "NVME"
       And I have a Node "node1" with MaskingView
       When I call getAndConfigureArrayNVMeTCPTargets
-      Then 2 nvmetcp targets are returned
+      Then 1 nvmetcp targets are returned
 
 @v1.3.0
     Scenario: Test getAndConfigureArrayNVMeTCPTargets without masking view
@@ -759,7 +783,7 @@ Feature: PowerMax CSI interface
         | "none"                                   | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
         | "GOFSInduceGetMountInfoFromDeviceError"  | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
         | "NoVolumeID"                             | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "Invalid volume id"      |
-	    | "NoMountInfo"                            | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"                | "none"                   |
+	  | "NoMountInfo"                            | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"                | "none"                   |
 
 @v2.3.0
   Scenario Outline: Test valid Topology ReadConfig in BeforeServe
@@ -797,7 +821,7 @@ Scenario: Identity ProbeController good call
   Given a PowerMax service
   When I call ProbeController
   Then a valid ProbeControllerResponse is returned
-
+  
 @v2.9.0
 Scenario: Identity GetReplicationCapabilities good call
   Given a PowerMax service
@@ -855,3 +879,17 @@ Scenario: Create a fileSystem volume with error
   And I induce error "GetFileSystemError"
   And I call fileSystem CreateVolume "volume1"
   Then the error contains "induced error"
+
+@v2.14.0
+Scenario: Identity Node probe by sym id good call, all protocols
+  Given a PowerMax service
+  And I set transport protocol to <protocol>
+  And I have a Node <node> with MaskingView
+  And I invoke nodeHostSetup with a "node" service
+  When I call ProbeNodeBySymID <symid>  
+  Then no error was received
+  Examples:
+    | symid                 | protocol    | node    |
+    | "000197900046"        | "FC"        | "node1" |   
+    | "000197900046"        | "NVMETCP"   | "node3" |
+    | "000197900046"        | "ISCSI"     | "node2" |

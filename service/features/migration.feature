@@ -79,19 +79,21 @@ Feature: PowerMax CSI Interface
     @v1.0.0
   Scenario Outline: ArrayMigrate
     Given a PowerMax service
-    And I call ArrayMigrate with <actionvalue>
+    And I call ArrayMigrate with <actionvalue>, parameter <parameter>
     And the error contains <errormsg>
     Examples:
-      | actionvalue                            | errormsg                                                        |
-      | "csimgr.ActionTypes_MG_MIGRATE"        | "failed to create array migration environment for target array" |
-      | "csimgr.ActionTypes_MG_COMMIT"         | "Not Found"                                                     |
-      | ""                                     | "Invalid action"                                                |
+      | actionvalue                      |parameter      | errormsg                                                        |
+      | "csimgr.ActionTypes_MG_MIGRATE"  | "all"      | "failed to create array migration environment for target array" |
+      | "csimgr.ActionTypes_MG_COMMIT"   | "all"      | "Not Found"                                                     |
+      | ""                               | "all"      | "Invalid action"                                                |
+      | ""                               | "remote"      | "A SYMID parameter is required"                                                |
+      | ""                               | "none"      | "Invalid argument"                                                |
 
   @migration
     @v1.0.0
   Scenario Outline: ArrayMigrate
     Given a PowerMax service
-    And I call ArrayMigrate with <actionvalue>
+    And I call ArrayMigrate with <actionvalue>, parameter "all"
     Then I induce error <induced1>
     Then I induce error <induced2>
     And the error contains <errormsg>

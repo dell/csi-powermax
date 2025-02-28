@@ -54,10 +54,12 @@ func (g *mockFCGobrick) ConnectVolume(_ context.Context, info gobrick.FCVolumeIn
 	return dev, nil
 }
 
-func (g *mockFCGobrick) DisconnectVolumeByDeviceName(_ context.Context, _ string) error {
+func (g *mockFCGobrick) DisconnectVolumeByDeviceName(ctx context.Context, _ string) error {
 	if mockGobrickInducedErrors.DisconnectVolumeError {
 		return fmt.Errorf("induced DisconnectVolumeError")
 	}
+	logger := &customLogger{}
+	logger.Info(ctx, "Removing WWN %s to path entry", nodePublishWWN)
 	delete(gofsutil.GOFSMockWWNToDevice, nodePublishWWN)
 
 	return nil
@@ -86,7 +88,6 @@ func (g *mockISCSIGobrick) ConnectVolume(ctx context.Context, info gobrick.ISCSI
 		return dev, fmt.Errorf("induced ConnectVolumeError")
 	}
 	logger := &customLogger{}
-	logger.Debug(ctx, "Adding WWN %s to path %s", nodePublishWWN, nodePublishBlockDevicePath)
 	logger.Info(ctx, "Adding WWN %s to path %s", nodePublishWWN, nodePublishBlockDevicePath)
 	gofsutil.GOFSMockWWNToDevice[nodePublishWWN] = nodePublishBlockDevicePath
 	return dev, nil
@@ -97,7 +98,6 @@ func (g *mockISCSIGobrick) DisconnectVolumeByDeviceName(ctx context.Context, _ s
 		return fmt.Errorf("induced DisconnectVolumeError")
 	}
 	logger := &customLogger{}
-	logger.Error(ctx, "Removing WWN %s to path entry", nodePublishWWN)
 	logger.Info(ctx, "Removing WWN %s to path entry", nodePublishWWN)
 	delete(gofsutil.GOFSMockWWNToDevice, nodePublishWWN)
 	return nil
@@ -123,6 +123,10 @@ func (g *mockFCGobrick) ConnectRDMVolume(_ context.Context, info gobrick.RDMVolu
 	if mockGobrickInducedErrors.ConnectVolumeError {
 		return dev, fmt.Errorf("induced ConnectVolumeError")
 	}
+
+	if gofsutil.GOFSMockWWNToDevice == nil {
+		gofsutil.GOFSMockWWNToDevice = make(map[string]string)
+	}
 	gofsutil.GOFSMockWWNToDevice[nodePublishWWN] = nodePublishBlockDevicePath
 	return dev, nil
 }
@@ -136,7 +140,13 @@ func (m *mockNVMeTCPConnector) ConnectVolume(_ context.Context, _ gobrick.NVMeVo
 	return gobrick.Device{}, nil
 }
 
-func (m *mockNVMeTCPConnector) DisconnectVolumeByDeviceName(_ context.Context, _ string) error {
+func (m *mockNVMeTCPConnector) DisconnectVolumeByDeviceName(ctx context.Context, _ string) error {
+	if mockGobrickInducedErrors.DisconnectVolumeError {
+		return fmt.Errorf("induced DisconnectVolumeError")
+	}
+	logger := &customLogger{}
+	logger.Info(ctx, "Removing WWN %s to path entry", nodePublishWWN)
+	delete(gofsutil.GOFSMockWWNToDevice, nodePublishWWN)
 	return nil
 }
 
