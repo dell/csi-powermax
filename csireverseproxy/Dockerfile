@@ -65,9 +65,12 @@ COPY --from=builder /etc/group /etc/group
 # Use an unprivileged user.
 USER revproxy:revproxy
 
+COPY --from=builder /go/src/csireverseproxy/entrypoint.sh /app/entrypoint.sh
 COPY --from=builder /go/src/csireverseproxy/revproxy /app/revproxy
 
 WORKDIR /app
+ENTRYPOINT ["/app/entrypoint.sh"]
+
 CMD ["/app/revproxy"]
 
 EXPOSE 2222
