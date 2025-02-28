@@ -35,7 +35,7 @@ import (
 )
 
 //go:generate mockgen -source=config.go -destination=mocks/configurator.go
-type Configurator interface {
+type ConfigManager interface {
 	SetConfigName(string)
 	SetConfigType(string)
 	AddConfigPath(string)
@@ -895,7 +895,7 @@ func ReadConfigFromSecret(vs *viper.Viper) (*ProxySecret, error) {
 }
 
 // ReadParamsConfigMapFromPath - read config map for params
-func ReadParamsConfigMapFromPath(configFilePath string, vcp Configurator) (*ParamsConfigMap, error) {
+func ReadParamsConfigMapFromPath(configFilePath string, vcp ConfigManager) (*ParamsConfigMap, error) {
 	log.Printf("Reading params config map: %s from path: %s", filepath.Base(configFilePath), filepath.Dir(configFilePath))
 
 	vcp.SetConfigName(filepath.Base(configFilePath))

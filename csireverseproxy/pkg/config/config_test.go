@@ -860,7 +860,7 @@ func TestProxyConfig_GetManagementServerCredentials(t *testing.T) {
 func TestReadParamsConfigMapFromPath(t *testing.T) {
 	type args struct {
 		configFilePath string
-		vcp            Configurator
+		vcp            ConfigManager
 	}
 	tests := []struct {
 		name    string
@@ -881,7 +881,7 @@ func TestReadParamsConfigMapFromPath(t *testing.T) {
 			name: "valid config file path",
 			args: args{
 				configFilePath: "./testing",
-				vcp: func() Configurator {
+				vcp: func() ConfigManager {
 					m := mock_config.NewMockConfigurator(gomock.NewController(t))
 					m.EXPECT().SetConfigName("testing").Times(1)
 					m.EXPECT().SetConfigType("yaml").Times(1)
