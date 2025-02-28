@@ -443,7 +443,7 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 
 	err := server.Setup(k8sUtils)
 	if err != nil {
-		log.Fatalf("Failed to setup Server (%s)", err.Error())
+		log.Errorf("Failed to setup Server (%s)", err.Error())
 		return nil, err
 	}
 
