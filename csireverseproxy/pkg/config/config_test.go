@@ -24,13 +24,14 @@ import (
 	"testing"
 
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config/mocks"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
-
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"gopkg.in/yaml.v2"
 )
 
@@ -851,6 +852,65 @@ func TestProxyConfig_GetManagementServerCredentials(t *testing.T) {
 				assert.Equal(t, tc.expectedError, err)
 			} else {
 				assert.Equal(t, tc.expectedCred, credentials)
+			}
+		})
+	}
+}
+
+func TestReadParamsConfigMapFromPath(t *testing.T) {
+	type args struct {
+		configFilePath string
+		vcp            Configurator
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *ParamsConfigMap
+		wantErr bool
+	}{
+		{
+			name: "empty config file path",
+			args: args{
+				configFilePath: "",
+				vcp:            viper.New(),
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "valid config file path",
+			args: args{
+				configFilePath: "./testing",
+				vcp: func() Configurator {
+					m := mock_config.NewMockConfigurator(gomock.NewController(t))
+					m.EXPECT().SetConfigName("testing").Times(1)
+					m.EXPECT().SetConfigType("yaml").Times(1)
+					m.EXPECT().AddConfigPath(".").Times(1)
+					m.EXPECT().ReadInConfig().Times(1).Return(nil)
+					m.EXPECT().GetString("csi_log_format").Times(1).Return("json")
+					m.EXPECT().GetString("csi_powermax_reverse_proxy_port").Times(1).Return("2222")
+					m.EXPECT().GetString("csi_log_level").Times(1).Return("info")
+
+					return m
+				}(),
+			},
+			want: &ParamsConfigMap{
+				Port:      "2222",
+				LogLevel:  "info",
+				LogFormat: "json",
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReadParamsConfigMapFromPath(tt.args.configFilePath, tt.args.vcp)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ReadParamsConfigMapFromPath() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ReadParamsConfigMapFromPath() = %v, want %v", got, tt.want)
 			}
 		})
 	}

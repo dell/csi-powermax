@@ -34,6 +34,15 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+//go:generate mockgen -source=config.go -destination=mocks/configurator.go
+type Configurator interface {
+	SetConfigName(string)
+	SetConfigType(string)
+	AddConfigPath(string)
+	ReadInConfig() error
+	GetString(string) string
+}
+
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
 	StorageArrayID         string   `yaml:"storageArrayId"`
@@ -886,7 +895,7 @@ func ReadConfigFromSecret(vs *viper.Viper) (*ProxySecret, error) {
 }
 
 // ReadParamsConfigMapFromPath - read config map for params
-func ReadParamsConfigMapFromPath(configFilePath string, vcp *viper.Viper) (*ParamsConfigMap, error) {
+func ReadParamsConfigMapFromPath(configFilePath string, vcp Configurator) (*ParamsConfigMap, error) {
 	log.Printf("Reading params config map: %s from path: %s", filepath.Base(configFilePath), filepath.Dir(configFilePath))
 
 	vcp.SetConfigName(filepath.Base(configFilePath))
