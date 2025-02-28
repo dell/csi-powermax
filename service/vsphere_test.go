@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -181,6 +182,78 @@ func TestCreateController(t *testing.T) {
 
 			err = mockVMHost.createController(&controllers[0])
 			assert.NoError(t, err)
+		})
+	})
+}
+
+func TestRemoveLunDevice(t *testing.T) {
+	simulator.Test(func(ctx context.Context, c *vim25.Client) {
+		mockVMHost := &VMHost{
+			client: &govmomi.Client{
+				Client: c,
+			},
+			Ctx: ctx,
+			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+		}
+
+		// Retrieve valud SCSI LUNs from simulator.
+		scsiLuns, err := mockVMHost.GetSCSILuns()
+		assert.NoError(t, err)
+
+		// Contruct a map of SCSI LUNs as expected by the function.
+		mapSDI := make(map[string]*types.ScsiLun)
+		for _, d := range scsiLuns {
+			mapSDI[d.Uuid] = d
+		}
+
+		// Retrieve device list.
+		devices, err := mockVMHost.VM.Device(ctx)
+		assert.NoError(t, err)
+
+		t.Run("Success: Remove Device", func(t *testing.T) {
+			virtDevice := &types.VirtualDevice{}
+			device := &types.VirtualDevice{}
+
+			devices = append(devices, &types.VirtualDevice{
+				DeviceInfo: &types.Description{
+					Label: "test device",
+				},
+			})
+			mapSDI["lunUUID"] = &types.ScsiLun{
+				CanonicalName: "deviceNAA",
+			}
+
+			rdmBacking := types.VirtualDiskRawDiskMappingVer1BackingInfo{
+				LunUuid: "lunUUID",
+			}
+
+			virtDevice.Backing = &rdmBacking
+
+			err := mockVMHost.removeLunDevice(devices, mapSDI, "deviceNAA", mockVMHost.VM, virtDevice, device)
+			assert.NoError(t, err)
+		})
+
+		t.Run("Failed: Unable to find device", func(t *testing.T) {
+			virtDevice := &types.VirtualDevice{}
+			device := &types.VirtualDevice{}
+
+			devices = append(devices, &types.VirtualDevice{
+				DeviceInfo: &types.Description{
+					Label: "test device",
+				},
+			})
+			mapSDI["lunUUID"] = &types.ScsiLun{
+				CanonicalName: "deviceNAA",
+			}
+
+			rdmBacking := types.VirtualDiskRawDiskMappingVer1BackingInfo{
+				LunUuid: "lunUUID",
+			}
+
+			virtDevice.Backing = &rdmBacking
+
+			err = mockVMHost.removeLunDevice(object.VirtualDeviceList{}, mapSDI, "deviceNAA", mockVMHost.VM, virtDevice, device)
+			assert.Error(t, err, errors.New("device 'device-0' not found"))
 		})
 	})
 }
