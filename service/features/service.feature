@@ -518,10 +518,13 @@ Feature: PowerMax CSI interface
       | transport     | induced              | errormsg                         | mode              | 
       | "ISCSI"       | "none"               | "none"                           | "node"            |
       | "FC"          | "none"               | "none"                           | "node"            |
+      | "NVME"        | "none"               | "none"                           | "node"            |
       | "ISCSI"       | "GetInitiatorError"  | "Error retrieving Initiator(s)"  | "node"            |
       | "ISCSI"       | "none"               | "none"                           | "node"            |
       | "FC"          | "GetInitiatorError"  | "Error retrieving Initiator(s)"  | "node"            |
       | "FC"          | "none"               | "none"                           | "node"            |
+      | "NVME"        | "GetInitiatorError"  | "Error retrieving Initiator(s)"  | "node"            |
+      | "NVME"        | "none"               | "none"                           | "node"            |
 
 @v1.0.0
     Scenario: Validate nodeHostSetup with temporary failure
@@ -759,7 +762,7 @@ Feature: PowerMax CSI interface
       Then 0 nvmetcp targets are returned
 
 @v1.4.0
-    Scenario: Validate nodeHostSetup with temporary failure
+    Scenario: Validate nodeHostSetup with temporary FC failure
       Given a PowerMax service
       And I set transport protocol to "FC"
       And I induce error "GetHostError"
@@ -767,6 +770,26 @@ Feature: PowerMax CSI interface
       And I have a Node "Node1" with MaskingView
       When I invoke nodeHostSetup with a "node" service
       Then no error was received
+
+@v2.13.0
+    Scenario: Validate nodeHostSetup with temporary NVMe failure
+      Given a PowerMax service
+      And I set transport protocol to "NVME"
+      And I induce error "GetHostError"
+      And I induce error "CreateHostError"
+      And I have a Node "Node1" with MaskingView
+      When I invoke nodeHostSetup with a "node" service
+      Then no error was received
+
+@v2.13.0
+    Scenario: Validate nodeHostSetup with temporary iSCSI failure
+      Given a PowerMax service
+      And I set transport protocol to "ISCSI"
+      And I induce error "GetHostError"
+      And I induce error "CreateHostError"
+      And I have a Node "Node1" with MaskingView
+      When I invoke nodeHostSetup with a "node" service
+      Then no error was received      
 
 @v2.2.0
     Scenario Outline: Call NodeGetVolumeStats
