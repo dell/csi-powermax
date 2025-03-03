@@ -63,6 +63,7 @@ Feature: PowerMax CSI interface
   @v1.0.0
   Scenario: Test deletion when volume is in masking view
     Given a PowerMax service
+    And I set transport protocol to "FC"
     When I call Probe
     And I call CreateVolume "volume1"
     When I request a PortGroup

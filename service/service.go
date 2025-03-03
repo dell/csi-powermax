@@ -726,28 +726,22 @@ func (s *service) getProxySettingsFromEnv() (string, string, bool) {
 }
 
 func (s *service) getTransportProtocolFromEnv() string {
-	transportProtocol := ""
-	if tp, ok := csictx.LookupEnv(context.Background(), EnvPreferredTransportProtocol); ok {
-		tp = strings.ToUpper(tp)
-		switch tp {
-		case "FIBRE":
-			tp = "FC"
-			break
-		case "FC":
-			break
-		case "ISCSI":
-			break
-		case "NVMETCP":
-			break
-		case "":
-			break
-		default:
-			log.Errorf("Invalid transport protocol: %s, valid values FC, ISCSI or NVMETCP", tp)
-			return ""
-		}
-		transportProtocol = tp
+	tp, ok := csictx.LookupEnv(context.Background(), EnvPreferredTransportProtocol)
+	if !ok {
+		return ""
 	}
-	return transportProtocol
+	tp = strings.ToUpper(tp)
+	switch tp {
+	case "FIBRE":
+		return "FC"
+	case "FC", "ISCSI", "NVMETCP", "":
+		return tp
+	case "AUTO":
+		return ""
+	default:
+		log.Errorf("Invalid transport protocol: %s, valid values AUTO, FC, ISCSI or NVMETCP", tp)
+		return ""
+	}
 }
 
 // get the amount of time to retry pmax calls
