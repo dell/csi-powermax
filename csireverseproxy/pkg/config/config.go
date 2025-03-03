@@ -36,7 +36,7 @@ import (
 
 // ConfigManager is an interface used for testing, satisfied by viper.Viper.
 //
-//go:generate mockgen -source=config.go -destination=mocks/configurator.go
+//go:generate mockgen -source=config.go -destination=mocks/config-manager.go
 type ConfigManager interface {
 	// SetConfigFile designates the name of the file containing the configuration
 	SetConfigName(string)

@@ -1020,7 +1020,7 @@ func TestReadParamsConfigMapFromPath(t *testing.T) {
 			args: args{
 				configFilePath: "./testing",
 				vcp: func() ConfigManager {
-					m := mock_config.NewMockConfigurator(gomock.NewController(t))
+					m := mock_config.NewMockConfigManager(gomock.NewController(t))
 					m.EXPECT().SetConfigName("testing").Times(1)
 					m.EXPECT().SetConfigType("yaml").Times(1)
 					m.EXPECT().AddConfigPath(".").Times(1)
