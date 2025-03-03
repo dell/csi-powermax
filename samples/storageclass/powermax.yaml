@@ -26,25 +26,31 @@ parameters:
   # will be used as default value
   csi.storage.k8s.io/fstype: xfs
   # Name of SRP on the PowerMax array that should be used for provisioning
+  # If not provided, the values specified in the secret will be used
   # Optional: false
   # Examples: "DEFAULT_SRP" , "SRP_1"
   SRP: <SRP Name>
   # Serial ID of the array that is used for provisioning
+  # If not provided and availability zones are used then the value specified in the
+  # secret will be used
   # Optional: false
   # Example: "000000000001"
   SYMID: <SYMID>
   # Name of Service Level on PowerMax array that should be used for provisioning
+  # If not provided, the values specified in the secret will be used
   # Optional: true, Default value: Optimized
   # Examples: "Diamond" , "Bronze"
   ServiceLevel: <Service Level>
   # Name of application to be used to group volumes
+  # If not provided, the values specified in the secret will be used
   # This is used in naming storage group
   # Optional: true, Default value: None
   # Examples: APP, app, sanity, tests
   ApplicationPrefix: <application prefix>
   # Following params are for HostLimits, set them only if you want to set IOLimits
+  # If not provided, the values specified in the secret will be used
   # HostLimitName uniquely identifies given set of limits on a storage class
-  # This is used in naming storage group, max of 3 letter
+  # This is used in naming storage group, max of 3 letters
   # Optional: true
   # Example: "HL1", "HL2"
   # HostLimitName: "HL1"
