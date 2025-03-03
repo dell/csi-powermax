@@ -1780,20 +1780,20 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 
 		nodeChroot, _ := csictx.LookupEnv(context.Background(), EnvNodeChroot)
 		if s.useNVMeTCP {
-			// resetOtherProtocols
-			s.useFC = false
-			s.useIscsi = false
 			// check nvme module availability on the host
 			err = s.setupArrayForNVMeTCP(ctx, symID, validNVMeTCPs, pmaxClient)
 			if err != nil {
 				log.Errorf("Failed to do the NVMe setup for the Array(%s). Error - %s", symID, err.Error())
+			} else {
+				s.initNVMeTCPConnector(nodeChroot)
+				s.arrayTransportProtocolMap[symID] = NvmeTCPTransportProtocol
+				// resetOtherProtocols
+				s.useFC = false
+				s.useIscsi = false
 			}
-			s.initNVMeTCPConnector(nodeChroot)
-			s.arrayTransportProtocolMap[symID] = NvmeTCPTransportProtocol
-		} else if s.useFC {
-			// resetOtherProtocols
-			s.useNVMeTCP = false
-			s.useIscsi = false
+
+		}
+		if s.useFC {
 			formattedFCs := make([]string, 0)
 			for _, initiatorID := range validFCs {
 				elems := strings.Split(initiatorID, ":")
@@ -1802,14 +1802,17 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			err := s.setupArrayForFC(ctx, symID, formattedFCs, pmaxClient)
 			if err != nil {
 				log.Errorf("Failed to do the FC setup the Array(%s). Error - %s", symID, err.Error())
+			} else {
+				s.initFCConnector(nodeChroot)
+				s.arrayTransportProtocolMap[symID] = FcTransportProtocol
+				isSymConnFC.Store(symID, true)
+				// resetOtherProtocols
+				s.useNVMeTCP = false
+				s.useIscsi = false
 			}
-			s.initFCConnector(nodeChroot)
-			s.arrayTransportProtocolMap[symID] = FcTransportProtocol
-			isSymConnFC.Store(symID, true)
-		} else if s.useIscsi {
-			// resetOtherProtocols
-			s.useNVMeTCP = false
-			s.useNFS = false
+
+		}
+		if s.useIscsi {
 			err := s.ensureISCSIDaemonStarted()
 			if err != nil {
 				log.Errorf("Failed to start the ISCSI Daemon. Error - %s", err.Error())
@@ -1817,9 +1820,14 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			err = s.setupArrayForIscsi(ctx, symID, validIscsis, pmaxClient)
 			if err != nil {
 				log.Errorf("Failed to do the ISCSI setup for the Array(%s). Error - %s", symID, err.Error())
+			} else {
+				s.initISCSIConnector(nodeChroot)
+				s.arrayTransportProtocolMap[symID] = IscsiTransportProtocol
+				// resetOtherProtocols
+				s.useNVMeTCP = false
+				s.useNFS = false
 			}
-			s.initISCSIConnector(nodeChroot)
-			s.arrayTransportProtocolMap[symID] = IscsiTransportProtocol
+
 		}
 	}
 
@@ -1859,7 +1867,11 @@ func (s *service) setupArrayForIscsi(ctx context.Context, array string, IQNs []s
 		return err
 	}
 	_, err = s.getAndConfigureMaskingViewTargets(ctx, array, mvName, IQNs, pmaxClient)
-	return err
+	if err != nil && !(strings.Contains(err.Error(), "Masking View") && strings.Contains(err.Error(), "cannot be found")) {
+		return err
+	}
+	log.Warning(err)
+	return nil
 }
 
 // setupArrayForIscsi is called to set up a node for iscsi operation.
@@ -1887,7 +1899,11 @@ func (s *service) setupArrayForNVMeTCP(ctx context.Context, array string, NQNs [
 
 	// Create or update the NVMe Host and Initiators
 	_, err = s.getAndConfigureMaskingViewTargetsNVMeTCP(ctx, array, mvName, pmaxClient)
-	return err
+	if err != nil && !(strings.Contains(err.Error(), "Masking View") && strings.Contains(err.Error(), "cannot be found")) {
+		return err
+	}
+	log.Warning(err)
+	return nil
 }
 
 func (s *service) updateNQNWithHostID(ctx context.Context, symID string, NQNs []string, pmaxClient pmax.Pmax) ([]string, error) {
@@ -1997,10 +2013,8 @@ func (s *service) setupNVMeTCPTargetDiscovery(ctx context.Context, array string,
 	}
 
 	if len(ipInterfaces) == 0 {
-		log.Errorf("Couldn't find any ip interfaces on any of the port-groups")
-		return err
+		return fmt.Errorf("couldn't find any ip interfaces on any of the port-groups %s", s.opts.PortGroups)
 	}
-
 	for ip := range ipInterfaces {
 		// Attempt target discovery from host
 		log.Debugf("Discovering NVMe targets on %s", ip)
