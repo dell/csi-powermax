@@ -28,7 +28,7 @@ parameters:
   SRP: <SRP Name>
   # Serial ID of the array that is used for provisioning
   # If not provided and availability zones are used then the value specified in the
-  # secret will be used 
+  # secret will be used
   # Optional: false
   # Example: "000000000001"
   SYMID: <SYMID>
