@@ -1805,7 +1805,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 			} else {
 				s.initFCConnector(nodeChroot)
 				s.arrayTransportProtocolMap[symID] = FcTransportProtocol
-				isSymConnFC[symID] = true
+				isSymConnFC.Store(symID, true)
 				// resetOtherProtocols
 				s.useNVMeTCP = false
 				s.useIscsi = false
