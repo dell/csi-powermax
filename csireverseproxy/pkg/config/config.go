@@ -34,6 +34,28 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+// ConfigManager is an interface used for testing, satisfied by viper.Viper.
+//
+//go:generate mockgen -source=config.go -destination=mocks/config-manager.go
+type ConfigManager interface {
+	// SetConfigFile designates the name of the file containing the configuration
+	SetConfigName(string)
+
+	// SetConfigType designates the type of the configuration. e.g. yaml, json
+	SetConfigType(string)
+
+	// AddConfigPath adds a path to look for the config file in
+	// Can be called multiple times to define multiple search paths
+	AddConfigPath(string)
+
+	// ReadInConfig will discover and load the configuration file from disk
+	// and key/value stores, searching in one of the defined paths.
+	ReadInConfig() error
+
+	// GetString returns the value associated with the key as a string.
+	GetString(string) string
+}
+
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
 	StorageArrayID         string   `yaml:"storageArrayId"`
@@ -886,7 +908,7 @@ func ReadConfigFromSecret(vs *viper.Viper) (*ProxySecret, error) {
 }
 
 // ReadParamsConfigMapFromPath - read config map for params
-func ReadParamsConfigMapFromPath(configFilePath string, vcp *viper.Viper) (*ParamsConfigMap, error) {
+func ReadParamsConfigMapFromPath(configFilePath string, vcp ConfigManager) (*ParamsConfigMap, error) {
 	log.Printf("Reading params config map: %s from path: %s", filepath.Base(configFilePath), filepath.Dir(configFilePath))
 
 	vcp.SetConfigName(filepath.Base(configFilePath))
