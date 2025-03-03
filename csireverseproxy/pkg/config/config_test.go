@@ -24,12 +24,13 @@ import (
 	"testing"
 
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	mock_config "github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config/mocks"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
-
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"gopkg.in/yaml.v2"
 )
 
@@ -388,6 +389,7 @@ func TestProxyConfig_UpdateManagementServers_ModifyServer(t *testing.T) {
 		})
 	}
 }
+
 func TestProxyConfig_UpdateManagementServers_AddDelete(t *testing.T) {
 	testCases := []struct {
 		name                 string
@@ -874,7 +876,6 @@ func TestProxyConfig_GetAuthorizedArraysFromSecret(t *testing.T) {
 			}
 			authorizedArrays := config.GetAuthorizedArrays(tc.username, tc.password)
 			assert.Equal(t, len(tc.expectedArrays), len(authorizedArrays))
-
 		})
 	}
 }
@@ -993,6 +994,66 @@ func TestProxyConfig_GetManagementServerCredentials(t *testing.T) {
 		})
 	}
 }
+
+func TestReadParamsConfigMapFromPath(t *testing.T) {
+	type args struct {
+		configFilePath string
+		vcp            ConfigManager
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *ParamsConfigMap
+		wantErr bool
+	}{
+		{
+			name: "empty config file path",
+			args: args{
+				configFilePath: "",
+				vcp:            viper.New(),
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "valid config file path",
+			args: args{
+				configFilePath: "./testing",
+				vcp: func() ConfigManager {
+					m := mock_config.NewMockConfigManager(gomock.NewController(t))
+					m.EXPECT().SetConfigName("testing").Times(1)
+					m.EXPECT().SetConfigType("yaml").Times(1)
+					m.EXPECT().AddConfigPath(".").Times(1)
+					m.EXPECT().ReadInConfig().Times(1).Return(nil)
+					m.EXPECT().GetString("csi_log_format").Times(1).Return("json")
+					m.EXPECT().GetString("csi_powermax_reverse_proxy_port").Times(1).Return("2222")
+					m.EXPECT().GetString("csi_log_level").Times(1).Return("info")
+
+					return m
+				}(),
+			},
+			want: &ParamsConfigMap{
+				Port:      "2222",
+				LogLevel:  "info",
+				LogFormat: "json",
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReadParamsConfigMapFromPath(tt.args.configFilePath, tt.args.vcp)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ReadParamsConfigMapFromPath() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ReadParamsConfigMapFromPath() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStorageArray_DeepCopy(t *testing.T) {
 	testCases := []struct {
 		name     string
