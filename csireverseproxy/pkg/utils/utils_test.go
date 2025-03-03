@@ -25,7 +25,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"revproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
 )
 
 func TestWriteHTTPError(t *testing.T) {

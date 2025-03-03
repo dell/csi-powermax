@@ -39,9 +39,9 @@ import (
 	pmax "github.com/dell/gopowermax/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"go.uber.org/mock/gomock"
 
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -137,6 +137,7 @@ func TestBeforeServe(t *testing.T) {
 		listener       net.Listener
 		adminClient    pmax.Pmax
 		k8sUtils       k8sutils.UtilsInterface
+		init           func(ctx context.Context)
 		expectedResult error
 	}{
 		{
@@ -172,9 +173,15 @@ func TestBeforeServe(t *testing.T) {
 			adminClient: func() pmax.Pmax {
 				return mocks.NewMockPmaxClient(gomock.NewController(t))
 			}(),
-			k8sUtils:       &k8smock.MockUtils{},
-			plugin:         nil,
-			listener:       &net.TCPListener{},
+			k8sUtils: &k8smock.MockUtils{},
+			plugin:   nil,
+			listener: &net.TCPListener{},
+			init: func(ctx context.Context) {
+				err := csictx.Setenv(ctx, EnvSidecarProxyPort, "2222")
+				if err != nil {
+					t.Errorf("failed to set csi reverse proxy port. err: %s", err.Error())
+				}
+			},
 			expectedResult: nil,
 		},
 		{
@@ -201,10 +208,17 @@ func TestBeforeServe(t *testing.T) {
 				"X_CSI_POWERMAX_ENDPOINT=http://127.0.0.1:8080",
 				"X_CSI_POWERMAX_PASSWORD=password",
 				"X_CSI_MODE=controller",
+				"X_CSI_POWERMAX_SIDECAR_PROXY_PORT=2222",
 			}),
-			k8sUtils:       &k8smock.MockUtils{},
-			plugin:         nil,
-			listener:       &net.TCPListener{},
+			k8sUtils: &k8smock.MockUtils{},
+			plugin:   nil,
+			listener: &net.TCPListener{},
+			init: func(ctx context.Context) {
+				err := csictx.Setenv(ctx, EnvSidecarProxyPort, "2222")
+				if err != nil {
+					t.Errorf("failed to set csi reverse proxy port. err: %s", err.Error())
+				}
+			},
 			expectedResult: status.Error(codes.FailedPrecondition, "unable to create PowerMax client: open tls.crt: no such file or directory"),
 		},
 	}
@@ -220,6 +234,9 @@ func TestBeforeServe(t *testing.T) {
 				},
 				k8sUtils:    tt.k8sUtils,
 				adminClient: tt.adminClient,
+			}
+			if tt.init != nil {
+				tt.init(tt.ctx)
 			}
 			oldInducedMockReverseProxy := inducedMockReverseProxy
 			defer func() { inducedMockReverseProxy = oldInducedMockReverseProxy }()

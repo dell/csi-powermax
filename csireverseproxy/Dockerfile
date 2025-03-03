@@ -65,7 +65,7 @@ COPY --from=builder /etc/group /etc/group
 # Use an unprivileged user.
 USER revproxy:revproxy
 
-COPY --from=builder /go/src/csireverseproxy/revproxy /app/revproxy
+COPY --from=builder /go/src/csireverseproxy/csireverseproxy /app/revproxy
 
 WORKDIR /app
 CMD ["/app/revproxy"]

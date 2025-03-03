@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	csictx "github.com/dell/gocsi/context"
 	"github.com/dell/gonvme"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
@@ -2789,6 +2790,10 @@ func (f *feature) iCallBeforeServe() error {
 	stringSlice = append(stringSlice, EnvClusterPrefix+"=TST")
 	f.service.k8sUtils = k8smock.Init()
 	ctx := context.WithValue(context.Background(), ctxOSEnviron, stringSlice)
+	err := csictx.Setenv(ctx, EnvSidecarProxyPort, "2222")
+	if err != nil {
+		return fmt.Errorf("failed to set reverse proxy port. err: %s", err.Error())
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:65000")
 	if err != nil {
 		return err
