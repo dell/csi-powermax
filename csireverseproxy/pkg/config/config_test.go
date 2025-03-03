@@ -25,7 +25,6 @@ import (
 
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
-	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
@@ -61,7 +60,7 @@ func TestMain(m *testing.M) {
 func TestReadConfig(t *testing.T) {
 	proxyConfigMap, err := readConfig()
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Errorf("%s", err.Error())
 		return
 	}
 	fmt.Printf("%v", proxyConfigMap)
@@ -80,10 +79,6 @@ func setReverseProxyUseSecret(value bool) error {
 		return setEnv(common.EnvReverseProxyUseSecret, "true")
 	}
 	return setEnv(common.EnvReverseProxyUseSecret, "false")
-}
-
-func newProxyConfig(configMap *ProxyConfigMap, utils k8sutils.UtilsInterface) (*ProxyConfig, error) {
-	return NewProxyConfig(configMap, utils)
 }
 
 func getProxyConfig(t *testing.T) (*ProxyConfig, error) {
@@ -235,6 +230,8 @@ func TestProxyConfig_UpdateCerts(t *testing.T) {
 }
 
 func TestProxyConfig_UpdateCreds(t *testing.T) {
+	setReverseProxyUseSecret(true)
+	defer setReverseProxyUseSecret(false)
 	config, err := getProxyConfig(t)
 	if err != nil {
 		return
@@ -324,6 +321,150 @@ func TestProxyConfig_UpdateManagementServers(t *testing.T) {
 	if returnedConfig != nil {
 		t.Errorf("Expected nil config")
 		return
+	}
+}
+
+func TestProxyConfig_UpdateManagementServers_ModifyServer(t *testing.T) {
+	testCases := []struct {
+		name                 string
+		existingManagement   map[url.URL]*ManagementServer
+		newManagement        map[url.URL]*ManagementServer
+		expectedDeletes      []ManagementServer
+		expectedUpdates      []ManagementServer
+		expectedErrorMessage string
+	}{
+		{
+			name: "Modify existing management server",
+			existingManagement: map[url.URL]*ManagementServer{
+				{Host: "example.com"}: {
+					Endpoint: url.URL{Host: "example.com"},
+				},
+			},
+			newManagement: map[url.URL]*ManagementServer{
+				{Host: "example.com"}: {
+					Endpoint: url.URL{Host: "example.com"},
+					Username: "new-username",
+					Password: "new-password",
+				},
+			},
+			expectedDeletes: []ManagementServer{},
+			expectedUpdates: []ManagementServer{
+				{
+					Endpoint: url.URL{Host: "example.com"},
+					Username: "new-username",
+					Password: "new-password",
+				},
+			},
+			expectedErrorMessage: "",
+		},
+		// Add more test cases as needed
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pc := &ProxyConfig{
+				managementServers: tc.existingManagement,
+			}
+			config := &ProxyConfig{
+				managementServers: tc.newManagement,
+			}
+			deletedManagementServers, updatedManagemetServers, err := pc.UpdateManagementServers(config)
+			if tc.expectedErrorMessage != "" {
+				if err == nil || err.Error() != tc.expectedErrorMessage {
+					t.Errorf("Expected error: %s, but got: %v", tc.expectedErrorMessage, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Failed to update management servers. (%s)", err.Error())
+				return
+			}
+			if !reflect.DeepEqual(tc.expectedDeletes, deletedManagementServers) {
+				t.Errorf("Expected deleted management servers: %+v, but got: %+v", tc.expectedDeletes, deletedManagementServers)
+			}
+			if !reflect.DeepEqual(tc.expectedUpdates, updatedManagemetServers) {
+				t.Errorf("Expected updated management servers: %+v, but got: %+v", tc.expectedUpdates, updatedManagemetServers)
+			}
+		})
+	}
+}
+func TestProxyConfig_UpdateManagementServers_AddDelete(t *testing.T) {
+	testCases := []struct {
+		name                 string
+		existingManagement   map[url.URL]*ManagementServer
+		newManagement        map[url.URL]*ManagementServer
+		expectedDeletes      []ManagementServer
+		expectedUpdates      []ManagementServer
+		expectedErrorMessage string
+	}{
+		{
+			name: "Add new management server",
+			existingManagement: map[url.URL]*ManagementServer{
+				{Host: "example.com"}: {
+					Endpoint: url.URL{Host: "example.com"},
+				},
+			},
+			newManagement: map[url.URL]*ManagementServer{
+				{Host: "example.com"}: {
+					Endpoint: url.URL{Host: "example.com"},
+				},
+				{Host: "new.example.com"}: {
+					Endpoint: url.URL{Host: "new.example.com"},
+				},
+			},
+			expectedDeletes: []ManagementServer{},
+			expectedUpdates: []ManagementServer{
+				{
+					Endpoint: url.URL{Host: "new.example.com"},
+				},
+			},
+			expectedErrorMessage: "",
+		},
+		{
+			name: "Delete existing management server",
+			existingManagement: map[url.URL]*ManagementServer{
+				{Host: "example.com"}: {
+					Endpoint: url.URL{Host: "example.com"},
+				},
+			},
+			newManagement: map[url.URL]*ManagementServer{},
+			expectedDeletes: []ManagementServer{
+				{
+					Endpoint: url.URL{Host: "example.com"},
+				},
+			},
+			expectedUpdates:      []ManagementServer{},
+			expectedErrorMessage: "",
+		},
+		// Add more test cases as needed
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pc := &ProxyConfig{
+				managementServers: tc.existingManagement,
+			}
+			config := &ProxyConfig{
+				managementServers: tc.newManagement,
+			}
+			deletedManagementServers, updatedManagemetServers, err := pc.UpdateManagementServers(config)
+			if tc.expectedErrorMessage != "" {
+				if err == nil || err.Error() != tc.expectedErrorMessage {
+					t.Errorf("Expected error: %s, but got: %v", tc.expectedErrorMessage, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Failed to update management servers. (%s)", err.Error())
+				return
+			}
+			if !reflect.DeepEqual(tc.expectedDeletes, deletedManagementServers) {
+				t.Errorf("Expected deleted management servers: %+v, but got: %+v", tc.expectedDeletes, deletedManagementServers)
+			}
+			if !reflect.DeepEqual(tc.expectedUpdates, updatedManagemetServers) {
+				t.Errorf("Expected updated management servers: %+v, but got: %+v", tc.expectedUpdates, updatedManagemetServers)
+			}
+		})
 	}
 }
 
@@ -437,7 +578,7 @@ func TestNewProxyConfigFromSecret(t *testing.T) {
 	setReverseProxyUseSecret(true)
 	proxySecret, err := readProxySecret()
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Errorf("%s", err.Error())
 		return
 	}
 	k8sUtils := k8smock.Init()
@@ -455,7 +596,7 @@ func TestNewProxyConfigFromSecret(t *testing.T) {
 func getProxyConfigFromSecret(t *testing.T) (*ProxyConfig, error) {
 	proxySecret, err := readProxySecret()
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Errorf("%s", err.Error())
 		return nil, err
 	}
 	k8sUtils := k8smock.Init()
@@ -732,11 +873,8 @@ func TestProxyConfig_GetAuthorizedArraysFromSecret(t *testing.T) {
 				return
 			}
 			authorizedArrays := config.GetAuthorizedArrays(tc.username, tc.password)
-			if err != nil {
-				assert.Equal(t, tc.expectedError, err)
-			} else {
-				assert.Equal(t, len(tc.expectedArrays), len(authorizedArrays))
-			}
+			assert.Equal(t, len(tc.expectedArrays), len(authorizedArrays))
+
 		})
 	}
 }
@@ -854,4 +992,122 @@ func TestProxyConfig_GetManagementServerCredentials(t *testing.T) {
 			}
 		})
 	}
+}
+func TestStorageArray_DeepCopy(t *testing.T) {
+	testCases := []struct {
+		name     string
+		sa       StorageArray
+		expected StorageArray
+	}{
+		{
+			name: "Empty storage array",
+			sa:   StorageArray{},
+			expected: StorageArray{
+				ProxyCredentialSecrets: make(map[string]ProxyCredentialSecret),
+			},
+		},
+		{
+			name: "Storage array with one secret",
+			sa: StorageArray{
+				StorageArrayIdentifier: "000197900045",
+				PrimaryEndpoint:        url.URL{Host: "example.com"},
+				ProxyCredentialSecrets: map[string]ProxyCredentialSecret{
+					"secret-1": {
+						Credentials: common.Credentials{
+							UserName: "test-username",
+							Password: "test-password",
+						},
+						CredentialSecret: "test-secret",
+					},
+				},
+			},
+			expected: StorageArray{
+				StorageArrayIdentifier: "000197900045",
+				PrimaryEndpoint:        url.URL{Host: "example.com"},
+				ProxyCredentialSecrets: map[string]ProxyCredentialSecret{
+					"secret-1": {
+						Credentials: common.Credentials{
+							UserName: "test-username",
+							Password: "test-password",
+						},
+						CredentialSecret: "test-secret",
+					},
+				},
+			},
+		},
+		// Add more test cases as needed
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			clone := tc.sa.DeepCopy()
+			if !reflect.DeepEqual(tc.expected, *clone) {
+				t.Errorf("Expected clone: %+v, but got: %+v", tc.expected, *clone)
+			}
+		})
+	}
+}
+
+func TestProxyUser_DeepClone(t *testing.T) {
+	testCases := []struct {
+		name     string
+		pu       ProxyUser
+		expected ProxyUser
+	}{
+		{
+			name: "Empty proxy user",
+			pu:   ProxyUser{},
+			expected: ProxyUser{
+				StorageArrayIdentifiers: make([]string, 0),
+			},
+		},
+		{
+			name: "Proxy user with one storage array",
+			pu: ProxyUser{
+				StorageArrayIdentifiers: []string{"000197900045"},
+				ProxyCredential: common.Credentials{
+					UserName: "test-username",
+					Password: "test-password",
+				},
+			},
+			expected: ProxyUser{
+				StorageArrayIdentifiers: []string{"000197900045"},
+				ProxyCredential: common.Credentials{
+					UserName: "test-username",
+					Password: "test-password",
+				},
+			},
+		},
+		// Add more test cases as needed
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			clone := tc.pu.DeepClone()
+			if !reflect.DeepEqual(tc.expected, *clone) {
+				t.Errorf("Expected clone: %+v, but got: %+v", tc.expected, *clone)
+			}
+		})
+	}
+}
+
+func TestProxyConfig_UpdateCreds_ConfigMap(t *testing.T) {
+	setReverseProxyUseSecret(false)
+	defer setReverseProxyUseSecret(false)
+	config, err := getProxyConfig(t)
+	if err != nil {
+		return
+	}
+	testSecrets := []string{"powermax-secret", "primary-unisphere-secret-1"}
+	newCredentials := &common.Credentials{
+		UserName: "new-test-username",
+		Password: "new-test-password",
+	}
+	for _, secret := range testSecrets {
+		if config.IsSecretConfiguredForArrays(secret) {
+			config.UpdateCreds(secret, newCredentials)
+		}
+	}
+	config.UpdateCreds("powermax-secret", newCredentials)
+	fmt.Println("Credentials updated successfully")
 }
