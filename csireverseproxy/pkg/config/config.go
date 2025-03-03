@@ -34,12 +34,25 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+// ConfigManager is an interface used for testing, satisfied by viper.Viper.
+//
 //go:generate mockgen -source=config.go -destination=mocks/configurator.go
 type ConfigManager interface {
+	// SetConfigFile designates the name of the file containing the configuration
 	SetConfigName(string)
+
+	// SetConfigType designates the type of the configuration. e.g. yaml, json
 	SetConfigType(string)
+
+	// AddConfigPath adds a path to look for the config file in
+	// Can be called multiple times to define multiple search paths
 	AddConfigPath(string)
+
+	// ReadInConfig will discover and load the configuration file from disk
+	// and key/value stores, searching in one of the defined paths.
 	ReadInConfig() error
+
+	// GetString returns the value associated with the key as a string.
 	GetString(string) string
 }
 
