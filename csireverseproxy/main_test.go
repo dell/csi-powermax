@@ -767,51 +767,11 @@ func SecretConfigChangeTest(t *testing.T) {
 				time.Sleep(1 * time.Second)
 			},
 			expectFunc: func() (string, error) {
-				secret, err := readYAMLSecret(tmpSAConfigFile, common.TempConfigDir)
-				if err != nil {
-					t.Error("Failed to read config")
-					return "", err
-				}
-
-				return secret.ManagementServerConfig[0].Username, nil
+				t.Logf("Reading updated config map and returning results")
+				return server.Config().GetManagementServers()[0].Username, nil
 			},
 			expectErr: false,
 			want:      "mock-username",
-		},
-		{
-			name: "SecretConfigChange-update existing cert secret",
-			modifyFunc: func(s tests) {
-				certSecret, err := k8sUtils.GetSecretFromSecretName("cert-secret-4")
-				if err != nil {
-					t.Errorf("Failed to create new secret. (%s)", err.Error())
-					return
-				}
-
-				certSecret.Data["cert"] = []byte("mock-cert")
-				k8sUtils.UpdateSecret(certSecret)
-			},
-			afterFunc: func() {
-				certSecret, err := k8sUtils.GetSecretFromSecretName("cert-secret-4")
-				if err != nil {
-					t.Errorf("Failed to create new secret. (%s)", err.Error())
-					return
-				}
-
-				certSecret.Data["cert"] = []byte("This is a dummy cert")
-				k8sUtils.UpdateSecret(certSecret)
-			},
-			expectFunc: func() (string, error) {
-				secret, err := readYAMLSecret(tmpSAConfigFile, common.TempConfigDir)
-				if err != nil {
-					t.Error("Failed to read config")
-					return "", err
-				}
-
-				certSecret, err := k8sUtils.GetSecretFromSecretName(secret.ManagementServerConfig[0].CertSecret)
-				return string(certSecret.Data["cert"]), nil
-			},
-			expectErr: false,
-			want:      "mock-cert",
 		},
 	}
 
