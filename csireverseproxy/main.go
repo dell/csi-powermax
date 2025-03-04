@@ -90,7 +90,7 @@ func getServerOpts() ServerOpts {
 	defaultNameSpace := getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace)
 	configFile := getEnv(common.EnvConfigFileName, common.DefaultConfigFileName)
 	configDir := getEnv(common.EnvConfigDirName, common.DefaultConfigDir)
-	inClusterEnvVal := getEnv(common.EnvInClusterConfig, "false")
+	inClusterEnvVal := getEnv(common.EnvInClusterConfig, "true")
 	inCluster := false
 	port := getEnv(common.EnvSidecarProxyPort, common.DefaultPort)
 
