@@ -467,22 +467,6 @@ func TestMultipleRuns(t *testing.T) {
 	// Remove any files left over from previous runs to ensure clean run
 	TearDownSetup()
 	// Run the tests multiple times with different configurations (secret or configmap)
-	t.Run("TestConfigMapCase", func(t *testing.T) {
-		log.Infof("#### Running tests with configmap ####")
-		InitializeSetup("configmap")
-		defer TearDownSetup()
-		os.Setenv(common.EnvReverseProxyUseSecret, "false")
-
-		// Run tests
-		SAHTTPRequestTest(t)
-		ServerSAEventHandlerTest(t)
-		SecretConfigChangeTest(t)
-		ConfigMapParamsConfigChangeTest(t)
-		ConfigMapEventHandlerTest(t)
-		ConfigMapConfigChangeTest(t)
-		log.Infof("#### END Running tests with configmap ####")
-	})
-
 	t.Run("TestSecretCase", func(t *testing.T) {
 		log.Infof("#### Running tests with secret ####")
 		os.Setenv(common.EnvReverseProxyUseSecret, "true")
@@ -497,6 +481,22 @@ func TestMultipleRuns(t *testing.T) {
 		ConfigMapEventHandlerTest(t)
 		ConfigMapConfigChangeTest(t)
 		log.Infof("#### END Running tests with secret ####")
+	})
+
+	t.Run("TestConfigMapCase", func(t *testing.T) {
+		log.Infof("#### Running tests with configmap ####")
+		InitializeSetup("configmap")
+		defer TearDownSetup()
+		os.Setenv(common.EnvReverseProxyUseSecret, "false")
+
+		// Run tests
+		SAHTTPRequestTest(t)
+		ServerSAEventHandlerTest(t)
+		SecretConfigChangeTest(t)
+		ConfigMapParamsConfigChangeTest(t)
+		ConfigMapEventHandlerTest(t)
+		ConfigMapConfigChangeTest(t)
+		log.Infof("#### END Running tests with configmap ####")
 	})
 }
 
@@ -848,6 +848,7 @@ func ConfigMapEventHandlerTest(t *testing.T) {
 		name          string
 		secretName    string
 		getSecretFunc func(s tests) *corev1.Secret
+		afterFunc     func()
 	}
 	tc := []tests{
 		{
@@ -865,6 +866,7 @@ func ConfigMapEventHandlerTest(t *testing.T) {
 				testsecret, _ := k8sUtils.UpdateSecret(secret)
 				return testsecret
 			},
+			afterFunc: func() {},
 		},
 		{
 			name:       "ConfigMapEventHandler-update existing cert secret",
@@ -880,6 +882,7 @@ func ConfigMapEventHandlerTest(t *testing.T) {
 				testSecret, _ := k8sUtils.UpdateSecret(certSecret)
 				return testSecret
 			},
+			afterFunc: func() {},
 		},
 		{
 			name:       "ConfigMapEventHandler-set mounted secret to true",
@@ -888,12 +891,14 @@ func ConfigMapEventHandlerTest(t *testing.T) {
 				os.Setenv(common.EnvReverseProxyUseSecret, "true")
 				return nil
 			},
+			afterFunc: func() { os.Setenv(common.EnvReverseProxyUseSecret, "false") },
 		},
 	}
 
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			server.EventHandler(k8sUtils, tt.getSecretFunc(tt))
+			tt.afterFunc()
 		})
 	}
 }
