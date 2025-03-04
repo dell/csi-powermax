@@ -315,8 +315,8 @@ func (pc *ProxyConfig) IsSecretConfiguredForCerts(secretName string) bool {
 func (pc *ProxyConfig) IsSecretConfiguredForArrays(secretName string) bool {
 	log.Infof("Checking secret : %s", secretName)
 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
-		// if using secrets, return true. updates for the username password happens in UpdateCreds
-		return true
+		// if using secrets, return false. updates for the username password happens in UpdateCreds
+		return false
 	}
 
 	for _, array := range pc.managedArrays {
