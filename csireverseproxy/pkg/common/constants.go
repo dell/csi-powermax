@@ -32,7 +32,7 @@ const (
 	EnvWatchNameSpace           = "X_CSI_REVPROXY_WATCH_NAMESPACE"
 	EnvConfigFileName           = "X_CSI_REVPROXY_CONFIG_FILE_NAME"
 	EnvConfigDirName            = "X_CSI_REVPROXY_CONFIG_DIR"
-	EnvInClusterConfig          = "X_CSI_REVRPOXY_IN_CLUSTER"
+	EnvInClusterConfig          = "X_CSI_REVPROXY_IN_CLUSTER"
 	EnvIsLeaderElectionEnabled  = "X_CSI_REVPROXY_IS_LEADER_ENABLED"
 	EnvSecretFilePath           = "X_CSI_REVPROXY_SECRET_FILEPATH"
 	EnvReverseProxyUseSecret    = "X_CSI_REVPROXY_USE_SECRET"
