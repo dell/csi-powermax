@@ -139,6 +139,17 @@ func (mockUtils *MockUtils) getCredentialFromSecret(secret *corev1.Secret) (*com
 	return nil, fmt.Errorf("username not found in secret data")
 }
 
+func (mockUtils *MockUtils) updateSecret(secret *corev1.Secret) (*corev1.Secret, error) {
+	if secret == nil {
+		return nil, fmt.Errorf("secret can't be nil")
+	}
+	secret, err := mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Update(context.TODO(), secret, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("error updating secret")
+	}
+	return secret, nil
+}
+
 // GetCredentialsFromSecretName - mock implementation for GetCredentialsFromSecretName
 func (mockUtils *MockUtils) GetCredentialsFromSecretName(secretName string) (*common.Credentials, error) {
 	if mockUtils == nil {
@@ -149,6 +160,15 @@ func (mockUtils *MockUtils) GetCredentialsFromSecretName(secretName string) (*co
 		return nil, err
 	}
 	return mockUtils.getCredentialFromSecret(secret)
+}
+
+// UpdateSecret - mock implementation for UpdateSecret
+func (mockUtils *MockUtils) UpdateSecret(secret *corev1.Secret) (*corev1.Secret, error) {
+	if mockUtils == nil {
+		return nil, fmt.Errorf("k8sutils not initialized")
+	}
+
+	return mockUtils.updateSecret(secret)
 }
 
 // GetSecretFromSecretName - mock implementation for GetSecretFromSecretName
@@ -199,12 +219,12 @@ func (mockUtils *MockUtils) CreateNewCertSecret(secretName string) (*corev1.Secr
 		Data: data,
 		Type: "Generic",
 	}
-	_, err = mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Create(context.TODO(), secretObj, metav1.CreateOptions{})
+	certsecret, err := mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Create(context.TODO(), secretObj, metav1.CreateOptions{})
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return nil, err
 	}
 
-	return nil, nil
+	return certsecret, nil
 }
 
 // CreateNewCredentialSecret - creates a new mock secret for credentials
@@ -233,10 +253,10 @@ func (mockUtils *MockUtils) CreateNewCredentialSecret(secretName string) (*corev
 		Type: "Generic",
 	}
 
-	_, err = mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Create(context.TODO(), secretObj, metav1.CreateOptions{})
+	secret, err := mockUtils.KubernetesClient.CoreV1().Secrets(common.DefaultNameSpace).Create(context.TODO(), secretObj, metav1.CreateOptions{})
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return nil, err
 	}
 
-	return nil, nil
+	return secret, nil
 }
