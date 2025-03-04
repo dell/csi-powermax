@@ -311,7 +311,7 @@ func (s *Server) SetupConfigWatcher(k8sUtils k8sutils.UtilsInterface, v *viper.V
 }
 
 func (s *Server) configChangeConfigMap(k8sUtils k8sutils.UtilsInterface, vcm *viper.Viper) {
-	log.Infof("Received a config change event for configmap")
+	log.Infof("Received a config change event for configmap - all settings %v", vcm.AllSettings())
 	var proxyConfigMap config.ProxyConfigMap
 	err := vcm.Unmarshal(&proxyConfigMap)
 	if err != nil {
@@ -333,11 +333,12 @@ func (s *Server) configChangeConfigMap(k8sUtils k8sutils.UtilsInterface, vcm *vi
 		if err != nil {
 			log.Errorf("Error in updating the config: %s", err.Error())
 		}
+		log.Infof("Updated proxy config: %+v", proxyConfig)
 	}
 }
 
 func (s *Server) configChangeSecret(k8sUtils k8sutils.UtilsInterface, vs *viper.Viper) {
-	log.Infof("Received a config change event for secret")
+	log.Infof("Received a config change event for secret - all settings %v", vs.AllSettings())
 	var proxySecret config.ProxySecret
 	err := vs.Unmarshal(&proxySecret)
 	if err != nil {
@@ -379,9 +380,14 @@ func (s *Server) configChangeParamsConfigMap(k8sUtils k8sutils.UtilsInterface, v
 // when an event related to a secret in the namespace being watched
 // is received by the informer
 func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.Secret) {
+	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
+		log.Infof("using mounted secret for reverse proxy. ignoring the config change event")
+		return
+	}
 	conf := s.Config().DeepCopy()
 	hasChanged := false
 
+	log.Infof("Received a config change event for secret %s", secret.Name)
 	found := conf.IsSecretConfiguredForCerts(secret.Name)
 	if found {
 		certFileName, err := k8sUtils.GetCertFileFromSecret(secret)
@@ -396,33 +402,14 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 	}
 	found = conf.IsSecretConfiguredForArrays(secret.Name)
 	if found {
-		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
-			proxySecret, err := config.ReadConfigFromSecret(viper.New())
-			if err != nil {
-				log.Errorf("error while reading config from raw secret: %v\n", err)
-			}
-
-			for _, mgmtServer := range proxySecret.ManagementServerConfig {
-				creds := &common.Credentials{
-					UserName: mgmtServer.Username,
-					Password: mgmtServer.Password,
-				}
-
-				isUpdated := conf.UpdateCreds(secret.Name, creds)
-				if isUpdated {
-					hasChanged = true
-				}
-			}
-		} else {
-			creds, err := k8sUtils.GetCredentialsFromSecret(secret)
-			if err != nil {
-				log.Errorf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
-				return
-			}
-			isUpdated := conf.UpdateCreds(secret.Name, creds)
-			if isUpdated {
-				hasChanged = true
-			}
+		creds, err := k8sUtils.GetCredentialsFromSecret(secret)
+		if err != nil {
+			log.Errorf("failed to get credentials from secret (error: %s). ignoring the config change event", err.Error())
+			return
+		}
+		isUpdated := conf.UpdateCreds(secret.Name, creds)
+		if isUpdated {
+			hasChanged = true
 		}
 	}
 
@@ -508,7 +495,6 @@ func main() {
 }
 
 var runWithLeaderElectionFunc = func(kubeClient *k8sutils.KubernetesClient) (err error) {
-	// var err error
 	lei := leaderelection.NewLeaderElection(kubeClient.Clientset, "csi-powermax-reverse-proxy-dellemc-com", runFunc)
 	lei.WithNamespace(getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace))
 	if err = lei.Run(); err != nil {

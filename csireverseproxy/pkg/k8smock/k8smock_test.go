@@ -304,3 +304,74 @@ func TestGetCredentialsFromSecret(t *testing.T) {
 		t.Errorf("expected %v got %v", "username not found in secret data", err)
 	}
 }
+
+func TestUpdateSecret(t *testing.T) {
+	tests := []struct {
+		name          string
+		mockUtils     *MockUtils
+		secretName    string
+		createSecret  bool
+		getSecretFunc func(secret *corev1.Secret) *corev1.Secret
+		expectSuccess bool
+	}{
+		{
+			name:       "Update secret successfully",
+			mockUtils:  Init(),
+			secretName: "test-cert-secret-name",
+			getSecretFunc: func(secret *corev1.Secret) *corev1.Secret {
+				secret.Data["username"] = []byte("upated-username")
+				secret.Data["password"] = []byte("updated-password")
+				return secret
+			},
+			createSecret:  true,
+			expectSuccess: true,
+		},
+		{
+			name:      "Nil secret",
+			mockUtils: Init(),
+			getSecretFunc: func(secret *corev1.Secret) *corev1.Secret {
+				return nil
+			},
+			createSecret:  false,
+			expectSuccess: false,
+		},
+		{
+			name:      "k8s utils nil",
+			mockUtils: nil,
+			getSecretFunc: func(secret *corev1.Secret) *corev1.Secret {
+				return nil
+			},
+			createSecret:  false,
+			expectSuccess: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var secret *corev1.Secret
+			var err error
+
+			if tt.createSecret {
+				_, err = tt.mockUtils.CreateNewCredentialSecret(tt.secretName)
+				if err != nil {
+					t.Errorf("Failed to create cert secret. (%s)", err.Error())
+					return
+				}
+				secret, err = tt.mockUtils.GetSecretFromSecretName(tt.secretName)
+				if err != nil {
+					t.Errorf("failed to get secret. err: %s", err.Error())
+				}
+			} else {
+				secret = nil
+			}
+
+			certFile, err := tt.mockUtils.UpdateSecret(tt.getSecretFunc(secret))
+
+			if tt.expectSuccess && err != nil {
+				t.Errorf("Expected success but failed to get cert file. (%s)", err.Error())
+			} else if !tt.expectSuccess && err == nil {
+				t.Errorf("Expected failure but got cert file: %s", certFile)
+			}
+		})
+	}
+}
