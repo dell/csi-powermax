@@ -110,8 +110,8 @@ github.com/dell/dell-csi-extensions/podmon v1.7.1-0.20250226203203-5dcd46c607b9 
 github.com/dell/dell-csi-extensions/podmon v1.7.1-0.20250226203203-5dcd46c607b9/go.mod h1:ODlchec6u+c05nnQ/IlkY94ctnvcr4LATl2PuYt7Hfk=
 github.com/dell/dell-csi-extensions/replication v1.10.2-0.20250226203203-5dcd46c607b9 h1:TMMbJK9LqWiE1i5KS5310ZTKwkAiN7HLY08AtgRKdi0=
 github.com/dell/dell-csi-extensions/replication v1.10.2-0.20250226203203-5dcd46c607b9/go.mod h1:OFdK+dJexaSSe4B2Sg8/V5ROTBVICZvgvYDeVTrIRWg=
-github.com/dell/gobrick v1.13.1 h1:RGSTw8f+qqT8S06a2R4pDjEXyl/07hpdFduJ1YR5dWA=
-github.com/dell/gobrick v1.13.1/go.mod h1:KDuns/FhqbcYgOV/VULvgema8t4sF35oxbBTW7Nw+cg=
+github.com/dell/gobrick v1.13.2-0.20250303063218-8ebfe78f2baf h1:7lTgedWk6EMtGWZ6GXplRp6GTzIz3dHik/DAcBIUmqg=
+github.com/dell/gobrick v1.13.2-0.20250303063218-8ebfe78f2baf/go.mod h1:KDuns/FhqbcYgOV/VULvgema8t4sF35oxbBTW7Nw+cg=
 github.com/dell/gocsi v1.13.1-0.20250226203119-f6c4e42fab09 h1:wYjkmD0nNVNgmmHxttgVZaQehFE76JIDuIuwbjrFuM8=
 github.com/dell/gocsi v1.13.1-0.20250226203119-f6c4e42fab09/go.mod h1:iZODT8g3FlH2R+umcn5J7uWsxERXOnokIj8UMGmUFE0=
 github.com/dell/gofsutil v1.18.0 h1:dZiZjBZLqHqEQw97yU4x0SR3ydF22dw7tqNS8Fvvl2c=
@@ -120,8 +120,8 @@ github.com/dell/goiscsi v1.11.1-0.20250227093735-d591593ee572 h1:DbUYd9UQOOyiQFf
 github.com/dell/goiscsi v1.11.1-0.20250227093735-d591593ee572/go.mod h1:uDXlWSh0w5BdLr5XhPKUyNpkJDTc0jmnz/u6QcPkIyA=
 github.com/dell/gonvme v1.10.2-0.20250226203131-a3942eb04728 h1:Ay0d4XzBmZciVU1fg6UyaLU8j00sOGNLyuk8x5YKQe0=
 github.com/dell/gonvme v1.10.2-0.20250226203131-a3942eb04728/go.mod h1:QKHlqjKObR7L5tugb+MCG4r3H/6AKje1sfg4XP6mA4U=
-github.com/dell/gopowermax/v2 v2.9.1-0.20250225194839-14832df3370b h1:9aD0QOfMKLQEDlFn3WO0FOotq0x3AAxcPrKg8vulfJk=
-github.com/dell/gopowermax/v2 v2.9.1-0.20250225194839-14832df3370b/go.mod h1:nPrviodvC5IvhJ4UWujFbLF8K2Nj49LrYVHkEma0ods=
+github.com/dell/gopowermax/v2 v2.9.1-0.20250227163259-5898e60158ee h1:pyCS/NQCNet4HCT8kThDbZwfijqaWVOvmvmOa1v72NI=
+github.com/dell/gopowermax/v2 v2.9.1-0.20250227163259-5898e60158ee/go.mod h1:nPrviodvC5IvhJ4UWujFbLF8K2Nj49LrYVHkEma0ods=
 github.com/dgrijalva/jwt-go v3.2.0+incompatible/go.mod h1:E3ru+11k8xSBh+hMPgOLZmtrrCbhqsmaPHjLKYnJCaQ=
 github.com/dgryski/go-sip13 v0.0.0-20181026042036-e10d5fee7954/go.mod h1:vAd38F8PWV+bWy6jNmig1y/TA+kYO4g3RSRF0IAv0no=
 github.com/docopt/docopt-go v0.0.0-20180111231733-ee0de3bc6815/go.mod h1:WwZ+bS3ebgob9U8Nd0kOddGdZWjyMGR8Wziv+TBNwSE=
