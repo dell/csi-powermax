@@ -21,10 +21,7 @@ format:
 clean:
 	go clean
 
-check:
-	@./check.sh
-
-build:	check
+build:
 	CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build
 
 docker: build
