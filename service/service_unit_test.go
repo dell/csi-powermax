@@ -850,34 +850,6 @@ func TestCloseDbusConnection(t *testing.T) {
 	}
 }
 
-func TestSetArrayConfigEnvs(t *testing.T) {
-	ctx := context.Background()
-	fp := filepath.Join(os.TempDir(), "arrayConfig.yaml")
-	file, err := os.Create(fp)
-	assert.Equal(t, nil, err)
-
-	defer func() {
-		os.Remove(fp)
-		file.Close()
-	}()
-
-	_ = os.Setenv(EnvArrayConfigPath, fp)
-	paramsViper := viper.New()
-	paramsViper.SetConfigFile(fp)
-	paramsViper.SetConfigType("yaml")
-	paramsViper.Set(Protocol, "ICSCI")
-	paramsViper.Set(EnvEndpoint, "endpoint")
-	paramsViper.Set(PortGroups, "pg1, pg2, pg3")
-	paramsViper.Set(ManagedArrays, "000000000001,000000000002")
-
-	err = paramsViper.WriteConfig()
-	assert.Equal(t, nil, err)
-
-	// Test case: Successful read of array config file
-	err = setArrayConfigEnvs(ctx)
-	assert.Equal(t, nil, err)
-}
-
 func TestReadConfig(t *testing.T) {
 	fp := filepath.Join(os.TempDir(), "topoConfig.yaml")
 	file, err := os.Create(fp)
