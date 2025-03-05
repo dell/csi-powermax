@@ -1,0 +1,3 @@
+csi_powermax_reverse_proxy_port: "2222"
+csi_log_level: debug
+csi_log_format: json

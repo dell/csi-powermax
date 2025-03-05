@@ -25,11 +25,11 @@ import (
 	"syscall"
 	"time"
 
-	"revproxy/v2/pkg/common"
-	"revproxy/v2/pkg/config"
-	"revproxy/v2/pkg/k8sutils"
-	"revproxy/v2/pkg/proxy"
-	"revproxy/v2/pkg/utils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/proxy"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 
@@ -58,6 +58,8 @@ type ServerOpts struct {
 	ConfigDir      string
 	ConfigFileName string
 	InCluster      bool
+	SecretFilePath string
+	Port           string
 }
 
 // Server represents the proxy server
@@ -88,8 +90,10 @@ func getServerOpts() ServerOpts {
 	defaultNameSpace := getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace)
 	configFile := getEnv(common.EnvConfigFileName, common.DefaultConfigFileName)
 	configDir := getEnv(common.EnvConfigDirName, common.DefaultConfigDir)
-	inClusterEnvVal := getEnv(common.EnvInClusterConfig, "false")
+	inClusterEnvVal := getEnv(common.EnvInClusterConfig, "true")
 	inCluster := false
+	port := getEnv(common.EnvSidecarProxyPort, common.DefaultPort)
+
 	if strings.ToLower(inClusterEnvVal) == "true" {
 		inCluster = true
 	}
@@ -102,6 +106,7 @@ func getServerOpts() ServerOpts {
 		CertFile:       common.DefaultCertFile,
 		KeyFile:        common.DefaultKeyFile,
 		InCluster:      inCluster,
+		Port:           port,
 	}
 }
 
@@ -120,28 +125,90 @@ func (s *Server) Config() *config.ProxyConfig {
 }
 
 // Setup sets up the server and the proxy configuration
-// this includes - reading the config, creating appropriate proxy instance
+// this includes - reading the secret or config map, creating appropriate proxy instance
 // and setting up the signal handler channel
 func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
-	proxyConfigMap, err := config.ReadConfig(s.Opts.ConfigFileName, s.Opts.ConfigDir)
-	if err != nil {
-		return err
+	// Read the config from secret if secret provided
+	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
+		log.Printf("Reading config using secret")
+
+		vs := viper.New()
+		proxySecret, err := config.ReadConfigFromSecret(vs)
+		if err != nil {
+			log.Printf("Error while reading config from secret: %v\n", err)
+			return err
+		}
+
+		proxyConfig, err := config.NewProxyConfigFromSecret(proxySecret, k8sUtils)
+		if err != nil {
+			log.Printf("Error while creating proxy config from secret: %v\n", err)
+			return err
+		}
+		s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
+		s.KeyFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.KeyFile)
+
+		s.Port = proxyConfig.Port
+		proxy, err := proxy.NewProxy(*proxyConfig)
+		if err != nil {
+			log.Printf("Error while creating proxy instance from secret: %v\n", err)
+			return err
+		}
+
+		log.Infof("Setting up watcher for mounted secret")
+		s.SetupConfigWatcher(k8sUtils, vs, s.configChangeSecret)
+
+		// params config map
+		vcp := viper.New()
+		paramsFilePath := getEnv(common.EnvPowermaxConfigPath, "")
+		paramsConfig, err := config.ReadParamsConfigMapFromPath(paramsFilePath, vcp)
+		if err != nil {
+			log.Printf("Error while reading from params config map: %v\n", err)
+			return err
+		}
+		if paramsConfig.Port != "" {
+			log.Infof("Setting reverseproxy port to %s", paramsConfig.Port)
+			s.Port = paramsConfig.Port
+			proxyConfig.Port = paramsConfig.Port
+		}
+
+		log.Infof("Setting up watcher for mounted params config map")
+		s.SetupConfigWatcher(k8sUtils, vcp, s.configChangeParamsConfigMap)
+
+		s.Proxy = proxy
+		s.SetConfig(proxyConfig)
+		s.SigChan = make(chan os.Signal, 1)
+
+	} else {
+		// Read the config from config map
+		log.Printf("Reading config using config map")
+		vcm := viper.New()
+		proxyConfigMap, err := config.ReadConfig(s.Opts.ConfigFileName, s.Opts.ConfigDir, vcm)
+		if err != nil {
+			return err
+		}
+		updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
+		proxyConfig, err := config.NewProxyConfig(proxyConfigMap, k8sUtils)
+		if err != nil {
+			return err
+		}
+		s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
+		s.KeyFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.KeyFile)
+		s.Port = proxyConfig.Port
+		proxy, err := proxy.NewProxy(*proxyConfig)
+		if err != nil {
+			log.Printf("Error while creating proxy instance from config map: %v\n", err)
+			return err
+		}
+
+		log.Infof("Setting up watcher for mounted reverse proxy config map")
+
+		s.SetupConfigWatcher(k8sUtils, vcm, s.configChangeConfigMap)
+
+		s.Proxy = proxy
+		s.SetConfig(proxyConfig)
+		s.SigChan = make(chan os.Signal, 1)
 	}
-	updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
-	proxyConfig, err := config.NewProxyConfig(proxyConfigMap, k8sUtils)
-	if err != nil {
-		return err
-	}
-	s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
-	s.KeyFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.KeyFile)
-	s.Port = proxyConfig.Port
-	proxy, err := proxy.NewProxy(*proxyConfig)
-	if err != nil {
-		return err
-	}
-	s.Proxy = proxy
-	s.SetConfig(proxyConfig)
-	s.SigChan = make(chan os.Signal, 1)
+
 	return nil
 }
 
@@ -231,43 +298,96 @@ func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 	log.SetLevel(level)
 }
 
-// SetupConfigMapWatcher - Uses viper config change watcher to watch for
+// SetupConfigWatcher - Uses viper config change watcher to watch for
 // config change events on the yaml file
 // this also works with configmaps as viper evaluates the symlinks (from the configmap mount)
 // When a config change event is received, the proxy are updated with the new configuration
-func (s *Server) SetupConfigMapWatcher(k8sUtils k8sutils.UtilsInterface) {
-	viper.WatchConfig()
-	viper.OnConfigChange(func(e fsnotify.Event) {
-		log.Info("Received a config change event")
-		var proxyConfigMap config.ProxyConfigMap
-		err := viper.Unmarshal(&proxyConfigMap)
+func (s *Server) SetupConfigWatcher(k8sUtils k8sutils.UtilsInterface, v *viper.Viper, f func(k k8sutils.UtilsInterface, v *viper.Viper)) {
+	v.WatchConfig()
+	v.OnConfigChange(func(e fsnotify.Event) {
+		log.Infof("Received a config change event %s for %s", e.Op.String(), e.Name)
+		f(k8sUtils, v)
+	})
+}
+
+func (s *Server) configChangeConfigMap(k8sUtils k8sutils.UtilsInterface, vcm *viper.Viper) {
+	log.Infof("Received a config change event for configmap - all settings %v", vcm.AllSettings())
+	var proxyConfigMap config.ProxyConfigMap
+	err := vcm.Unmarshal(&proxyConfigMap)
+	if err != nil {
+		log.Errorf("Error in unmarshalling the config: %s", err.Error())
+		return
+	}
+	err = proxyConfigMap.CustomUnmarshal(vcm)
+	if err != nil {
+		log.Errorf("Error in unmarshalling the config map: %s", err.Error())
+		return
+	}
+	updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
+	proxyConfig, err := config.NewProxyConfig(&proxyConfigMap, k8sUtils)
+	if err != nil || proxyConfig == nil {
+		log.Errorf("Error parsing the config: %v", err)
+	} else {
+		s.SetConfig(proxyConfig)
+		err = s.GetRevProxy().UpdateConfig(*proxyConfig)
 		if err != nil {
-			log.Errorf("Error in unmarshalling the config: %s", err.Error())
+			log.Errorf("Error in updating the config: %s", err.Error())
+		}
+		log.Infof("Updated proxy config: %+v", proxyConfig)
+	}
+}
+
+func (s *Server) configChangeSecret(k8sUtils k8sutils.UtilsInterface, vs *viper.Viper) {
+	log.Infof("Received a config change event for secret - all settings %v", vs.AllSettings())
+	var proxySecret config.ProxySecret
+	err := vs.Unmarshal(&proxySecret)
+	if err != nil {
+		log.Errorf("Error in unmarshalling the config: %s", err.Error())
+	} else {
+		proxyConfig, err := config.NewProxyConfigFromSecret(&proxySecret, k8sUtils)
+		if err != nil || proxyConfig == nil {
+			log.Errorf("Error parsing the config: %v", err)
 		} else {
-			updateRevProxyLogParams(proxyConfigMap.LogFormat, proxyConfigMap.LogLevel)
-			proxyConfig, err := config.NewProxyConfig(&proxyConfigMap, k8sUtils)
-			if err != nil || proxyConfig == nil {
-				log.Errorf("Error parsing the config: %v", err)
-			} else {
-				log.Info("Successfully parsed the updated config")
-				s.SetConfig(proxyConfig)
-				err = s.GetRevProxy().UpdateConfig(*proxyConfig)
-				if err != nil {
-					log.Errorf("Error in updating the config: %s", err.Error())
-				}
+			s.SetConfig(proxyConfig)
+			err = s.GetRevProxy().UpdateConfig(*proxyConfig)
+			if err != nil {
+				log.Errorf("Error in updating the config: %s", err.Error())
 			}
 		}
-	})
+	}
+}
+
+func (s *Server) configChangeParamsConfigMap(k8sUtils k8sutils.UtilsInterface, vcmp *viper.Viper) {
+	log.Infof("Received a config change event for params configmap - all settings %v", vcmp.AllSettings())
+	var ParamsConfigMap config.ParamsConfigMap
+	err := vcmp.Unmarshal(&ParamsConfigMap)
+	if err != nil {
+		log.Errorf("Error in unmarshalling the params config: %s", err.Error())
+		return
+	}
+
+	updateRevProxyLogParams(ParamsConfigMap.LogFormat, ParamsConfigMap.LogLevel)
+	config := s.Config()
+	log.Infof("Updating reverse proxy port to %s", ParamsConfigMap.Port)
+	config.Port = ParamsConfigMap.Port
+	err = s.GetRevProxy().UpdateConfig(*config)
+	if err != nil {
+		log.Errorf("Error in updating the config: %s", err.Error())
+	}
 }
 
 // EventHandler - callback function which is used by k8sutils
 // when an event related to a secret in the namespace being watched
 // is received by the informer
 func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.Secret) {
+	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
+		log.Infof("using mounted secret for reverse proxy. ignoring the config change event")
+		return
+	}
 	conf := s.Config().DeepCopy()
-	log.Infof("New credential/cert update event for the secret(%s)", secret.Name)
 	hasChanged := false
 
+	log.Infof("Received a config change event for secret %s", secret.Name)
 	found := conf.IsSecretConfiguredForCerts(secret.Name)
 	if found {
 		certFileName, err := k8sUtils.GetCertFileFromSecret(secret)
@@ -292,6 +412,7 @@ func (s *Server) EventHandler(k8sUtils k8sutils.UtilsInterface, secret *corev1.S
 			hasChanged = true
 		}
 	}
+
 	if hasChanged {
 		err := s.GetRevProxy().UpdateConfig(*conf)
 		if err != nil {
@@ -309,7 +430,7 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 
 	err := server.Setup(k8sUtils)
 	if err != nil {
-		log.Errorf("Failed to setup server. (%s)", err.Error())
+		log.Errorf("Failed to setup Server (%s)", err.Error())
 		return nil, err
 	}
 
@@ -324,9 +445,6 @@ func startServer(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, er
 
 	// Setup the signal handler
 	server.SignalHandler(k8sUtils)
-
-	// Setup the watcher on the config map
-	server.SetupConfigMapWatcher(k8sUtils)
 
 	return server, nil
 }
@@ -377,7 +495,6 @@ func main() {
 }
 
 var runWithLeaderElectionFunc = func(kubeClient *k8sutils.KubernetesClient) (err error) {
-	// var err error
 	lei := leaderelection.NewLeaderElection(kubeClient.Clientset, "csi-powermax-reverse-proxy-dellemc-com", runFunc)
 	lei.WithNamespace(getEnv(common.EnvWatchNameSpace, common.DefaultNameSpace))
 	if err = lei.Run(); err != nil {

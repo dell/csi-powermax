@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"revproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"

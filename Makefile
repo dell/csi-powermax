@@ -21,9 +21,6 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-check:
-	GOLINT=$(GOLINT) bash check.sh --all
-
 format:
 	@gofmt -w -s .
 
@@ -31,7 +28,7 @@ clean:
 	rm -f core/core_generated.go
 	go clean
 
-build: golint check
+build:
 	go generate
 	CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build
 
@@ -61,11 +58,11 @@ push:	docker
 	make -f docker.mk push
 
 # Run unit tests and skip the BDD tests
-unit-test: golint check
+unit-test:
 	( cd service; go clean -cache; CGO_ENABLED=0 GO111MODULE=on go test -v -coverprofile=c.out ./... )
 
 # Run BDD tests. Need to be root to run as tests require some system access, need to fix
-bdd-test: golint check
+bdd-test:
 	( cd service; go clean -cache; CGO_ENABLED=0 GO111MODULE=on go test -run TestGoDog -v -coverprofile=c.out ./... )
 
 # Linux only; populate env.sh with the hardware parameters
@@ -85,21 +82,6 @@ else
 	$(shell gosec -quiet -log gosec.log -out=gosecresults.csv -fmt=csv ./...)
 endif
 	@echo "Logs are stored at gosec.log, Outputfile at gosecresults.csv"
-
-golint:
-ifeq (, $(shell which golint))
-	@{ \
-	set -e ;\
-	GOLINT_GEN_TMP_DIR=$$(mktemp -d) ;\
-	cd $$GOLINT_GEN_TMP_DIR ;\
-	go mod init tmp ;\
-	go install golang.org/x/lint/golint@latest ;\
-	rm -rf $$GOLINT_GEN_TMP_DIR ;\
-	}
-GOLINT=$(GOBIN)/golint
-else
-GOLINT=$(shell which golint)
-endif
 
 .PHONY: actions action-help
 actions: ## Run all GitHub Action checks that run on a pull request creation

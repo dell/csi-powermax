@@ -18,18 +18,31 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
-	"revproxy/v2/pkg/common"
-	"revproxy/v2/pkg/k8smock"
-	"revproxy/v2/pkg/utils"
-
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	mock_config "github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config/mocks"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"gopkg.in/yaml.v2"
 )
 
 func readConfig() (*ProxyConfigMap, error) {
-	return ReadConfig(common.TestConfigFileName, "./../../"+common.TestConfigDir)
+	return ReadConfig(common.TestConfigFileName, "./../../"+common.TestConfigDir, viper.New())
+}
+
+func readProxySecret() (*ProxySecret, error) {
+	setReverseProxyUseSecret(true)
+	relativePath := filepath.Join(".", "..", "..", common.TestConfigDir, common.TestSecretFileName)
+	setEnv(common.EnvSecretFilePath, relativePath)
+	return ReadConfigFromSecret(viper.New())
 }
 
 func TestMain(m *testing.M) {
@@ -48,13 +61,29 @@ func TestMain(m *testing.M) {
 func TestReadConfig(t *testing.T) {
 	proxyConfigMap, err := readConfig()
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Errorf("%s", err.Error())
 		return
 	}
 	fmt.Printf("%v", proxyConfigMap)
 }
 
+func setEnv(key, value string) error {
+	err := os.Setenv(key, value)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func setReverseProxyUseSecret(value bool) error {
+	if value {
+		return setEnv(common.EnvReverseProxyUseSecret, "true")
+	}
+	return setEnv(common.EnvReverseProxyUseSecret, "false")
+}
+
 func getProxyConfig(t *testing.T) (*ProxyConfig, error) {
+	setReverseProxyUseSecret(false)
 	k8sUtils := k8smock.Init()
 	configMap, err := readConfig()
 	if err != nil {
@@ -139,7 +168,7 @@ func TestParseConfig(t *testing.T) {
 			name: "Primary URL is nil",
 			before: func(cm *ProxyConfigMap) {
 				*cm = deepCopyFunc(configMap)
-				cm.Config.StorageArrayConfig[0].PrimaryURL = ""
+				cm.Config.StorageArrayConfig[0].PrimaryEndpoint = ""
 			},
 			wantErr: true,
 		},
@@ -147,7 +176,7 @@ func TestParseConfig(t *testing.T) {
 			name: "Backup URL is nil",
 			before: func(cm *ProxyConfigMap) {
 				*cm = deepCopyFunc(configMap)
-				cm.Config.StorageArrayConfig[0].BackupURL = ""
+				cm.Config.StorageArrayConfig[0].BackupEndpoint = ""
 			},
 			wantErr: true,
 		},
@@ -156,7 +185,7 @@ func TestParseConfig(t *testing.T) {
 			before: func(cm *ProxyConfigMap) {
 				*cm = deepCopyFunc(configMap)
 				// modify the configmap to include a new array
-				cm.Config.StorageArrayConfig[0].BackupURL = "123000123000"
+				cm.Config.StorageArrayConfig[0].BackupEndpoint = "123000123000"
 			},
 			wantErr: true,
 		},
@@ -165,8 +194,8 @@ func TestParseConfig(t *testing.T) {
 			before: func(cm *ProxyConfigMap) {
 				*cm = deepCopyFunc(configMap)
 				storageArrayConfig := StorageArrayConfig{
-					PrimaryURL:             "new-primary-1.unisphe.re:8443",
-					BackupURL:              "new-backup-1.unisphe.re:8443",
+					PrimaryEndpoint:        "new-primary-1.unisphe.re:8443",
+					BackupEndpoint:         "new-backup-1.unisphe.re:8443",
 					StorageArrayID:         "123000123000",
 					ProxyCredentialSecrets: []string{"new-primary-unisphere-secret-1", "new-backup-unisphere-secret-1"},
 				}
@@ -202,6 +231,8 @@ func TestProxyConfig_UpdateCerts(t *testing.T) {
 }
 
 func TestProxyConfig_UpdateCreds(t *testing.T) {
+	setReverseProxyUseSecret(true)
+	defer setReverseProxyUseSecret(false)
 	config, err := getProxyConfig(t)
 	if err != nil {
 		return
@@ -226,18 +257,46 @@ func TestProxyConfig_UpdateCertsAndCredentials(t *testing.T) {
 		return
 	}
 	k8sUtils := k8smock.Init()
-	serverSecret, _ := k8sUtils.CreateNewCredentialSecret("powermax-secret")
-	proxySecret, _ := k8sUtils.CreateNewCredentialSecret("proxy-secret")
+	_, err = k8sUtils.CreateNewCredentialSecret("powermax-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverSecret, err := k8sUtils.GetSecretFromSecretName("powermax-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = k8sUtils.CreateNewCredentialSecret("proxy-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxySecret, err := k8sUtils.GetSecretFromSecretName("powermax-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	serverSecret.Data["username"] = []byte("new-username")
 	proxySecret.Data["username"] = []byte("new-username")
-	certSecret, _ := k8sUtils.CreateNewCertSecret("secret-cert")
+	_, _ = k8sUtils.CreateNewCertSecret("secret-cert")
+	certSecret, err := k8sUtils.GetSecretFromSecretName("secret-cert")
+	if err != nil {
+		t.Fatalf("failed to get cert secret: %s", err.Error())
+	}
 	config.UpdateCertsAndCredentials(k8sUtils, serverSecret)
 	config.UpdateCertsAndCredentials(k8sUtils, proxySecret)
 	config.UpdateCertsAndCredentials(k8sUtils, certSecret)
 
-	primaryUnisphereSecret2, _ := k8sUtils.CreateNewCredentialSecret("primary-unisphere-secret-2")
+	_, _ = k8sUtils.CreateNewCredentialSecret("primary-unisphere-secret-2")
+	primaryUnisphereSecret2, err := k8sUtils.GetSecretFromSecretName("primary-unisphere-secret-2")
+	if err != nil {
+		t.Fatal(err)
+	}
 	primaryUnisphereSecret2.Data["username"] = []byte("new-username")
-	primaryUnisphereCert2, _ := k8sUtils.CreateNewCertSecret("primary-unisphere-cert-2")
+	_, _ = k8sUtils.CreateNewCertSecret("primary-unisphere-cert-2")
+	primaryUnisphereCert2, err := k8sUtils.GetSecretFromSecretName("primary-unisphere-cert-2")
+	if err != nil {
+		t.Fatal(err)
+	}
 	config.UpdateCertsAndCredentials(k8sUtils, primaryUnisphereSecret2)
 	config.UpdateCertsAndCredentials(k8sUtils, primaryUnisphereCert2)
 
@@ -266,6 +325,151 @@ func TestProxyConfig_UpdateManagementServers(t *testing.T) {
 	}
 }
 
+func TestProxyConfig_UpdateManagementServers_ModifyServer(t *testing.T) {
+	testCases := []struct {
+		name                 string
+		existingManagement   map[url.URL]*ManagementServer
+		newManagement        map[url.URL]*ManagementServer
+		expectedDeletes      []ManagementServer
+		expectedUpdates      []ManagementServer
+		expectedErrorMessage string
+	}{
+		{
+			name: "Modify existing management server",
+			existingManagement: map[url.URL]*ManagementServer{
+				{Host: "example.com"}: {
+					Endpoint: url.URL{Host: "example.com"},
+				},
+			},
+			newManagement: map[url.URL]*ManagementServer{
+				{Host: "example.com"}: {
+					Endpoint: url.URL{Host: "example.com"},
+					Username: "new-username",
+					Password: "new-password",
+				},
+			},
+			expectedDeletes: []ManagementServer{},
+			expectedUpdates: []ManagementServer{
+				{
+					Endpoint: url.URL{Host: "example.com"},
+					Username: "new-username",
+					Password: "new-password",
+				},
+			},
+			expectedErrorMessage: "",
+		},
+		// Add more test cases as needed
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pc := &ProxyConfig{
+				managementServers: tc.existingManagement,
+			}
+			config := &ProxyConfig{
+				managementServers: tc.newManagement,
+			}
+			deletedManagementServers, updatedManagemetServers, err := pc.UpdateManagementServers(config)
+			if tc.expectedErrorMessage != "" {
+				if err == nil || err.Error() != tc.expectedErrorMessage {
+					t.Errorf("Expected error: %s, but got: %v", tc.expectedErrorMessage, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Failed to update management servers. (%s)", err.Error())
+				return
+			}
+			if !reflect.DeepEqual(tc.expectedDeletes, deletedManagementServers) {
+				t.Errorf("Expected deleted management servers: %+v, but got: %+v", tc.expectedDeletes, deletedManagementServers)
+			}
+			if !reflect.DeepEqual(tc.expectedUpdates, updatedManagemetServers) {
+				t.Errorf("Expected updated management servers: %+v, but got: %+v", tc.expectedUpdates, updatedManagemetServers)
+			}
+		})
+	}
+}
+
+func TestProxyConfig_UpdateManagementServers_AddDelete(t *testing.T) {
+	testCases := []struct {
+		name                 string
+		existingManagement   map[url.URL]*ManagementServer
+		newManagement        map[url.URL]*ManagementServer
+		expectedDeletes      []ManagementServer
+		expectedUpdates      []ManagementServer
+		expectedErrorMessage string
+	}{
+		{
+			name: "Add new management server",
+			existingManagement: map[url.URL]*ManagementServer{
+				{Host: "example.com"}: {
+					Endpoint: url.URL{Host: "example.com"},
+				},
+			},
+			newManagement: map[url.URL]*ManagementServer{
+				{Host: "example.com"}: {
+					Endpoint: url.URL{Host: "example.com"},
+				},
+				{Host: "new.example.com"}: {
+					Endpoint: url.URL{Host: "new.example.com"},
+				},
+			},
+			expectedDeletes: []ManagementServer{},
+			expectedUpdates: []ManagementServer{
+				{
+					Endpoint: url.URL{Host: "new.example.com"},
+				},
+			},
+			expectedErrorMessage: "",
+		},
+		{
+			name: "Delete existing management server",
+			existingManagement: map[url.URL]*ManagementServer{
+				{Host: "example.com"}: {
+					Endpoint: url.URL{Host: "example.com"},
+				},
+			},
+			newManagement: map[url.URL]*ManagementServer{},
+			expectedDeletes: []ManagementServer{
+				{
+					Endpoint: url.URL{Host: "example.com"},
+				},
+			},
+			expectedUpdates:      []ManagementServer{},
+			expectedErrorMessage: "",
+		},
+		// Add more test cases as needed
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pc := &ProxyConfig{
+				managementServers: tc.existingManagement,
+			}
+			config := &ProxyConfig{
+				managementServers: tc.newManagement,
+			}
+			deletedManagementServers, updatedManagemetServers, err := pc.UpdateManagementServers(config)
+			if tc.expectedErrorMessage != "" {
+				if err == nil || err.Error() != tc.expectedErrorMessage {
+					t.Errorf("Expected error: %s, but got: %v", tc.expectedErrorMessage, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Failed to update management servers. (%s)", err.Error())
+				return
+			}
+			if !reflect.DeepEqual(tc.expectedDeletes, deletedManagementServers) {
+				t.Errorf("Expected deleted management servers: %+v, but got: %+v", tc.expectedDeletes, deletedManagementServers)
+			}
+			if !reflect.DeepEqual(tc.expectedUpdates, updatedManagemetServers) {
+				t.Errorf("Expected updated management servers: %+v, but got: %+v", tc.expectedUpdates, updatedManagemetServers)
+			}
+		})
+	}
+}
+
 func TestProxyConfig_UpdateManagedArrays(t *testing.T) {
 	config, err := getProxyConfig(t)
 	if err != nil {
@@ -278,14 +482,15 @@ func TestProxyConfig_UpdateManagedArrays(t *testing.T) {
 	// Test invalid config
 	managedArrays := &newConfig.managedArrays
 	for _, array := range *managedArrays {
-		saveURL := array.PrimaryURL
-		array.PrimaryURL = url.URL{
-			Scheme: "https", Host: "new-primary-1.unisphe.re:8443"}
+		saveURL := array.PrimaryEndpoint
+		array.PrimaryEndpoint = url.URL{
+			Scheme: "https", Host: "new-primary-1.unisphe.re:8443",
+		}
 		config.UpdateManagedArrays(newConfig)
-		array.PrimaryURL = saveURL
+		array.PrimaryEndpoint = saveURL
 
 	}
-	//config.UpdateManagedArrays(newConfig)
+	// config.UpdateManagedArrays(newConfig)
 	fmt.Printf("Managed arrays updated successfully")
 }
 
@@ -302,10 +507,9 @@ func TestProxyConfig_GetStorageArray(t *testing.T) {
 	if err != nil {
 		return
 	}
-	fmt.Printf("Storage arrays: %+v\n", config.GetStorageArray("000197900045")) //non empty invalid
+	fmt.Printf("Storage arrays: %+v\n", config.GetStorageArray("000197900045")) // non empty invalid
 	fmt.Printf("Storage arrays: %+v\n", config.GetStorageArray("000000000001")) // non empty valid
-	fmt.Printf("Storage arrays: %+v\n", config.GetStorageArray(""))             //emp
-
+	fmt.Printf("Storage arrays: %+v\n", config.GetStorageArray(""))             // emp
 }
 
 func TestProxyConfig_GetManagedArrayAndServers(t *testing.T) {
@@ -324,7 +528,7 @@ func Test_GetManagementServerCredentials(t *testing.T) {
 	}
 
 	for _, server := range config.GetManagementServers() {
-		_, _ = config.GetManagementServerCredentials(server.URL)
+		_, _ = config.GetManagementServerCredentials(server.Endpoint)
 	}
 
 	// Fetch invalid mgmt server
@@ -340,7 +544,7 @@ func TestGetManagementServer(t *testing.T) {
 		return
 	}
 	for _, server := range config.GetManagementServers() {
-		_, _ = config.GetManagementServer(server.URL)
+		_, _ = config.GetManagementServer(server.Endpoint)
 	}
 
 	_, _ = config.GetManagementServer(url.URL{
@@ -360,4 +564,611 @@ func TestIsUserAuthorized(t *testing.T) {
 
 	// nonexistent username
 	_, _ = config.IsUserAuthorized("non-existent-username", "test-password", "12345678910")
+}
+
+func TestReadConfigFromSecret(t *testing.T) {
+	setReverseProxyUseSecret(true)
+	proxySecret, err := readProxySecret()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	fmt.Printf("%v", proxySecret)
+}
+
+func TestNewProxyConfigFromSecret(t *testing.T) {
+	setReverseProxyUseSecret(true)
+	proxySecret, err := readProxySecret()
+	if err != nil {
+		t.Errorf("%s", err.Error())
+		return
+	}
+	k8sUtils := k8smock.Init()
+	proxyConfig, err := NewProxyConfigFromSecret(proxySecret, k8sUtils)
+	if err != nil {
+		return
+	}
+	if proxyConfig == nil {
+		t.Error("Config not created properly")
+		return
+	}
+	fmt.Printf("Management servers: %+v\n", proxyConfig.GetManagementServers())
+}
+
+func getProxyConfigFromSecret(t *testing.T) (*ProxyConfig, error) {
+	proxySecret, err := readProxySecret()
+	if err != nil {
+		t.Errorf("%s", err.Error())
+		return nil, err
+	}
+	k8sUtils := k8smock.Init()
+	proxyConfig, err := NewProxyConfigFromSecret(proxySecret, k8sUtils)
+	if err != nil {
+		return nil, err
+	}
+	return proxyConfig, nil
+}
+
+func TestProxyConfig_ParseConfigFromSecret(t *testing.T) {
+	testCases := []struct {
+		name           string
+		proxySecret    ProxySecret
+		expectedConfig *ProxyConfig
+		expectedError  error
+	}{
+		{
+			name: "Valid config with one array and one management server",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID:  "test-symm-id",
+						PrimaryEndpoint: "https://management.example.com",
+					},
+				},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError: nil,
+		},
+		{
+			name: "Invalid config with no arrays",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError: fmt.Errorf("no storage arrays configured"),
+		},
+		{
+			name: "Invalid config with no endpoints configured for a storage array",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID: "test-symm-id",
+					},
+				},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError: fmt.Errorf("primary endpoint not configured for array: test-symm-id"),
+		},
+		{
+			name: "Invalid config with primary endpoint not among management servers",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID:  "test-symm-id",
+						PrimaryEndpoint: "https://example.com",
+					},
+				},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError: fmt.Errorf("primary endpoint: %s for array: %s not present among management endpoint addresses", "https://example.com", "test-symm-id"),
+		},
+		{
+			name: "Valid config with multiple arrays and multiple management servers",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID:  "array1",
+						PrimaryEndpoint: "https://management1.example.com",
+						BackupEndpoint:  "https://management2.example.com",
+					},
+					{
+						StorageArrayID:  "array2",
+						PrimaryEndpoint: "https://management1.example.com",
+						BackupEndpoint:  "https://management2.example.com",
+					},
+				},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management1.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+					{
+						Endpoint:                  "https://management2.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError: nil,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var config ProxyConfig
+			err := config.ParseConfigFromSecret(tc.proxySecret, nil)
+			if err != nil {
+				assert.Equal(t, tc.expectedError, err)
+				return
+			}
+			// assert.Equal(t, tc.expectedConfig, &config)
+		})
+	}
+}
+
+func TestProxyConfig_GetAuthorizedArraysFromSecret(t *testing.T) {
+	testCases := []struct {
+		name           string
+		username       string
+		password       string
+		proxySecret    ProxySecret
+		expectedArrays []string
+		expectedError  error
+	}{
+		{
+			name:     "Valid config with one array and one management server",
+			username: "test-username",
+			password: "password",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID:  "test-symm-id",
+						PrimaryEndpoint: "https://management.example.com",
+					},
+				},
+
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError:  nil,
+			expectedArrays: []string{"test-symm-id"},
+		},
+		{
+			name:     "Invalid config with no arrays",
+			username: "test-username",
+			password: "password",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError: fmt.Errorf("no storage arrays configured"),
+		},
+		{
+			name:     "Invalid config with no endpoints configured for a storage array",
+			username: "test-username",
+			password: "password",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID: "test-symm-id",
+					},
+				},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError: fmt.Errorf("primary endpoint not configured for array: test-symm-id"),
+		},
+		{
+			name:     "Invalid config with primary endpoint not among management servers",
+			username: "test-username",
+			password: "password",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID:  "test-symm-id",
+						PrimaryEndpoint: "https://example.com",
+					},
+				},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError: fmt.Errorf("primary endpoint: %s for array: %s not present among management endpoint addresses", "https://example.com", "test-symm-id"),
+		},
+		{
+			name:     "Valid config with multiple arrays and multiple management servers",
+			username: "test-username",
+			password: "password",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID:  "array1",
+						PrimaryEndpoint: "https://management1.example.com",
+						BackupEndpoint:  "https://management2.example.com",
+					},
+					{
+						StorageArrayID:  "array2",
+						PrimaryEndpoint: "https://management1.example.com",
+						BackupEndpoint:  "https://management2.example.com",
+					},
+				},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management1.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+					{
+						Endpoint:                  "https://management2.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+					},
+				},
+			},
+			expectedError:  nil,
+			expectedArrays: []string{"array1", "array2", "array1", "array2"}, // Returns the arrays via the two different management servers! Is this unexpected?!
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var config ProxyConfig
+			err := config.ParseConfigFromSecret(tc.proxySecret, nil)
+			if err != nil {
+				assert.Equal(t, tc.expectedError, err)
+				return
+			}
+			authorizedArrays := config.GetAuthorizedArrays(tc.username, tc.password)
+			assert.Equal(t, len(tc.expectedArrays), len(authorizedArrays))
+		})
+	}
+}
+
+func TestManagementServer_DeepCopy(t *testing.T) {
+	testCases := []struct {
+		name             string
+		managementServer ManagementServer
+		expectedCopy     ManagementServer
+	}{
+		{
+			name: "Valid management server",
+			managementServer: ManagementServer{
+				Endpoint:                  url.URL{Host: "example.com"},
+				StorageArrayIdentifiers:   []string{"000197900045"},
+				Credentials:               common.Credentials{UserName: "test-username", Password: "test-password"},
+				CredentialSecret:          "test-secret",
+				SkipCertificateValidation: true,
+				CertFile:                  "test-cert",
+				CertSecret:                "test-cert-secret",
+				Username:                  "test-username",
+				Password:                  "test-password",
+			},
+			expectedCopy: ManagementServer{
+				Endpoint:                  url.URL{Host: "example.com"},
+				StorageArrayIdentifiers:   []string{"000197900045"},
+				Credentials:               common.Credentials{UserName: "test-username", Password: "test-password"},
+				CredentialSecret:          "test-secret",
+				SkipCertificateValidation: true,
+				CertFile:                  "test-cert",
+				CertSecret:                "test-cert-secret",
+				Username:                  "test-username",
+				Password:                  "test-password",
+			},
+		},
+		// Add more test cases as needed
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			copy := tc.managementServer.DeepCopy()
+			if !reflect.DeepEqual(tc.expectedCopy, *copy) {
+				t.Errorf("Expected copy: %+v, but got: %+v", tc.expectedCopy, *copy)
+			}
+		})
+	}
+}
+
+func TestProxyConfig_GetManagementServerCredentials(t *testing.T) {
+	testCases := []struct {
+		name          string
+		mgmtEndpoint  url.URL
+		expectedCred  common.Credentials
+		expectedError error
+	}{
+		{
+			name:          "Valid management server with EnvReverseProxyUseSecret=true",
+			mgmtEndpoint:  url.URL{Host: "primary-1.unisphe.re:8443"},
+			expectedCred:  common.Credentials{UserName: "admin", Password: "password"},
+			expectedError: nil,
+		},
+		{
+			name:          "Valid management server with EnvReverseProxyUseSecret=false",
+			mgmtEndpoint:  url.URL{Host: "primary-1.unisphe.re:8443"},
+			expectedCred:  common.Credentials{UserName: "test-username", Password: "test-password"},
+			expectedError: nil,
+		},
+		{
+			name:          "Invalid management server with EnvReverseProxyUseSecret=true",
+			mgmtEndpoint:  url.URL{Host: "invalid.com"},
+			expectedCred:  common.Credentials{},
+			expectedError: fmt.Errorf("endpoint not configured"),
+		},
+		{
+			name:          "Invalid management server with EnvReverseProxyUseSecret=false",
+			mgmtEndpoint:  url.URL{Host: "invalid.com"},
+			expectedCred:  common.Credentials{},
+			expectedError: fmt.Errorf("endpoint not configured"),
+		},
+		// Add more test cases as needed
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var config *ProxyConfig
+			var err error
+			var endpoint url.URL
+
+			// Set the EnvReverseProxyUseSecret environment variable
+			if strings.Contains(tc.name, "EnvReverseProxyUseSecret=true") {
+				setReverseProxyUseSecret(true)
+				config, err = getProxyConfigFromSecret(t)
+				if err != nil {
+					return
+				}
+
+			} else if strings.Contains(tc.name, "EnvReverseProxyUseSecret=false") {
+				setReverseProxyUseSecret(false)
+				config, err = getProxyConfig(t)
+				if err != nil {
+					return
+				}
+			}
+			if tc.expectedError == nil {
+				endpoint = config.GetManagementServers()[0].Endpoint
+			} else {
+				endpoint = tc.mgmtEndpoint
+			}
+
+			credentials, err := config.GetManagementServerCredentials(endpoint)
+			if err != nil {
+				assert.Equal(t, tc.expectedError, err)
+			} else {
+				assert.Equal(t, tc.expectedCred, credentials)
+			}
+		})
+	}
+}
+
+func TestReadParamsConfigMapFromPath(t *testing.T) {
+	type args struct {
+		configFilePath string
+		vcp            ConfigManager
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *ParamsConfigMap
+		wantErr bool
+	}{
+		{
+			name: "empty config file path",
+			args: args{
+				configFilePath: "",
+				vcp:            viper.New(),
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "valid config file path",
+			args: args{
+				configFilePath: "./testing",
+				vcp: func() ConfigManager {
+					m := mock_config.NewMockConfigManager(gomock.NewController(t))
+					m.EXPECT().SetConfigName("testing").Times(1)
+					m.EXPECT().SetConfigType("yaml").Times(1)
+					m.EXPECT().AddConfigPath(".").Times(1)
+					m.EXPECT().ReadInConfig().Times(1).Return(nil)
+					m.EXPECT().GetString("csi_log_format").Times(1).Return("json")
+					m.EXPECT().GetString("csi_powermax_reverse_proxy_port").Times(1).Return("2222")
+					m.EXPECT().GetString("csi_log_level").Times(1).Return("info")
+
+					return m
+				}(),
+			},
+			want: &ParamsConfigMap{
+				Port:      "2222",
+				LogLevel:  "info",
+				LogFormat: "json",
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReadParamsConfigMapFromPath(tt.args.configFilePath, tt.args.vcp)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ReadParamsConfigMapFromPath() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ReadParamsConfigMapFromPath() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStorageArray_DeepCopy(t *testing.T) {
+	testCases := []struct {
+		name     string
+		sa       StorageArray
+		expected StorageArray
+	}{
+		{
+			name: "Empty storage array",
+			sa:   StorageArray{},
+			expected: StorageArray{
+				ProxyCredentialSecrets: make(map[string]ProxyCredentialSecret),
+			},
+		},
+		{
+			name: "Storage array with one secret",
+			sa: StorageArray{
+				StorageArrayIdentifier: "000197900045",
+				PrimaryEndpoint:        url.URL{Host: "example.com"},
+				ProxyCredentialSecrets: map[string]ProxyCredentialSecret{
+					"secret-1": {
+						Credentials: common.Credentials{
+							UserName: "test-username",
+							Password: "test-password",
+						},
+						CredentialSecret: "test-secret",
+					},
+				},
+			},
+			expected: StorageArray{
+				StorageArrayIdentifier: "000197900045",
+				PrimaryEndpoint:        url.URL{Host: "example.com"},
+				ProxyCredentialSecrets: map[string]ProxyCredentialSecret{
+					"secret-1": {
+						Credentials: common.Credentials{
+							UserName: "test-username",
+							Password: "test-password",
+						},
+						CredentialSecret: "test-secret",
+					},
+				},
+			},
+		},
+		// Add more test cases as needed
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			clone := tc.sa.DeepCopy()
+			if !reflect.DeepEqual(tc.expected, *clone) {
+				t.Errorf("Expected clone: %+v, but got: %+v", tc.expected, *clone)
+			}
+		})
+	}
+}
+
+func TestProxyUser_DeepClone(t *testing.T) {
+	testCases := []struct {
+		name     string
+		pu       ProxyUser
+		expected ProxyUser
+	}{
+		{
+			name: "Empty proxy user",
+			pu:   ProxyUser{},
+			expected: ProxyUser{
+				StorageArrayIdentifiers: make([]string, 0),
+			},
+		},
+		{
+			name: "Proxy user with one storage array",
+			pu: ProxyUser{
+				StorageArrayIdentifiers: []string{"000197900045"},
+				ProxyCredential: common.Credentials{
+					UserName: "test-username",
+					Password: "test-password",
+				},
+			},
+			expected: ProxyUser{
+				StorageArrayIdentifiers: []string{"000197900045"},
+				ProxyCredential: common.Credentials{
+					UserName: "test-username",
+					Password: "test-password",
+				},
+			},
+		},
+		// Add more test cases as needed
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			clone := tc.pu.DeepClone()
+			if !reflect.DeepEqual(tc.expected, *clone) {
+				t.Errorf("Expected clone: %+v, but got: %+v", tc.expected, *clone)
+			}
+		})
+	}
+}
+
+func TestProxyConfig_UpdateCreds_ConfigMap(t *testing.T) {
+	setReverseProxyUseSecret(false)
+	defer setReverseProxyUseSecret(false)
+	config, err := getProxyConfig(t)
+	if err != nil {
+		return
+	}
+	testSecrets := []string{"powermax-secret", "primary-unisphere-secret-1"}
+	newCredentials := &common.Credentials{
+		UserName: "new-test-username",
+		Password: "new-test-password",
+	}
+	for _, secret := range testSecrets {
+		if config.IsSecretConfiguredForArrays(secret) {
+			config.UpdateCreds(secret, newCredentials)
+		}
+	}
+	config.UpdateCreds("powermax-secret", newCredentials)
+	fmt.Println("Credentials updated successfully")
 }
