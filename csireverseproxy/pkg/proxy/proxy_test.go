@@ -20,15 +20,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
-	"revproxy/v2/pkg/common"
-	"revproxy/v2/pkg/config"
-	"revproxy/v2/pkg/k8smock"
-	"revproxy/v2/pkg/utils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 
 	types "github.com/dell/gopowermax/v2/types/v100"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/gorilla/mux"
@@ -39,9 +41,50 @@ func readConfigFile(fileName string) string {
 	return relativePath
 }
 
+func setEnv(key, value string) error {
+	err := os.Setenv(key, value)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func setReverseProxyUseSecret(value bool) error {
+	if value {
+		return setEnv(common.EnvReverseProxyUseSecret, "true")
+	}
+	return setEnv(common.EnvReverseProxyUseSecret, "false")
+}
+
+func readProxySecret() (*config.ProxySecret, error) {
+	setReverseProxyUseSecret(true)
+	relativePath := filepath.Join(".", "..", "..", common.TestConfigDir, common.TestSecretFileName)
+	setEnv(common.EnvSecretFilePath, relativePath)
+	return config.ReadConfigFromSecret(viper.New())
+}
+
+func getProxyConfigFromSecret(t *testing.T) (*config.ProxyConfig, error) {
+	proxySecret, err := readProxySecret()
+	if err != nil {
+		t.Errorf(err.Error())
+		return nil, err
+	}
+	k8sUtils := k8smock.Init()
+	_, err = k8sUtils.CreateNewCertSecret("secret-cert")
+	if err != nil {
+		return nil, err
+	}
+
+	proxyConfig, err := config.NewProxyConfigFromSecret(proxySecret, k8sUtils)
+	if err != nil {
+		return nil, err
+	}
+	return proxyConfig, nil
+}
+
 func TestNewProxy(t *testing.T) {
 	configFile := readConfigFile(common.TestConfigFileName)
-	configMap, err := config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	configMap, err := config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile), viper.New())
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
 	}
@@ -74,7 +117,7 @@ func TestNewProxy(t *testing.T) {
 
 func TestUpdateConfig(t *testing.T) {
 	configFile := readConfigFile(common.TestConfigFileName)
-	configMap, err := config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	configMap, err := config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile), viper.New())
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
 	}
@@ -106,7 +149,7 @@ func TestUpdateConfig(t *testing.T) {
 
 	// Create new configFile - Test Update ALL endpoints
 	configFile = readConfigFile("configB.yaml")
-	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile), viper.New())
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
 	}
@@ -126,7 +169,7 @@ func TestUpdateConfig(t *testing.T) {
 
 	// Create new configFile - Test Remove array
 	configFile = readConfigFile("configB_single.yaml")
-	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile), viper.New())
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
 	}
@@ -146,7 +189,7 @@ func TestUpdateConfig(t *testing.T) {
 
 	// Create new configFile - Test No Backup
 	configFile = readConfigFile("configB_single_noBackup.yaml")
-	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile), viper.New())
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
 	}
@@ -166,7 +209,7 @@ func TestUpdateConfig(t *testing.T) {
 
 	// Create new configFile - Test Add Backup
 	configFile = readConfigFile("configB_single.yaml")
-	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile), viper.New())
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
 	}
@@ -186,7 +229,7 @@ func TestUpdateConfig(t *testing.T) {
 
 	// Create new configFile - Test New Array
 	configFile = readConfigFile("configC_single.yaml")
-	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile))
+	configMap, err = config.ReadConfig(filepath.Base(configFile), filepath.Dir(configFile), viper.New())
 	if err != nil {
 		t.Fatalf("Failed to read config: %v", err)
 	}
@@ -1879,12 +1922,12 @@ func mockProxyConfigMap(server *httptest.Server) *config.ProxyConfigMap {
 			StorageArrayConfig: []config.StorageArrayConfig{
 				{
 					StorageArrayID:         "000000000001",
-					PrimaryURL:             server.URL,
+					PrimaryEndpoint:        server.URL,
 					ProxyCredentialSecrets: []string{"primary-unisphere-secret-1", "backup-unisphere-secret-1"},
 				},
 			},
 			ManagementServerConfig: []config.ManagementServerConfig{
-				{URL: server.URL, SkipCertificateValidation: true},
+				{Endpoint: server.URL, SkipCertificateValidation: true},
 			},
 		},
 	}
