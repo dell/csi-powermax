@@ -58,10 +58,12 @@ type ConfigManager interface {
 
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
-	StorageArrayID         string   `yaml:"storageArrayId"`
-	PrimaryEndpoint        string   `yaml:"primaryEndpoint"`
-	BackupEndpoint         string   `yaml:"backupEndpoint,omitempty"`
-	ProxyCredentialSecrets []string `yaml:"proxyCredentialSecrets"`
+	StorageArrayID         string            `yaml:"storageArrayId"`
+	PrimaryEndpoint        string            `yaml:"primaryEndpoint"`
+	BackupEndpoint         string            `yaml:"backupEndpoint,omitempty"`
+	ProxyCredentialSecrets []string          `yaml:"proxyCredentialSecrets"`
+	Labels                 map[string]string `yaml:"labels,omitempty"`
+	Parameters             map[string]string `yaml:"parameters,omitempty"`
 }
 
 // ProxyCredentialSecret is used for storing a credential for a secret
