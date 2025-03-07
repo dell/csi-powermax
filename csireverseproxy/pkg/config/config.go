@@ -78,6 +78,8 @@ type StorageArray struct {
 	PrimaryEndpoint        url.URL
 	SecondaryEndpoint      url.URL
 	ProxyCredentialSecrets map[string]ProxyCredentialSecret
+	Labels                 map[string]string
+	Parameters             map[string]string
 }
 
 // StorageArrayServer represents an array with its primary and backup management server
@@ -719,6 +721,13 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 					pc.updateProxyCredentialsFromSecret(mgmtServer.Username, mgmtServer.Password, array.StorageArrayID)
 				}
 			}
+		}
+		// read labels and parameters
+		if array.Labels != nil {
+			pc.managedArrays[array.StorageArrayID].Labels = array.Labels
+		}
+		if array.Parameters != nil {
+			pc.managedArrays[array.StorageArrayID].Parameters = array.Parameters
 		}
 	}
 	for _, managementServer := range proxySecret.ManagementServerConfig {
