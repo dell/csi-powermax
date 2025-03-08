@@ -22,9 +22,9 @@ clean:
 	go clean
 
 build:
-	CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build
+	CGO_ENABLED=0 go build
 
-docker: build
+docker:
 	go run ../core/semver/semver.go -f mk >semver.mk
 	make -f docker.mk docker
 

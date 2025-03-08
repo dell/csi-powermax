@@ -12,7 +12,7 @@
 #
 include overrides.mk
 
-all: clean build
+all: build unit-test
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -30,11 +30,7 @@ clean:
 
 build:
 	go generate
-	CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build
-
-install:
-	go generate
-	GOOS=linux CGO_ENABLED=0 go install
+	CGO_ENABLED=0 go build
 
 # Generates the docker container (but does not push)
 docker:
@@ -59,11 +55,11 @@ push:	docker
 
 # Run unit tests and skip the BDD tests
 unit-test:
-	( cd service; go clean -cache; CGO_ENABLED=0 GO111MODULE=on go test -v -coverprofile=c.out ./... )
+	( cd service; go clean -cache; CGO_ENABLED=0 go test -v -coverprofile=c.out ./... )
 
 # Run BDD tests. Need to be root to run as tests require some system access, need to fix
 bdd-test:
-	( cd service; go clean -cache; CGO_ENABLED=0 GO111MODULE=on go test -run TestGoDog -v -coverprofile=c.out ./... )
+	( cd service; go clean -cache; CGO_ENABLED=0 go test -run TestGoDog -v -coverprofile=c.out ./... )
 
 # Linux only; populate env.sh with the hardware parameters
 integration-test:

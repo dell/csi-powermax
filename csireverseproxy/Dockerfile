@@ -15,6 +15,7 @@
 ############################
 ARG GOIMAGE
 ARG BASEIMAGE
+ARG GOPROXY
 
 FROM $GOIMAGE as builder
 
