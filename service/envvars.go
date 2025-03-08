@@ -168,4 +168,13 @@ const (
 
 	// EnvIfaceExcludeFilter is an env variable with a regex of interface names to exclude
 	EnvIfaceExcludeFilter = "X_CSI_IFACE_EXCLUDE_FILTER"
+
+	// EnvTLSCertDirName is an env variable that contains the path of reverseproxy tls certificate
+	EnvTLSCertDirName = "X_CSI_REVPROXY_TLS_CERT_DIR"
+
+	// EnvRevProxyUseSecret is an env variable that indicates if reverseproxy should use secret
+	EnvRevProxyUseSecret = "X_CSI_REVPROXY_USE_SECRET" // #nosec 101
+
+	// EnvRevProxySecretPath is an env variable that indicates reverseproxy secret path
+	EnvRevProxySecretPath = "X_CSI_REVPROXY_SECRET_FILEPATH" // #nosec 101
 )

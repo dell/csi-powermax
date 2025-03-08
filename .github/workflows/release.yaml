@@ -1,0 +1,29 @@
+name: Release CSI-Powermax
+# Invocable as a reusable workflow
+# Can be manually triggered
+on:  # yamllint disable-line rule:truthy
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      option:
+        description: 'Select version to release'
+        required: true
+        type: choice
+        default: 'minor'
+        options:
+          - major
+          - minor
+          - patch
+      reverseproxyCheckInput:
+        description: 'Release CSI-ReverseProxy Image'
+        type: boolean
+        default: false
+        required: false
+jobs:
+  csm-release:
+    uses: dell/common-github-actions/.github/workflows/csm-release-driver-module.yaml@main
+    name: Release CSM Drivers and Modules
+    with:
+      version: ${{ github.event.inputs.option }}
+      images: ${{ github.event.inputs.reverseproxyCheckInput == 'true' && 'csi-powermax,csipowermax-reverseproxy' || 'csi-powermax' }}
+    secrets: inherit

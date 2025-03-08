@@ -1,5 +1,5 @@
 /*
- Copyright © 2021-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -18,23 +18,49 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strconv"
 
-	"revproxy/v2/pkg/common"
-	"revproxy/v2/pkg/k8sutils"
-	"revproxy/v2/pkg/utils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 
+	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/spf13/viper"
 	corev1 "k8s.io/api/core/v1"
 )
 
+// ConfigManager is an interface used for testing, satisfied by viper.Viper.
+//
+//go:generate mockgen -source=config.go -destination=mocks/config-manager.go
+type ConfigManager interface {
+	// SetConfigFile designates the name of the file containing the configuration
+	SetConfigName(string)
+
+	// SetConfigType designates the type of the configuration. e.g. yaml, json
+	SetConfigType(string)
+
+	// AddConfigPath adds a path to look for the config file in
+	// Can be called multiple times to define multiple search paths
+	AddConfigPath(string)
+
+	// ReadInConfig will discover and load the configuration file from disk
+	// and key/value stores, searching in one of the defined paths.
+	ReadInConfig() error
+
+	// GetString returns the value associated with the key as a string.
+	GetString(string) string
+}
+
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
 	StorageArrayID         string   `yaml:"storageArrayId"`
-	PrimaryURL             string   `yaml:"primaryURL"`
-	BackupURL              string   `yaml:"backupURL,omitempty"`
+	PrimaryEndpoint        string   `yaml:"primaryEndpoint"`
+	BackupEndpoint         string   `yaml:"backupEndpoint,omitempty"`
 	ProxyCredentialSecrets []string `yaml:"proxyCredentialSecrets"`
 }
 
@@ -47,8 +73,8 @@ type ProxyCredentialSecret struct {
 // StorageArray represents a StorageArray (formed using StorageArrayConfig)
 type StorageArray struct {
 	StorageArrayIdentifier string
-	PrimaryURL             url.URL
-	SecondaryURL           url.URL
+	PrimaryEndpoint        url.URL
+	SecondaryEndpoint      url.URL
 	ProxyCredentialSecrets map[string]ProxyCredentialSecret
 }
 
@@ -59,13 +85,20 @@ type StorageArrayServer struct {
 	BackupServer  *ManagementServer
 }
 
+func getEnv(envName, defaultValue string) string {
+	envVal, found := os.LookupEnv(envName)
+	if !found {
+		envVal = defaultValue
+	}
+	return envVal
+}
+
 // DeepCopy - used for deep copy of StorageArray
 func (sa *StorageArray) DeepCopy() *StorageArray {
 	if sa == nil {
 		return nil
 	}
-	cloned := StorageArray{}
-	cloned = *sa
+	cloned := *sa
 	cloned.ProxyCredentialSecrets = make(map[string]ProxyCredentialSecret, len(sa.ProxyCredentialSecrets))
 	for secret, proxySecret := range sa.ProxyCredentialSecrets {
 		cloned.ProxyCredentialSecrets[secret] = proxySecret
@@ -75,16 +108,18 @@ func (sa *StorageArray) DeepCopy() *StorageArray {
 
 // ManagementServerConfig - represents a management server configuration for the management server
 type ManagementServerConfig struct {
-	URL                       string        `yaml:"url"`
+	Endpoint                  string        `yaml:"endpoint"`
 	ArrayCredentialSecret     string        `yaml:"arrayCredentialSecret,omitempty"`
 	SkipCertificateValidation bool          `yaml:"skipCertificateValidation,omitempty"`
 	CertSecret                string        `yaml:"certSecret,omitempty"`
 	Limits                    common.Limits `yaml:"limits,omitempty" mapstructure:"limits"`
+	Username                  string        `yaml:"username,omitempty"`
+	Password                  string        `yaml:"password,omitempty"`
 }
 
 // ManagementServer - represents a Management Server (formed using ManagementServerConfig)
 type ManagementServer struct {
-	URL                       url.URL
+	Endpoint                  url.URL
 	StorageArrayIdentifiers   []string
 	Credentials               common.Credentials
 	CredentialSecret          string
@@ -92,12 +127,13 @@ type ManagementServer struct {
 	CertFile                  string
 	CertSecret                string
 	Limits                    common.Limits
+	Username                  string
+	Password                  string
 }
 
 // DeepCopy is used for creating a deep copy of Management Server
 func (ms *ManagementServer) DeepCopy() *ManagementServer {
-	clone := ManagementServer{}
-	clone = *ms
+	clone := *ms
 	clone.StorageArrayIdentifiers = make([]string, len(ms.StorageArrayIdentifiers))
 	copy(clone.StorageArrayIdentifiers, ms.StorageArrayIdentifiers)
 	return &clone
@@ -109,6 +145,12 @@ type Config struct {
 	ManagementServerConfig []ManagementServerConfig `yaml:"managementServers" mapstructure:"managementServers"`
 }
 
+// ProxyUser - used for storing a proxy user and list of associated storage array identifiers
+type ProxyUser struct {
+	StorageArrayIdentifiers []string
+	ProxyCredential         common.Credentials
+}
+
 // ProxyConfigMap - represents the configuration file
 type ProxyConfigMap struct {
 	Port      string  `yaml:"port,omitempty"`
@@ -117,12 +159,25 @@ type ProxyConfigMap struct {
 	Config    *Config `yaml:"config,omitempty" mapstructure:"config"`
 }
 
-// ProxyConfig - represents Proxy Config (formed using ProxyConfigMap)
+// ProxySecret - represents the configuration file
+type ProxySecret struct {
+	StorageArrayConfig     []StorageArrayConfig     `yaml:"storageArrays" mapstructure:"storageArrays"`
+	ManagementServerConfig []ManagementServerConfig `yaml:"managementServers" mapstructure:"managementServers"`
+}
+
+// ProxyConfig - represents Proxy Config (formed using ProxyConfigMap OR ProxySecret)
 type ProxyConfig struct {
 	Port              string
 	managedArrays     map[string]*StorageArray
 	managementServers map[url.URL]*ManagementServer
 	proxyCredentials  map[string]*ProxyUser
+}
+
+// ParamsConfigMap - represents the config map for params
+type ParamsConfigMap struct {
+	Port      string `yaml:"csi_powermax_reverse_proxy_port" mapstructure:"csi_powermax_reverse_proxy_port,omitempty"`
+	LogLevel  string `yaml:"csi_log_level" mapstructure:"csi_log_level,omitempty"`
+	LogFormat string `yaml:"csi_log_format" mapstructure:"csi_log_format,omitempty"`
 }
 
 // DeepCopy is used to create a deep copy of ProxyConfig
@@ -151,26 +206,26 @@ func (pc *ProxyConfig) DeepCopy() *ProxyConfig {
 
 // Log - logs the Proxy Config
 func (pc *ProxyConfig) Log() {
-	fmt.Println("---------------------")
-	fmt.Printf("port ::: %+s\n", pc.Port)
-	fmt.Println("---------------------")
-	fmt.Println("managedArrays")
+	log.Println("---------------------")
+	log.Printf("port ::: %+s\n", pc.Port)
+	log.Println("---------------------")
+	log.Println("managedArrays")
 	for key, val := range pc.managedArrays {
-		fmt.Printf("%s ::: %+v\n", key, val)
+		log.Printf("%s ::: %+v\n", key, val)
 	}
-	fmt.Println("---------------------")
-	fmt.Println("---------------------")
-	fmt.Println("managementServers")
+	log.Println("---------------------")
+	log.Println("---------------------")
+	log.Println("managementServers")
 	for key, val := range pc.managementServers {
-		fmt.Printf("%v ::: %+v\n", key, val)
+		log.Printf("%v ::: %+v\n", key, val)
 	}
-	fmt.Println("---------------------")
-	fmt.Println("---------------------")
-	fmt.Println("proxyCredentials")
+	log.Println("---------------------")
+	log.Println("---------------------")
+	log.Println("proxyCredentials")
 	for key, val := range pc.proxyCredentials {
-		fmt.Printf("%s ::: %+v\n", key, val)
+		log.Printf("%s ::: %+v\n", key, val)
 	}
-	fmt.Println("---------------------")
+	log.Println("---------------------")
 }
 
 func (pc *ProxyConfig) updateProxyCredentials(creds common.Credentials, storageArrayIdentifier string) {
@@ -186,6 +241,26 @@ func (pc *ProxyConfig) updateProxyCredentials(creds common.Credentials, storageA
 			StorageArrayIdentifiers: []string{storageArrayIdentifier},
 		}
 		pc.proxyCredentials[creds.UserName] = &proxyUser
+	}
+}
+
+func (pc *ProxyConfig) updateProxyCredentialsFromSecret(username, password, storageArrayIdentifier string) {
+	if proxyUser, ok := pc.proxyCredentials[username]; ok {
+		if subtle.ConstantTimeCompare([]byte(password), []byte(proxyUser.ProxyCredential.Password)) == 1 {
+			// Credentials already exist in map
+			proxyUser.StorageArrayIdentifiers = utils.AppendIfMissingStringSlice(
+				proxyUser.StorageArrayIdentifiers, storageArrayIdentifier)
+		}
+	} else {
+		creds := &common.Credentials{
+			UserName: username,
+			Password: password,
+		}
+		proxyUser := ProxyUser{
+			ProxyCredential:         *creds,
+			StorageArrayIdentifiers: []string{storageArrayIdentifier},
+		}
+		pc.proxyCredentials[username] = &proxyUser
 	}
 }
 
@@ -211,9 +286,9 @@ func (pc *ProxyConfig) GetManagedArraysAndServers() map[string]StorageArrayServe
 				arrayServer = StorageArrayServer{}
 				arrayServer.Array = *(pc.managedArrays[arrayID])
 			}
-			if server.URL == arrayServer.Array.PrimaryURL {
+			if server.Endpoint == arrayServer.Array.PrimaryEndpoint {
 				arrayServer.PrimaryServer = *(server)
-			} else if server.URL == arrayServer.Array.SecondaryURL {
+			} else if server.Endpoint == arrayServer.Array.SecondaryEndpoint {
 				arrayServer.BackupServer = server
 			}
 			arrayServers[arrayID] = arrayServer
@@ -227,6 +302,7 @@ func (pc *ProxyConfig) IsSecretConfiguredForCerts(secretName string) bool {
 	found := false
 	for _, server := range pc.managementServers {
 		if server.CertSecret == secretName {
+			log.Infof("Found secret configured %s", server.CertSecret)
 			found = true
 			break
 		}
@@ -237,6 +313,12 @@ func (pc *ProxyConfig) IsSecretConfiguredForCerts(secretName string) bool {
 // IsSecretConfiguredForArrays - returns true if a given secret name has been configured
 // as credential secret for a storage array
 func (pc *ProxyConfig) IsSecretConfiguredForArrays(secretName string) bool {
+	log.Infof("Checking secret : %s", secretName)
+	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
+		// if using secrets, return false. updates for the username password happens in UpdateCreds
+		return false
+	}
+
 	for _, array := range pc.managedArrays {
 		if array.ProxyCredentialSecrets[secretName].CredentialSecret == secretName {
 			return true
@@ -261,14 +343,22 @@ func (pc *ProxyConfig) UpdateCerts(secretName, certFileName string) bool {
 // proxy credentials
 func (pc *ProxyConfig) UpdateCreds(secretName string, credentials *common.Credentials) bool {
 	isUpdated := false
+
 	for _, server := range pc.managementServers {
-		if server.CredentialSecret == secretName {
-			if server.Credentials != *credentials {
-				server.Credentials = *credentials
-				isUpdated = true
+		if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
+			server.Username = credentials.UserName
+			server.Password = credentials.Password
+			isUpdated = true
+		} else {
+			if server.CredentialSecret == secretName {
+				if server.Credentials != *credentials {
+					server.Credentials = *credentials
+					isUpdated = true
+				}
 			}
 		}
 	}
+
 	for _, array := range pc.managedArrays {
 		if array.ProxyCredentialSecrets[secretName].CredentialSecret == secretName {
 			if array.ProxyCredentialSecrets[secretName].Credentials != *credentials {
@@ -381,25 +471,43 @@ func (pc *ProxyConfig) UpdateManagedArrays(config *ProxyConfig) {
 
 // GetAuthorizedArrays - Given a credential, returns the list of authorized storage arrays
 func (pc *ProxyConfig) GetAuthorizedArrays(username, password string) []string {
-	authorisedArrays := make([]string, 0)
-	for _, a := range pc.managedArrays {
-		isAuth, err := pc.IsUserAuthorized(username, password, a.StorageArrayIdentifier)
-		if err != nil {
-			log.Errorf("error : (%s)", err.Error())
-		}
-		if isAuth {
-			authorisedArrays = append(authorisedArrays, a.StorageArrayIdentifier)
+	authorizedArrays := make([]string, 0)
+	var isAuth bool
+	var err error
+	for _, array := range pc.managedArrays {
+		for _, mgmtserver := range pc.managementServers {
+			if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
+				isAuth, err = pc.IsUserAuthorized(mgmtserver.Username, mgmtserver.Password, array.StorageArrayIdentifier)
+			} else {
+				isAuth, err = pc.IsUserAuthorized(username, password, array.StorageArrayIdentifier)
+			}
+
+			if err != nil {
+				log.Errorf("error : (%s)", err.Error())
+			}
+			if isAuth {
+				authorizedArrays = append(authorizedArrays, array.StorageArrayIdentifier)
+			}
 		}
 	}
-	return authorisedArrays
+	return authorizedArrays
 }
 
-// GetManagementServerCredentials - Given a management server URL, returns the associated credentials
-func (pc *ProxyConfig) GetManagementServerCredentials(mgmtURL url.URL) (common.Credentials, error) {
-	if mgmtServer, ok := pc.managementServers[mgmtURL]; ok {
+// GetManagementServerCredentials - Given a management server endoint, returns the associated credentials
+func (pc *ProxyConfig) GetManagementServerCredentials(mgmtEndpoint url.URL) (common.Credentials, error) {
+	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
+		var arrayCredentials common.Credentials
+		if _, ok := pc.managementServers[mgmtEndpoint]; ok {
+			arrayCredentials.UserName = pc.managementServers[mgmtEndpoint].Username
+			arrayCredentials.Password = pc.managementServers[mgmtEndpoint].Password
+			return arrayCredentials, nil
+		}
+	}
+
+	if mgmtServer, ok := pc.managementServers[mgmtEndpoint]; ok {
 		return mgmtServer.Credentials, nil
 	}
-	return common.Credentials{}, fmt.Errorf("url not configured")
+	return common.Credentials{}, fmt.Errorf("endpoint not configured")
 }
 
 // IsUserAuthorized - Returns if a given user is authorized to access a specific storage array
@@ -439,19 +547,13 @@ func (pc *ProxyConfig) GetManagementServer(url url.URL) (ManagementServer, bool)
 	return ManagementServer{}, false
 }
 
-// ProxyUser - used for storing a proxy user and list of associated storage array identifiers
-type ProxyUser struct {
-	StorageArrayIdentifiers []string
-	ProxyCredential         common.Credentials
-}
-
 // DeepClone is used to create a deep copy of Proxy User
 func (pu *ProxyUser) DeepClone() *ProxyUser {
 	if pu == nil {
 		return nil
 	}
-	cloned := ProxyUser{}
-	cloned = *pu
+
+	cloned := *pu
 	cloned.StorageArrayIdentifiers = make([]string, len(pu.StorageArrayIdentifiers))
 	copy(cloned.StorageArrayIdentifiers, pu.StorageArrayIdentifiers)
 	return &cloned
@@ -460,7 +562,6 @@ func (pu *ProxyUser) DeepClone() *ProxyUser {
 // ParseConfig - Parses a given proxy config map
 func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sutils.UtilsInterface) error {
 	pc.Port = proxyConfigMap.Port
-	fmt.Printf("ConfigMap: %v\n", proxyConfigMap)
 	config := proxyConfigMap.Config
 	if config == nil {
 		return fmt.Errorf("config is empty")
@@ -470,50 +571,43 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 	pc.proxyCredentials = make(map[string]*ProxyUser)
 	storageArrayIdentifiers := make(map[url.URL][]string)
 	ipAddresses := make([]string, 0)
+
 	for _, mgmtServer := range config.ManagementServerConfig {
-		ipAddresses = append(ipAddresses, mgmtServer.URL)
+		ipAddresses = append(ipAddresses, mgmtServer.Endpoint)
 	}
 	for _, array := range config.StorageArrayConfig {
-		if array.PrimaryURL == "" {
-			return fmt.Errorf("primary URL not configured for array: %s", array.StorageArrayID)
+		if array.PrimaryEndpoint == "" {
+			return fmt.Errorf("primary endpoint not configured for array: %s", array.StorageArrayID)
 		}
-		if !utils.IsStringInSlice(ipAddresses, array.PrimaryURL) {
-			return fmt.Errorf("primary URL: %s for array: %s not present among management URL addresses",
-				array.PrimaryURL, array)
+		if !utils.IsStringInSlice(ipAddresses, array.PrimaryEndpoint) {
+			return fmt.Errorf("primary endpoint: %s for array: %s not present among management URL addresses",
+				array.PrimaryEndpoint, array)
 		}
-		if array.BackupURL != "" {
-			if !utils.IsStringInSlice(ipAddresses, array.BackupURL) {
-				return fmt.Errorf("backup URL: %s for array: %s is not in the list of management URL addresses. Ignoring it",
-					array.BackupURL, array)
+		if array.BackupEndpoint != "" {
+			if !utils.IsStringInSlice(ipAddresses, array.BackupEndpoint) {
+				log.Warnf("backup endpoint: %s for array: %s not present among management URL addresses",
+					array.BackupEndpoint, array)
 			}
 		}
-		primaryURL, err := url.Parse(array.PrimaryURL)
+		primaryURL, err := url.Parse(array.PrimaryEndpoint)
 		if err != nil {
 			return err
 		}
 		backupURL := &url.URL{}
-		if array.BackupURL != "" {
-			backupURL, err = url.Parse(array.BackupURL)
+		if array.BackupEndpoint != "" {
+			backupURL, err = url.Parse(array.BackupEndpoint)
 			if err != nil {
 				return err
 			}
 		}
 		pc.managedArrays[array.StorageArrayID] = &StorageArray{
 			StorageArrayIdentifier: array.StorageArrayID,
-			PrimaryURL:             *primaryURL,
-			SecondaryURL:           *backupURL,
+			PrimaryEndpoint:        *primaryURL,
+			SecondaryEndpoint:      *backupURL,
 		}
 		// adding Primary and Backup URl to storageArrayIdentifier, later to be used in management server
-		if _, ok := storageArrayIdentifiers[*primaryURL]; ok {
-			storageArrayIdentifiers[*primaryURL] = append(storageArrayIdentifiers[*primaryURL], array.StorageArrayID)
-		} else {
-			storageArrayIdentifiers[*primaryURL] = []string{array.StorageArrayID}
-		}
-		if _, ok := storageArrayIdentifiers[*backupURL]; ok {
-			storageArrayIdentifiers[*backupURL] = append(storageArrayIdentifiers[*backupURL], array.StorageArrayID)
-		} else {
-			storageArrayIdentifiers[*backupURL] = []string{array.StorageArrayID}
-		}
+		storageArrayIdentifiers[*primaryURL] = append(storageArrayIdentifiers[*primaryURL], array.StorageArrayID)
+		storageArrayIdentifiers[*backupURL] = append(storageArrayIdentifiers[*backupURL], array.StorageArrayID)
 
 		// Reading proxy credentials for the array
 		if len(array.ProxyCredentialSecrets) > 0 {
@@ -523,10 +617,12 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 				if err != nil {
 					return err
 				}
+
 				proxyCredentialSecret := &ProxyCredentialSecret{
 					Credentials:      *proxyCredentials,
 					CredentialSecret: secret,
 				}
+
 				pc.managedArrays[array.StorageArrayID].ProxyCredentialSecrets[secret] = *proxyCredentialSecret
 				pc.updateProxyCredentials(*proxyCredentials, array.StorageArrayID)
 			}
@@ -541,7 +637,7 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 			}
 			arrayCredentials = *credentials
 		}
-		mgmtURL, err := url.Parse(managementServer.URL)
+		mgmtURL, err := url.Parse(managementServer.Endpoint)
 		if err != nil {
 			return err
 		}
@@ -553,7 +649,7 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 			}
 		}
 		pc.managementServers[*mgmtURL] = &ManagementServer{
-			URL:                       *mgmtURL,
+			Endpoint:                  *mgmtURL,
 			StorageArrayIdentifiers:   storageArrayIdentifiers[*mgmtURL],
 			SkipCertificateValidation: managementServer.SkipCertificateValidation,
 			CertFile:                  certFile,
@@ -561,6 +657,113 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 			Credentials:               arrayCredentials,
 			CredentialSecret:          managementServer.ArrayCredentialSecret,
 			Limits:                    managementServer.Limits,
+		}
+	}
+	return nil
+}
+
+// ParseConfigFromSecret - Parses a given proxy secret
+func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k8sutils.UtilsInterface) error {
+	// Set the port to default, this will be updated later
+	pc.Port = getEnv(common.DefaultPort, "2222")
+
+	pc.managedArrays = make(map[string]*StorageArray)
+	pc.managementServers = make(map[url.URL]*ManagementServer)
+	pc.proxyCredentials = make(map[string]*ProxyUser)
+	storageArrayIdentifiers := make(map[url.URL][]string)
+	ipAddresses := make([]string, 0)
+	for _, mgmtServer := range proxySecret.ManagementServerConfig {
+		ipAddresses = append(ipAddresses, mgmtServer.Endpoint)
+	}
+	for _, array := range proxySecret.StorageArrayConfig {
+		if array.PrimaryEndpoint == "" {
+			return fmt.Errorf("primary endpoint not configured for array: %s", array.StorageArrayID)
+		}
+		if !utils.IsStringInSlice(ipAddresses, array.PrimaryEndpoint) {
+			return fmt.Errorf("primary endpoint: %s for array: %s not present among management endpoint addresses",
+				array.PrimaryEndpoint, array.StorageArrayID)
+		}
+		if array.BackupEndpoint != "" {
+			if !utils.IsStringInSlice(ipAddresses, array.BackupEndpoint) {
+				log.Warnf("backup endpoint: %s for array: %s not present among management endpoint addresses",
+					array.BackupEndpoint, array.StorageArrayID)
+			}
+		}
+		primaryEndpoint, err := url.Parse(array.PrimaryEndpoint)
+		if err != nil {
+			return err
+		}
+		backupEndpoint := &url.URL{}
+		if array.BackupEndpoint != "" {
+			backupEndpoint, err = url.Parse(array.BackupEndpoint)
+			if err != nil {
+				return err
+			}
+		}
+		pc.managedArrays[array.StorageArrayID] = &StorageArray{
+			StorageArrayIdentifier: array.StorageArrayID,
+			PrimaryEndpoint:        *primaryEndpoint,
+			SecondaryEndpoint:      *backupEndpoint,
+		}
+		// adding Primary and Backup URl to storageArrayIdentifier, later to be used in management server
+		storageArrayIdentifiers[*primaryEndpoint] = append(storageArrayIdentifiers[*primaryEndpoint], array.StorageArrayID)
+		storageArrayIdentifiers[*backupEndpoint] = append(storageArrayIdentifiers[*backupEndpoint], array.StorageArrayID)
+
+		// Reading proxy credentials for the array
+		if len(array.ProxyCredentialSecrets) > 0 {
+			pc.managedArrays[array.StorageArrayID].ProxyCredentialSecrets = make(map[string]ProxyCredentialSecret)
+			for _, mgmtServer := range proxySecret.ManagementServerConfig {
+				if array.PrimaryEndpoint == mgmtServer.Endpoint || array.BackupEndpoint == mgmtServer.Endpoint {
+					pc.updateProxyCredentialsFromSecret(mgmtServer.Username, mgmtServer.Password, array.StorageArrayID)
+				}
+			}
+		}
+	}
+	for _, managementServer := range proxySecret.ManagementServerConfig {
+		mgmtEndpoint, err := url.Parse(managementServer.Endpoint)
+		if err != nil {
+			return err
+		}
+		var certFile string
+		if managementServer.CertSecret != "" {
+			certFile, err = k8sUtils.GetCertFileFromSecretName(managementServer.CertSecret)
+			if err != nil {
+				return err
+			}
+		}
+		pc.managementServers[*mgmtEndpoint] = &ManagementServer{
+			Endpoint:                  *mgmtEndpoint,
+			StorageArrayIdentifiers:   storageArrayIdentifiers[*mgmtEndpoint],
+			SkipCertificateValidation: managementServer.SkipCertificateValidation,
+			CertFile:                  certFile,
+			CertSecret:                managementServer.CertSecret,
+			Credentials:               common.Credentials{}, // Not used in the case of getting username password from secret
+			CredentialSecret:          managementServer.ArrayCredentialSecret,
+			Limits:                    managementServer.Limits,
+			Username:                  managementServer.Username,
+			Password:                  managementServer.Password,
+		}
+	}
+
+	for _, array := range pc.managedArrays {
+		primaryEndpoint := array.PrimaryEndpoint
+		backupEndpoint := array.SecondaryEndpoint
+		var primaryUsername, primaryPassword string
+		var backupUsername, backupPassword string
+		if primaryServer, ok := pc.managementServers[primaryEndpoint]; ok {
+			primaryUsername = primaryServer.Username
+			primaryPassword = primaryServer.Password
+			pc.updateProxyCredentialsFromSecret(primaryUsername, primaryPassword, array.StorageArrayIdentifier)
+		} else {
+			log.Errorf("primary endpoint not configured for %s", array.StorageArrayIdentifier)
+		}
+
+		if backupServer, ok := pc.managementServers[backupEndpoint]; ok {
+			backupUsername = backupServer.Username
+			backupPassword = backupServer.Password
+			pc.updateProxyCredentialsFromSecret(backupUsername, backupPassword, array.StorageArrayIdentifier)
+		} else {
+			log.Warnf("backup endpoint not configured for %s", array.StorageArrayIdentifier)
 		}
 	}
 	return nil
@@ -576,22 +779,150 @@ func NewProxyConfig(configMap *ProxyConfigMap, k8sUtils k8sutils.UtilsInterface)
 	return &proxyConfig, nil
 }
 
+// CustomUnmarshal - Custom unmarshal function for config map
+/*
+	Since the common ManagementServerConfig and StorageArrayConfig have been modified to use Endpoint instead of URL,
+	viper has an issue unmarshalling those in to the struct for ConfigMap which uses URLs (ex.primaryURL, backupURL in config map definition).
+	Hence a custom function is needed to make sure that they are parsed correctly.
+	This method also uses a custom hook to decode int to string as the default mapstructure.decode cannot natively do that.
+	Note: This function only used for unmarshalling configMap to structures.
+*/
+func (c *ProxyConfigMap) CustomUnmarshal(vcm *viper.Viper) error {
+	settings := vcm.AllSettings()
+
+	log.Infof("viper all settings: %+v\n", vcm.AllSettings())
+	// Retrieve all settings as a map
+	// Custom handling for URL fields before unmarshaling
+	for i, managementServer := range vcm.Get("config.managementservers").([]interface{}) {
+		serverMap := managementServer.(map[string]interface{})
+		log.Infof("serverMap: %+v", serverMap)
+		// Check if the "url" field exists and is a string
+		if urlStr, ok := serverMap["url"].(string); ok {
+			parsedURL, err := url.Parse(urlStr)
+			if err != nil {
+				return fmt.Errorf("invalid URL for url: %w", err)
+			}
+			// Update the map with the parsed URL
+			c.Config.ManagementServerConfig[i].Endpoint = parsedURL.String()
+		}
+	}
+
+	for i, storageArray := range vcm.Get("config.storagearrays").([]interface{}) {
+		arrayMap := storageArray.(map[string]interface{})
+		// Parse the primaryurl and backupurl to see if they exist
+		if urlStr, ok := arrayMap["primaryurl"].(string); ok {
+			parsedURL, err := url.Parse(urlStr)
+			if err != nil {
+				return fmt.Errorf("invalid endpoint for primaryEndpoint: %w", err)
+			}
+			c.Config.StorageArrayConfig[i].PrimaryEndpoint = parsedURL.String()
+		}
+		if urlStr, ok := arrayMap["backupurl"].(string); ok {
+			parsedURL, err := url.Parse(urlStr)
+			if err != nil {
+				return fmt.Errorf("invalid endpoint for backupEndpoint: %w", err)
+			}
+			c.Config.StorageArrayConfig[i].BackupEndpoint = parsedURL.String()
+		}
+	}
+
+	// Create a custom DecodeHook to convert int to string.
+	// Port in config map is defined as an int and needs to be converted to string.
+	decoderConfig := &mapstructure.DecoderConfig{
+		TagName: "mapstructure",
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			// Define a hook to convert int to string
+			func(f, t reflect.Type, data interface{}) (interface{}, error) {
+				if f.Kind() == reflect.Int && t.Kind() == reflect.String {
+					// Convert int to string
+					return strconv.Itoa(data.(int)), nil
+				}
+				return data, nil
+			},
+		),
+		Result: &c,
+	}
+
+	// Decode the config
+	decoder, err := mapstructure.NewDecoder(decoderConfig)
+	if err != nil {
+		return fmt.Errorf("error while decoding : %w", err)
+	}
+
+	// Unmarshal the updated settings into the config struct
+	return decoder.Decode(settings)
+}
+
 // ReadConfig - uses viper to read the config from the config map
-func ReadConfig(configFile, configPath string) (*ProxyConfigMap, error) {
-	viper.New()
-	viper.SetConfigName(configFile)
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(configPath)
-	// viper.SetEnvPrefix("X_CSI_REVPROXY")
-	err := viper.ReadInConfig()
+func ReadConfig(configFile, configPath string, vcm *viper.Viper) (*ProxyConfigMap, error) {
+	vcm.SetConfigName(configFile)
+	vcm.SetConfigType("yaml")
+	vcm.AddConfigPath(configPath)
+	err := vcm.ReadInConfig()
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(viper.AllSettings())
+
 	var configMap ProxyConfigMap
-	err = viper.Unmarshal(&configMap)
+	err = vcm.Unmarshal(&configMap)
+	if err != nil {
+		return nil, err
+	}
+
+	err = configMap.CustomUnmarshal(vcm)
 	if err != nil {
 		return nil, err
 	}
 	return &configMap, nil
+}
+
+// NewProxyConfigFromSecret - new config using secret
+func NewProxyConfigFromSecret(proxySecret *ProxySecret, k8sUtils k8sutils.UtilsInterface) (*ProxyConfig, error) {
+	var proxyConfig ProxyConfig
+	err := proxyConfig.ParseConfigFromSecret(*proxySecret, k8sUtils)
+	if err != nil {
+		return nil, err
+	}
+	return &proxyConfig, nil
+}
+
+// ReadConfigFromSecret - read config using secret
+func ReadConfigFromSecret(vs *viper.Viper) (*ProxySecret, error) {
+	secretFilePath := getEnv(common.EnvSecretFilePath, common.DefaultSecretPath)
+	secretFileName := filepath.Base(secretFilePath)
+	secretFileDir := filepath.Dir(secretFilePath)
+	log.Printf("Reading secret: %s from path: %s \n", secretFileName, secretFileDir)
+	vs.SetConfigName(secretFileName)
+	vs.SetConfigType("yaml")
+	vs.AddConfigPath(secretFileDir)
+	err := vs.ReadInConfig()
+	if err != nil {
+		return nil, err
+	}
+	var secret ProxySecret
+	err = vs.Unmarshal(&secret)
+	if err != nil {
+		return nil, err
+	}
+	return &secret, nil
+}
+
+// ReadParamsConfigMapFromPath - read config map for params
+func ReadParamsConfigMapFromPath(configFilePath string, vcp ConfigManager) (*ParamsConfigMap, error) {
+	log.Printf("Reading params config map: %s from path: %s", filepath.Base(configFilePath), filepath.Dir(configFilePath))
+
+	vcp.SetConfigName(filepath.Base(configFilePath))
+	vcp.SetConfigType("yaml")
+	vcp.AddConfigPath(filepath.Dir(configFilePath))
+	err := vcp.ReadInConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	var paramsConfig ParamsConfigMap
+	paramsConfig.LogFormat = vcp.GetString("csi_log_format")
+	paramsConfig.Port = vcp.GetString("csi_powermax_reverse_proxy_port")
+	paramsConfig.LogLevel = vcp.GetString("csi_log_level")
+
+	return &paramsConfig, nil
 }

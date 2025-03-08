@@ -1,4 +1,4 @@
-# Copyright © 2020 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2020-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,12 +48,14 @@ RUN CGO_ENABLED=0 go build
 # STEP 2 build a small image
 ############################
 FROM $BASEIMAGE as final
-LABEL vendor="Dell Inc." \
-      name="csipowermax-reverseproxy" \
-      summary="CSI PowerMax Reverse Proxy" \
-      description="CSI PowerMax Reverse Proxy which helps manage connections with Unisphere for PowerMax" \
-      version="2.11.0" \
-      license="Apache-2.0"
+LABEL vendor="Dell Technologies" \
+    maintainer="Dell Technologies" \
+    name="csipowermax-reverseproxy" \
+    summary="CSI PowerMax Reverse Proxy" \
+    description="CSI PowerMax Reverse Proxy which helps manage connections with Unisphere for PowerMax" \
+    release="1.13.0" \
+    version="2.12.0" \
+    license="Apache-2.0"
 COPY licenses /licenses
 # Import from builder.
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
@@ -63,7 +65,7 @@ COPY --from=builder /etc/group /etc/group
 # Use an unprivileged user.
 USER revproxy:revproxy
 
-COPY --from=builder /go/src/csireverseproxy/revproxy /app/revproxy
+COPY --from=builder /go/src/csireverseproxy/csireverseproxy /app/revproxy
 
 WORKDIR /app
 CMD ["/app/revproxy"]

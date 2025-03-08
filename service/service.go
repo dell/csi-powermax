@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -68,13 +69,17 @@ const (
 	CSILogFormatParam          = "CSI_LOG_FORMAT"
 	ArrayStatus                = "/array-status"
 	DefaultPodmonPollRate      = 60
+	ReplicationContextPrefix   = "powermax"
+	ReplicationPrefix          = "replication.storage.dell.com"
 	PortGroups                 = "X_CSI_POWERMAX_PORTGROUPS"
 	Protocol                   = "X_CSI_TRANSPORT_PROTOCOL"
 	// PmaxEndPoint               = "X_CSI_POWERMAX_ENDPOINT"
-	ManagedArrays = "X_CSI_MANAGED_ARRAYS"
+	ManagedArrays   = "X_CSI_MANAGED_ARRAYS"
+	defaultCertFile = "tls.crt"
 )
 
-type contextKey string           // specific string type used for context keys
+type contextKey string // specific string type used for context keys
+
 var inducedMockReverseProxy bool // for testing only
 
 // Manifest is the SP's manifest.
@@ -127,22 +132,23 @@ type Opts struct {
 	NonDefaultRetries          bool   // Indicates if non-default retry values to be used for deletion worker, only for unit testing
 	NodeNameTemplate           string
 	ModifyHostName             bool
-	ReplicationContextPrefix   string         // Enables sidecars to read required information from volume context
-	ReplicationPrefix          string         // Used as a prefix to find out if replication is enabled
-	IsHealthMonitorEnabled     bool           // used to check if health monitor for volume is enabled
-	IsTopologyControlEnabled   bool           // used to filter topology keys based on user config
-	IsVsphereEnabled           bool           // used to check if vSphere is enabled
-	VSpherePortGroup           string         // port group for vsphere
-	VSphereHostName            string         // host (initiator group) for vsphere
-	VCenterHostURL             string         // vCenter host url
-	VCenterHostUserName        string         // vCenter host username
-	VCenterHostPassword        string         // vCenter password
-	MaxVolumesPerNode          int64          // to specify volume limits
-	KubeConfigPath             string         // to specify k8s configuration to be used CSI driver
-	IsPodmonEnabled            bool           // used to indicate that podmon is enabled
-	PodmonPort                 string         // to indicates the port to be used for exposing podmon API health
-	PodmonPollingFreq          string         // indicates the polling frequency to check array connectivity
 	IfaceExcludeFilter         *regexp.Regexp // regex of interface names to exclude from consideration
+	ReplicationContextPrefix   string // Enables sidecars to read required information from volume context
+	ReplicationPrefix          string // Used as a prefix to find out if replication is enabled
+	IsHealthMonitorEnabled     bool   // used to check if health monitor for volume is enabled
+	IsTopologyControlEnabled   bool   // used to filter topology keys based on user config
+	IsVsphereEnabled           bool   // used to check if vSphere is enabled
+	VSpherePortGroup           string // port group for vsphere
+	VSphereHostName            string // host (initiator group) for vsphere
+	VCenterHostURL             string // vCenter host url
+	VCenterHostUserName        string // vCenter host username
+	VCenterHostPassword        string // vCenter password
+	MaxVolumesPerNode          int64  // to specify volume limits
+	KubeConfigPath             string // to specify k8s configuration to be used CSI driver
+	IsPodmonEnabled            bool   // used to indicate that podmon is enabled
+	PodmonPort                 string // to indicates the port to be used for exposing podmon API health
+	PodmonPollingFreq          string // indicates the polling frequency to check array connectivity
+	TLSCertDir                 string
 }
 
 // NodeConfig defines rules for given node
@@ -168,20 +174,24 @@ type service struct {
 	iscsiClient    goiscsi.ISCSIinterface
 	nvmetcpClient  gonvme.NVMEinterface
 	// replace this with Unisphere system if needed
-	system             *interface{}
-	privDir            string
-	loggedInArrays     map[string]bool
-	loggedInNVMeArrays map[string]bool
-	mutex              sync.Mutex
-	cacheMutex         sync.Mutex
-	nodeProbeMutex     sync.Mutex
-	nodeIsInitialized  bool
-	useNFS             bool
-	useFC              bool
-	useIscsi           bool
-	useNVMeTCP         bool
-	iscsiTargets       map[string][]string
-	nvmeTargets        map[string][]string
+	system                    *interface{}
+	privDir                   string
+	loggedInArrays            map[string]bool
+	loggedInNVMeArrays        map[string]bool
+	mutex                     sync.Mutex
+	cacheMutex                sync.Mutex
+	nodeProbeMutex            sync.Mutex
+	probeStatus               *sync.Map
+	probeStatusMutex          sync.Mutex
+	pollingFrequencyMutex     sync.Mutex
+	pollingFrequencyInSeconds int64
+	nodeIsInitialized         bool
+	useNFS                    bool
+	useFC                     bool
+	useIscsi                  bool
+	useNVMeTCP                bool
+	iscsiTargets              map[string][]string
+	nvmeTargets               *sync.Map
 
 	// Timeout for storage pool cache
 	storagePoolCacheDuration time.Duration
@@ -201,7 +211,8 @@ type service struct {
 	allowedTopologyKeys       map[string][]string // map of nodes to allowed topology keys
 	deniedTopologyKeys        map[string][]string // map of nodes to denied topology keys
 
-	k8sUtils k8sutils.UtilsInterface
+	k8sUtils    k8sutils.UtilsInterface
+	snapCleaner *snapCleanupWorker
 }
 
 // New returns a new Service.
@@ -210,10 +221,11 @@ func New() Service {
 		loggedInArrays:     map[string]bool{},
 		iscsiTargets:       map[string][]string{},
 		loggedInNVMeArrays: map[string]bool{},
-		nvmeTargets:        map[string][]string{},
+		nvmeTargets:        new(sync.Map),
 	}
 	svc.sgSvc = newStorageGroupService(svc)
 	svc.pmaxTimeoutSeconds = defaultPmaxTimeout
+	svc.probeStatus = new(sync.Map)
 	return svc
 }
 
@@ -377,9 +389,7 @@ func (s *service) BeforeServe(
 	if ep, ok := csictx.LookupEnv(ctx, EnvDriverName); ok {
 		opts.DriverName = ep
 	}
-	if ep, ok := csictx.LookupEnv(ctx, EnvEndpoint); ok {
-		opts.Endpoint = ep
-	}
+
 	if user, ok := csictx.LookupEnv(ctx, EnvUser); ok {
 		opts.User = user
 	}
@@ -389,6 +399,41 @@ func (s *service) BeforeServe(
 	if pw, ok := csictx.LookupEnv(ctx, EnvPassword); ok {
 		opts.Password = pw
 	}
+
+	if useSecret, ok := csictx.LookupEnv(ctx, EnvRevProxyUseSecret); ok && useSecret == "true" {
+
+		secretPath := csictx.Getenv(ctx, EnvRevProxySecretPath)
+		secretNameFromPath := filepath.Base(secretPath)
+		secretPathFromPath := filepath.Dir(secretPath)
+
+		secretParams := viper.New()
+		secretParams.SetConfigName(secretNameFromPath)
+		secretParams.SetConfigType("yaml")
+		secretParams.AddConfigPath(secretPathFromPath)
+
+		err := secretParams.ReadInConfig()
+		if err != nil {
+			log.Errorf("Secret mandated, but secret file not found %s.", err)
+		}
+
+		// Access the managementservers key (which is a slice of maps)
+		managementServers := secretParams.Get("managementservers").([]interface{})
+		// Ensure there's at least one server and extract username/password
+		if len(managementServers) > 0 {
+			// Access the first element of the managementServers slice, which is a map
+			server := managementServers[0].(map[string]interface{})
+
+			// Extract the username and password
+			User := server["username"].(string)
+			Password := server["password"].(string)
+
+			opts.User = User
+			opts.Password = Password
+		} else {
+			log.Println("No management servers found.")
+		}
+	}
+
 	if chapuser, ok := csictx.LookupEnv(ctx, EnvISCSICHAPUserName); ok {
 		opts.CHAPUserName = chapuser
 	}
@@ -407,7 +452,7 @@ func (s *service) BeforeServe(
 	if portgroups, ok := csictx.LookupEnv(ctx, EnvPortGroups); ok {
 		tempList, err := s.parseCommaSeperatedList(portgroups)
 		if err != nil {
-			return fmt.Errorf("Invalid value for %s", EnvPortGroups)
+			return fmt.Errorf("invalid value for %s", EnvPortGroups)
 		}
 		opts.PortGroups = tempList
 	}
@@ -423,11 +468,16 @@ func (s *service) BeforeServe(
 		opts.KubeConfigPath = kubeConfigPath
 	}
 
+	// set default values for replication prefix since replicator sidecar is not needed for Metro feature.
 	if replicationContextPrefix, ok := csictx.LookupEnv(ctx, EnvReplicationContextPrefix); ok {
 		opts.ReplicationContextPrefix = replicationContextPrefix
+	} else {
+		opts.ReplicationContextPrefix = ReplicationContextPrefix
 	}
 	if replicationPrefix, ok := csictx.LookupEnv(ctx, EnvReplicationPrefix); ok {
 		opts.ReplicationPrefix = replicationPrefix
+	} else {
+		opts.ReplicationPrefix = ReplicationPrefix
 	}
 	if ifaceExcludeFilter, ok := csictx.LookupEnv(ctx, EnvIfaceExcludeFilter); ok {
 		opts.IfaceExcludeFilter = regexp.MustCompile(ifaceExcludeFilter)
@@ -449,6 +499,10 @@ func (s *service) BeforeServe(
 
 	if podmonPollRate, ok := csictx.LookupEnv(ctx, EnvPodmonArrayConnectivityPollRate); ok {
 		opts.PodmonPollingFreq = podmonPollRate
+	}
+
+	if tlsCertDir, ok := csictx.LookupEnv(ctx, EnvTLSCertDirName); ok {
+		opts.TLSCertDir = tlsCertDir
 	}
 
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
@@ -600,23 +654,14 @@ func (s *service) BeforeServe(
 	// Start the deletion worker thread
 	log.Printf("s.mode: %s", s.mode)
 	if !strings.EqualFold(s.mode, "node") {
-		/*symIDs, err := s.adminClient.GetSymmetrixIDList()
-		if err != nil {
-			return err
-		}
-		if len(symIDs.SymmetrixIDs) == 0 {
-			errMsg := "no arrays connected to the unisphere"
-			log.Println(errMsg)
-			return fmt.Errorf("%s", errMsg)
-		}*/
 		s.NewDeletionWorker(s.opts.ClusterPrefix, s.opts.ManagedArrays)
 	}
 
 	// Start the snapshot housekeeping worker thread
 	if !strings.EqualFold(s.mode, "node") {
 		s.startSnapCleanupWorker() // #nosec G20
-		if snapCleaner == nil {
-			snapCleaner = new(snapCleanupWorker)
+		if s.snapCleaner == nil {
+			s.snapCleaner = new(snapCleanupWorker)
 		}
 	}
 
@@ -699,22 +744,19 @@ func (s *service) getProxySettingsFromEnv() (string, string, bool) {
 	}
 	if proxyServiceName, ok := csictx.LookupEnv(context.Background(), EnvUnisphereProxyServiceName); ok {
 		if proxyServiceName != "none" {
+			serviceHost = proxyServiceName
 			// Change it to uppercase
 			proxyServiceName = strings.ToUpper(proxyServiceName)
 			// Change all "-" to underscores
 			proxyServiceName = strings.Replace(proxyServiceName, "-", "_", -1)
-			serviceHostEnv := fmt.Sprintf("%s_SERVICE_HOST", proxyServiceName)
 			servicePortEnv := fmt.Sprintf("%s_SERVICE_PORT", proxyServiceName)
-			if sh, ok := csictx.LookupEnv(context.Background(), serviceHostEnv); ok {
-				serviceHost = sh
-				if sp, ok := csictx.LookupEnv(context.Background(), servicePortEnv); ok {
-					servicePort = sp
-					if serviceHost == "" || servicePort == "" {
-						log.Warning("Either ServiceHost and ServicePort is set to empty")
-						return "", "", false
-					}
-					return serviceHost, servicePort, true
+			if sp, ok := csictx.LookupEnv(context.Background(), servicePortEnv); ok {
+				servicePort = sp
+				if serviceHost == "" || servicePort == "" {
+					log.Warning("Either ServiceHost and ServicePort is set to empty")
+					return "", "", false
 				}
+				return serviceHost, servicePort, true
 			}
 		}
 	}
@@ -722,28 +764,22 @@ func (s *service) getProxySettingsFromEnv() (string, string, bool) {
 }
 
 func (s *service) getTransportProtocolFromEnv() string {
-	transportProtocol := ""
-	if tp, ok := csictx.LookupEnv(context.Background(), EnvPreferredTransportProtocol); ok {
-		tp = strings.ToUpper(tp)
-		switch tp {
-		case "FIBRE":
-			tp = "FC"
-			break
-		case "FC":
-			break
-		case "ISCSI":
-			break
-		case "NVMETCP":
-			break
-		case "":
-			break
-		default:
-			log.Errorf("Invalid transport protocol: %s, valid values FC, ISCSI or NVMETCP", tp)
-			return ""
-		}
-		transportProtocol = tp
+	tp, ok := csictx.LookupEnv(context.Background(), EnvPreferredTransportProtocol)
+	if !ok {
+		return ""
 	}
-	return transportProtocol
+	tp = strings.ToUpper(tp)
+	switch tp {
+	case "FIBRE":
+		return "FC"
+	case "FC", "ISCSI", "NVMETCP", "":
+		return tp
+	case "AUTO":
+		return ""
+	default:
+		log.Errorf("Invalid transport protocol: %s, valid values AUTO, FC, ISCSI or NVMETCP", tp)
+		return ""
+	}
 }
 
 // get the amount of time to retry pmax calls
@@ -782,7 +818,8 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 	// Create our PowerMax API client, if needed
 	if s.adminClient == nil {
 		applicationName := ApplicationName + "/" + "v" + core.SemVer
-		c, err := pmax.NewClientWithArgs(endPoint, applicationName, s.opts.Insecure, !s.opts.DisableCerts)
+		tlsCertFile := filepath.Join(s.opts.TLSCertDir, defaultCertFile)
+		c, err := pmax.NewClientWithArgs(endPoint, applicationName, s.opts.Insecure, !s.opts.DisableCerts, tlsCertFile)
 		if err != nil {
 			return status.Errorf(codes.FailedPrecondition,
 				"unable to create PowerMax client: %s", err.Error())
@@ -798,6 +835,8 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 			if err == nil {
 				break
 			}
+
+			log.Infof("Error authenticating : %s", err)
 			time.Sleep(10 * time.Second)
 		}
 		if err != nil {
@@ -809,10 +848,11 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 		// Filter out a list of locally connected list of arrays, and
 		// initialize the PowerMax client for those array only
 		managedArrays := make([]string, 0, len(s.opts.ManagedArrays))
+		log.Infof("Managed arrays - %v", s.opts.ManagedArrays)
 		for _, array := range s.opts.ManagedArrays {
 			symmetrix, err := s.adminClient.GetSymmetrixByID(ctx, array)
 			if err != nil {
-				log.Errorf("Failed to fetch details for array: %s. [%s]", array, err.Error())
+				log.Errorf("Failed to fetch details for array: %s. Reason: [%s]", array, err.Error())
 			} else {
 				if symmetrix.Local {
 					managedArrays = append(managedArrays, array)
@@ -861,17 +901,16 @@ func setLogFields(ctx context.Context, fields log.Fields) context.Context {
 }
 
 func getLogFields(ctx context.Context) log.Fields {
-	if ctx == nil {
-		return log.Fields{}
-	}
 	fields, ok := ctx.Value(contextKey(logFields)).(log.Fields)
 	if !ok {
 		fields = log.Fields{}
 	}
+
 	csiReqID, ok := ctx.Value(csictx.RequestIDKey).(string)
 	if !ok {
 		return fields
 	}
+
 	fields["RequestID"] = csiReqID
 	return fields
 }
@@ -879,18 +918,29 @@ func getLogFields(ctx context.Context) log.Fields {
 // SetPollingFrequency reads the pollingFrequency from Env, sets default vale if ENV not found
 func (s *service) SetPollingFrequency(ctx context.Context) int64 {
 	var pollingFrequency int64
+	s.pollingFrequencyMutex.Lock()
+	defer s.pollingFrequencyMutex.Unlock()
 	if pollRateEnv, ok := csictx.LookupEnv(ctx, EnvPodmonArrayConnectivityPollRate); ok {
 		if pollingFrequency, _ = strconv.ParseInt(pollRateEnv, 10, 32); pollingFrequency != 0 {
 			log.Debugf("use pollingFrequency as %d seconds", pollingFrequency)
-			return pollingFrequency
+			s.pollingFrequencyInSeconds = pollingFrequency
+			return s.pollingFrequencyInSeconds
 		}
 	}
 	log.Debugf("use default pollingFrequency as %d seconds", DefaultPodmonPollRate)
-	return DefaultPodmonPollRate
+	s.pollingFrequencyInSeconds = DefaultPodmonPollRate
+	return s.pollingFrequencyInSeconds
+}
+
+// GetPollingFrequency returns the pollingFrequency
+func (s *service) GetPollingFrequency() int64 {
+	s.pollingFrequencyMutex.Lock()
+	defer s.pollingFrequencyMutex.Unlock()
+	return s.pollingFrequencyInSeconds
 }
 
 func setArrayConfigEnvs(ctx context.Context) error {
-	log.Info("---------inside setArrayConfig function----------")
+	log.Info("---------Inside setArrayConfigEnvs function----------")
 	// set additional driver configs moved from envs.
 	configFilePath, ok := csictx.LookupEnv(ctx, EnvArrayConfigPath)
 	if !ok {
@@ -930,5 +980,37 @@ func setArrayConfigEnvs(ctx context.Context) error {
 		log.Info("Managed arrays from config file:", managedArrays)
 		_ = os.Setenv(ManagedArrays, managedArrays)
 	}
+
+	if useSecret, ok := csictx.LookupEnv(ctx, EnvRevProxyUseSecret); ok && useSecret == "true" {
+
+		secretPath := csictx.Getenv(ctx, EnvRevProxySecretPath)
+		secretNameFromPath := filepath.Base(secretPath)
+		secretPathFromPath := filepath.Dir(secretPath)
+
+		secretParams := viper.New()
+		secretParams.SetConfigName(secretNameFromPath)
+		secretParams.SetConfigType("yaml")
+		secretParams.AddConfigPath(secretPathFromPath)
+
+		err := secretParams.ReadInConfig()
+		if err != nil {
+			log.Errorf("Secret mandated, but secret file not found %s", err)
+		}
+
+		// Access the managementservers key (which is a slice of maps)
+		managementServers := secretParams.Get("managementservers").([]interface{})
+
+		// Ensure there's at least one server and extract username/password
+		if len(managementServers) > 0 {
+			// Access the first element of the managementServers slice, which is a map
+			server := managementServers[0].(map[string]interface{})
+
+			// Extract the username and password
+			endpoint = server["endpoint"].(string)
+		} else {
+			fmt.Println("No management servers found.")
+		}
+	}
+
 	return nil
 }

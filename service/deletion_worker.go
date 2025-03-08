@@ -37,7 +37,6 @@ const (
 	MaxErrorCount               = 100
 	CacheValidTime              = 30 * time.Minute
 	MinPollingInterval          = 3 * time.Second
-	WaitTillSyncInProgTime      = 20 * time.Second
 	initialStep                 = "initialStep"
 	cleanupSnapshotStep         = "cleanupSnapshotStep"
 	removeVolumesFromSGStep     = "removeVolumesFromSGStep"
@@ -50,6 +49,8 @@ const (
 	maxedOutState               = "maxedOut"
 	FinalError                  = "Final error: Max error count reached, device will be removed from Deletion Queue"
 )
+
+var waitTillSyncInProgTime = 20 * time.Second
 
 // symDeviceID - holds a hexadecimal device id in string as well as the corresponding integer value
 type symDeviceID struct {
@@ -199,6 +200,17 @@ func (queue *deletionQueue) Print() {
 	defer queue.lock.Unlock()
 	log.Info("Deletion queue")
 	queue.print()
+}
+
+func (queue *deletionQueue) GetDeviceList() []csiDevice {
+	queue.lock.Lock()
+	defer queue.lock.Unlock()
+	log.Info("Deletion queue")
+	result := make([]csiDevice, 0)
+	for _, v := range queue.DeviceList {
+		result = append(result, *v)
+	}
+	return result
 }
 
 func (queue *deletionQueue) print() {
@@ -484,7 +496,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 						log.Error(errorMsg(err))
 						return false
 					}
-					time.Sleep(WaitTillSyncInProgTime)
+					time.Sleep(waitTillSyncInProgTime)
 				}
 			}
 			// build remoteSGID
@@ -822,10 +834,12 @@ func (worker *deletionWorker) populateDeletionQueue() {
 			}
 			// Put volume on the queue if appropriate
 			if strings.HasPrefix(volume.VolumeIdentifier, volDeletePrefix) {
-				err = worker.QueueDeviceForDeletion(id, volume.VolumeIdentifier, symID)
-				if err != nil {
-					log.Errorf("Error in queuing device for deletion. Error: %s", err.Error())
-				}
+				go func() {
+					err := worker.QueueDeviceForDeletion(id, volume.VolumeIdentifier, symID)
+					if err != nil {
+						log.Errorf("Error in queuing device for deletion. Error: %s", err.Error())
+					}
+				}()
 			} else {
 				log.Warningf("(Device ID: %s, SymID: %s): skipping as it is not tagged for deletion",
 					volume.VolumeID, symID)
@@ -854,7 +868,7 @@ func (s *service) NewDeletionWorker(clusterPrefix string, symIDs []string) {
 		log.Infof("Configuring deletion worker with Cluster Prefix: %s, Sym IDs: %v",
 			clusterPrefix, symIDs)
 		go delWorker.deletionRequestHandler()
-		go delWorker.populateDeletionQueue()
+		delWorker.populateDeletionQueue()
 		go delWorker.deletionWorker()
 		s.deletionWorker = delWorker
 	}

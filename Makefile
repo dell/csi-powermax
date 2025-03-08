@@ -21,9 +21,6 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-check:
-	GOLINT=$(GOLINT) bash check.sh --all
-
 format:
 	@gofmt -w -s .
 
@@ -31,7 +28,7 @@ clean:
 	rm -f core/core_generated.go
 	go clean
 
-build: golint check
+build:
 	go generate
 	CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build
 
@@ -43,7 +40,7 @@ install:
 docker:
 	go generate
 	go run core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk build-base-image docker
+	make -f docker.mk docker
 	# build the reverseproxy container as part of this target
 	( cd csireverseproxy; make docker )
 
@@ -52,7 +49,7 @@ docker:
 docker-no-cache:
 	go generate
 	go run core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk build-base-image docker-no-cache
+	make -f docker.mk docker-no-cache
 	# build the reverseproxy container as part of this target
 	( cd csireverseproxy; make docker-no-cache )
 
@@ -61,19 +58,16 @@ push:	docker
 	make -f docker.mk push
 
 # Run unit tests and skip the BDD tests
-unit-test: golint check
+unit-test:
 	( cd service; go clean -cache; CGO_ENABLED=0 GO111MODULE=on go test -v -coverprofile=c.out ./... )
 
 # Run BDD tests. Need to be root to run as tests require some system access, need to fix
-bdd-test: golint check
+bdd-test:
 	( cd service; go clean -cache; CGO_ENABLED=0 GO111MODULE=on go test -run TestGoDog -v -coverprofile=c.out ./... )
 
 # Linux only; populate env.sh with the hardware parameters
 integration-test:
 	( cd test/integration; sh run.sh )
-
-release:
-	BUILD_TYPE="R" $(MAKE) clean build docker push
 
 version:
 	go generate
@@ -89,17 +83,19 @@ else
 endif
 	@echo "Logs are stored at gosec.log, Outputfile at gosecresults.csv"
 
-golint:
-ifeq (, $(shell which golint))
-	@{ \
-	set -e ;\
-	GOLINT_GEN_TMP_DIR=$$(mktemp -d) ;\
-	cd $$GOLINT_GEN_TMP_DIR ;\
-	go mod init tmp ;\
-	go install golang.org/x/lint/golint@latest ;\
-	rm -rf $$GOLINT_GEN_TMP_DIR ;\
-	}
-GOLINT=$(GOBIN)/golint
-else
-GOLINT=$(shell which golint)
-endif
+.PHONY: actions action-help
+actions: ## Run all GitHub Action checks that run on a pull request creation
+	@echo "Running all GitHub Action checks for pull request events..."
+	@act -l | grep -v ^Stage | grep pull_request | grep -v image_security_scan | awk '{print $$2}' | while read WF; do \
+		echo "Running workflow: $${WF}"; \
+		act pull_request --no-cache-server --platform ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --job "$${WF}"; \
+	done
+
+action-help: ## Echo instructions to run one specific workflow locally
+	@echo "GitHub Workflows can be run locally with the following command:"
+	@echo "act pull_request --no-cache-server --platform ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --job <jobid>"
+	@echo ""
+	@echo "Where '<jobid>' is a Job ID returned by the command:"
+	@echo "act -l"
+	@echo ""
+	@echo "NOTE: if act is not installed, it can be downloaded from https://github.com/nektos/act"

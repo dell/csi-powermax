@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -43,10 +43,8 @@ const (
 
 var (
 	cleanupStarted      = false
-	licenseCached       = false
-	symmRepCapabilities *types.SymReplicationCapabilities
+	symmRepCapabilities = make(map[string]types.SymmetrixCapability)
 	mutex               sync.Mutex
-	snapCleaner         *snapCleanupWorker
 )
 
 // SnapSession is an intermediate structure to share session info
@@ -175,31 +173,50 @@ func (s *service) UnlinkTargets(ctx context.Context, symID, srcDevID string, pma
 	return nil
 }
 
-// IsSnapshotLicensed return true if the symmetrix array has
-// SnapVX license
+// RemoveReplicationCapability safely removes the replication capability for the
+// provided symmetrix ID from the cache.
+// Created for testing purposes.
+func RemoveReplicationCapability(symID string) {
+	mutex.Lock()
+	defer mutex.Unlock()
+	delete(symmRepCapabilities, symID)
+}
+
+// This function checks if the PowerMax array has the SnapVX license.
+// It returns an error if the array does not meet the expectations.
 func (s *service) IsSnapshotLicensed(ctx context.Context, symID string, pmaxClient pmax.Pmax) (err error) {
 	if _, err := pmaxClient.IsAllowedArray(symID); err != nil {
 		return err
 	}
 	mutex.Lock()
 	defer mutex.Unlock()
-	if licenseCached == false {
-		symmRepCapabilities, err = pmaxClient.GetReplicationCapabilities(ctx)
+
+	symmRepCapability, ok := symmRepCapabilities[symID]
+	if !ok {
+		repCapabilities, err := pmaxClient.GetReplicationCapabilities(ctx)
 		if err != nil {
 			return err
 		}
-		licenseCached = true
-		log.Infof("License information with Powermax %s is cached", symID)
-	}
-	for i := range symmRepCapabilities.SymmetrixCapability {
-		if symmRepCapabilities.SymmetrixCapability[i].SymmetrixID == symID {
-			if symmRepCapabilities.SymmetrixCapability[i].SnapVxCapable {
-				return nil
+
+		for _, symmCapability := range repCapabilities.SymmetrixCapability {
+			if symmCapability.SymmetrixID == symID {
+				symmRepCapabilities[symID] = symmCapability
+				log.Infof("License information with PowerMax %s is cached", symID)
+				break
 			}
-			return fmt.Errorf("PowerMax array (%s) doesn't have Snapshot license", symID)
+		}
+
+		symmRepCapability, ok = symmRepCapabilities[symID]
+		if !ok {
+			return fmt.Errorf("PowerMax array (%s) is not being managed by Unisphere", symID)
 		}
 	}
-	return fmt.Errorf("PowerMax array (%s) is not being managed by Unisphere", symID)
+
+	if symmRepCapability.SnapVxCapable {
+		return nil
+	}
+
+	return fmt.Errorf("PowerMax array (%s) doesn't have Snapshot license", symID)
 }
 
 // UnlinkAndTerminate executes cleanup operation on the source/target volume
@@ -483,7 +500,7 @@ func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *typ
 	cleanReq.symmetrixID = symID
 	cleanReq.volumeID = vol.VolumeID
 	cleanReq.requestID = reqID
-	snapCleaner.requestCleanup(&cleanReq)
+	s.snapCleaner.requestCleanup(&cleanReq)
 	return nil
 }
 
@@ -561,16 +578,16 @@ func (s *service) startSnapCleanupWorker() error {
 			return err
 		}
 	}
-	if snapCleaner == nil {
-		snapCleaner = new(snapCleanupWorker)
-		snapCleaner.PollingInterval = 3 * time.Minute
-		snapCleaner.Queue = make(snapCleanupQueue, 0)
-		snapCleaner.MaxRetries = 10
+	if s.snapCleaner == nil {
+		s.snapCleaner = new(snapCleanupWorker)
+		s.snapCleaner.PollingInterval = 3 * time.Minute
+		s.snapCleaner.Queue = make(snapCleanupQueue, 0)
+		s.snapCleaner.MaxRetries = 10
 	}
 
 	log.Infof("Starting snapshots cleanup worker thread")
 	if !cleanupStarted {
-		go snapCleanupThread(context.Background(), snapCleaner, s)
+		go snapCleanupThread(context.Background(), s.snapCleaner, s)
 		cleanupStarted = true
 	}
 	return nil
@@ -627,7 +644,7 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 							cleanReq.symmetrixID = symID
 							cleanReq.volumeID = id.Name
 							log.Debugf("Pushing (%s) on vol (%s) to the queue", snapID, id.Name)
-							snapCleaner.requestCleanup(&cleanReq)
+							s.snapCleaner.requestCleanup(&cleanReq)
 						}
 					} else {
 						log.Debugf("Snapshot (%s) is not in a supported format", snap.Name)

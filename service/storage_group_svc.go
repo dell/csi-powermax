@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -571,7 +571,7 @@ func (g *storageGroupSvc) addVolumesToSGMV(ctx context.Context, reqID, symID, tg
 	if maskingViewExists {
 		// We just need to confirm if all the other entities are in order
 		// Check for host group too in case of vsphere
-		if (tgtMaskingView.HostID == hostID || tgtMaskingView.HostGroupID == hostID) && tgtMaskingView.StorageGroupID == tgtStorageGroupID {
+		if (strings.EqualFold(tgtMaskingView.HostID, hostID) || strings.EqualFold(tgtMaskingView.HostGroupID, hostID)) && strings.EqualFold(tgtMaskingView.StorageGroupID, tgtStorageGroupID) {
 			// Add the volumes to masking view, if any to be added
 			if len(devIDs) > 0 {
 				log.WithFields(f).Info("Calling AddVolumesToStorageGroup")

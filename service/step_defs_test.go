@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	csictx "github.com/dell/gocsi/context"
 	"github.com/dell/gonvme"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
@@ -75,6 +76,7 @@ const (
 	datadir2                   = "test/tmp/datadir2"
 	volume1                    = "CSIXX-Int409498632-000197900046-00501"
 	volume2                    = "CSIXX-Int409498632-000197900046-00502"
+	volumeWithRemote1          = "CSIXX-Int409498632-000197900046:000197900046-00501:00502"
 	volume0                    = "CSI-notfound-000197900046-00500"
 	nodePublishBlockDevice     = "sdc"
 	altPublishBlockDevice      = "sdd"
@@ -88,16 +90,21 @@ const (
 	nodePublishPrivateDir      = "test/tmp"
 	nodePublishWWN             = "60000970000197900046533030300501"
 	nodePublishAltWWN          = "60000970000197900046533030300502"
+	remoteNodePublishWWN       = "60000970000197900046533030300501"
+	remoteNodePublishAltWWN    = "60000970000197900046533030300502"
 	nodePublishLUNID           = "3"
+	remoteNodePublishLUNID     = "4"
 	iSCSIEtcDir                = "test/etc/iscsi"
 	iSCSIEtcFile               = "initiatorname.iscsi"
 	goodSnapID                 = "444-444"
 	altSnapID                  = "555-555"
 	defaultStorageGroup        = "DefaultStorageGroup"
 	defaultIscsiInitiator      = "iqn.1993-08.org.debian:01:5ae293b352a2"
-	defaultNvmeInitiator       = "nqn.2019-08.org.emc:sn.0x10000090fa6603b7"
+	alternateIscsiInitator     = "iqn.2015-10.com.dell:dellemc-foobar-123-a-7ceb34a0"
+	defaultNvmeInitiator       = "nqn.1988-11.com.dell.mock:00:e6e2d5b871f1403E169D0"
 	defaultFcInitiator         = "0x10000090fa6603b7"
 	defaultArrayTargetIQN      = "iqn.1992-04.com.emc:600009700bcbb70e3287017400000001"
+	defaultAraryTargetNQN      = "nqn.1988-11.com.dell.mock:00:e6e2d5b871f1403E169D0"
 	defaultFcInitiatorWWN      = "10000090fa6603b7"
 	defaultFcStoragePortWWN    = "5000000000000001"
 	portalIP                   = "1.2.3.4"
@@ -105,7 +112,7 @@ const (
 	defaultFCDirPort           = "FA-1D:4"
 	defaultISCSIDirPort1       = "SE1-E:6"
 	defaultISCSIDirPort2       = "SE2-E:4"
-	defaultNVMEDirPort         = "N:2"
+	defaultNVMEDirPort         = "OR-1C:6"
 	MaxRetries                 = 10
 	Namespace                  = "namespace-test"
 	kubeconfig                 = "/etc/kubernetes/admin.conf"
@@ -221,6 +228,7 @@ var inducedErrors struct {
 	noMountInfo             bool
 	invalidTopologyPathEnv  bool
 	getRDFInfoFromSGIDError bool
+	unexpectedResponse      bool
 }
 
 type failedSnap struct {
@@ -246,8 +254,8 @@ func (f *feature) aPowerMaxService() error {
 		fmt.Printf("time for last op: %v\n", dur)
 	}
 	f.lastTime = now
-	induceOverloadError = false
-	inducePendingError = false
+	SetInduceOverloadError(false)
+	SetInducePendingError(false)
 	inducedMockReverseProxy = true
 	gofsutil.GOFSWWNPath = "test/dev/disk/by-id/wwn-0x"
 	nodePublishSleepTime = 5 * time.Millisecond
@@ -271,6 +279,7 @@ func (f *feature) aPowerMaxService() error {
 	if pmaxCache != nil {
 		pmaxCache = make(map[string]*pmaxCachedInformation)
 	}
+
 	nodeCache = sync.Map{}
 	f.err = nil
 	f.symmetrixID = mock.DefaultSymmetrixID
@@ -375,9 +384,9 @@ func (f *feature) aPowerMaxService() error {
 	gofsutil.GOFSMock.InduceResizeFSError = false
 	gofsutil.GOFSMock.InduceGetDiskFormatType = ""
 	gofsutil.GOFSMockMounts = gofsutil.GOFSMockMounts[:0]
-	gofsutil.GOFSMockWWNToDevice = make(map[string]string)
 	gofsutil.GOFSMockTargetIPLUNToDevice = make(map[string]string)
 	gofsutil.GOFSRescanCallback = nil
+	gofsutil.GOFSMockWWNToDevice = map[string]string{nodePublishWWN: "00501"}
 
 	// configure variables in the driver
 	getMappedVolMaxRetry = 1
@@ -416,29 +425,57 @@ func (f *feature) aPowerMaxService() error {
 		}
 		f.service.opts.Endpoint = f.server.URL
 		log.Printf("server url: %s", f.server.URL)
+
+		// initialize the admin client
+		if f.service.adminClient == nil {
+			err := f.service.controllerProbe(context.Background())
+			if err != nil && !strings.Contains(err.Error(), "already added to the configuration") {
+				log.Fatal(err.Error())
+			}
+		}
 	} else {
 		f.server = nil
 	}
 
+	f.service.snapCleaner = &snapCleanupWorker{
+		Queue: []*snapCleanupRequest{
+			{
+				symmetrixID: "000197900046",
+				snapshotID:  "snap1",
+				volumeID:    "vol1",
+				requestID:   "000197900046",
+				retries:     MaxRetries,
+			},
+			{
+				symmetrixID: "000197900047",
+				snapshotID:  "snap2",
+				volumeID:    "vol2",
+				requestID:   "000197900047",
+				retries:     MaxRetries,
+			},
+		},
+	}
 	// Make sure the snapshot cleanup thread is started.
-	f.service.startSnapCleanupWorker()
-	snapCleaner.PollingInterval = 2 * time.Second
+	e := f.service.startSnapCleanupWorker()
+	if e != nil && !strings.Contains(e.Error(), "already added to the configuration") {
+		return fmt.Errorf("failed to start snapshot cleanup worker. err: %s", e.Error())
+	}
+	if f.service.snapCleaner != nil {
+		f.service.snapCleaner.PollingInterval = 2 * time.Second
+	}
 	// Start the lock workers
 	f.service.StartLockManager(1 * time.Minute)
 	// Make sure the deletion worker is started.
 	// f.service.startDeletionWorker(false)
 	f.checkGoRoutines("end aPowerMaxService")
-	symIDs, err := f.service.retryableGetSymmetrixIDList()
-	if err != nil {
-		return err
-	}
+	symIDs := f.service.retryableGetSymmetrixIDList()
 	f.service.NewDeletionWorker(f.service.opts.ClusterPrefix, symIDs.SymmetrixIDs)
 	f.errType = ""
 	return nil
 }
 
 func (f *feature) getService() *service {
-	mock.InducedErrors.NoConnection = false
+	mock.SafeSetInducedError(mock.InducedErrors, "NoConnection", false)
 	svc := new(service)
 	svc.sgSvc = newStorageGroupService(svc)
 	if f.adminClient != nil {
@@ -452,7 +489,7 @@ func (f *feature) getService() *service {
 	mock.Data.JSONDir = "mock-data"
 	svc.loggedInArrays = map[string]bool{}
 	svc.iscsiTargets = map[string][]string{}
-	svc.nvmeTargets = map[string][]string{}
+	svc.nvmeTargets = new(sync.Map)
 	svc.loggedInNVMeArrays = map[string]bool{}
 	var opts Opts
 	opts.User = "username"
@@ -464,9 +501,12 @@ func (f *feature) getService() *service {
 	opts.EnableBlock = true
 	opts.KubeConfigPath = kubeconfig
 	opts.NodeName, _ = os.Hostname()
-	opts.PortGroups = []string{"portgroup1", "portgroup2"}
-	mock.AddPortGroup("portgroup1", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
-	mock.AddPortGroup("portgroup2", "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+	opts.PortGroups = []string{"portgroup1", "portgroup2", "portgroup3", "portgroup4"}
+	mock.AddPortGroupWithPortID("portgroup1", IscsiTransportProtocol, []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+	mock.AddPortGroupWithPortID("portgroup2", IscsiTransportProtocol, []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+	mock.AddPortGroupWithPortID("portgroup3", NvmeTCPTransportProtocol, []string{defaultNVMEDirPort})
+	mock.AddPortGroupWithPortID("portgroup4", FcTransportProtocol, []string{defaultFCDirPort})
+
 	opts.ManagedArrays = []string{"000197900046", "000197900047", "000000000013"}
 	opts.NodeFullName, _ = os.Hostname()
 	opts.EnableSnapshotCGDelete = true
@@ -615,6 +655,15 @@ func (f *feature) iCallProbeController() error {
 	return nil
 }
 
+func (f *feature) iCallProbeNodeBySymID(symID string) error {
+	header := metadata.New(map[string]string{"csi.requestid": "1"})
+	ctx := metadata.NewIncomingContext(context.Background(), header)
+	f.checkGoRoutines("before node probe")
+	f.err = f.service.nodeProbeBySymID(ctx, symID)
+	f.checkGoRoutines("after node probe")
+	return nil
+}
+
 func (f *feature) aValidProbeControllerResponseIsReturned() error {
 	if f.probeControllerResponse.GetReady().GetValue() != true {
 		return errors.New("ProbeController returned Ready false")
@@ -681,7 +730,7 @@ func (f *feature) thePossibleErrorContains(arg1 string) error {
 }
 
 func (f *feature) theControllerHasNoConnection() error {
-	mock.InducedErrors.NoConnection = true
+	mock.SafeSetInducedError(mock.InducedErrors, "NoConnection", true)
 	return nil
 }
 
@@ -1063,141 +1112,141 @@ func (f *feature) iInduceError(errtype string) error {
 	case "PortGroupError":
 		inducedErrors.portGroupError = true
 	case "GetVolumeIteratorError":
-		mock.InducedErrors.GetVolumeIteratorError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetVolumeIteratorError", true)
 	case "GetVolumeError":
-		mock.InducedErrors.GetVolumeError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetVolumeError", true)
 	case "UpdateVolumeError":
-		mock.InducedErrors.UpdateVolumeError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "UpdateVolumeError", true)
 	case "DeleteVolumeError":
-		mock.InducedErrors.DeleteVolumeError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "DeleteVolumeError", true)
 	case "DeviceInSGError":
-		mock.InducedErrors.DeviceInSGError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "DeviceInSGError", true)
 	case "GetJobError":
-		mock.InducedErrors.GetJobError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetJobError", true)
 	case "JobFailedError":
-		mock.InducedErrors.JobFailedError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "JobFailedError", true)
 	case "UpdateStorageGroupError":
-		mock.InducedErrors.UpdateStorageGroupError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "UpdateStorageGroupError", true)
 	case "GetStorageGroupError":
-		mock.InducedErrors.GetStorageGroupError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetStorageGroupError", true)
 	case "CreateStorageGroupError":
-		mock.InducedErrors.CreateStorageGroupError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "CreateStorageGroupError", true)
 	case "GetMaskingViewError":
-		mock.InducedErrors.GetMaskingViewError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetMaskingViewError", true)
 	case "CreateMaskingViewError":
-		mock.InducedErrors.CreateMaskingViewError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "CreateMaskingViewError", true)
 	case "GetStoragePoolListError":
-		mock.InducedErrors.GetStoragePoolListError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetStoragePoolListError", true)
 	case "GetHostError":
-		mock.InducedErrors.GetHostError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetHostError", true)
 	case "CreateHostError":
-		mock.InducedErrors.CreateHostError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "CreateHostError", true)
 	case "UpdateHostError":
-		mock.InducedErrors.UpdateHostError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "UpdateHostError", true)
 	case "GetSymmetrixError":
-		mock.InducedErrors.GetSymmetrixError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetSymmetrixError", true)
 	case "GetStoragePoolError":
-		mock.InducedErrors.GetStoragePoolError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetStoragePoolError", true)
 	case "DeleteMaskingViewError":
-		mock.InducedErrors.DeleteMaskingViewError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "DeleteMaskingViewError", true)
 	case "GetMaskingViewConnectionsError":
-		mock.InducedErrors.GetMaskingViewConnectionsError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetMaskingViewConnectionsError", true)
 	case "DeleteStorageGroupError":
-		mock.InducedErrors.DeleteStorageGroupError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "DeleteStorageGroupError", true)
 	case "GetPortGroupError":
-		mock.InducedErrors.GetPortGroupError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetPortGroupError", true)
 	case "GetPortError":
-		mock.InducedErrors.GetPortError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetPortError", true)
 	case "GetDirectorError":
-		mock.InducedErrors.GetDirectorError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetDirectorError", true)
 	case "ResetAfterFirstError":
-		mock.InducedErrors.ResetAfterFirstError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "ResetAfterFirstError", true)
 	case "GetInitiatorError":
-		mock.InducedErrors.GetInitiatorError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetInitiatorError", true)
 	case "GetInitiatorByIDError":
-		mock.InducedErrors.GetInitiatorByIDError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetInitiatorByIDError", true)
 	case "CreateSnapshotError":
-		mock.InducedErrors.CreateSnapshotError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "CreateSnapshotError", true)
 	case "DeleteSnapshotError":
-		mock.InducedErrors.DeleteSnapshotError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "DeleteSnapshotError", true)
 	case "LinkSnapshotError":
-		mock.InducedErrors.LinkSnapshotError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "LinkSnapshotError", true)
 	case "SnapshotNotLicensed":
-		mock.InducedErrors.SnapshotNotLicensed = true
+		mock.SafeSetInducedError(mock.InducedErrors, "SnapshotNotLicensed", true)
 	case "InvalidResponse":
-		mock.InducedErrors.InvalidResponse = true
+		mock.SafeSetInducedError(mock.InducedErrors, "InvalidResponse", true)
 	case "UnisphereMismatchError":
-		mock.InducedErrors.UnisphereMismatchError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "UnisphereMismatchError", true)
 	case "TargetNotDefinedError":
-		mock.InducedErrors.TargetNotDefinedError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "TargetNotDefinedError", true)
 	case "SnapshotExpired":
-		mock.InducedErrors.SnapshotExpired = true
+		mock.SafeSetInducedError(mock.InducedErrors, "SnapshotExpired", true)
 	case "GetSymVolumeError":
-		mock.InducedErrors.GetSymVolumeError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetSymVolumeError", true)
 	case "InvalidSnapshotName":
-		mock.InducedErrors.InvalidSnapshotName = true
+		mock.SafeSetInducedError(mock.InducedErrors, "InvalidSnapshotName", true)
 	case "GetVolSnapsError":
-		mock.InducedErrors.GetVolSnapsError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetVolSnapsError", true)
 	case "GetPrivVolumeByIDError":
-		mock.InducedErrors.GetPrivVolumeByIDError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetPrivVolumeByIDError", true)
 	case "ExpandVolumeError":
-		mock.InducedErrors.ExpandVolumeError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "ExpandVolumeError", true)
 	case "MaxSnapSessionError":
-		mock.InducedErrors.MaxSnapSessionError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "MaxSnapSessionError", true)
 	case "VolumeNotAddedError":
-		mock.InducedErrors.VolumeNotAddedError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "VolumeNotAddedError", true)
 	case "GetSRDFInfoError":
-		mock.InducedErrors.GetSRDFInfoError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetSRDFInfoError", true)
 	case "VolumeRdfTypesError":
-		mock.InducedErrors.VolumeRdfTypesError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "VolumeRdfTypesError", true)
 	case "GetSRDFPairInfoError":
-		mock.InducedErrors.GetSRDFPairInfoError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetSRDFPairInfoError", true)
 	case "GetProtectedStorageGroupError":
-		mock.InducedErrors.GetProtectedStorageGroupError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetProtectedStorageGroupError", true)
 	case "GetRDFGroupError":
-		mock.InducedErrors.GetRDFGroupError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetRDFGroupError", true)
 	case "CreateSGReplicaError":
-		mock.InducedErrors.CreateSGReplicaError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "CreateSGReplicaError", true)
 	case "GetSGOnRemote":
-		mock.InducedErrors.GetSGOnRemote = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetSGOnRemote", true)
 	case "GetSGWithVolOnRemote":
-		mock.InducedErrors.GetSGWithVolOnRemote = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetSGWithVolOnRemote", true)
 	case "InvalidLocalVolumeError":
-		mock.InducedErrors.InvalidLocalVolumeError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "InvalidLocalVolumeError", true)
 	case "InvalidRemoteVolumeError":
-		mock.InducedErrors.InvalidRemoteVolumeError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "InvalidRemoteVolumeError", true)
 	case "GetRemoteVolumeError":
-		mock.InducedErrors.GetRemoteVolumeError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetRemoteVolumeError", true)
 	case "RDFGroupHasPairError":
-		mock.InducedErrors.RDFGroupHasPairError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "RDFGroupHasPairError", true)
 	case "FetchResponseError":
-		mock.InducedErrors.FetchResponseError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "FetchResponseError", true)
 	case "RemoveVolumesFromSG":
-		mock.InducedErrors.RemoveVolumesFromSG = true
+		mock.SafeSetInducedError(mock.InducedErrors, "RemoveVolumesFromSG", true)
 	case "GetFreeRDFGError":
-		mock.InducedErrors.GetFreeRDFGError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetFreeRDFGError", true)
 	case "GetLocalOnlineRDFDirsError":
-		mock.InducedErrors.GetLocalOnlineRDFDirsError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetLocalOnlineRDFDirsError", true)
 	case "GetRemoteRDFPortOnSANError":
-		mock.InducedErrors.GetRemoteRDFPortOnSANError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetRemoteRDFPortOnSANError", true)
 	case "GetLocalOnlineRDFPortsError":
-		mock.InducedErrors.GetLocalOnlineRDFPortsError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetLocalOnlineRDFPortsError", true)
 	case "GetLocalRDFPortDetailsError":
-		mock.InducedErrors.GetLocalRDFPortDetailsError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetLocalRDFPortDetailsError", true)
 	case "CreateRDFGroupError":
-		mock.InducedErrors.CreateRDFGroupError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "CreateRDFGroupError", true)
 	case "ExecuteActionError":
-		mock.InducedErrors.ExecuteActionError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "ExecuteActionError", true)
 	case "GetFileSystemError":
-		mock.InducedErrors.GetFileSystemError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetFileSystemError", true)
 	case "GetArrayPerfKeyError":
-		mock.InducedErrors.GetArrayPerfKeyError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetArrayPerfKeyError", true)
 	case "GetVolumesMetricsError":
-		mock.InducedErrors.GetVolumesMetricsError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetVolumesMetricsError", true)
 	case "GetFileSysMetricsError":
-		mock.InducedErrors.GetFileSysMetricsError = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetFileSysMetricsError", true)
 	case "GetFreshMetrics":
-		mock.InducedErrors.GetFreshMetrics = true
+		mock.SafeSetInducedError(mock.InducedErrors, "GetFreshMetrics", true)
 	case "NoSymlinkForNodePublish":
 		cmd := exec.Command("rm", "-rf", nodePublishSymlinkDir)
 		_, err := cmd.CombinedOutput()
@@ -1264,6 +1313,10 @@ func (f *feature) iInduceError(errtype string) error {
 		gofsutil.GOFSMock.InduceMultipathCommandError = true
 	case "GOFSInduceGetMountInfoFromDeviceError":
 		gofsutil.GOFSMock.InduceGetMountInfoFromDeviceError = true
+	case "GOFSInduceFilesystemInfoError":
+		gofsutil.GOFSMock.InduceGetMountInfoFromDeviceError = true
+	case "GOFSInduceGetSysBlockDevicesError":
+		gofsutil.GOFSMock.InduceGetSysBlockDevicesError = true
 	case "GOFSInduceDeviceRescanError":
 		gofsutil.GOFSMock.InduceDeviceRescanError = true
 	case "GOFSInduceResizeMultipathError":
@@ -1362,9 +1415,9 @@ func (f *feature) iInduceError(errtype string) error {
 		mockgosystemdInducedErrors.ISCSIDInactiveError = true
 		mockgosystemdInducedErrors.JobFailure = true
 	case "InduceOverloadError":
-		induceOverloadError = true
+		SetInduceOverloadError(true)
 	case "InducePendingError":
-		inducePendingError = true
+		SetInducePendingError(true)
 	case "InvalidateNodeID":
 		f.iInvalidateTheNodeID()
 	case "NoMountInfo":
@@ -1373,6 +1426,8 @@ func (f *feature) iInduceError(errtype string) error {
 		inducedErrors.invalidTopologyPathEnv = true
 	case "GetRDFInfoFromSGIDError":
 		inducedErrors.getRDFInfoFromSGIDError = true
+	case "QueryArrayStatusUnexpectedResponse":
+		inducedErrors.unexpectedResponse = true
 	case "StorageGroupMigrationNoError":
 		migration.StorageGroupMigration = func(_ context.Context, _, _, _ string, _ pmax.Pmax) (bool, error) {
 			return true, nil
@@ -1587,36 +1642,43 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		mock.AddInitiator(initID, initiator, "Fibre", []string{defaultFCDirPort}, "")
 		mock.AddHost(f.hostID, "Fibre", initiators)
 		mock.AddStorageGroup(f.sgID, "", "")
+		mock.SafeSetInducedError(mock.Filters, "GetNVMePorts", false)
 		portGroupID := ""
 		if f.selectedPortGroup != "" {
 			portGroupID = f.selectedPortGroup
 		} else {
 			portGroupID = "fc_ports"
 		}
-		mock.AddPortGroup(portGroupID, "Fibre", []string{defaultFCDirPort})
+		mock.AddPortGroupWithPortID(portGroupID, "Fibre", []string{defaultFCDirPort})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
-	} else if transportProtocol == "NVME" {
+	} else if transportProtocol == "NVME" || transportProtocol == "NVMETCP" {
 		f.hostID, f.sgID, f.mvID = f.service.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
 		initiator := defaultNvmeInitiator
 		initiators := []string{initiator}
-		initID := defaultISCSIDirPort1 + ":" + initiator
-		mock.AddInitiator(initID, initiator, "GigE", []string{defaultNVMEDirPort}, "")
-		mock.AddHost(f.hostID, "iSCSI", initiators)
+		initID := defaultNVMEDirPort + ":" + initiator
+		mock.AddInitiator(initID, initiator, "OSHostAndRDF", []string{defaultNVMEDirPort}, "")
+		mock.AddHost(f.hostID, "OSHostAndRDF", initiators)
 		mock.AddStorageGroup(f.sgID, "", "")
 		portGroupID := ""
 		if f.selectedPortGroup != "" {
 			portGroupID = f.selectedPortGroup
 		} else {
-			portGroupID = "iscsi_ports"
+			portGroupID = "nvmetcp_ports"
 		}
-		mock.AddPortGroup(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+		mock.SafeSetInducedError(mock.Filters, "GetNVMePorts", true)
+		mock.AddPortGroupWithPortID(portGroupID, "NVMETCP", []string{defaultNVMEDirPort})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	} else {
 		f.hostID, f.sgID, f.mvID = f.service.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
-		initiator := defaultIscsiInitiator
-		initiators := []string{initiator}
-		initID := defaultISCSIDirPort1 + ":" + initiator
-		mock.AddInitiator(initID, initiator, "GigE", []string{defaultISCSIDirPort1}, "")
+		initiator1 := defaultIscsiInitiator
+		initID := defaultISCSIDirPort1 + ":" + initiator1
+		mock.AddInitiator(initID, initiator1, "GigE", []string{defaultISCSIDirPort1}, "")
+
+		initiator2 := alternateIscsiInitator
+		initID2 := defaultISCSIDirPort2 + ":" + initiator2
+		mock.AddInitiator(initID2, initiator2, "GigE", []string{defaultISCSIDirPort2}, "")
+
+		initiators := []string{initiator1, initiator2}
 		mock.AddHost(f.hostID, "iSCSI", initiators)
 		mock.AddStorageGroup(f.sgID, "", "")
 		portGroupID := ""
@@ -1625,7 +1687,8 @@ func (f *feature) iHaveANodeWithMaskingView(nodeID string) error {
 		} else {
 			portGroupID = "iscsi_ports"
 		}
-		mock.AddPortGroup(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
+		mock.SafeSetInducedError(mock.Filters, "GetNVMePorts", false)
+		mock.AddPortGroupWithPortID(portGroupID, "ISCSI", []string{defaultISCSIDirPort1, defaultISCSIDirPort2})
 		mock.AddMaskingView(f.mvID, f.sgID, f.hostID, portGroupID)
 	}
 	return nil
@@ -1701,7 +1764,7 @@ func (f *feature) iHaveANodeWithHostWithInitiatorMappedToMultiplePorts(nodeID st
 func (f *feature) iHaveAFCPortGroup(portGroupID string) error {
 	dirPort := defaultFCDirPort
 	tempPGID := "csi-" + f.service.getClusterPrefix() + "-" + portGroupID
-	mock.AddPortGroup(tempPGID, "Fibre", []string{dirPort})
+	mock.AddPortGroupWithPortID(tempPGID, "Fibre", []string{dirPort})
 	return nil
 }
 
@@ -1908,8 +1971,16 @@ func (f *feature) aValidNodeGetInfoResponseIsReturned() error {
 	if f.nodeGetInfoResponse.AccessibleTopology == nil {
 		return errors.New("no topology keys created")
 	} else if f.fcArray != "" {
-		if _, ok := f.nodeGetInfoResponse.AccessibleTopology.Segments[f.service.getDriverName()+"/"+f.fcArray+"."+strings.ToLower(FcTransportProtocol)]; !ok {
-			return errors.New("toplogy keys not created properly")
+		fcKey := f.service.getDriverName() + "/" + f.fcArray + "." + strings.ToLower(FcTransportProtocol)
+		iscsiKey := f.service.getDriverName() + "/" + f.fcArray + "." + strings.ToLower(IscsiTransportProtocol)
+		nvmeKey := f.service.getDriverName() + "/" + f.fcArray + "." + strings.ToLower(NvmeTCPTransportProtocol)
+
+		if _, fcOk := f.nodeGetInfoResponse.AccessibleTopology.Segments[fcKey]; !fcOk {
+			if _, iscsiOk := f.nodeGetInfoResponse.AccessibleTopology.Segments[iscsiKey]; !iscsiOk {
+				if _, nvmeOk := f.nodeGetInfoResponse.AccessibleTopology.Segments[nvmeKey]; !nvmeOk {
+					return errors.New("topology keys not created properly for FC, iSCSI, and NVMe")
+				}
+			}
 		}
 	}
 	fmt.Printf("NodeID %s\n", f.nodeGetInfoResponse.NodeId)
@@ -2506,8 +2577,10 @@ func (f *feature) getPortIdentifiers(portCount int) string {
 	portIDs := ""
 	if f.service.opts.TransportProtocol == FcTransportProtocol {
 		portIDs = strings.Repeat(fmt.Sprintf("%s,", defaultFcInitiator), portCount)
-	} else {
+	} else if f.service.opts.TransportProtocol == IscsiTransportProtocol {
 		portIDs = strings.Repeat(fmt.Sprintf("%s,", defaultArrayTargetIQN), portCount)
+	} else {
+		portIDs = strings.Repeat(fmt.Sprintf("%s,", defaultAraryTargetNQN), portCount)
 	}
 	return portIDs
 }
@@ -2526,12 +2599,66 @@ func (f *feature) getNodePublishVolumeRequest() error {
 	req.PublishContext = make(map[string]string)
 	req.PublishContext[PublishContextDeviceWWN] = nodePublishWWN
 	req.PublishContext[PublishContextLUNAddress] = nodePublishLUNID
+
 	keyCount := 2  // holds the count of port identifiers set are there
 	portCount := 3 // holds the count of port identifiers present in one set of key count
 	req.PublishContext[PortIdentifierKeyCount] = strconv.Itoa(keyCount)
 	for i := 1; i <= keyCount; i++ {
 		portIdentifierKey := fmt.Sprintf("%s_%d", PortIdentifiers, i)
 		req.PublishContext[portIdentifierKey] = f.getPortIdentifiers(portCount)
+	}
+
+	block := f.capability.GetBlock()
+	if block != nil {
+		req.TargetPath = datafile
+	}
+	mount := f.capability.GetMount()
+	if mount != nil {
+		req.TargetPath = datadir
+	}
+	req.StagingTargetPath = nodePublishPrivateDir
+	req.VolumeContext = make(map[string]string)
+	req.VolumeContext["VolumeId"] = req.VolumeId
+	f.nodePublishVolumeRequest = req
+	return nil
+}
+
+func (f *feature) iCallNodePublishVolumeRequestWithLocalAndRemoteArray() error {
+	req := new(csi.NodePublishVolumeRequest)
+	req.VolumeId = volumeWithRemote1
+	volName, _, devID, remoteArrayID, _, err := f.service.parseCsiID(volumeWithRemote1)
+	if err != nil {
+		return errors.New("couldn't parse volumeWithRemote1")
+	}
+
+	mock.AddOneVolumeToStorageGroup(devID, volName, f.sgID, 1000)
+	req.Readonly = false
+	req.VolumeCapability = f.capability
+	req.PublishContext = make(map[string]string)
+	req.PublishContext[PublishContextDeviceWWN] = nodePublishWWN
+	req.PublishContext[PublishContextLUNAddress] = nodePublishLUNID
+
+	if remoteArrayID != "" {
+		req.PublishContext[RemotePublishContextDeviceWWN] = remoteNodePublishWWN
+		req.PublishContext[RemotePublishContextLUNAddress] = remoteNodePublishLUNID
+	}
+	keyCount := 2  // holds the count of port identifiers set are there
+	portCount := 3 // holds the count of port identifiers present in one set of key count
+	req.PublishContext[PortIdentifierKeyCount] = strconv.Itoa(keyCount)
+	for i := 1; i <= keyCount; i++ {
+		portIdentifierKey := fmt.Sprintf("%s_%d", PortIdentifiers, i)
+		req.PublishContext[portIdentifierKey] = f.getPortIdentifiers(portCount)
+	}
+
+	if remoteArrayID != "" {
+		keyCount = 2  // holds the count of port identifiers set are there
+		portCount = 3 // holds the count of port identifiers present in one set of key count
+		req.PublishContext[RemotePortIdentifierKeyCount] = strconv.Itoa(keyCount)
+		for i := 1; i <= keyCount; i++ {
+			remotePortIdentifierKey := fmt.Sprintf("%s_%d", RemotePortIdentifiers, i)
+			req.PublishContext[remotePortIdentifierKey] = f.getPortIdentifiers(portCount)
+		}
+
 	}
 	block := f.capability.GetBlock()
 	if block != nil {
@@ -2653,6 +2780,7 @@ func (f *feature) getTypicalEnviron() []string {
 	stringSlice = append(stringSlice, EnvGrpcMaxThreads+"=1")
 	stringSlice = append(stringSlice, EnvManagedArrays+"=000197900046,000197900047")
 	stringSlice = append(stringSlice, "X_CSI_PRIVATE_MOUNT_DIR=/csi")
+	stringSlice = append(stringSlice, EnvTLSCertDirName+"=/app/tls")
 	return stringSlice
 }
 
@@ -2662,6 +2790,10 @@ func (f *feature) iCallBeforeServe() error {
 	stringSlice = append(stringSlice, EnvClusterPrefix+"=TST")
 	f.service.k8sUtils = k8smock.Init()
 	ctx := context.WithValue(context.Background(), ctxOSEnviron, stringSlice)
+	err := csictx.Setenv(ctx, EnvSidecarProxyPort, "2222")
+	if err != nil {
+		return fmt.Errorf("failed to set reverse proxy port. err: %s", err.Error())
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:65000")
 	if err != nil {
 		return err
@@ -2716,6 +2848,15 @@ func (f *feature) iCallBeforeServeWithTopologyConfigSetAt(path string) error {
 	}
 	f.err = f.service.BeforeServe(ctx, nil, listener)
 	listener.Close()
+	return nil
+}
+
+func (f *feature) verifyDefaultReplicationPrefix() error {
+	opts := f.service.opts
+	if opts.ReplicationPrefix != "replication.storage.dell.com" || opts.ReplicationContextPrefix != "powermax" {
+		return fmt.Errorf("expected default replication prefix, got %s %s", opts.ReplicationPrefix, opts.ReplicationContextPrefix)
+	}
+
 	return nil
 }
 
@@ -2848,6 +2989,13 @@ func (f *feature) iCallNodeGetCapabilities() error {
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 	req := new(csi.NodeGetCapabilitiesRequest)
 	f.nodeGetCapabilitiesResponse, f.err = f.service.NodeGetCapabilities(ctx, req)
+	return nil
+}
+
+func (f *feature) theResponseHasCapabilities(num int) error {
+	if len(f.nodeGetCapabilitiesResponse.Capabilities) != num {
+		return errors.New("Incorrect number of capabilities returned")
+	}
 	return nil
 }
 
@@ -3138,7 +3286,7 @@ func (f *feature) deletionWorkerProcessesWhichResultsIn(volumeName, errormsg str
 		if f.service.deletionWorker == nil {
 			return fmt.Errorf("delWorker nil")
 		}
-		for _, vol := range f.service.deletionWorker.DeletionQueues[arrayID].DeviceList {
+		for _, vol := range f.service.deletionWorker.DeletionQueues[arrayID].GetDeviceList() {
 			if volumeName == vol.VolumeIdentifier {
 				// We expected an error
 				if errormsg == "none" {
@@ -3193,10 +3341,7 @@ func (f *feature) iRepopulateTheDeletionQueues() error {
 
 func (f *feature) iRestartTheDeletionWorker() error {
 	f.service.deletionWorker = nil
-	symIDs, err := f.service.retryableGetSymmetrixIDList()
-	if err != nil {
-		return err
-	}
+	symIDs := f.service.retryableGetSymmetrixIDList()
 	f.service.NewDeletionWorker(f.service.opts.ClusterPrefix, symIDs.SymmetrixIDs)
 	return nil
 }
@@ -3210,11 +3355,9 @@ func (f *feature) volumesAreBeingProcessedForDeletion(nVols int) error {
 	cnt := 0
 	for retryno := 0; retryno < retry; retryno++ {
 		for _, dQ := range f.service.deletionWorker.DeletionQueues {
-			if dQ.DeviceList != nil {
-				dQ.Print()
-				cnt = cnt + len(dQ.DeviceList)
-				break
-			}
+			dQ.Print()
+			cnt = cnt + len(dQ.GetDeviceList())
+			break
 		}
 		if cnt > 0 {
 			break
@@ -3316,7 +3459,7 @@ func (f *feature) iInvokeNodeHostSetupWithAService(mode string) error {
 	iscsiInitiators := []string{defaultIscsiInitiator}
 	fcInitiators := []string{defaultFcInitiator}
 	// NVME
-	nvmetcpinitiators := []string{defaultIscsiInitiator}
+	nvmetcpinitiators := []string{defaultNvmeInitiator}
 	symmetrixIDs := []string{f.symmetrixID}
 	f.service.mode = mode
 	// reset default protocol
@@ -3333,19 +3476,19 @@ func (f *feature) theErrorClearsAfterSeconds(seconds int64) error {
 		time.Sleep(time.Duration(seconds) * time.Second)
 		switch f.errType {
 		case "GetSymmetrixError":
-			mock.InducedErrors.GetSymmetrixError = false
+			mock.SafeSetInducedError(mock.InducedErrors, "GetSymmetrixError", false)
 		case "DeviceInSGError":
-			mock.InducedErrors.DeviceInSGError = false
+			mock.SafeSetInducedError(mock.InducedErrors, "DeviceInSGError", false)
 		case "GetStorageGroupError":
-			mock.InducedErrors.GetStorageGroupError = false
+			mock.SafeSetInducedError(mock.InducedErrors, "GetStorageGroupError", false)
 		case "UpdateStorageGroupError":
-			mock.InducedErrors.UpdateStorageGroupError = false
+			mock.SafeSetInducedError(mock.InducedErrors, "UpdateStorageGroupError", false)
 		case "DeleteVolumeError":
-			mock.InducedErrors.DeleteVolumeError = false
+			mock.SafeSetInducedError(mock.InducedErrors, "DeleteVolumeError", false)
 		case "InduceOverloadError":
-			induceOverloadError = false
+			SetInduceOverloadError(false)
 		case "InducePendingError":
-			inducePendingError = false
+			SetInducePendingError(false)
 		}
 		f.doneChan <- true
 	}(seconds)
@@ -3504,9 +3647,26 @@ func (f *feature) thereAreNoArraysLoggedIn() error {
 	return nil
 }
 
+func (f *feature) arraysAreLoggedInWithProtocol(protocol string) error {
+	f.service.SetPmaxTimeoutSeconds(3)
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+	if protocol == "FC" {
+		isSymConnFC.Store(f.symmetrixID, true)
+	} else if protocol == "iSCSI" {
+		f.service.loggedInArrays = make(map[string]bool)
+		f.service.UpdateLoggedInArrays(f.symmetrixID, true)
+	} else if protocol == "NVMe" {
+		f.service.loggedInNVMeArrays = make(map[string]bool)
+		f.service.UpdateLoggedInNVMeArrays(f.symmetrixID, true)
+	}
+	return nil
+}
+
 func (f *feature) iInvokeEnsureLoggedIntoEveryArray() error {
 	f.service.SetPmaxTimeoutSeconds(3)
-	isSymConnFC = make(map[string]bool) // Ensure none of the other test marked the array as FC
+	isSymConnFC.Clear()
+	// Ensure none of the other test marked the array as FC
 	f.err = f.service.ensureLoggedIntoEveryArray(context.Background(), false)
 	return nil
 }
@@ -3678,7 +3838,7 @@ func (f *feature) iSetTransportProtocolTo(protocol string) error {
 		f.service.useNVMeTCP = false
 		f.service.useFC = false
 		f.service.useIscsi = true
-	case "NVME":
+	case "NVME", "NVMETCP":
 		f.service.useNVMeTCP = true
 		f.service.useFC = false
 		f.service.useIscsi = false
@@ -3689,6 +3849,16 @@ func (f *feature) iSetTransportProtocolTo(protocol string) error {
 
 func (f *feature) iEnableISCSICHAP() error {
 	f.service.opts.EnableCHAP = true
+	return nil
+}
+
+func (f *feature) iSetEnableHealthMonitorToFalse() error {
+	f.service.opts.IsHealthMonitorEnabled = false
+	return nil
+}
+
+func (f *feature) iSetEnableHealthMonitorToTrue() error {
+	f.service.opts.IsHealthMonitorEnabled = true
 	return nil
 }
 
@@ -3928,9 +4098,18 @@ func (f *feature) noVolumeSource() error {
 	return nil
 }
 
+func (f *feature) validateSnapshotLicenseCache(count int) error {
+	if len(symmRepCapabilities) != count {
+		return fmt.Errorf("Expected %d array(s) in the license cache but got %d", count, len(symmRepCapabilities))
+	}
+	return nil
+}
+
 func (f *feature) iResetTheLicenseCache() error {
-	licenseCached = false
-	symmRepCapabilities = nil
+	for k := range symmRepCapabilities {
+		delete(symmRepCapabilities, k)
+	}
+
 	return nil
 }
 
@@ -3980,14 +4159,14 @@ func (f *feature) iQueueSnapshotsForTermination() error {
 	if err != nil {
 		return fmt.Errorf("Invalid snapshot name")
 	}
-	snapCleaner.requestCleanup(snapDelReq1)
+	f.service.snapCleaner.requestCleanup(snapDelReq1)
 	snap2 := f.snapshotNameToID["snapshot2"]
 	snapDelReq2 := new(snapCleanupRequest)
 	snapDelReq2.snapshotID, snapDelReq2.symmetrixID, snapDelReq2.volumeID, _, _, err = f.service.parseCsiID(snap2)
 	if err != nil {
 		return fmt.Errorf("Invalid snapshot name")
 	}
-	snapCleaner.requestCleanup(snapDelReq2)
+	f.service.snapCleaner.requestCleanup(snapDelReq2)
 	snapshot := f.snapshotNameToID["snapshot3"]
 	snapDelReq := new(snapCleanupRequest)
 	snapDelReq.snapshotID, snapDelReq.symmetrixID, snapDelReq.volumeID, _, _, err = f.service.parseCsiID(snapshot)
@@ -3995,7 +4174,7 @@ func (f *feature) iQueueSnapshotsForTermination() error {
 		return fmt.Errorf("Invalid snapshot name")
 	}
 	time.Sleep(10 * time.Second)
-	snapCleaner.requestCleanup(snapDelReq)
+	f.service.snapCleaner.requestCleanup(snapDelReq)
 	return nil
 }
 
@@ -4198,9 +4377,9 @@ func (f *feature) iCallGetAndConfigureArrayISCSITargets() error {
 
 func (f *feature) iCallGetAndConfigureArrayNVMeTCPTargets() error {
 	arrayTargets := make([]string, 0)
-	arrayTargets = append(arrayTargets, defaultArrayTargetIQN)
+	arrayTargets = append(arrayTargets, defaultAraryTargetNQN)
 	f.nvmetcpTargetInfo = f.service.getAndConfigureArrayNVMeTCPTargets(context.Background(), arrayTargets, mock.DefaultRemoteSymID, f.service.adminClient)
-	fmt.Println(f.iscsiTargetInfo)
+	fmt.Println(f.nvmetcpTargetInfo)
 	return nil
 }
 
@@ -4272,14 +4451,42 @@ func (f *feature) iCallBuildHostIDFromTemplateForNodeHost(node string) error {
 }
 
 func (f *feature) iAddFCArrayToProtocolMap() error {
-	arrays, err := f.service.retryableGetSymmetrixIDList()
-	if err != nil {
-		return err
-	}
+	arrays := f.service.retryableGetSymmetrixIDList()
 	if len(arrays.SymmetrixIDs) > 0 {
 		f.fcArray = arrays.SymmetrixIDs[0]
 	}
 	f.service.arrayTransportProtocolMap[f.fcArray] = FcTransportProtocol
+	f.service.opts.TransportProtocol = FcTransportProtocol
+	return nil
+}
+
+func (f *feature) iAddToProtocolMap(protocol string) error {
+	arrays := f.service.retryableGetSymmetrixIDList()
+	if len(arrays.SymmetrixIDs) > 0 {
+		f.fcArray = arrays.SymmetrixIDs[0]
+	}
+	f.service.arrayTransportProtocolMap[f.fcArray] = protocol
+	f.service.opts.TransportProtocol = protocol
+	return nil
+}
+
+func (f *feature) iAddISCSIArrayToProtocolMap() error {
+	arrays := f.service.retryableGetSymmetrixIDList()
+	if len(arrays.SymmetrixIDs) > 0 {
+		f.fcArray = arrays.SymmetrixIDs[0]
+	}
+	f.service.arrayTransportProtocolMap[f.fcArray] = IscsiTransportProtocol
+	f.service.opts.TransportProtocol = IscsiTransportProtocol
+	return nil
+}
+
+func (f *feature) iAddNVMEArrayToProtocolMap() error {
+	arrays := f.service.retryableGetSymmetrixIDList()
+	if len(arrays.SymmetrixIDs) > 0 {
+		f.fcArray = arrays.SymmetrixIDs[0]
+	}
+	f.service.arrayTransportProtocolMap[f.fcArray] = NvmeTCPTransportProtocol
+	f.service.opts.TransportProtocol = NvmeTCPTransportProtocol
 	return nil
 }
 
@@ -4893,6 +5100,9 @@ func (f *feature) iCallQueryArrayStatus(url string, statusType string) {
 		} else if statusType == "old" {
 			status.LastAttempt = time.Now().Add(-time.Hour).Unix()
 			status.LastSuccess = time.Now().Add(-time.Hour).Unix()
+		} else if statusType == "notConnected" {
+			status.LastAttempt = time.Now().Unix() + int64(1*time.Minute)
+			status.LastSuccess = time.Now().Unix()
 		}
 		input, _ := json.Marshal(status)
 		if statusType == "invalid" {
@@ -4901,6 +5111,9 @@ func (f *feature) iCallQueryArrayStatus(url string, statusType string) {
 
 		// responding with some dummy response that is for the case when array is connected and LastSuccess check was just finished
 		http.HandleFunc(url, func(w http.ResponseWriter, _ *http.Request) {
+			if inducedErrors.unexpectedResponse {
+				w.WriteHeader(http.StatusBadRequest)
+			}
 			w.Write(input)
 		})
 
@@ -4951,15 +5164,24 @@ func iActionValue(actionvalue string) *csimgr.ArrayMigrateRequest_Action {
 	}
 }
 
-func (f *feature) iCallArrayMigrate(actionvalue string) error {
+func (f *feature) iCallArrayMigrate(actionvalue string, parameter string) error {
 	header := metadata.New(map[string]string{"csi.requestid": "2"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 
-	req := &csimgr.ArrayMigrateRequest{
-		Parameters: map[string]string{
+	req := &csimgr.ArrayMigrateRequest{}
+	if parameter == "all" {
+		req.Parameters = map[string]string{
 			SymmetrixIDParam: mock.DefaultSymmetrixID,
 			RemoteSymIDParam: mock.DefaultRemoteSymID,
-		},
+		}
+	} else if parameter == "local" {
+		req.Parameters = map[string]string{
+			SymmetrixIDParam: mock.DefaultSymmetrixID,
+		}
+	} else if parameter == "remote" {
+		req.Parameters = map[string]string{
+			RemoteSymIDParam: mock.DefaultRemoteSymID,
+		}
 	}
 	action := iActionValue(actionvalue)
 	if action != nil {
@@ -5040,17 +5262,20 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^a controller published multipath volume$`, f.aControllerPublishedMultipathVolume)
 	s.Step(`^I call NodePublishVolume$`, f.iCallNodePublishVolume)
 	s.Step(`^get Node Publish Volume Request$`, f.getNodePublishVolumeRequest)
+	s.Step(`^I call Node Publish Volume Request with Local and Remote Array$`, f.iCallNodePublishVolumeRequestWithLocalAndRemoteArray)
 	s.Step(`^I mark request read only$`, f.iMarkRequestReadOnly)
 	s.Step(`^I call NodeUnpublishVolume$`, f.iCallNodeUnpublishVolume)
 	s.Step(`^there are no remaining mounts$`, f.thereAreNoRemainingMounts)
 	s.Step(`^I call BeforeServe$`, f.iCallBeforeServe)
 	s.Step(`^I call BeforeServe without ClusterPrefix$`, f.iCallBeforeServeWithoutClusterPrefix)
 	s.Step(`^I call BeforeServe with an invalid ClusterPrefix$`, f.iCallBeforeServeWithAnInvalidClusterPrefix)
+	s.Step(`^replication prefixes have default values$`, f.verifyDefaultReplicationPrefix)
 	s.Step(`^I call NodeStageVolume$`, f.iCallNodeStageVolume)
 	s.Step(`^I call NodeUnstageVolume$`, f.iCallNodeUnstageVolume)
 	s.Step(`^I call NodeStageVolume with simulator$`, f.iCallNodeStageVolumeWithSimulator)
 	s.Step(`^I call NodeUnstageVolume with simulator$`, f.iCallNodeUnstageVolumeWithSimulator)
 	s.Step(`^I call NodeGetCapabilities$`, f.iCallNodeGetCapabilities)
+	s.Step(`^the response has capabilities (\d+)$`, f.theResponseHasCapabilities)
 	s.Step(`^a valid NodeGetCapabilitiesResponse is returned$`, f.aValidNodeGetCapabilitiesResponseIsReturned)
 	s.Step(`^I call CreateSnapshot$`, f.iCallCreateSnapshot)
 	s.Step(`^I call CreateSnapshot With "([^"]*)"$`, f.iCallCreateSnapshotWith)
@@ -5103,6 +5328,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^there are no arrays logged in$`, f.thereAreNoArraysLoggedIn)
 	s.Step(`^I invoke ensureLoggedIntoEveryArray$`, f.iInvokeEnsureLoggedIntoEveryArray)
 	s.Step(`^(\d+) arrays are logged in$`, f.arraysAreLoggedIn)
+	s.Step(`^arrays are logged in with protocol "([^"]*)"$`, f.arraysAreLoggedInWithProtocol)
 	s.Step(`^I call GetTargetsForMaskingView$`, f.iCallGetTargetsForMaskingView)
 	s.Step(`^the result has "([^"]*)" ports$`, f.theResultHasPorts)
 	s.Step(`^I call validateStoragePoolID (\d+) in parallel$`, f.iCallValidateStoragePoolIDInParallel)
@@ -5125,7 +5351,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^the result is "([^"]*)"$`, f.theResultIs)
 	s.Step(`^a non existent port "([^"]*)"$`, f.aNonExistentPort)
 	s.Step(`^I have a port "([^"]*)" identifier "([^"]*)" type "([^"]*)"$`, f.iHaveAPortIdentifierType)
-	s.Step(`^I have (\d+) sysblock deviceso$`, f.iHaveSysblockDevices)
+	s.Step(`^I have (\d+) sysblock devices$`, f.iHaveSysblockDevices)
 	s.Step(`^I call linearScanToRemoveDevices$`, f.iCallLinearScanToRemoveDevices)
 	s.Step(`^I call verifyAndUpdateInitiatorsInADiffHost for node "([^"]*)"$`, f.iCallverifyAndUpdateInitiatorsInADiffHostForNode)
 	s.Step(`^(\d+) valid initiators are returned$`, f.validInitiatorsAreReturned)
@@ -5143,6 +5369,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^a valid DeleteSnapshotResponse is returned$`, f.aValidDeleteSnapshotResponseIsReturned)
 	s.Step(`^a non-existent volume$`, f.aNonexistentVolume)
 	s.Step(`^no volume source$`, f.noVolumeSource)
+	s.Step(`^the snapshot license cache has "(\d+)" array$`, f.validateSnapshotLicenseCache)
 	s.Step(`^I reset the license cache$`, f.iResetTheLicenseCache)
 	s.Step(`^I call IsSnapshotSource$`, f.iCallIsSnapshotSource)
 	s.Step(`^IsSnapshotSource returns "([^"]*)"$`, f.isSnapshotSourceReturns)
@@ -5157,6 +5384,8 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call runRemoveVolumesFromSGMV$`, f.iCallRunRemoveVolumesFromSGMV)
 	s.Step(`^I call handleRemoveVolumeFromSGMVError$`, f.iCallHandleRemoveVolumeFromSGMVError)
 	s.Step(`^I enable ISCSI CHAP$`, f.iEnableISCSICHAP)
+	s.Step(`^I set Health Monitor Enabled to false$`, f.iSetEnableHealthMonitorToFalse)
+	s.Step(`^I set Health Monitor Enabled to true$`, f.iSetEnableHealthMonitorToTrue)
 	s.Step(`^I wait for the execution to complete$`, f.iWaitForTheExecutionToComplete)
 	s.Step(`^I call getAndConfigureArrayISCSITargets$`, f.iCallGetAndConfigureArrayISCSITargets)
 	s.Step(`^I call getAndConfigureArrayNVMeTCPTargets$`, f.iCallGetAndConfigureArrayNVMeTCPTargets)
@@ -5170,6 +5399,9 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I have a NodeNameTemplate "([^"]*)"$`, f.iHaveANodeNameTemplate)
 	s.Step(`^I call buildHostIDFromTemplate for node "([^"]*)"$`, f.iCallBuildHostIDFromTemplateForNodeHost)
 	s.Step(`^I add FC array to ProtocolMap$`, f.iAddFCArrayToProtocolMap)
+	s.Step(`^I add ISCSI array to ProtocolMap$`, f.iAddISCSIArrayToProtocolMap)
+	s.Step(`^I add NVME array to ProtocolMap$`, f.iAddNVMEArrayToProtocolMap)
+	s.Step(`^I add to ProtocolMap "([^"]*)"$`, f.iAddToProtocolMap)
 	s.Step(`^I call RDF enabled CreateVolume "([^"]*)" in namespace "([^"]*)", mode "([^"]*)" and RDFGNo (\d+)$`, f.iCallRDFEnabledCreateVolume)
 	s.Step(`^I call  GetRDFInfoFromSGID with "([^"]*)"$`, f.iCallGetRDFInfoFromSGIDWith)
 	s.Step(`^I call ProtectStorageGroup on "([^"]*)"$`, f.iCallProtectStorageGroupOn)
@@ -5197,6 +5429,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call GetReplicationCapabilities$`, f.iCallGetReplicationCapabilities)
 	s.Step(`^a valid GetReplicationCapabilities is returned$`, f.aValidGetReplicationCapabilitiesIsReturned)
 	s.Step(`^I call ProbeController$`, f.iCallProbeController)
+	s.Step(`^I call ProbeNodeBySymID "([^"]*)"$`, f.iCallProbeNodeBySymID)
 	s.Step(`^a valid ProbeControllerResponse is returned$`, f.aValidProbeControllerResponseIsReturned)
 	s.Step(`^a valid vmHost is returned$`, f.aValidVMHostIsReturned)
 	s.Step(`^I enable vSphere$`, f.iEnableVSphere)
@@ -5217,5 +5450,5 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I start node API server$`, f.iStartNodeAPIServer)
 	s.Step(`^I call IsIOInProgress$`, f.iCallIsIOInProgress)
 	s.Step(`^I call QueryArrayStatus with "([^"]*)" and "([^"]*)"$`, f.iCallQueryArrayStatus)
-	s.Step(`^I call ArrayMigrate with "([^"]*)"$`, f.iCallArrayMigrate)
+	s.Step(`^I call ArrayMigrate with "([^"]*)", parameter "([^"]*)"$`, f.iCallArrayMigrate)
 }
