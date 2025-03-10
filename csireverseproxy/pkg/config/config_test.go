@@ -839,6 +839,8 @@ func TestProxyConfig_GetAuthorizedArraysFromSecret(t *testing.T) {
 						StorageArrayID:  "array1",
 						PrimaryEndpoint: "https://management1.example.com",
 						BackupEndpoint:  "https://management2.example.com",
+						Labels:          map[string]string{"topology.kubernetes.io/region": "region1", "topology.kubernetes.io/zone": "zone1"},
+						Parameters:      map[string]string{"csi.storage.k8s.io/fstype": "xfs", "SRP": "srp_1", "ServiceLevel": "Gold"},
 					},
 					{
 						StorageArrayID:  "array2",
