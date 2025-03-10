@@ -7,7 +7,7 @@
 **Repository for CSI Driver for Dell PowerMax**
 
 ## Description
-CSI Driver for PowerMax is part of the [CSM (Container Storage Modules)](https://github.com/dell/csm) open-source suite of Kubernetes storage enablers for Dell products. CSI Driver for PowerMax is a Container Storage Interface (CSI) driver that provides support for provisioning persistent storage using Dell PowerMax storage array. 
+CSI Driver for PowerMax is part of the [CSM (Container Storage Modules)](https://github.com/dell/csm) open-source suite of Kubernetes storage enablers for Dell products. The CSI Driver for PowerMax is a Container Storage Interface (CSI) driver that provides support for provisioning persistent storage using Dell PowerMax storage array.
 
 It supports CSI specification version 1.6.
 
@@ -32,20 +32,17 @@ This project may be compiled as a stand-alone binary using Golang that, when run
 For any CSI driver issues, questions or feedback, please follow our [support process](https://github.com/dell/csm/blob/main/docs/SUPPORT.md)
 
 ## Building
-This project is a Go module (see golang.org Module information for explanation). 
-The dependencies for this project are in the go.mod file.
 
-To build the source, execute `make clean build`.
+To build the source, execute `make build`.
 
 To run unit tests, execute `make unit-test`.
 
-To build an image, copy all dependent repos (see Dockerfile.sh) into the same folder with csi-powermax, then `cd` into `csi-powermax` and execute `make docker`.
+To build an image, execute `make docker`.
 
 You can run an integration test on a Linux system by populating the file `env.sh` with values for your Dell PowerMax systems and then run "`make integration-test`".
 
 ## Runtime Dependencies
 For a complete list of dependencies, please visit [Prerequisites](https://dell.github.io/csm-docs/docs/deployment/helm/drivers/installation/powermax/#prerequisites)
-
 
 ## Driver Installation
 Please consult the [Installation Guide](https://dell.github.io/csm-docs/docs/deployment/)
