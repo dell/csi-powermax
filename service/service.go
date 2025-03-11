@@ -152,11 +152,9 @@ type Opts struct {
 
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
-	Labels                 map[string]string `yaml:"labels,omitempty"`
-	Parameters             map[string]string `yaml:"parameters,omitempty"`
+	Labels     map[string]string `yaml:"labels,omitempty"`
+	Parameters map[string]string `yaml:"parameters,omitempty"`
 }
-
-
 
 // NodeConfig defines rules for given node
 type NodeConfig struct {
@@ -456,8 +454,8 @@ func (s *service) BeforeServe(
 					storageArrayMap["parameters"] = make(map[string]string)
 				}
 				storageArrayConfig := StorageArrayConfig{
-					Labels:       storageArrayMap["labels"].(map[string]string),
-					Parameters:   storageArrayMap["parameters"].(map[string]string),
+					Labels:     storageArrayMap["labels"].(map[string]string),
+					Parameters: storageArrayMap["parameters"].(map[string]string),
 				}
 				opts.StorageArrays = append(opts.StorageArrays, storageArrayConfig)
 			}
