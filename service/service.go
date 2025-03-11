@@ -147,7 +147,16 @@ type Opts struct {
 	PodmonPort                 string // to indicates the port to be used for exposing podmon API health
 	PodmonPollingFreq          string // indicates the polling frequency to check array connectivity
 	TLSCertDir                 string
+	StorageArrays              []StorageArrayConfig
 }
+
+// StorageArrayConfig represents the configuration of a storage array in the config file
+type StorageArrayConfig struct {
+	Labels                 map[string]string `yaml:"labels,omitempty"`
+	Parameters             map[string]string `yaml:"parameters,omitempty"`
+}
+
+
 
 // NodeConfig defines rules for given node
 type NodeConfig struct {
@@ -429,6 +438,29 @@ func (s *service) BeforeServe(
 			opts.Password = Password
 		} else {
 			log.Println("No management servers found.")
+		}
+
+		// Access the storagearrays key (which is a slice of maps)
+		storageArrays := secretParams.Get("storagearrays").([]interface{})
+		// Ensure there's at least one server and extract labels and parameters if any
+		if len(storageArrays) == 0 {
+			log.Println("No storage arrays found.")
+		} else {
+			// cycle through each storage array and extract Labels and Parameters maps
+			for _, storageArray := range storageArrays {
+				storageArrayMap := storageArray.(map[string]interface{})
+				if storageArrayMap["labels"] == nil {
+					storageArrayMap["labels"] = make(map[string]string)
+				}
+				if storageArrayMap["parameters"] == nil {
+					storageArrayMap["parameters"] = make(map[string]string)
+				}
+				storageArrayConfig := StorageArrayConfig{
+					Labels:       storageArrayMap["labels"].(map[string]string),
+					Parameters:   storageArrayMap["parameters"].(map[string]string),
+				}
+				opts.StorageArrays = append(opts.StorageArrays, storageArrayConfig)
+			}
 		}
 	}
 
