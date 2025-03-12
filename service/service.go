@@ -147,13 +147,14 @@ type Opts struct {
 	PodmonPort                 string // to indicates the port to be used for exposing podmon API health
 	PodmonPollingFreq          string // indicates the polling frequency to check array connectivity
 	TLSCertDir                 string
-	StorageArrays              []StorageArrayConfig
+	StorageArrays              map[string]StorageArrayConfig
 }
 
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
-	Labels     map[string]interface{} `yaml:"labels,omitempty"`
-	Parameters map[string]interface{} `yaml:"parameters,omitempty"`
+	StorageArrayID       string                 `yaml:"storageArrayID,omitempty"`
+	Labels               map[string]interface{} `yaml:"labels,omitempty"`
+	Parameters           map[string]interface{} `yaml:"parameters,omitempty"`
 }
 
 // NodeConfig defines rules for given node
@@ -281,6 +282,39 @@ func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 	log.SetFormatter(logFormat)
 	log.Infof("Setting log level to %v", level)
 	log.SetLevel(level)
+}
+
+func getStorageArrays(secretParams *viper.Viper, opts *Opts) () {
+		// Access the storagearrays key (which is a slice of maps)
+		storageArrays := secretParams.Get("storagearrays").([]interface{})
+		if storageArrays == nil {
+			log.Println("No storage arrays found.")
+		} else {
+			// Ensure there's at least one server and extract labels and parameters if any
+			if len(storageArrays) == 0 {
+				log.Println("No storage arrays found.")
+			} else {
+				// cycle through each storage array and extract Labels and Parameters maps
+				for _, storageArray := range storageArrays {
+					storageArrayMap := storageArray.(map[string]interface{})
+					storageArrayId := storageArrayMap["storagearrayid"].(string)
+					if storageArrayMap["labels"] == nil {
+						storageArrayMap["labels"] = make(map[string]interface{})
+					}
+					if storageArrayMap["parameters"] == nil {
+						storageArrayMap["parameters"] = make(map[string]interface{})
+					}
+					storageArrayConfig := StorageArrayConfig{
+						StorageArrayID: storageArrayId,
+						Labels:         storageArrayMap["labels"].(map[string]interface{}),
+						Parameters:     storageArrayMap["parameters"].(map[string]interface{}),
+					}
+					//opts.StorageArrays[storageArrayId] = append(opts.StorageArrays, storageArrayConfig)
+					opts.StorageArrays[storageArrayId] = storageArrayConfig
+					log.Println("storage array config: ", storageArrayConfig)
+				}
+			}
+		}
 }
 
 func (s *service) BeforeServe(
@@ -438,28 +472,8 @@ func (s *service) BeforeServe(
 			log.Println("No management servers found.")
 		}
 
-		// Access the storagearrays key (which is a slice of maps)
-		storageArrays := secretParams.Get("storagearrays").([]interface{})
-		// Ensure there's at least one server and extract labels and parameters if any
-		if len(storageArrays) == 0 {
-			log.Println("No storage arrays found.")
-		} else {
-			// cycle through each storage array and extract Labels and Parameters maps
-			for _, storageArray := range storageArrays {
-				storageArrayMap := storageArray.(map[string]interface{})
-				if storageArrayMap["labels"] == nil {
-					storageArrayMap["labels"] = make(map[string]interface{})
-				}
-				if storageArrayMap["parameters"] == nil {
-					storageArrayMap["parameters"] = make(map[string]interface{})
-				}
-				storageArrayConfig := StorageArrayConfig{
-					Labels:     storageArrayMap["labels"].(map[string]interface{}),
-					Parameters: storageArrayMap["parameters"].(map[string]interface{}),
-				}
-				opts.StorageArrays = append(opts.StorageArrays, storageArrayConfig)
-			}
-		}
+		opts.StorageArrays = make(map[string]StorageArrayConfig)
+		getStorageArrays(secretParams, &opts)
 	}
 
 	if chapuser, ok := csictx.LookupEnv(ctx, EnvISCSICHAPUserName); ok {
