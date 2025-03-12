@@ -7,6 +7,9 @@ destination="$3"
 cp "$template" "$destination"
 
 while read line; do
+    # Skip lines that begin with a # or are empty
+    [[ $line == \#* || -z $line ]] && continue
+
     setting="$( echo "$line" | cut -d '=' -f 1 )"
     value="$( echo "$line" | cut -d '=' -f 2- )"
 

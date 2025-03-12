@@ -96,7 +96,7 @@ read_secret() {
 }
 
 # validating zoning is configured on the cluster
-validate_zoning() {
+validate_zoning_powerflex() {
   # read the secret and extract zone information
   secret_name="test-vxflexos-config"
   namespace="vxflexos"

@@ -27,6 +27,7 @@
 ./scripts/modify_zoning_labels.sh add zone.topology.kubernetes.io/region=zoneA zone.topology.kubernetes.io/region=zoneB
 ./scripts/modify_zoning_labels.sh add zone.topology.kubernetes.io/zone=zoneC zone.topology.kubernetes.io/zone=zoneD
 
+# create a directory to store temporary files generated from templates
 mkdir ./testfiles/tmp
 
 # TODO: create a copy of the template secret yaml and populate it with values from env.sh
@@ -37,7 +38,10 @@ mkdir ./testfiles/tmp
 
 # TODO: create a copy of the template csm object yaml and populate it with values from env.sh
 
-# TODO: apply all necessary yamls to the cluster
+# apply all necessary yamls to the cluster
+#kubectl apply -f ./testfiles/tmp/secret.yaml
+#kubectl apply -f ./testfiles/tmp/configmap.yaml
+#kubectl apply -f ./testfiles/tmp/csm.yaml
 
 # TODO: fix the below zoning labels check to work for powermax instead of powerflex
 # currently does not work - was originally designed for powerflex and will need retooling
