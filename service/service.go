@@ -152,7 +152,6 @@ type Opts struct {
 
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
-	StorageArrayID       string                 `yaml:"storageArrayID,omitempty"`
 	Labels               map[string]interface{} `yaml:"labels,omitempty"`
 	Parameters           map[string]interface{} `yaml:"parameters,omitempty"`
 }
@@ -288,7 +287,7 @@ func getStorageArrays(secretParams *viper.Viper, opts *Opts) () {
 		// Access the storagearrays key (which is a slice of maps)
 		storageArrays := secretParams.Get("storagearrays").([]interface{})
 		if storageArrays == nil {
-			log.Println("No storage arrays found.")
+			log.Println("No storage array declared.")
 		} else {
 			// Ensure there's at least one server and extract labels and parameters if any
 			if len(storageArrays) == 0 {
@@ -305,13 +304,10 @@ func getStorageArrays(secretParams *viper.Viper, opts *Opts) () {
 						storageArrayMap["parameters"] = make(map[string]interface{})
 					}
 					storageArrayConfig := StorageArrayConfig{
-						StorageArrayID: storageArrayId,
 						Labels:         storageArrayMap["labels"].(map[string]interface{}),
 						Parameters:     storageArrayMap["parameters"].(map[string]interface{}),
 					}
-					//opts.StorageArrays[storageArrayId] = append(opts.StorageArrays, storageArrayConfig)
 					opts.StorageArrays[storageArrayId] = storageArrayConfig
-					log.Println("storage array config: ", storageArrayConfig)
 				}
 			}
 		}
