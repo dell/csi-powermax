@@ -306,13 +306,13 @@ func GetStorageArrays(secretParams *viper.Viper, opts *Opts) {
 			storageArrayMap := storageArray.(map[string]interface{})
 			storageArrayID := storageArrayMap["storagearrayid"].(string)
 			if storageArrayMap["labels"] == nil {
-			storageArrayMap["labels"] = make(map[string]interface{})
+				storageArrayMap["labels"] = make(map[string]interface{})
 			}
 			if storageArrayMap["parameters"] == nil {
 				storageArrayMap["parameters"] = make(map[string]interface{})
 			}
 			storageArrayConfig := StorageArrayConfig{
-			Labels:     storageArrayMap["labels"].(map[string]interface{}),
+				Labels:     storageArrayMap["labels"].(map[string]interface{}),
 				Parameters: storageArrayMap["parameters"].(map[string]interface{}),
 			}
 			opts.StorageArrays[storageArrayID] = storageArrayConfig
