@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/cucumber/godog"
+	"github.com/spf13/viper"
 )
 
 var (
@@ -66,3 +67,95 @@ func TestGoDog(t *testing.T) {
 		t.Error("Error encountered in godog testing")
 	}
 }
+
+func TestGetStorageArrays(t *testing.T) {
+  tests := []struct {
+    name          string
+    secretParams  *viper.Viper
+    expectedOpts  Opts
+    expectedLog   string
+  }{
+    {
+      name: "No storage arrays declared",
+      secretParams: func() *viper.Viper {
+        v := viper.New()
+        return v
+      }(),
+      expectedOpts: Opts{StorageArrays: make(map[string]StorageArrayConfig)},
+      expectedLog:  "No storage array declared.",
+    },
+    {
+      name: "No storage arrays found",
+      secretParams: func() *viper.Viper {
+        v := viper.New()
+        v.Set("storagearrays", []interface{}{})
+        return v
+      }(),
+      expectedOpts: Opts{StorageArrays: make(map[string]StorageArrayConfig)},
+      expectedLog:  "No storage arrays found.",
+    },
+    {
+      name: "Storage arrays with labels and parameters",
+      secretParams: func() *viper.Viper {
+        v := viper.New()
+        v.Set("storagearrays", []interface{}{
+          map[string]interface{}{
+            "storagearrayid": "array1",
+            "labels":         map[string]interface{}{"label1": "value1"},
+            "parameters":     map[string]interface{}{"param1": "value1"},
+          },
+        })
+        return v
+      }(),
+      expectedOpts: Opts{StorageArrays: map[string]StorageArrayConfig{
+        "array1": {
+          Labels:     map[string]interface{}{"label1": "value1"},
+          Parameters: map[string]interface{}{"param1": "value1"},
+        },
+      }},
+      expectedLog: "",
+    },
+		{
+      name: "Storage arrays with labels and valid parameters",
+      secretParams: func() *viper.Viper {
+        v := viper.New()
+        v.Set("storagearrays", []interface{}{
+          map[string]interface{}{
+            "storagearrayid": "array1",
+            "labels":         map[string]interface{}{"label1": "value1"},
+            "parameters":     map[string]interface{}{"SRP": "srp_1", "ServiceLevel": "Optimized", "ApplicationPrefix": "powermax", "HostLimitName": "limitset", "HostIOLimitMBSec": "1000", "HostIOLimitIOSec": "1001", "DynamicDistribution": "Always"},
+          },
+        })
+        return v
+      }(),
+      expectedOpts: Opts{StorageArrays: map[string]StorageArrayConfig{
+        "array1": {
+          Labels:     map[string]interface{}{"label1": "value1"},
+          Parameters: map[string]interface{}{"SRP": "srp_1", "ServiceLevel": "Optimized", "ApplicationPrefix": "powermax", "HostLimitName": "limitset", "HostIOLimitMBSec": "1000", "HostIOLimitIOSec": "1001", "DynamicDistribution": "Always"},
+        },
+      }},
+      expectedLog: "",
+    },
+  }
+
+  for _, tt := range tests {
+    t.Run(tt.name, func(t *testing.T) {
+      opts := &Opts{StorageArrays: make(map[string]StorageArrayConfig)}
+      GetStorageArrays(tt.secretParams, opts)
+
+      if len(opts.StorageArrays) != len(tt.expectedOpts.StorageArrays) {
+        t.Errorf("expected %v, got %v", tt.expectedOpts.StorageArrays, opts.StorageArrays)
+      }
+
+      for id, config := range tt.expectedOpts.StorageArrays {
+        if opts.StorageArrays[id].Labels["label1"] != config.Labels["label1"] {
+          t.Errorf("expected label %v, got %v", config.Labels["label1"], opts.StorageArrays[id].Labels["label1"])
+        }
+        if opts.StorageArrays[id].Parameters["param1"] != config.Parameters["param1"] {
+          t.Errorf("expected parameter %v, got %v", config.Parameters["param1"], opts.StorageArrays[id].Parameters["param1"])
+        }
+      }
+    })
+  }
+}
+
