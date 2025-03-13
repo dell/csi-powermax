@@ -502,9 +502,11 @@ func (s *service) BeforeServe(
 		opts.PortGroups = tempList
 	}
 
-	if manArr, ok := csictx.LookupEnv(ctx, EnvManagedArrays); ok {
-		log.Infof("Managed arrays manArr: %v", manArr)
-		opts.ManagedArrays, _ = s.filterArrays()
+	if arrays, ok := csictx.LookupEnv(ctx, EnvManagedArrays); ok {
+		opts.ManagedArrays, _ = s.parseCommaSeperatedList(arrays)
+	} else {
+		log.Error("No managed arrays specified")
+		os.Exit(1)
 	}
 
 	if kubeConfigPath, ok := csictx.LookupEnv(ctx, EnvKubeConfigPath); ok {

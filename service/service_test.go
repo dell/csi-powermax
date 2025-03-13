@@ -109,7 +109,7 @@ func TestGetStorageArrays(t *testing.T) {
 			}(),
 			expectedOpts: Opts{StorageArrays: map[string]StorageArrayConfig{
 				"array1": {
-					Labels:     map[string]string{"label1": "value1"},
+					Labels:     map[string]interface{}{"label1": "value1"},
 					Parameters: map[string]interface{}{"param1": "value1"},
 				},
 			}},
@@ -130,7 +130,7 @@ func TestGetStorageArrays(t *testing.T) {
 			}(),
 			expectedOpts: Opts{StorageArrays: map[string]StorageArrayConfig{
 				"array1": {
-					Labels:     map[string]string{"label1": "value1"},
+					Labels:     map[string]interface{}{"label1": "value1"},
 					Parameters: map[string]interface{}{"SRP": "srp_1", "ServiceLevel": "Optimized", "ApplicationPrefix": "powermax", "HostLimitName": "limitset", "HostIOLimitMBSec": "1000", "HostIOLimitIOSec": "1001", "DynamicDistribution": "Always"},
 				},
 			}},

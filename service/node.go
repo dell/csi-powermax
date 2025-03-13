@@ -1574,8 +1574,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		log.Debug("vmHost created successfully")
 	}
 
-	arrays := s.retryableGetSymmetrixIDList()
-	symmetrixIDs := arrays.SymmetrixIDs
+	symmetrixIDs, _ := s.filterArrays()
 	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
 
 	err = s.nodeHostSetup(ctx, portWWNs, IQNs, hostNQN, symmetrixIDs)
