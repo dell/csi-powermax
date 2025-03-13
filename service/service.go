@@ -284,8 +284,8 @@ func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 }
 
 func getStorageArrays(secretParams *viper.Viper, opts *Opts) {
-	// Access the storagearrays key (which is a slice of maps)
 	storageArrays := secretParams.Get("storagearrays").([]interface{})
+
 	if storageArrays == nil {
 		log.Println("No storage array declared.")
 	} else {
@@ -296,7 +296,7 @@ func getStorageArrays(secretParams *viper.Viper, opts *Opts) {
 			// cycle through each storage array and extract Labels and Parameters maps
 			for _, storageArray := range storageArrays {
 				storageArrayMap := storageArray.(map[string]interface{})
-				storageArrayId := storageArrayMap["storagearrayid"].(string)
+				storageArrayID := storageArrayMap["storagearrayid"].(string)
 				if storageArrayMap["labels"] == nil {
 					storageArrayMap["labels"] = make(map[string]interface{})
 				}
@@ -307,7 +307,7 @@ func getStorageArrays(secretParams *viper.Viper, opts *Opts) {
 					Labels:     storageArrayMap["labels"].(map[string]interface{}),
 					Parameters: storageArrayMap["parameters"].(map[string]interface{}),
 				}
-				opts.StorageArrays[storageArrayId] = storageArrayConfig
+				opts.StorageArrays[storageArrayID] = storageArrayConfig
 			}
 		}
 	}
