@@ -1323,6 +1323,13 @@ func (s *service) NodeGetInfo(
 		}
 		maxPowerMaxVolumesPerNode = s.opts.MaxVolumesPerNode
 	}
+	for _, arrayConfig := range s.opts.ManagedArrays {
+		arrayLabels := s.opts.StorageArrays[arrayConfig].Labels
+		for arrayLabelKey, arrayLabelVal := range arrayLabels {
+			log.Infof("adding label '%s' with value '%s'", arrayLabelKey, arrayLabelVal)
+			topology[arrayLabelKey] = arrayLabelVal
+		}
+	}
 	return &csi.NodeGetInfoResponse{
 		NodeId: s.opts.NodeName,
 		AccessibleTopology: &csi.Topology{

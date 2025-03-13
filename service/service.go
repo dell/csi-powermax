@@ -152,8 +152,8 @@ type Opts struct {
 
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
-	Labels               map[string]interface{} `yaml:"labels,omitempty"`
-	Parameters           map[string]interface{} `yaml:"parameters,omitempty"`
+	Labels     map[string]string      `yaml:"labels,omitempty"`
+	Parameters map[string]interface{} `yaml:"parameters,omitempty"`
 }
 
 // NodeConfig defines rules for given node
@@ -283,34 +283,34 @@ func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 	log.SetLevel(level)
 }
 
-func getStorageArrays(secretParams *viper.Viper, opts *Opts) () {
-		// Access the storagearrays key (which is a slice of maps)
-		storageArrays := secretParams.Get("storagearrays").([]interface{})
-		if storageArrays == nil {
-			log.Println("No storage array declared.")
+func getStorageArrays(secretParams *viper.Viper, opts *Opts) {
+	// Access the storagearrays key (which is a slice of maps)
+	storageArrays := secretParams.Get("storagearrays").([]interface{})
+	if storageArrays == nil {
+		log.Println("No storage array declared.")
+	} else {
+		// Ensure there's at least one server and extract labels and parameters if any
+		if len(storageArrays) == 0 {
+			log.Println("No storage arrays found.")
 		} else {
-			// Ensure there's at least one server and extract labels and parameters if any
-			if len(storageArrays) == 0 {
-				log.Println("No storage arrays found.")
-			} else {
-				// cycle through each storage array and extract Labels and Parameters maps
-				for _, storageArray := range storageArrays {
-					storageArrayMap := storageArray.(map[string]interface{})
-					storageArrayId := storageArrayMap["storagearrayid"].(string)
-					if storageArrayMap["labels"] == nil {
-						storageArrayMap["labels"] = make(map[string]interface{})
-					}
-					if storageArrayMap["parameters"] == nil {
-						storageArrayMap["parameters"] = make(map[string]interface{})
-					}
-					storageArrayConfig := StorageArrayConfig{
-						Labels:         storageArrayMap["labels"].(map[string]interface{}),
-						Parameters:     storageArrayMap["parameters"].(map[string]interface{}),
-					}
-					opts.StorageArrays[storageArrayId] = storageArrayConfig
+			// cycle through each storage array and extract Labels and Parameters maps
+			for _, storageArray := range storageArrays {
+				storageArrayMap := storageArray.(map[string]interface{})
+				storageArrayId := storageArrayMap["storagearrayid"].(string)
+				if storageArrayMap["labels"] == nil {
+					storageArrayMap["labels"] = make(map[string]interface{})
 				}
+				if storageArrayMap["parameters"] == nil {
+					storageArrayMap["parameters"] = make(map[string]interface{})
+				}
+				storageArrayConfig := StorageArrayConfig{
+					Labels:     storageArrayMap["labels"].(map[string]string),
+					Parameters: storageArrayMap["parameters"].(map[string]interface{}),
+				}
+				opts.StorageArrays[storageArrayId] = storageArrayConfig
 			}
 		}
+	}
 }
 
 func (s *service) BeforeServe(
@@ -495,8 +495,8 @@ func (s *service) BeforeServe(
 		opts.PortGroups = tempList
 	}
 
-	if arrays, ok := csictx.LookupEnv(ctx, EnvManagedArrays); ok {
-		opts.ManagedArrays, _ = s.parseCommaSeperatedList(arrays)
+	if _, ok := csictx.LookupEnv(ctx, EnvManagedArrays); ok {
+		opts.ManagedArrays, _ = s.filterArrays()
 	} else {
 		log.Error("No managed arrays specified")
 		os.Exit(1)
@@ -1048,4 +1048,28 @@ func setArrayConfigEnvs(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *service) filterArrays() ([]string, error) {
+	results := make([]string, 0)
+	// parsedArrays, _ := s.parseCommaSeperatedList(arrays)
+
+	for arrayId, arrayConfig := range s.opts.StorageArrays {
+		arrayLabels := arrayConfig.Labels
+		log.Infof("node full name '%s'", s.opts.NodeFullName)
+		nodeLabels, err := s.k8sUtils.GetNodeLabels(s.opts.NodeFullName)
+		if err != nil {
+			log.Infof("failed to get Node Labels with error '%s'", err.Error())
+		}
+		for arrayLabelKey, arrayLabelVal := range arrayLabels {
+			if nodeLabelVal, ok := nodeLabels[arrayLabelKey]; !ok || nodeLabelVal != arrayLabelVal {
+				break
+			}
+			results = append(results, arrayId)
+			log.Infof("validArrays '%v'", results)
+			// opts.ManagedArrays = validArrays
+		}
+	}
+
+	return results, nil
 }
