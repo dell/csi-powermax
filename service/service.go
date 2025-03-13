@@ -152,7 +152,7 @@ type Opts struct {
 
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
-	Labels     map[string]string      `yaml:"labels,omitempty"`
+	Labels     map[string]interface{} `yaml:"labels,omitempty"`
 	Parameters map[string]interface{} `yaml:"parameters,omitempty"`
 }
 
@@ -304,7 +304,7 @@ func getStorageArrays(secretParams *viper.Viper, opts *Opts) {
 					storageArrayMap["parameters"] = make(map[string]interface{})
 				}
 				storageArrayConfig := StorageArrayConfig{
-					Labels:     storageArrayMap["labels"].(map[string]string),
+					Labels:     storageArrayMap["labels"].(map[string]interface{}),
 					Parameters: storageArrayMap["parameters"].(map[string]interface{}),
 				}
 				opts.StorageArrays[storageArrayId] = storageArrayConfig
