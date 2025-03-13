@@ -152,8 +152,8 @@ type Opts struct {
 
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
-	Labels               map[string]interface{} `yaml:"labels,omitempty"`
-	Parameters           map[string]interface{} `yaml:"parameters,omitempty"`
+	Labels     map[string]interface{} `yaml:"labels,omitempty"`
+	Parameters map[string]interface{} `yaml:"parameters,omitempty"`
 }
 
 // NodeConfig defines rules for given node
@@ -283,34 +283,34 @@ func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 	log.SetLevel(level)
 }
 
-func getStorageArrays(secretParams *viper.Viper, opts *Opts) () {
-		// Access the storagearrays key (which is a slice of maps)
-		storageArrays := secretParams.Get("storagearrays").([]interface{})
-		if storageArrays == nil {
-			log.Println("No storage array declared.")
+func getStorageArrays(secretParams *viper.Viper, opts *Opts) {
+	storageArrays := secretParams.Get("storagearrays").([]interface{})
+
+	if storageArrays == nil {
+		log.Println("No storage array declared.")
+	} else {
+		// Ensure there's at least one server and extract labels and parameters if any
+		if len(storageArrays) == 0 {
+			log.Println("No storage arrays found.")
 		} else {
-			// Ensure there's at least one server and extract labels and parameters if any
-			if len(storageArrays) == 0 {
-				log.Println("No storage arrays found.")
-			} else {
-				// cycle through each storage array and extract Labels and Parameters maps
-				for _, storageArray := range storageArrays {
-					storageArrayMap := storageArray.(map[string]interface{})
-					storageArrayId := storageArrayMap["storagearrayid"].(string)
-					if storageArrayMap["labels"] == nil {
-						storageArrayMap["labels"] = make(map[string]interface{})
-					}
-					if storageArrayMap["parameters"] == nil {
-						storageArrayMap["parameters"] = make(map[string]interface{})
-					}
-					storageArrayConfig := StorageArrayConfig{
-						Labels:         storageArrayMap["labels"].(map[string]interface{}),
-						Parameters:     storageArrayMap["parameters"].(map[string]interface{}),
-					}
-					opts.StorageArrays[storageArrayId] = storageArrayConfig
+			// cycle through each storage array and extract Labels and Parameters maps
+			for _, storageArray := range storageArrays {
+				storageArrayMap := storageArray.(map[string]interface{})
+				storageArrayID := storageArrayMap["storagearrayid"].(string)
+				if storageArrayMap["labels"] == nil {
+					storageArrayMap["labels"] = make(map[string]interface{})
 				}
+				if storageArrayMap["parameters"] == nil {
+					storageArrayMap["parameters"] = make(map[string]interface{})
+				}
+				storageArrayConfig := StorageArrayConfig{
+					Labels:     storageArrayMap["labels"].(map[string]interface{}),
+					Parameters: storageArrayMap["parameters"].(map[string]interface{}),
+				}
+				opts.StorageArrays[storageArrayID] = storageArrayConfig
 			}
 		}
+	}
 }
 
 func (s *service) BeforeServe(
