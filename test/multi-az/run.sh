@@ -34,14 +34,26 @@ mkdir ./testfiles/tmp
 # For now, we are simply using a config file that contains all relevant values for prototyping/configurability
 ./scripts/replace.sh ./config ./testfiles/template-powermax-secret.yaml ./testfiles/tmp/secret.yaml
 
-# TODO: create a copy of the template configmap yaml and populate it with values from env.sh
+# Create the powermax-array-config configmap
+./scripts/replace.sh ./config ./testfiles/template-powermax-configmap.yaml ./testfiles/tmp/powermax-configmap.yaml
 
-# TODO: create a copy of the template csm object yaml and populate it with values from env.sh
+# TODO: create a copy of the template csm object yaml and populate it once configmap powermax-array-config becomes optional
 
-# apply all necessary yamls to the cluster
-#kubectl apply -f ./testfiles/tmp/secret.yaml
-#kubectl apply -f ./testfiles/tmp/configmap.yaml
-#kubectl apply -f ./testfiles/tmp/csm.yaml
+# Set up storageclass
+./scripts/replace.sh ./config ./testfiles/template-powermax-storageclass.yaml  ./testfiles/tmp/sc.yaml
+
+
+#Create SSL secret for reverse proxy
+openssl genrsa -out ./testfiles/tmp/tls.key 2048
+openssl req -new -key ./testfiles/tmp/tls.key -out ./testfiles/tmp/tls.csr -config ./testfiles/openssl.cnf
+openssl x509 -req -in ./testfiles/tmp/tls.csr -signkey ./testfiles/tmp/tls.key -out ./testfiles/tmp/tls.crt -days 3650 -extensions req_ext -extfile ./testfiles/openssl.cnf
+kubectl create secret -n powermax tls csirevproxy-tls-secret --cert=./testfiles/tmp/tls.crt --key=./testfiles/tmp/tls.key
+
+# Apply all necessary yamls to the cluster
+kubectl create secret generic powermax-creds --namespace powermax --from-file=config=./testfiles/tmp/secret.yaml
+kubectl apply -f ./testfiles/tmp/powermax-configmap.yaml
+kubectl apply -f ./testfiles/tmp/sc.yaml
+kubectl apply -f ./testfiles/template-powermax-csm.yaml
 
 # TODO: fix the below zoning labels check to work for powermax instead of powerflex
 # currently does not work - was originally designed for powerflex and will need retooling
@@ -54,11 +66,14 @@ mkdir ./testfiles/tmp
 # this removes all labels that begin with the text 'zone', created above
 ./scripts/modify_zoning_labels.sh remove-all-zones
 
-# TODO: remove storage class
-
-# TODO: remove csm object for powermax driver
-
-# TODO: remove configmap and secret
+# Clean up resources created during this test
+# Commented out right now for debugging 
+#kubectl delete csm -n powermax powermax
+#kubectl delete secret -n powermax powermax-creds
+#kubectl delete cm -n powermax powermax-array-config
+#kubectl delete secret -n powermax csirevproxy-tls-secret
+#kubectl delete sc pmax-mz-1
 
 # delete temporary testfiles
-rm -rf ./testfiles/tmp
+#rm -rf ./testfiles/tmp
+
