@@ -152,7 +152,7 @@ type Opts struct {
 
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
-	Labels     map[string]interface{} `yaml:"labels,omitempty"`
+	Labels     map[string]string      `yaml:"labels,omitempty"`
 	Parameters map[string]interface{} `yaml:"parameters,omitempty"`
 }
 
@@ -306,13 +306,13 @@ func GetStorageArrays(secretParams *viper.Viper, opts *Opts) {
 			storageArrayMap := storageArray.(map[string]interface{})
 			storageArrayID := storageArrayMap["storagearrayid"].(string)
 			if storageArrayMap["labels"] == nil {
-			storageArrayMap["labels"] = make(map[string]interface{})
+				storageArrayMap["labels"] = make(map[string]string)
 			}
 			if storageArrayMap["parameters"] == nil {
 				storageArrayMap["parameters"] = make(map[string]interface{})
 			}
 			storageArrayConfig := StorageArrayConfig{
-			Labels:     storageArrayMap["labels"].(map[string]interface{}),
+				Labels:     storageArrayMap["labels"].(map[string]string),
 				Parameters: storageArrayMap["parameters"].(map[string]interface{}),
 			}
 			opts.StorageArrays[storageArrayID] = storageArrayConfig
@@ -502,12 +502,7 @@ func (s *service) BeforeServe(
 		opts.PortGroups = tempList
 	}
 
-	if _, ok := csictx.LookupEnv(ctx, EnvManagedArrays); ok {
-		opts.ManagedArrays, _ = s.filterArrays()
-	} else {
-		log.Error("No managed arrays specified")
-		os.Exit(1)
-	}
+	opts.ManagedArrays, _ = s.filterArrays()
 
 	if kubeConfigPath, ok := csictx.LookupEnv(ctx, EnvKubeConfigPath); ok {
 		opts.KubeConfigPath = kubeConfigPath
@@ -1061,6 +1056,26 @@ func (s *service) filterArrays() ([]string, error) {
 	results := make([]string, 0)
 	// parsedArrays, _ := s.parseCommaSeperatedList(arrays)
 
+	// log.Infof("filtering arrays '%s'", arrays)
+	// for _, arrayId := range parsedArrays {
+	// 	if arrayConfig, ok := s.opts.StorageArrays[arrayId]; ok {
+	// 		arrayLabels := arrayConfig.Labels
+	// 		log.Infof("node full name '%s'", s.opts.NodeFullName)
+	// 		nodeLabels, err := s.k8sUtils.GetNodeLabels(s.opts.NodeFullName)
+	// 		if err != nil {
+	// 			log.Infof("failed to get Node Labels with error '%s'", err.Error())
+	// 		}
+	// 		for arrayLabelKey, arrayLabelVal := range arrayLabels {
+	// 			if nodeLabelVal, ok := nodeLabels[arrayLabelKey]; !ok || nodeLabelVal != arrayLabelVal {
+	// 				break
+	// 			}
+	// 			results = append(results, arrayId)
+	// 			log.Infof("validArrays '%v'", results)
+	// 			// opts.ManagedArrays = validArrays
+	// 		}
+	// 	}
+	// }
+
 	for arrayId, arrayConfig := range s.opts.StorageArrays {
 		arrayLabels := arrayConfig.Labels
 		log.Infof("node full name '%s'", s.opts.NodeFullName)
@@ -1068,8 +1083,8 @@ func (s *service) filterArrays() ([]string, error) {
 		if err != nil {
 			log.Infof("failed to get Node Labels with error '%s'", err.Error())
 		}
-		for arrayLabelKey, arrayLabelVal := range arrayLabels {
-			if nodeLabelVal, ok := nodeLabels[arrayLabelKey]; !ok || nodeLabelVal != arrayLabelVal {
+		for arrayLabelKey, _ := range arrayLabels {
+			if _, ok := nodeLabels[arrayLabelKey]; !ok {
 				break
 			}
 			results = append(results, arrayId)
