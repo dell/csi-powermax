@@ -502,7 +502,10 @@ func (s *service) BeforeServe(
 		opts.PortGroups = tempList
 	}
 
-	opts.ManagedArrays, _ = s.filterArrays()
+	if manArr, ok := csictx.LookupEnv(ctx, EnvManagedArrays); ok {
+		log.Infof("Managed arrays manArr: %v", manArr)
+		opts.ManagedArrays, _ = s.filterArrays()
+	}
 
 	if kubeConfigPath, ok := csictx.LookupEnv(ctx, EnvKubeConfigPath); ok {
 		opts.KubeConfigPath = kubeConfigPath

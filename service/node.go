@@ -1327,7 +1327,7 @@ func (s *service) NodeGetInfo(
 		arrayLabels := s.opts.StorageArrays[arrayConfig].Labels
 		for arrayLabelKey, arrayLabelVal := range arrayLabels {
 			log.Infof("adding label '%s' with value '%s'", arrayLabelKey, arrayLabelVal)
-			// topology[arrayLabelKey] = arrayLabelVal
+			topology[arrayLabelKey] = arrayLabelVal
 		}
 	}
 	return &csi.NodeGetInfoResponse{
