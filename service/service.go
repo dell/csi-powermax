@@ -283,32 +283,39 @@ func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 	log.SetLevel(level)
 }
 
-func getStorageArrays(secretParams *viper.Viper, opts *Opts) {
+// GetStorageArrays retrieves storage arrays from the provided secret parameters
+// and populates the opts with the corresponding configurations.
+//
+// secretParams: A Viper instance containing the secret parameters.
+// opts: A pointer to an Opts struct where the storage array configurations will be stored.
+//
+// If no storage arrays are declared, it logs "No storage array declared."
+// If storage arrays are declared but empty, it logs "No storage arrays found."
+// Otherwise, it processes each storage array, extracting labels and parameters.
+func GetStorageArrays(secretParams *viper.Viper, opts *Opts) {
+	if secretParams.Get("storagearrays") == nil {
+		log.Println("No storage arrays declared.")
+		return
+	}
 	storageArrays := secretParams.Get("storagearrays").([]interface{})
 
-	if storageArrays == nil {
+	if len(storageArrays) == 0 {
 		log.Println("No storage array declared.")
 	} else {
-		// Ensure there's at least one server and extract labels and parameters if any
-		if len(storageArrays) == 0 {
-			log.Println("No storage arrays found.")
-		} else {
-			// cycle through each storage array and extract Labels and Parameters maps
-			for _, storageArray := range storageArrays {
-				storageArrayMap := storageArray.(map[string]interface{})
-				storageArrayID := storageArrayMap["storagearrayid"].(string)
-				if storageArrayMap["labels"] == nil {
-					storageArrayMap["labels"] = make(map[string]interface{})
-				}
-				if storageArrayMap["parameters"] == nil {
-					storageArrayMap["parameters"] = make(map[string]interface{})
-				}
-				storageArrayConfig := StorageArrayConfig{
-					Labels:     storageArrayMap["labels"].(map[string]interface{}),
-					Parameters: storageArrayMap["parameters"].(map[string]interface{}),
-				}
-				opts.StorageArrays[storageArrayID] = storageArrayConfig
+		for _, storageArray := range storageArrays {
+			storageArrayMap := storageArray.(map[string]interface{})
+			storageArrayID := storageArrayMap["storagearrayid"].(string)
+			if storageArrayMap["labels"] == nil {
+			storageArrayMap["labels"] = make(map[string]interface{})
 			}
+			if storageArrayMap["parameters"] == nil {
+				storageArrayMap["parameters"] = make(map[string]interface{})
+			}
+			storageArrayConfig := StorageArrayConfig{
+			Labels:     storageArrayMap["labels"].(map[string]interface{}),
+				Parameters: storageArrayMap["parameters"].(map[string]interface{}),
+			}
+			opts.StorageArrays[storageArrayID] = storageArrayConfig
 		}
 	}
 }
@@ -469,7 +476,7 @@ func (s *service) BeforeServe(
 		}
 
 		opts.StorageArrays = make(map[string]StorageArrayConfig)
-		getStorageArrays(secretParams, &opts)
+		GetStorageArrays(secretParams, &opts)
 	}
 
 	if chapuser, ok := csictx.LookupEnv(ctx, EnvISCSICHAPUserName); ok {
