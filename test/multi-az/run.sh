@@ -55,6 +55,9 @@ kubectl apply -f ./testfiles/tmp/powermax-configmap.yaml
 kubectl apply -f ./testfiles/tmp/sc.yaml
 kubectl apply -f ./testfiles/template-powermax-csm.yaml
 
+
+scripts/waitForPowerMaxPods.sh
+
 # TODO: fix the below zoning labels check to work for powermax instead of powerflex
 # currently does not work - was originally designed for powerflex and will need retooling
 # intent for this method is to compare zones in secret to zones in the nodes and in the pods
@@ -76,4 +79,3 @@ kubectl apply -f ./testfiles/template-powermax-csm.yaml
 
 # delete temporary testfiles
 #rm -rf ./testfiles/tmp
-
