@@ -1323,11 +1323,14 @@ func (s *service) NodeGetInfo(
 		}
 		maxPowerMaxVolumesPerNode = s.opts.MaxVolumesPerNode
 	}
-	for _, arrayConfig := range s.opts.ManagedArrays {
+	validArrays, _ := s.filterArrays()
+	for _, arrayConfig := range validArrays {
 		arrayLabels := s.opts.StorageArrays[arrayConfig].Labels
 		for arrayLabelKey, arrayLabelVal := range arrayLabels {
-			log.Infof("adding label '%s' with value '%s'", arrayLabelKey, arrayLabelVal)
-			topology[arrayLabelKey] = arrayLabelVal.(string)
+			if nodeLabelVal, ok := labels[arrayLabelKey]; ok && nodeLabelVal == arrayLabelVal.(string) {
+				log.Infof("adding label '%s' with value '%s' to the topology map", arrayLabelKey, arrayLabelVal)
+				topology[arrayLabelKey] = arrayLabelVal.(string)
+			}
 		}
 	}
 	return &csi.NodeGetInfoResponse{
