@@ -1062,23 +1062,42 @@ func (s *service) filterArrays() ([]string, error) {
 
 	for arrayID, arrayConfig := range s.opts.StorageArrays {
 		arrayLabels := arrayConfig.Labels
-		log.Infof("node full name '%s'", s.opts.NodeFullName)
 		nodeLabels, err := s.k8sUtils.GetNodeLabels(s.opts.NodeFullName)
 		if err != nil {
 			log.Infof("failed to get Node Labels with error '%s'", err.Error())
 		}
+
 		keepArray := true
-		for arrayLabelKey := range arrayLabels {
-			if _, ok := nodeLabels[arrayLabelKey]; !ok {
-				keepArray = false
-				break
+		if hasZoneInfo(nodeLabels) || len(arrayLabels) != 0 {
+			for arrayLabelKey := range arrayLabels {
+				if _, ok := nodeLabels[arrayLabelKey]; !ok {
+					keepArray = false
+					break
+				}
 			}
 		}
+
 		if keepArray {
 			results = append(results, arrayID)
 		}
+	}
 
+	if len(results) == 0 {
+		log.Warn("No arrays match the node labels")
 	}
 
 	return results, nil
+}
+
+// hasZoneInfo checks if the given labels contain the zone information.
+func hasZoneInfo(labels map[string]string) bool {
+	hasZoneInfo := false
+	for labelKey, _ := range labels {
+		if strings.EqualFold(labelKey, "topology.kubernetes.io/region") || strings.EqualFold(labelKey, "topology.kubernetes.io/zone") {
+			hasZoneInfo = true
+			break
+		}
+	}
+
+	return hasZoneInfo
 }
