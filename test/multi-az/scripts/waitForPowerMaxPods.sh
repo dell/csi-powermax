@@ -14,7 +14,6 @@
 
 #!/bin/bash
 
-# TODO: PowerMax pods restart many times before becoming stable, this function currently cannot detect that a running pod is not stable
 function waitForPowerMaxPods() {
 
  echo "Checking PowerMax pods..."
@@ -53,5 +52,79 @@ function waitForPowerMaxPods() {
  fi
 }
 
+# PowerMax pods restart many times before becoming stable, so this function ensures containers in powermax pods have been running for at least $timeForStableRun 
+function ensurePodsAreStable() {
+ 
+ # assume one container is not stable to start while loop
+ notStable=1
 
+ # how long (in seconds) a container must be running for us to consider it stable
+ timeForStableRun=80
+
+
+ #timeout values
+ time=$(date +%s)
+ secondsToWait=600
+ timeToEnd=$((time + $secondsToWait))
+
+
+ echo Ensuring containers have been running for at least $timeForStableRun seconds
+ pmaxPods=$(kubectl get pods -n powermax  -o custom-columns=NAME:.metadata.name --no-headers)
+ while [ $notStable -ne 0 ] && [ $time -lt $timeToEnd ]; do
+  echo sleeping 60 seconds
+  sleep 60
+  for pod in $pmaxPods; do
+   notStable=0
+   containers=$(kubectl get pod -n powermax $pod  -o jsonpath='{.status.containerStatuses[*].name}')
+   read -a containersArray <<< "$containers"
+   array_length=${#containersArray[@]}
+   for (( i=0; i<array_length; i++ )); do
+
+     # define the jsonpaths needed to get container name, restart time, restart count, start time
+     jsonPathName="{.status.containerStatuses[$i].name}"
+     jsonPathRestartTime="{.status.containerStatuses[$i].lastState.terminated.finishedAt}"
+     jsonPathRestartCount="{.status.containerStatuses[$i].restartCount}"
+     jsonPathStartTime="{.status.containerStatuses[$i].state.running.startedAt}"
+
+     # using jsonPaths above, use kubectl command to get container name, restart time, and restart count
+     name=$(kubectl get pod -n powermax $pod  -o jsonpath=$jsonPathName)
+     restartTime=$(kubectl get pod -n powermax $pod  -o jsonpath=$jsonPathRestartTime)
+     restartCount=$(kubectl get pod -n powermax $pod  -o jsonpath=$jsonPathRestartCount)
+
+     # convert restart time to seconds
+     timeInSeconds=$(date -d "$restartTime" +%s)
+     time=$(date +%s)
+
+     # if the container hasn't been restarted, this container has been running for current time - start time
+     if [ $restartCount -eq 0 ]; then
+      startedTime=$(kubectl get pod -n powermax $pod  -o jsonpath=$jsonPathStartTime)
+      startedTimeInSeconds=$(date -d "$startedTime" +%s)
+      timeDiff=$[ $time - $startedTimeInSeconds ]
+     else
+      # if container has been restarted, this container has been running for current time - last restart time
+      timeDiff=$[ $time - $timeInSeconds ]
+     fi
+
+     echo container: $name in pod: $pod has been running for $timeDiff seconds
+
+     # if container has been running for at least $timeForStableRun, consider it stable, if not, we assume unstable
+     if [ $timeDiff -lt $timeForStableRun ]; then
+      ((notStable++))
+     fi
+   done
+  done
+ done
+
+ if ! [ $time -lt $timeToEnd ]; then
+  echo Powermax pods not stable in $secondsToWait seconds
+  exit 1
+ fi
+
+}
+
+ 
 waitForPowerMaxPods
+ensurePodsAreStable
+
+kubectl get pods -n powermax
+
