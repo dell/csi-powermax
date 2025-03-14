@@ -55,27 +55,24 @@ kubectl apply -f ./testfiles/tmp/powermax-configmap.yaml
 kubectl apply -f ./testfiles/tmp/sc.yaml
 kubectl apply -f ./testfiles/template-powermax-csm.yaml
 
+# Wait for all pods to be ready
+./scripts/waitForPowerMaxPods.sh
 
-scripts/waitForPowerMaxPods.sh
+# Verify that all nodes that have a pod running have their
+./modify_zoning_labels.sh validate-zoning
 
-# TODO: fix the below zoning labels check to work for powermax instead of powerflex
-# currently does not work - was originally designed for powerflex and will need retooling
-# intent for this method is to compare zones in secret to zones in the nodes and in the pods
-# then verify that everything matches.
-# ./modify_zoning_labels.sh validate-zoning
-
-# TODO: perform cert-csi test that will verify functionality
+# TODO: perform provisioning test that will verify functionality
 
 # this removes all labels that begin with the text 'zone', created above
 ./scripts/modify_zoning_labels.sh remove-all-zones
 
 # Clean up resources created during this test
 # Commented out right now for debugging 
-#kubectl delete csm -n powermax powermax
-#kubectl delete secret -n powermax powermax-creds
-#kubectl delete cm -n powermax powermax-array-config
-#kubectl delete secret -n powermax csirevproxy-tls-secret
-#kubectl delete sc pmax-mz-1
+kubectl delete csm -n powermax powermax
+kubectl delete secret -n powermax powermax-creds
+kubectl delete cm -n powermax powermax-array-config
+kubectl delete secret -n powermax csirevproxy-tls-secret
+kubectl delete sc pmax-mz-1
 
 # delete temporary testfiles
-#rm -rf ./testfiles/tmp
+rm -rf ./testfiles/tmp
