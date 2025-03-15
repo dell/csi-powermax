@@ -1666,8 +1666,10 @@ func TestNodeGetInfo(t *testing.T) {
 		mockUtilsInterface        *k8smock.MockUtilsInterface
 		maxVolumesPerNode         int64
 		csiNodeGetInfoRequest     *csi.NodeGetInfoRequest
+		storageArrays             map[string]StorageArrayConfig
 		want                      map[string]string
 		wantErr                   bool
+		wantResp                  bool
 	}
 
 	testCases := []test{
@@ -1906,6 +1908,38 @@ func TestNodeGetInfo(t *testing.T) {
 			portGroups: []string{"portgroup1"},
 			wantErr:    false,
 		},
+		{
+			name:     "Zone labels added to topology",
+			nodeName: "node1",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": NvmeTCPTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{"topology.kubernetes.io/region": "R1", "topology.kubernetes.io/zone": "Z1"}, nil).AnyTimes()
+				return mockUtilsInterface
+			},
+			loggedInArrays: map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{
+				"array1": true,
+			},
+			portGroups: []string{"portgroup1"},
+			storageArrays: map[string]StorageArrayConfig{
+				"array1": {
+					Labels: map[string]interface{}{"topology.kubernetes.io/region": "R1", "topology.kubernetes.io/zone": "Z1"},
+				},
+			},
+			wantErr:  false,
+			wantResp: true,
+		},
 	}
 	// Run the tests
 	for _, tc := range testCases {
@@ -1919,6 +1953,7 @@ func TestNodeGetInfo(t *testing.T) {
 					PortGroups:        tc.portGroups,
 					MaxVolumesPerNode: tc.maxVolumesPerNode,
 					IsVsphereEnabled:  tc.isVsphereEnabled,
+					StorageArrays:     tc.storageArrays,
 				},
 				arrayTransportProtocolMap: tc.arrayTransportProtocolMap,
 				nvmetcpClient:             tc.nvmeTCPClient,
@@ -1929,9 +1964,15 @@ func TestNodeGetInfo(t *testing.T) {
 			}
 			tc.pmaxClient = tc.getClient()
 			// Call the function and check the results
-			_, err := s.NodeGetInfo(context.Background(), tc.csiNodeGetInfoRequest)
+			resp, err := s.NodeGetInfo(context.Background(), tc.csiNodeGetInfoRequest)
 			if tc.wantErr && err == nil {
 				t.Errorf("Expected error but got none")
+			}
+			if tc.wantResp {
+				topology := resp.AccessibleTopology.Segments
+				if topology["topology.kubernetes.io/region"] != "R1" || topology["topology.kubernetes.io/zone"] != "Z1" {
+					t.Errorf("Expected region and zone to be R1 and Z1 but got %v and %v", topology["topology.kubernetes.io/region"], topology["topology.kubernetes.io/zone"])
+				}
 			}
 		})
 	}
