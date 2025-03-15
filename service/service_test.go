@@ -20,11 +20,19 @@ import (
 	"net/http"
 	_ "net/http/pprof" // #nosec G108
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/cucumber/godog"
+	"github.com/dell/csi-powermax/v2/k8smock"
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
+	pmax "github.com/dell/gopowermax/v2"
+	gomock "github.com/golang/mock/gomock"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	gmock "go.uber.org/mock/gomock"
 )
 
 var (
@@ -154,6 +162,100 @@ func TestGetStorageArrays(t *testing.T) {
 				if opts.StorageArrays[id].Parameters["param1"] != config.Parameters["param1"] {
 					t.Errorf("expected parameter %v, got %v", config.Parameters["param1"], opts.StorageArrays[id].Parameters["param1"])
 				}
+			}
+		})
+	}
+}
+
+func TestFilterArraysByZoneInfo(t *testing.T) {
+	testCases := []struct {
+		name           string
+		pmaxClient     pmax.Pmax
+		secretParams   *viper.Viper
+		getClient      func() *mocks.MockPmaxClient
+		opts           Opts
+		expectedArrays []string
+		storageArrays  map[string]StorageArrayConfig
+		initFunc       func() *k8smock.MockUtilsInterface
+	}{
+		{
+			name: "Storage array and node labels match",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{"topology.kubernetes.io/zone": "Z1"}, nil)
+				return mockUtilsInterface
+			},
+			storageArrays: map[string]StorageArrayConfig{
+				"array1": {
+					Labels: map[string]interface{}{"topology.kubernetes.io/zone": "Z1"},
+				},
+			},
+			expectedArrays: []string{"array1"},
+		},
+		{
+			name: "Storage array and node labels do not match",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{"topology.kubernetes.io/region": "R1"}, nil)
+				return mockUtilsInterface
+			},
+			storageArrays: map[string]StorageArrayConfig{
+				"array1": {
+					Labels: map[string]interface{}{"differentlabel1": "differentvalue1"},
+				},
+			},
+			expectedArrays: []string{},
+		},
+		{
+			name: "Storage array and node do not have zone info",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{}, nil)
+				return mockUtilsInterface
+			},
+			storageArrays: map[string]StorageArrayConfig{
+				"array1": {
+					Labels: map[string]interface{}{},
+				},
+			},
+			expectedArrays: []string{"array1"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a new service instance for testing
+			s := &service{
+				opts: Opts{
+					NodeName:     "node1",
+					NodeFullName: "node1",
+				},
+				k8sUtils: tc.initFunc(),
+			}
+			tc.pmaxClient = tc.getClient()
+			// Call the function and check the results
+			filteredArrays, _ := s.filterArraysByZoneInfo(tc.storageArrays)
+			log.Infof("Filtered arrays: %v", filteredArrays)
+			if !reflect.DeepEqual(filteredArrays, tc.expectedArrays) {
+				t.Errorf("Expected %v, got %v", tc.expectedArrays, filteredArrays)
 			}
 		})
 	}
