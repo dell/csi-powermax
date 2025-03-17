@@ -20,7 +20,7 @@
 
 #!/bin/bash
 
-# TODO: use env.sh to get all secret/configmap fields
+# TODO: use env.sh to get all secret/configmap fields instead of the current config file
 
 # this will add zone label zoneA to worker-1 and zoneB to worker 2
 # since we want to support multi-AZ matching EVERY label, we're adding two separate labels
@@ -40,7 +40,8 @@ mkdir ./testfiles/tmp
 # TODO: create a copy of the template csm object yaml and populate it once configmap powermax-array-config becomes optional
 
 # Set up storageclass
-./scripts/replace.sh ./config ./testfiles/template-powermax-storageclass.yaml  ./testfiles/tmp/sc.yaml
+./scripts/replace.sh ./config ./testfiles/template-powermax-storageclass-1.yaml  ./testfiles/tmp/sc1.yaml
+./scripts/replace.sh ./config ./testfiles/template-powermax-storageclass-2.yaml  ./testfiles/tmp/sc2.yaml
 
 
 #Create SSL secret for reverse proxy
@@ -52,14 +53,15 @@ kubectl create secret -n powermax tls csirevproxy-tls-secret --cert=./testfiles/
 # Apply all necessary yamls to the cluster
 kubectl create secret generic powermax-creds --namespace powermax --from-file=config=./testfiles/tmp/secret.yaml
 kubectl apply -f ./testfiles/tmp/powermax-configmap.yaml
-kubectl apply -f ./testfiles/tmp/sc.yaml
+kubectl apply -f ./testfiles/tmp/sc1.yaml
+kubectl apply -f ./testfiles/tmp/sc2.yaml
 kubectl apply -f ./testfiles/template-powermax-csm.yaml
 
 # Wait for all pods to be ready
 ./scripts/waitForPowerMaxPods.sh
 
-# Verify that all nodes that have a pod running have their
-./modify_zoning_labels.sh validate-zoning
+# Verify that all nodes that have a pod running have their labels accordingly
+./scripts/modify_zoning_labels.sh validate-zoning
 
 # TODO: perform provisioning test that will verify functionality
 
@@ -73,6 +75,7 @@ kubectl delete secret -n powermax powermax-creds
 kubectl delete cm -n powermax powermax-array-config
 kubectl delete secret -n powermax csirevproxy-tls-secret
 kubectl delete sc pmax-mz-1
+kubectl delete sc pmax-mz-2
 
 # delete temporary testfiles
 rm -rf ./testfiles/tmp
