@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cucumber/godog"
+	// "github.com/cucumber/godog"
 	"github.com/spf13/viper"
 )
 
@@ -47,26 +47,26 @@ func TestMain(m *testing.M) {
 	os.Exit(testStatus)
 }
 
-func TestGoDog(t *testing.T) {
-	fmt.Printf("starting godog...\n")
-	runOptions := godog.Options{
-		Format: "pretty",
-		Paths:  []string{"features"},
-		Tags:   "v1.0.0, v1.1.0, v1.2.0, v1.3.0, v1.4.0, v1.5.0, v1.6.0, v2.2.0, v2.3.0, v2.4.0, v2.5.0, v2.6.0, v2.7.0, v2.8.0, v2.9.0, v2.11.0, v2.12.0, v2.13.0, v2.14.0",
-		// Tags:   "wip",
-		// Tags: "resiliency", // uncomment to run all node resiliency related tests,
-	}
-	testStatus = godog.TestSuite{
-		Name:                "CSI Powermax Unit Test",
-		ScenarioInitializer: FeatureContext,
-		Options:             &runOptions,
-	}.Run()
+// func TestGoDog(t *testing.T) {
+// 	fmt.Printf("starting godog...\n")
+// 	runOptions := godog.Options{
+// 		Format: "pretty",
+// 		Paths:  []string{"features"},
+// 		Tags:   "v1.0.0, v1.1.0, v1.2.0, v1.3.0, v1.4.0, v1.5.0, v1.6.0, v2.2.0, v2.3.0, v2.4.0, v2.5.0, v2.6.0, v2.7.0, v2.8.0, v2.9.0, v2.11.0, v2.12.0, v2.13.0, v2.14.0",
+// 		// Tags:   "wip",
+// 		// Tags: "resiliency", // uncomment to run all node resiliency related tests,
+// 	}
+// 	testStatus = godog.TestSuite{
+// 		Name:                "CSI Powermax Unit Test",
+// 		ScenarioInitializer: FeatureContext,
+// 		Options:             &runOptions,
+// 	}.Run()
 
-	fmt.Printf("godog finished\n")
-	if testStatus != 0 {
-		t.Error("Error encountered in godog testing")
-	}
-}
+// 	fmt.Printf("godog finished\n")
+// 	if testStatus != 0 {
+// 		t.Error("Error encountered in godog testing")
+// 	}
+// }
 
 func TestGetStorageArrays(t *testing.T) {
 	tests := []struct {

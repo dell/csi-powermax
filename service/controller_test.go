@@ -35,6 +35,8 @@ import (
 	"go.uber.org/mock/gomock"
 	gmock "go.uber.org/mock/gomock"
 	"golang.org/x/net/context"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -130,6 +132,92 @@ func Test_addMetaData(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := addMetaData(tt.args.params); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("addMetaData() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateVolume(t *testing.T) {
+	tests := []struct {
+		name                string
+		pmaxClient          *mocks.MockPmaxClient
+		fields              serviceFields
+		ctx                 context.Context
+		req                 *csi.CreateVolumeRequest
+		want                *csi.CreateVolumeResponse
+		wantErr             bool
+		expectedErr         error
+		useNFS              bool
+		replicatedEnabled   bool
+		existingVolume      *types.Volume
+		existingVolumeError error
+	}{
+		{
+			name:        "missing symmetrixID",
+			fields:      serviceFields{},
+			ctx:         context.Background(),
+			req:         &csi.CreateVolumeRequest{},
+			wantErr:     true,
+			expectedErr: status.Errorf(codes.InvalidArgument, "A SYMID parameter is required"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				opts:                      tt.fields.opts,
+				mode:                      tt.fields.mode,
+				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
+				adminClient:               tt.fields.adminClient,
+				deletionWorker:            tt.fields.deletionWorker,
+				iscsiClient:               tt.fields.iscsiClient,
+				nvmetcpClient:             tt.fields.nvmetcpClient,
+				system:                    tt.fields.system,
+				privDir:                   tt.fields.privDir,
+				loggedInArrays:            tt.fields.loggedInArrays,
+				loggedInNVMeArrays:        tt.fields.loggedInNVMeArrays,
+				mutex:                     sync.Mutex{},
+				cacheMutex:                sync.Mutex{},
+				nodeProbeMutex:            sync.Mutex{},
+				probeStatus:               tt.fields.probeStatus,
+				probeStatusMutex:          sync.Mutex{},
+				pollingFrequencyMutex:     sync.Mutex{},
+				pollingFrequencyInSeconds: tt.fields.pollingFrequencyInSeconds,
+				nodeIsInitialized:         tt.fields.nodeIsInitialized,
+				useNFS:                    tt.fields.useNFS,
+				useFC:                     tt.fields.useFC,
+				useIscsi:                  tt.fields.useIscsi,
+				useNVMeTCP:                tt.fields.useNVMeTCP,
+				iscsiTargets:              tt.fields.iscsiTargets,
+				nvmeTargets:               tt.fields.nvmeTargets,
+				storagePoolCacheDuration:  tt.fields.storagePoolCacheDuration,
+				waitGroup:                 sync.WaitGroup{},
+				fcConnector:               tt.fields.fcConnector,
+				iscsiConnector:            tt.fields.iscsiConnector,
+				nvmeTCPConnector:          tt.fields.nvmeTCPConnector,
+				dBusConn:                  tt.fields.dBusConn,
+				sgSvc:                     tt.fields.sgSvc,
+				arrayTransportProtocolMap: tt.fields.arrayTransportProtocolMap,
+				topologyConfig:            tt.fields.topologyConfig,
+				allowedTopologyKeys:       tt.fields.allowedTopologyKeys,
+				deniedTopologyKeys:        tt.fields.deniedTopologyKeys,
+				k8sUtils:                  tt.fields.k8sUtils,
+				snapCleaner:               tt.fields.snapCleaner,
+			}
+
+			got, err := s.CreateVolume(tt.ctx, tt.req)
+			if err != nil {
+				if tt.expectedErr == nil {
+					t.Errorf("expected no error, got: %v", err)
+				} else if err.Error() != tt.expectedErr.Error() {
+					t.Errorf("expected error %v, got: %v", tt.expectedErr, err)
+				}
+			} else if tt.expectedErr != nil {
+				t.Errorf("expected error %v, got no error", tt.expectedErr)
+			}
+
+			if got != tt.want {
+				t.Errorf("expected response %v, got: %v", tt.want, got)
 			}
 		})
 	}
