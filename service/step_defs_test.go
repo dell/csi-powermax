@@ -5192,26 +5192,22 @@ func (f *feature) iCallArrayMigrate(actionvalue string, parameter string) error 
 	return nil
 }
 
-func (f* feature) validateSnapshotSizeBytesMatchesVolumeCapacityGB() error {
+func (f *feature) validateSnapshotSizeBytesMatchesVolumeCapacityGB() error {
 	if f.err != nil {
-        return f.err
-    }
-    if f.createSnapshotResponse == nil || f.createSnapshotResponse.Snapshot == nil {
-        return errors.New("Expected a valid createSnapshotResponse")
-    }
-    
+		return f.err
+	}
+	if f.createSnapshotResponse == nil || f.createSnapshotResponse.Snapshot == nil {
+		return errors.New("Expected a valid createSnapshotResponse")
+	}
+
 	_, _, vol, _ := f.service.GetVolumeByID(context.Background(), f.volumeID, f.service.adminClient)
-    expectedSizeBytes := int64(vol.CapacityGB)
+	expectedSizeBytes := int64(vol.CapacityGB)
 
-	log.Println("expected size: ", expectedSizeBytes)
-	log.Println("Snapshot size: ", f.createSnapshotResponse.Snapshot.SizeBytes)
+	if f.createSnapshotResponse.Snapshot.SizeBytes != expectedSizeBytes {
+		return errors.New("SizeBytes in response should match the volume's CapacityGB")
+	}
 
-	
-    if f.createSnapshotResponse.Snapshot.SizeBytes != expectedSizeBytes {
-        return errors.New("SizeBytes in response should match the volume's CapacityGB")
-    }
-    
-    return nil
+	return nil
 }
 
 func FeatureContext(s *godog.ScenarioContext) {

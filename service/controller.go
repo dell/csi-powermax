@@ -3290,7 +3290,7 @@ func (s *service) CreateSnapshot(
 	}
 
 	snapBytes := int64(vol.CapacityGB * 1024 * 1024 * 1024)
-	
+
 	// Is it an idempotent request?
 	snapInfo, err := pmaxClient.GetSnapshotInfo(ctx, symID, devID, snapID)
 	if err == nil && snapInfo.VolumeSnapshotSource != nil {
@@ -3330,7 +3330,6 @@ func (s *service) CreateSnapshot(
 	}
 
 	snapID = fmt.Sprintf("%s-%s-%s", snap.SnapshotName, symID, devID)
-	
 	// populate response structure
 	snapshot := &csi.Snapshot{
 		SizeBytes:      snapBytes,
