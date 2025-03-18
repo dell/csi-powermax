@@ -22,6 +22,9 @@
 
 # TODO: use env.sh to get all secret/configmap fields instead of the current config file
 
+#############
+# SETUP
+#############
 # this will add zone label zoneA to worker-1 and zoneB to worker 2
 # since we want to support multi-AZ matching EVERY label, we're adding two separate labels
 ./scripts/modify_zoning_labels.sh add zone.topology.kubernetes.io/region=zoneA zone.topology.kubernetes.io/region=zoneB
@@ -37,12 +40,10 @@ mkdir ./testfiles/tmp
 # Create the powermax-array-config configmap
 ./scripts/replace.sh ./config ./testfiles/template-powermax-configmap.yaml ./testfiles/tmp/powermax-configmap.yaml
 
-# TODO: create a copy of the template csm object yaml and populate it once configmap powermax-array-config becomes optional
-
-# Set up storageclass
+# Set up storageclasses-- two zoned in the SC and one without zoning
 ./scripts/replace.sh ./config ./testfiles/template-powermax-storageclass-1.yaml  ./testfiles/tmp/sc1.yaml
 ./scripts/replace.sh ./config ./testfiles/template-powermax-storageclass-2.yaml  ./testfiles/tmp/sc2.yaml
-
+./scripts/replace.sh ./config ./testfiles/template-powermax-storageclass-zoneless.yaml  ./testfiles/tmp/sc3.yaml
 
 #Create SSL secret for reverse proxy
 openssl genrsa -out ./testfiles/tmp/tls.key 2048
@@ -55,6 +56,7 @@ kubectl create secret generic powermax-creds --namespace powermax --from-file=co
 kubectl apply -f ./testfiles/tmp/powermax-configmap.yaml
 kubectl apply -f ./testfiles/tmp/sc1.yaml
 kubectl apply -f ./testfiles/tmp/sc2.yaml
+kubectl apply -f ./testfiles/tmp/sc3.yaml
 kubectl apply -f ./testfiles/template-powermax-csm.yaml
 
 # Wait for all pods to be ready
@@ -63,7 +65,32 @@ kubectl apply -f ./testfiles/template-powermax-csm.yaml
 # Verify that all nodes that have a pod running have their labels accordingly
 ./scripts/modify_zoning_labels.sh validate-zoning
 
-# TODO: perform provisioning test that will verify functionality
+#############
+# PROVISIONING TESTS
+#############
+
+# get the nodes, for verification of zoning
+nodes=($(kubectl get nodes -A | grep -v -E 'master|control-plane' | grep -v NAME | awk '{ print $1 }'))
+node1=${nodes[0]}
+node2=${nodes[1]}
+
+# these will verify that zoning works using storage classes that have zone information
+./scripts/workload.sh create_app zoneATest pmax-mz-1
+./scripts/workload.sh create_app zoneBTest pmax-mz-2
+./scripts/workload.sh validate_app zoneATest $node1
+./scripts/workload.sh validate_app zoneBTest $node2
+./scripts/workload.sh delete_app zoneATest
+./scripts/workload.sh delete_app zoneBTest
+
+# this will verify that provisioning with no zone in storage class still works
+./scripts/workload.sh create_app zonelessTest pmax-mz-none
+./scripts/workload.sh validate_app zonelessTest any
+./scripts/workload.sh delete_app zonelessTest
+
+
+#############
+# CLEANUP
+#############
 
 # this removes all labels that begin with the text 'zone', created above
 ./scripts/modify_zoning_labels.sh remove-all-zones
@@ -76,6 +103,7 @@ kubectl delete cm -n powermax powermax-array-config
 kubectl delete secret -n powermax csirevproxy-tls-secret
 kubectl delete sc pmax-mz-1
 kubectl delete sc pmax-mz-2
+kubectl delete sc pmax-mz-none
 
 # delete temporary testfiles
 rm -rf ./testfiles/tmp

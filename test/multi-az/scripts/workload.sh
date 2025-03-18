@@ -204,7 +204,47 @@ wait_app_ready() {
   wait_with_timeout $DEFAULT_WAIT_SECONDS check_app_ready $name
 }
 
-# DELETE: test calls
-create_app "abtest" "vxflexos"
-validate_app "abtest" "worker-2-geqsvegm7ox61" || print_err "Validation failed"
-delete_app "abtest"
+if [ "$#" -lt 1 ]; then
+  echo "Usage: $0 create_app <app name> <storage class name> ... | validate_app <app name> <node name> | delete_app <app name>"
+  exit 1
+fi
+
+action=$1
+shift
+
+case $action in
+  create_app)
+    if [ "$#" -ne 2 ]; then
+      echo "Usage: $0 create_app <app name> <storage class name>"
+      exit 1
+    fi
+    appname=$1
+    storageclass=$2
+
+    add_zone_label $appname $storage_class
+    ;;
+  delete_app)
+    if [ "$#" -ne 1 ]; then
+      echo "Usage: $0 delete_app <app name>"
+      exit 1
+    fi
+    appname=$1
+    delete_app $appname
+    ;;
+  validate-app)
+    if [ "$#" -ne 2 ]; then
+      echo "Usage: $0 validate-app <app name> <node name>"
+      exit 1
+    fi
+    appname=$1
+    workernode=$2
+    validate_app $appname $workernode
+    ;;
+  *)
+    echo "Invalid action: $action"
+    echo "Usage: $0 create_app <app name> <storage class name> ... | validate_app <app name> <node name> | delete_app <app name>"
+    exit 1
+    ;;
+esac
+
+exit 0
