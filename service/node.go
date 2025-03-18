@@ -96,6 +96,8 @@ var symToMaskingViewTargets sync.Map
 // Map to store if sym has fc connectivity or not
 var isSymConnFC sync.Map
 
+var symmetrixIDs []string
+
 // InvalidateSymToMaskingViewTargets - invalidates the cache
 // Only used for testing
 func (s *service) InvalidateSymToMaskingViewTargets() {
@@ -1323,6 +1325,13 @@ func (s *service) NodeGetInfo(
 		}
 		maxPowerMaxVolumesPerNode = s.opts.MaxVolumesPerNode
 	}
+	for _, array := range symmetrixIDs {
+		arrayLabels := s.opts.StorageArrays[array].Labels
+		for arrayLabelKey, arrayLabelVal := range arrayLabels {
+			log.Infof("adding label '%s' with value '%s' to the topology map", arrayLabelKey, arrayLabelVal)
+			topology[arrayLabelKey] = arrayLabelVal.(string)
+		}
+	}
 	return &csi.NodeGetInfoResponse{
 		NodeId: s.opts.NodeName,
 		AccessibleTopology: &csi.Topology{
@@ -1567,8 +1576,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		log.Debug("vmHost created successfully")
 	}
 
-	arrays := s.retryableGetSymmetrixIDList()
-	symmetrixIDs := arrays.SymmetrixIDs
+	symmetrixIDs = s.filterArraysByZoneInfo(s.opts.StorageArrays)
 	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
 
 	err = s.nodeHostSetup(ctx, portWWNs, IQNs, hostNQN, symmetrixIDs)

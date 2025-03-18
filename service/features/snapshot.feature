@@ -42,6 +42,7 @@ Feature: PowerMax CSI Interface
         When I call CreateSnapshot "snapshot1" on "volume1"
         And I call CreateSnapshot "snapshot1" on "volume1"
         Then a valid CreateSnapshotResponse is returned
+        And I validate the snapshot SizeBytes matches the volume CapacityGB
 @v1.2.0
     Scenario: Create a snapshot on a volume which is already in a snap session
         Given a PowerMax service

@@ -58,10 +58,12 @@ type ConfigManager interface {
 
 // StorageArrayConfig represents the configuration of a storage array in the config file
 type StorageArrayConfig struct {
-	StorageArrayID         string   `yaml:"storageArrayId"`
-	PrimaryEndpoint        string   `yaml:"primaryEndpoint"`
-	BackupEndpoint         string   `yaml:"backupEndpoint,omitempty"`
-	ProxyCredentialSecrets []string `yaml:"proxyCredentialSecrets"`
+	StorageArrayID         string            `yaml:"storageArrayId"`
+	PrimaryEndpoint        string            `yaml:"primaryEndpoint"`
+	BackupEndpoint         string            `yaml:"backupEndpoint,omitempty"`
+	ProxyCredentialSecrets []string          `yaml:"proxyCredentialSecrets"`
+	Labels                 map[string]string `yaml:"labels,omitempty"`
+	Parameters             map[string]string `yaml:"parameters,omitempty"`
 }
 
 // ProxyCredentialSecret is used for storing a credential for a secret
@@ -76,6 +78,8 @@ type StorageArray struct {
 	PrimaryEndpoint        url.URL
 	SecondaryEndpoint      url.URL
 	ProxyCredentialSecrets map[string]ProxyCredentialSecret
+	Labels                 map[string]string
+	Parameters             map[string]string
 }
 
 // StorageArrayServer represents an array with its primary and backup management server
@@ -717,6 +721,13 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 					pc.updateProxyCredentialsFromSecret(mgmtServer.Username, mgmtServer.Password, array.StorageArrayID)
 				}
 			}
+		}
+		// read labels and parameters
+		if array.Labels != nil {
+			pc.managedArrays[array.StorageArrayID].Labels = array.Labels
+		}
+		if array.Parameters != nil {
+			pc.managedArrays[array.StorageArrayID].Parameters = array.Parameters
 		}
 	}
 	for _, managementServer := range proxySecret.ManagementServerConfig {
