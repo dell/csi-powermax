@@ -33,8 +33,7 @@
 # create a directory to store temporary files generated from templates
 mkdir ./testfiles/tmp
 
-# TODO: create a copy of the template secret yaml and populate it with values from env.sh
-# For now, we are simply using a config file that contains all relevant values for prototyping/configurability
+# create the secret yaml file
 ./scripts/replace.sh ./config ./testfiles/template-powermax-secret.yaml ./testfiles/tmp/secret.yaml
 
 # Create the powermax-array-config configmap
@@ -83,8 +82,9 @@ node2=${nodes[1]}
 ./scripts/workload.sh delete_app zoneBTest
 
 # this will verify that provisioning with no zone in storage class still works
+# no validate app step-- it coming online is sufficient, and we do not care which zone it's on
+# that will be decided by the allowed topologies of the node the workload is put on.
 ./scripts/workload.sh create_app zonelessTest pmax-mz-none
-./scripts/workload.sh validate_app zonelessTest any
 ./scripts/workload.sh delete_app zonelessTest
 
 
