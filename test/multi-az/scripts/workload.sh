@@ -29,7 +29,7 @@ function create_app() {
   app_name=$1
   storage_class=$2
 
-  print_msg "Creating app $app_name in namespace $APP_NAMESPACE..."
+  print_msg "Creating app $app_name ($REPLICAS replicas) in namespace $APP_NAMESPACE..."
 
   # validate inputs
   if [ -z "$app_name" ] || [ -z "$storage_class" ]; then
@@ -78,29 +78,29 @@ function delete_app() {
     print_err "the app namespace $APP_NAMESPACE is not fully deleted"
     return 1
   fi
-
 }
 
+# Checks that all replicas of the app are running on the given worker according to
+# our zoning configuration, despite of the pod anti-affinity rules that would
+# otherwise spread all pods evenly across all workers.
 function validate_app() {
   app_name=$1
+  node_name=$2
 
-  print_msg "Validating app $app_name in namespace $APP_NAMESPACE..."
+  print_msg "Checking that all replicas of app $app_name in namespace $APP_NAMESPACE \
+are running on worker node $node_name"
 
   # validate inputs
-  if [ -z "$app_name" ]; then
-    print_err "app name not specified"
+  if [ -z "$app_name" ] || [ -z "$node_name" ]; then
+    print_err "app name or node name not specified"
     return 1
   fi
 
-  # check that the app state is stable, by observing it for 10 seconds
-  for i in $(seq 5); do
-    if ! check_app_ready $app_name; then
-      print_err "app $app_name replicas in namespace $APP_NAMESPACE haven't been stable for 10 seconds"
-      return 1
-    fi
-    sleep 2
-  done
-
+  stray_pods="$(kubectl -n $APP_NAMESPACE get pods -o wide --no-headers 2>/dev/null | awk -v node=$node_name '$7!=node { print $1" - "$7 }')"
+  if [ -n "$stray_pods" ]; then
+    print_err "Some replicas are running on a different worker node:${NL}$stray_pods"
+    return 1
+  fi
 }
 
 make_app_spec() {
@@ -138,7 +138,11 @@ spec:
       - name: $app_name
         image: $SIMPLE_APP_IMG
         command: ["/bin/sh"]
-        args: ["-c", "tail -f /dev/null"]
+        args:
+          - -c
+          - |
+            trap 'echo "Received TERM signal, exiting" && exit 0' TERM
+            while true; do sleep 1; done
         volumeDevices:
         - devicePath: "/dev/pmaxdata"
           name: pmaxvol
@@ -201,6 +205,6 @@ wait_app_ready() {
 }
 
 # DELETE: test calls
-create_app "abtest" "vxflexos" "worker-2-pklwnootxu0ap.domain"
-validate_app "abtest"
+create_app "abtest" "vxflexos"
+validate_app "abtest" "worker-2-geqsvegm7ox61" || print_err "Validation failed"
 delete_app "abtest"

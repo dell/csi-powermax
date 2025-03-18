@@ -113,5 +113,5 @@ Final line"
 
 print_box "First line${NL}Final line"
 
-print_msg "Below is a long message:${NL}Social media adds an additional dimension, as user networks can become echo chambers possibly emphasised by the filter bubble where one political viewpoint dominates and scrutiny of claims fails..."
+print_msg "Below is a long message:${NL}Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0 Unless required by applicable law ..."
 '
