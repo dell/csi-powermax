@@ -1323,14 +1323,12 @@ func (s *service) NodeGetInfo(
 		}
 		maxPowerMaxVolumesPerNode = s.opts.MaxVolumesPerNode
 	}
-	validArrays, _ := s.filterArraysByZoneInfo(s.opts.StorageArrays)
-	for _, arrayConfig := range validArrays {
-		arrayLabels := s.opts.StorageArrays[arrayConfig].Labels
+	validArrays := s.filterArraysByZoneInfo(s.opts.StorageArrays)
+	for _, array := range validArrays {
+		arrayLabels := s.opts.StorageArrays[array].Labels
 		for arrayLabelKey, arrayLabelVal := range arrayLabels {
-			if nodeLabelVal, ok := labels[arrayLabelKey]; ok && nodeLabelVal == arrayLabelVal.(string) {
-				log.Infof("adding label '%s' with value '%s' to the topology map", arrayLabelKey, arrayLabelVal)
-				topology[arrayLabelKey] = arrayLabelVal.(string)
-			}
+			log.Infof("adding label '%s' with value '%s' to the topology map", arrayLabelKey, arrayLabelVal)
+			topology[arrayLabelKey] = arrayLabelVal.(string)
 		}
 	}
 	return &csi.NodeGetInfoResponse{
@@ -1577,7 +1575,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		log.Debug("vmHost created successfully")
 	}
 
-	symmetrixIDs, _ := s.filterArraysByZoneInfo(s.opts.StorageArrays)
+	symmetrixIDs := s.filterArraysByZoneInfo(s.opts.StorageArrays)
 	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
 
 	err = s.nodeHostSetup(ctx, portWWNs, IQNs, hostNQN, symmetrixIDs)

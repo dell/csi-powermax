@@ -1668,6 +1668,7 @@ func TestNodeGetInfo(t *testing.T) {
 		csiNodeGetInfoRequest     *csi.NodeGetInfoRequest
 		storageArrays             map[string]StorageArrayConfig
 		want                      map[string]string
+		expectedZoneInfo          map[string]string
 		wantErr                   bool
 		wantResp                  bool
 	}
@@ -1924,7 +1925,7 @@ func TestNodeGetInfo(t *testing.T) {
 			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
 			initFunc: func() *k8smock.MockUtilsInterface {
 				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
-				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{"topology.kubernetes.io/region": "R1", "topology.kubernetes.io/zone": "Z1"}, nil).AnyTimes()
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{"regionlabel": "R1", "zonelabel": "Z1"}, nil).AnyTimes()
 				return mockUtilsInterface
 			},
 			loggedInArrays: map[string]bool{},
@@ -1934,11 +1935,12 @@ func TestNodeGetInfo(t *testing.T) {
 			portGroups: []string{"portgroup1"},
 			storageArrays: map[string]StorageArrayConfig{
 				"array1": {
-					Labels: map[string]interface{}{"topology.kubernetes.io/region": "R1", "topology.kubernetes.io/zone": "Z1"},
+					Labels: map[string]interface{}{"regionlabel": "R1", "zonelabel": "Z1"},
 				},
 			},
-			wantErr:  false,
-			wantResp: true,
+			expectedZoneInfo: map[string]string{"regionlabel": "R1", "zonelabel": "Z1"},
+			wantErr:          false,
+			wantResp:         true,
 		},
 	}
 	// Run the tests
@@ -1970,8 +1972,9 @@ func TestNodeGetInfo(t *testing.T) {
 			}
 			if tc.wantResp {
 				topology := resp.AccessibleTopology.Segments
-				if topology["topology.kubernetes.io/region"] != "R1" || topology["topology.kubernetes.io/zone"] != "Z1" {
-					t.Errorf("Expected region and zone to be R1 and Z1 but got %v and %v", topology["topology.kubernetes.io/region"], topology["topology.kubernetes.io/zone"])
+				if topology["regionlabel"] != tc.expectedZoneInfo["regionlabel"] ||
+					topology["zonelabel"] != tc.expectedZoneInfo["zonelabel"] {
+					t.Errorf("Expected zone info to be %v and %v but got %v and %v", tc.expectedZoneInfo["regionlabel"], tc.expectedZoneInfo["zonelabel"], topology["regionlabel"], topology["zonelabel"])
 				}
 			}
 		})

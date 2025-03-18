@@ -1057,7 +1057,7 @@ func setArrayConfigEnvs(ctx context.Context) error {
 	return nil
 }
 
-func (s *service) filterArraysByZoneInfo(storageArrays map[string]StorageArrayConfig) ([]string, error) {
+func (s *service) filterArraysByZoneInfo(storageArrays map[string]StorageArrayConfig) []string {
 	results := make([]string, 0)
 
 	for arrayID, arrayConfig := range storageArrays {
@@ -1068,9 +1068,9 @@ func (s *service) filterArraysByZoneInfo(storageArrays map[string]StorageArrayCo
 		}
 
 		keepArray := true
-		if hasZoneInfo(nodeLabels) || len(arrayLabels) != 0 {
-			for arrayLabelKey := range arrayLabels {
-				if _, ok := nodeLabels[arrayLabelKey]; !ok {
+		if len(arrayLabels) != 0 {
+			for arrayLabelKey, arrayLabelVal := range arrayLabels {
+				if nodeLabelVal, ok := nodeLabels[arrayLabelKey]; !ok || nodeLabelVal != arrayLabelVal.(string) {
 					keepArray = false
 					break
 				}
@@ -1086,18 +1086,5 @@ func (s *service) filterArraysByZoneInfo(storageArrays map[string]StorageArrayCo
 		log.Warn("No arrays match the node labels")
 	}
 
-	return results, nil
-}
-
-// hasZoneInfo checks if the given labels contain the zone information.
-func hasZoneInfo(labels map[string]string) bool {
-	hasZoneInfo := false
-	for labelKey := range labels {
-		if strings.EqualFold(labelKey, "topology.kubernetes.io/region") || strings.EqualFold(labelKey, "topology.kubernetes.io/zone") {
-			hasZoneInfo = true
-			break
-		}
-	}
-
-	return hasZoneInfo
+	return results
 }

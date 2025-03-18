@@ -252,7 +252,7 @@ func TestFilterArraysByZoneInfo(t *testing.T) {
 			}
 			tc.pmaxClient = tc.getClient()
 			// Call the function and check the results
-			filteredArrays, _ := s.filterArraysByZoneInfo(tc.storageArrays)
+			filteredArrays := s.filterArraysByZoneInfo(tc.storageArrays)
 			log.Infof("Filtered arrays: %v", filteredArrays)
 			if !reflect.DeepEqual(filteredArrays, tc.expectedArrays) {
 				t.Errorf("Expected %v, got %v", tc.expectedArrays, filteredArrays)
