@@ -123,12 +123,17 @@ const (
 	ContentSource     = "VolumeContentSource"
 	StoragePoolParam  = "SRP"
 	// If storage_group is set, this over-rides the generation of the Storage Group from SLO/SRP
-	StorageGroupParam      = "StorageGroup"
-	ThickVolumesParam      = "ThickVolumes" // "true" or "false" or "" (defaults thin)
-	ApplicationPrefixParam = "ApplicationPrefix"
-	CapacityGB             = "CapacityGB"
-	uCode5978              = 5978
-	uCodeELMSR             = 221
+	StorageGroupParam        = "StorageGroup"
+	ThickVolumesParam        = "ThickVolumes" // "true" or "false" or "" (defaults thin)
+	ApplicationPrefixParam   = "ApplicationPrefix"
+	HostLimitNameParam       = "HostLimitName"
+	HostIOLimitMBSecParam    = "HostIOLimitMBSec"
+	HostIOLimitIOSecParam    = "HostIOLimitIOSec"
+	DynamicDistributionParam = "DynamicDistribution"
+
+	CapacityGB = "CapacityGB"
+	uCode5978  = 5978
+	uCodeELMSR = 221
 	// These params will be in replication enabled storage class
 	RepEnabledParam              = "isReplicationEnabled"
 	LocalRDFGroupParam           = "RdfGroup"
@@ -296,13 +301,25 @@ func (s *service) CreateVolume(
 		}
 	}
 
+	accessibility := req.GetAccessibilityRequirements()
+
 	params := req.GetParameters()
+	var symmIDFoundInAZ bool
+
 	params = mergeStringMaps(params, req.GetSecrets())
 	symmetrixID := params[SymmetrixIDParam]
 	if symmetrixID == "" {
-		log.Error("A SYMID parameter is required")
-		return nil, status.Errorf(codes.InvalidArgument, "A SYMID parameter is required")
+		log.Debug("SYMID not provided in parameters, will check accessibility requirements")
+
+		symmetrixID = s.getArrayIDFromLabels(accessibility)
+		if symmetrixID == "" {
+			log.Error("A SYMID parameter is required")
+			return nil, status.Errorf(codes.InvalidArgument, "A SYMID parameter is required")
+		}
+
+		symmIDFoundInAZ = true
 	}
+
 	pmaxClient, err := s.GetPowerMaxClient(symmetrixID)
 	if err != nil {
 		log.Error(err.Error())
@@ -314,14 +331,10 @@ func (s *service) CreateVolume(
 	}
 
 	thick := params[ThickVolumesParam]
-
-	applicationPrefix := ""
-	if params[ApplicationPrefixParam] != "" {
-		applicationPrefix = params[ApplicationPrefixParam]
-	}
+	applicationPrefix := s.resolveParameter(params, symmetrixID, ApplicationPrefixParam, "")
 
 	// Storage (resource) Pool. Validate it against exist Pools
-	storagePoolID := params[StoragePoolParam]
+	storagePoolID := s.resolveParameter(params, symmetrixID, StoragePoolParam, "")
 	err = s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
@@ -329,48 +342,24 @@ func (s *service) CreateVolume(
 	}
 
 	// SLO is optional
-	serviceLevel := "Optimized"
-	if params[ServiceLevelParam] != "" {
-		serviceLevel = params[ServiceLevelParam]
-		found := false
-		for _, val := range validSLO {
-			if serviceLevel == val {
-				found = true
-			}
-		}
-		if !found {
-			log.Error("An invalid Service Level parameter was specified")
-			return nil, status.Errorf(codes.InvalidArgument, "An invalid Service Level parameter was specified")
+	serviceLevel := s.resolveParameter(params, symmetrixID, ServiceLevelParam, "Optimized")
+	found := false
+	for _, val := range validSLO {
+		if serviceLevel == val {
+			found = true
 		}
 	}
-	storageGroupName := ""
-	if params[StorageGroupParam] != "" {
-		storageGroupName = params[StorageGroupParam]
+	if !found {
+		log.Error("An invalid Service Level parameter was specified")
+		return nil, status.Errorf(codes.InvalidArgument, "An invalid Service Level parameter was specified")
 	}
 
-	// get HostIOLimits for the storage group
-	hostLimitName := ""
-	hostMBsec := ""
-	hostIOsec := ""
-	hostDynDistribution := ""
-	if params[HostLimitName] != "" {
-		hostLimitName = params[HostLimitName]
-	}
-	if params[HostIOLimitMBSec] != "" {
-		hostMBsec = params[HostIOLimitMBSec]
-	}
-	if params[HostIOLimitIOSec] != "" {
-		hostIOsec = params[HostIOLimitIOSec]
-	}
-	if params[DynamicDistribution] != "" {
-		hostDynDistribution = params[DynamicDistribution]
-	}
-
-	// Get the namespace
-	namespace := ""
-	if params[CSIPVCNamespace] != "" {
-		namespace = params[CSIPVCNamespace]
-	}
+	storageGroupName := s.resolveParameter(params, symmetrixID, StorageGroupParam, "")
+	hostLimitName := s.resolveParameter(params, symmetrixID, HostLimitNameParam, "")
+	hostMBsec := s.resolveParameter(params, symmetrixID, HostIOLimitMBSecParam, "")
+	hostIOsec := s.resolveParameter(params, symmetrixID, HostIOLimitIOSecParam, "")
+	hostDynDistribution := s.resolveParameter(params, symmetrixID, DynamicDistributionParam, "")
+	namespace := s.resolveParameter(params, "", CSIPVCNamespace, "")
 
 	// File related params
 	useNFS := false
@@ -424,6 +413,11 @@ func (s *service) CreateVolume(
 			remoteRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
 		}
 		repMode = params[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)]
+
+		if symmIDFoundInAZ && repMode == Metro {
+			return nil, status.Errorf(codes.InvalidArgument, "The use of Availability Zones with Metro volumes is not supported")
+		}
+
 		remoteServiceLevel = params[path.Join(s.opts.ReplicationPrefix, RemoteServiceLevelParam)]
 		remoteSRPID = params[path.Join(s.opts.ReplicationPrefix, RemoteSRPParam)]
 		bias = params[path.Join(s.opts.ReplicationPrefix, BiasParam)]
@@ -449,8 +443,6 @@ func (s *service) CreateVolume(
 			return nil, status.Errorf(codes.InvalidArgument, "Unsupported Replication Mode: (%s)", repMode)
 		}
 	}
-
-	accessibility := req.GetAccessibilityRequirements()
 
 	// Get the required capacity
 	cr := req.GetCapacityRange()
@@ -751,6 +743,11 @@ func (s *service) CreateVolume(
 				// Format the time output
 				"CreationTime": time.Now().Format("20060102150405"),
 			}
+
+			if symmIDFoundInAZ {
+				s.addZoneLabelsToVolumeAttributes(attributes, symmetrixID)
+			}
+
 			if replicationEnabled == "true" {
 				addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID, localRDFGrpNo, remoteRDFGrpNo)
 			}
@@ -871,6 +868,7 @@ func (s *service) CreateVolume(
 		}
 		addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID, localRDFGrpNo, remoteRDFGrpNo)
 	}
+
 	volResp.VolumeContext = attributes
 	if accessibility != nil {
 		volResp.AccessibleTopology = accessibility.Preferred
@@ -4359,4 +4357,76 @@ func (s *service) GetStorageProtectionGroupStatus(ctx context.Context, req *csie
 		Status: pgStatus,
 	}
 	return resp, err
+}
+
+// getArrayIDFromLabels returns the PowerMax ID based on topology resuirements and
+// the list of labelled arrays. Returns an empty string if no PowerMax ID is found.
+func (s *service) getArrayIDFromLabels(topologyRequirement *csi.TopologyRequirement) string {
+
+	if topologyRequirement == nil || len(topologyRequirement.Requisite) == 0 {
+		log.Warn("No topology requirements specified")
+		return ""
+	}
+
+	if len(s.opts.StorageArrays) == 0 {
+		log.Warn("No storage arrays specified")
+		return ""
+	}
+
+	candidates := make([]string, 0, 1)
+	for _, topology := range topologyRequirement.GetRequisite() {
+		for id, arrayConfig := range s.opts.StorageArrays {
+			matchedLabels := 0
+
+			if len(arrayConfig.Labels) == 0 {
+				continue
+			}
+
+			for labelKey, labelValue := range arrayConfig.Labels {
+				if segmentValue, ok := topology.Segments[labelKey]; ok && strings.EqualFold(segmentValue, labelValue.(string)) {
+					matchedLabels++
+				}
+			}
+
+			if matchedLabels == len(arrayConfig.Labels) {
+				candidates = append(candidates, id)
+			}
+		}
+	}
+
+	if len(candidates) != 1 {
+		return ""
+	}
+
+	return candidates[0]
+}
+
+// resolveParamater will evaluate the paramater and return the value based on the priority of
+// sources. The value from the params map is first chosen. If not found, the value from the
+// array secret is used. If not found, the default value is used.
+func (s *service) resolveParameter(params map[string]string, arrayID, param, defaultValue string) string {
+
+	if len(params) > 0 {
+		if result, ok := params[param]; ok {
+			return result
+		}
+	}
+
+	if len(arrayID) > 0 && len(s.opts.StorageArrays) > 0 {
+		if array, ok := s.opts.StorageArrays[arrayID]; ok {
+			if result, ok := array.Parameters[param]; ok {
+				return result.(string)
+			}
+		}
+	}
+
+	return defaultValue
+}
+
+func (s *service) addZoneLabelsToVolumeAttributes(attributes map[string]string, arrayID string) {
+	if array, ok := s.opts.StorageArrays[arrayID]; ok {
+		for k, v := range array.Labels {
+			attributes[k] = v.(string)
+		}
+	}
 }
