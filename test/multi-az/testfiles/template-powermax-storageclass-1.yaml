@@ -6,7 +6,6 @@ metadata:
   name: pmax-mz-1
 parameters:
   SRP: "REPLACE_RESOURCE_POOL"
-  SYMID: "REPLACE_STORAGE_ID_1"
   ServiceLevel: "REPLACE_SERVICE_LEVEL"
 provisioner: csi-powermax.dellemc.com
 reclaimPolicy: Delete
@@ -14,9 +13,9 @@ volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
 allowedTopologies:
   - matchLabelExpressions:
-      - key: csi-powermax.dellemc.com/REPLACE_STORAGE_ID_1
+      - key: zone.topology.kubernetes.io/region
         values:
-          - csi-powermax.dellemc.com
-      - key: csi-powermax.dellemc.com/REPLACE_STORAGE_ID_1.iscsi
+          - zoneA
+      - key: zone.topology.kubernetes.io/zone
         values:
-          - csi-powermax.dellemc.com
+          - zoneC

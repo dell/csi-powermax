@@ -44,7 +44,7 @@ spec:
     dnsPolicy: ClusterFirstWithHostNet
     forceRemoveDriver: true
     common:
-      image: quay.io/dell/container-storage-modules/csi-powermax:nightly
+      image: REPLACE_POWERMAX_IMAGE
       # imagePullPolicy: Policy to determine if the image should be pulled prior to starting the container.
       # Allowed values:
       #  Always: Always pull the image.
