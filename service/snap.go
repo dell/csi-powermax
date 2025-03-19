@@ -485,6 +485,8 @@ func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *typ
 		}
 		return err
 	}
+	// If Auth is enabled, snap name will come back with a prefix like tn1-snapID
+	snapID = snapInfo.SnapshotName
 	// Link the Target to the created snapshot
 	err = s.LinkVolumeToSnapshot(ctx, symID, vol.VolumeID, tgtDevID, snapID, reqID, isCopy, pmaxClient)
 	if err != nil {
