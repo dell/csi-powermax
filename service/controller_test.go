@@ -2698,7 +2698,60 @@ func Test_service_getSymmetrixIDFromLabels(t *testing.T) {
 				},
 			}
 
-			got := s.getArrayIDFromLabels(tt.topologyRequirement)
+			got := s.getArrayIDFromTopologyRequirement(tt.topologyRequirement)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_service_getArrayIDFromTopology(t *testing.T) {
+	tests := []struct {
+		name               string
+		storageArrayConfig map[string]StorageArrayConfig
+		topology           *csi.Topology
+		want               string
+	}{
+		{
+			name:               "nil topology",
+			topology:           nil,
+			storageArrayConfig: nil,
+			want:               "",
+		},
+		{
+			name:               "nil topology segments",
+			topology:           &csi.Topology{Segments: nil},
+			storageArrayConfig: nil,
+			want:               "",
+		},
+		{
+			name: "basic test of successful match",
+			topology: &csi.Topology{
+				Segments: map[string]string{
+					"topology.kubernetes.io/region": "region1",
+					"topology.kubernetes.io/zone":   "zone1",
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+			},
+			want: "000000000001",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				opts: Opts{
+					StorageArrays: tt.storageArrayConfig,
+				},
+			}
+
+			got := s.getArrayIDFromTopology(tt.topology)
 			assert.Equal(t, tt.want, got)
 		})
 	}

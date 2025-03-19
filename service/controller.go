@@ -311,7 +311,7 @@ func (s *service) CreateVolume(
 	if symmetrixID == "" {
 		log.Debug("SYMID not provided in parameters, will check accessibility requirements")
 
-		symmetrixID = s.getArrayIDFromLabels(accessibility)
+		symmetrixID = s.getArrayIDFromTopologyRequirement(accessibility)
 		if symmetrixID == "" {
 			log.Error("A SYMID parameter is required")
 			return nil, status.Errorf(codes.InvalidArgument, "A SYMID parameter is required")
@@ -2860,11 +2860,17 @@ func (s *service) GetCapacity(
 		log.Error("GetCapacity: Required StoragePool and SymID in parameters")
 		return nil, status.Errorf(codes.InvalidArgument, "GetCapacity: Required StoragePool and SymID in parameters")
 	}
+
 	symmetrixID := params[SymmetrixIDParam]
 	if symmetrixID == "" {
-		log.Error("A SYMID parameter is required")
-		return nil, status.Errorf(codes.InvalidArgument, "A SYMID parameter is required")
+		accessibilityTopology := req.GetAccessibleTopology()
+		symmetrixID = s.getArrayIDFromTopology(accessibilityTopology)
+		if symmetrixID == "" {
+			log.Error("A SYMID parameter is required")
+			return nil, status.Errorf(codes.InvalidArgument, "A SYMID parameter is required")
+		}
 	}
+
 	pmaxClient, err := s.GetPowerMaxClient(symmetrixID)
 	if err != nil {
 		log.Error(err.Error())
@@ -2877,7 +2883,7 @@ func (s *service) GetCapacity(
 	}
 
 	// Storage (resource) Pool. Validate it against exist Pools
-	storagePoolID := params[StoragePoolParam]
+	storagePoolID := s.resolveParameter(params, symmetrixID, StoragePoolParam, "")
 	err = s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
@@ -4359,17 +4365,18 @@ func (s *service) GetStorageProtectionGroupStatus(ctx context.Context, req *csie
 	return resp, err
 }
 
-// getArrayIDFromLabels returns the PowerMax ID based on topology resuirements and
-// the list of labelled arrays. Returns an empty string if no PowerMax ID is found.
-func (s *service) getArrayIDFromLabels(topologyRequirement *csi.TopologyRequirement) string {
+// getArrayIDFromTopologyRequirement returns the PowerMax ID based on
+// topology requirements. Returns an empty string if no PowerMax ID is
+// found or if more than one matching array is found.
+func (s *service) getArrayIDFromTopologyRequirement(topologyRequirement *csi.TopologyRequirement) string {
 
 	if topologyRequirement == nil || len(topologyRequirement.Requisite) == 0 {
-		log.Warn("No topology requirements specified")
+		log.Warn("no topology requirements specified")
 		return ""
 	}
 
 	if len(s.opts.StorageArrays) == 0 {
-		log.Warn("No storage arrays specified")
+		log.Warn("no storage arrays specified")
 		return ""
 	}
 
@@ -4395,14 +4402,35 @@ func (s *service) getArrayIDFromLabels(topologyRequirement *csi.TopologyRequirem
 	}
 
 	if len(candidates) != 1 {
+		log.Warnf("topology requirements matched %d storage arrays, expected one", len(candidates))
 		return ""
 	}
 
 	return candidates[0]
 }
 
-// resolveParamater will evaluate the paramater and return the value based on the priority of
-// sources. The value from the params map is first chosen. If not found, the value from the
+// getArrayIDFromTopology returns the PowerMax ID based on topology.
+// Returns an empty string if no PowerMax ID is found or if more than
+// one matching array is found.
+func (s *service) getArrayIDFromTopology(topology *csi.Topology) string {
+
+	if topology == nil || len(topology.Segments) == 0 {
+		log.Warn("no topology specified")
+		return ""
+	}
+
+	TopologyRequirement := &csi.TopologyRequirement{
+		Requisite: []*csi.Topology{
+			topology,
+		},
+	}
+
+	return s.getArrayIDFromTopologyRequirement(TopologyRequirement)
+}
+
+// resolveParamater will evaluate the paramater and return the
+// value based on the priority of sources. The value from the
+// params map is first chosen. If not found, the value from the
 // array secret is used. If not found, the default value is used.
 func (s *service) resolveParameter(params map[string]string, arrayID, param, defaultValue string) string {
 
