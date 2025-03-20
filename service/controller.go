@@ -303,9 +303,8 @@ func (s *service) CreateVolume(
 
 	accessibility := req.GetAccessibilityRequirements()
 
-	params := req.GetParameters()
 	var symmIDFoundInAZ bool
-
+	params := req.GetParameters()
 	params = mergeStringMaps(params, req.GetSecrets())
 	symmetrixID := params[SymmetrixIDParam]
 	if symmetrixID == "" {
