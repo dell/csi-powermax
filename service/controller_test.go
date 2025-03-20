@@ -2812,7 +2812,7 @@ func Test_service_resolveParameter(t *testing.T) {
 			storageArrayConfig: map[string]StorageArrayConfig{
 				"000000000001": {
 					Parameters: map[string]interface{}{
-						"UTParamName": "UTSecret",
+						"utparamname": "UTSecret",
 					},
 				},
 			},
@@ -2826,7 +2826,7 @@ func Test_service_resolveParameter(t *testing.T) {
 			storageArrayConfig: map[string]StorageArrayConfig{
 				"000000000001": {
 					Parameters: map[string]interface{}{
-						"UTParamName": "UTSecret",
+						"utparamname": "UTSecret",
 					},
 				},
 			},

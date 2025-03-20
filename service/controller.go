@@ -4439,8 +4439,10 @@ func (s *service) resolveParameter(params map[string]string, arrayID, param, def
 
 	if len(arrayID) > 0 && len(s.opts.StorageArrays) > 0 {
 		if array, ok := s.opts.StorageArrays[arrayID]; ok {
-			if result, ok := array.Parameters[param]; ok {
-				return result.(string)
+			for k, value := range array.Parameters {
+				if strings.EqualFold(param, k) {
+					return value.(string)
+				}
 			}
 		}
 	}
