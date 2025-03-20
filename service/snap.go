@@ -447,8 +447,8 @@ func (s *service) GetSnapSessions(ctx context.Context, symID, deviceID string, p
 // volume as a target to a snapshot
 func (s *service) LinkVolumeToSnapshot(ctx context.Context, symID, srcDevID, tgtDevID, snapID string, reqID string, isCopy bool, pmaxClient pmax.Pmax) (err error) {
 	lockHandle := fmt.Sprintf("%s%s", srcDevID, symID)
-	lockNum := RequestLock(lockHandle, reqID)
-	defer ReleaseLock(lockHandle, reqID, lockNum)
+	lockNum := requestLockFunc(lockHandle, reqID)
+	defer releaseLockFunc(lockHandle, reqID, lockNum)
 
 	// Verify that the snapshot exists on the array
 	_, err = pmaxClient.GetSnapshotInfo(ctx, symID, srcDevID, snapID)
@@ -508,11 +508,10 @@ func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *typ
 
 // CreateSnapshotFromVolume creates a snapshot on a source volume
 func (s *service) CreateSnapshotFromVolume(ctx context.Context, symID string, vol *types.Volume, snapID string, TTL int64, reqID string, pmaxClient pmax.Pmax) (snapshot *types.VolumeSnapshot, err error) {
-	lockHandle := fmt.Sprintf("%s%s", vol.VolumeID, symID)
-	lockNum := RequestLock(lockHandle, reqID)
-	defer ReleaseLock(lockHandle, reqID, lockNum)
-
 	log.Debugf("Creating snapshot %s on %s", snapID, vol.VolumeID)
+	lockHandle := fmt.Sprintf("%s%s", vol.VolumeID, symID)
+	lockNum := requestLockFunc(lockHandle, reqID)
+	defer releaseLockFunc(lockHandle, reqID, lockNum)
 	deviceID := vol.VolumeID
 	// Unlink this device if it is a target of another snapshot
 	if vol.SnapSource || vol.SnapTarget {
