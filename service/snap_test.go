@@ -389,7 +389,7 @@ func TestLinkVolumeToVolumeWithAuth(t *testing.T) {
 
 	var TTL int64 = 1
 
-	var generation int64 = 0
+	var generation int64
 
 	// Set up the mock Pmax client with request/release lock functions and snap cleaner
 	requestLockFunc = func(_, _ string) int {
