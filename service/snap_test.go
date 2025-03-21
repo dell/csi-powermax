@@ -15,10 +15,15 @@
 package service
 
 import (
+	"context"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
+	types "github.com/dell/gopowermax/v2/types/v100"
+	gmock "go.uber.org/mock/gomock"
 )
 
 func Test_snapCleanupQueue_Swap(t *testing.T) {
@@ -343,5 +348,79 @@ func Test_service_startSnapCleanupWorker(t *testing.T) {
 				t.Errorf("service.startSnapCleanupWorker() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// This test simulates a successful linkVolumeToVolume call when Auth is enabled
+func TestLinkVolumeToVolumeWithAuth(t *testing.T) {
+	// Create a service
+	s := &service{}
+
+	// Create a mock Pmax client
+	mockPmaxClient := mocks.NewMockPmaxClient(gmock.NewController(t))
+	sysID := "sym-123"
+
+	// Creating fields for the expected method calls
+	vol := &types.Volume{
+		VolumeID: "123",
+	}
+
+	volumeList := []types.VolumeList{
+		{
+			Name: vol.VolumeID,
+		},
+	}
+	tgtDevID := "tgt-dev-123"
+
+	tgtVolumeList := []types.VolumeList{
+		{
+			Name: tgtDevID,
+		},
+	}
+
+	snapID := "snap-123"
+
+	// snapID with the tenent prefix from Auth
+	authSnapID := "tn1-snap-123"
+
+	reqID := "req-123"
+
+	isCopy := true
+
+	var TTL int64 = 1
+
+	var generation int64
+
+	// Set up the mock Pmax client with request/release lock functions and snap cleaner
+	requestLockFunc = func(_, _ string) int {
+		return 0
+	}
+
+	releaseLockFunc = func(_, _ string, _ int) {}
+
+	s.snapCleaner = &snapCleanupWorker{
+		PollingInterval: time.Second * 1,
+		Queue:           snapCleanupQueue{},
+	}
+
+	// Set up the mock Pmax client with expected method calls
+	mockPmaxClient.EXPECT().CreateSnapshot(context.Background(), sysID, snapID, volumeList, TTL).Return(nil)
+
+	mockPmaxClient.EXPECT().GetSnapshotInfo(context.Background(), sysID, vol.VolumeID, snapID).Return(&types.VolumeSnapshot{
+		SnapshotName: authSnapID,
+	}, nil)
+
+	// Returning snapID with the tenent prefix from Auth simulates what happens when Auth is enabled and LinkVolumeToVolume is called
+	mockPmaxClient.EXPECT().GetSnapshotInfo(context.Background(), sysID, vol.VolumeID, authSnapID).Return(&types.VolumeSnapshot{
+		SnapshotName: authSnapID,
+	}, nil)
+
+	mockPmaxClient.EXPECT().ModifySnapshotS(context.Background(), sysID, volumeList, tgtVolumeList, authSnapID, Link, "", generation, isCopy).Return(nil)
+
+	// Call the LinkVolumeToVolume function
+	err := s.LinkVolumeToVolume(context.Background(), sysID, vol, tgtDevID, snapID, reqID, isCopy, mockPmaxClient)
+	// Assert that the error is nil
+	if err != nil {
+		t.Errorf("Expected nil error, but got: %v", err)
 	}
 }
