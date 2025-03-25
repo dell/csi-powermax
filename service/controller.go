@@ -4400,7 +4400,7 @@ func (s *service) getArrayIDFromTopologyRequirement(topologyRequirement *csi.Top
 	}
 
 	if len(candidates) != 1 {
-		log.Warnf("topology requirements matched %d storage arrays, expected one", len(candidates))
+		log.Warnf("topology requirements matched %d storage arrays, expected one got %v", len(candidates), candidates)
 		return ""
 	}
 

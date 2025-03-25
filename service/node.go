@@ -96,8 +96,6 @@ var symToMaskingViewTargets sync.Map
 // Map to store if sym has fc connectivity or not
 var isSymConnFC sync.Map
 
-var symmetrixIDs []string
-
 // InvalidateSymToMaskingViewTargets - invalidates the cache
 // Only used for testing
 func (s *service) InvalidateSymToMaskingViewTargets() {
@@ -1325,7 +1323,7 @@ func (s *service) NodeGetInfo(
 		}
 		maxPowerMaxVolumesPerNode = s.opts.MaxVolumesPerNode
 	}
-	for _, array := range symmetrixIDs {
+	for _, array := range s.opts.ManagedArrays {
 		arrayLabels := s.opts.StorageArrays[array].Labels
 		for arrayLabelKey, arrayLabelVal := range arrayLabels {
 			log.Infof("adding label '%s' with value '%s' to the topology map", arrayLabelKey, arrayLabelVal)
@@ -1576,10 +1574,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		log.Debug("vmHost created successfully")
 	}
 
-	symmetrixIDs = s.filterArraysByZoneInfo(s.opts.StorageArrays)
-	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
-
-	err = s.nodeHostSetup(ctx, portWWNs, IQNs, hostNQN, symmetrixIDs)
+	err = s.nodeHostSetup(ctx, portWWNs, IQNs, hostNQN, s.opts.ManagedArrays)
 	if err != nil {
 		return err
 	} // #nosec G20
@@ -2246,12 +2241,8 @@ func (s *service) ensureISCSIDaemonStarted() error {
 func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error {
 	arrays := &types.SymmetrixIDList{}
 
-	if len(symmetrixIDs) > 0 {
-		arrays = s.retryableGetSymmetrixIDListAZ()
-	} else {
-		// Get the list of arrays
-		arrays = s.retryableGetSymmetrixIDList()
-	}
+	// Get the list of arrays
+	arrays = s.retryableGetSymmetrixIDList()
 
 	// for each array known to unisphere, ensure we have performed ISCSI login for our masking views
 	for _, array := range arrays.SymmetrixIDs {
@@ -2625,13 +2616,6 @@ func (s *service) retryableUpdateHostInitiators(ctx context.Context, array strin
 func (s *service) retryableGetSymmetrixIDList() *types.SymmetrixIDList {
 	return &types.SymmetrixIDList{
 		SymmetrixIDs: s.opts.ManagedArrays,
-	}
-}
-
-// retryableGetSymmetrixIDList returns the list of arrays
-func (s *service) retryableGetSymmetrixIDListAZ() *types.SymmetrixIDList {
-	return &types.SymmetrixIDList{
-		SymmetrixIDs: symmetrixIDs,
 	}
 }
 
