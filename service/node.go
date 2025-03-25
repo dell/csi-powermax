@@ -2251,7 +2251,7 @@ func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error 
 	} else {
 		// Get the list of arrays
 		arrays = s.retryableGetSymmetrixIDList()
-  }
+	}
 
 	// for each array known to unisphere, ensure we have performed ISCSI login for our masking views
 	for _, array := range arrays.SymmetrixIDs {
