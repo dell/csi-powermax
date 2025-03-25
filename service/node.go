@@ -2246,8 +2246,13 @@ func (s *service) ensureISCSIDaemonStarted() error {
 func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error {
 	arrays := &types.SymmetrixIDList{}
 
-	// Get the list of arrays
-	arrays = s.retryableGetSymmetrixIDList()
+	if len(symmetrixIDs) > 0 {
+		arrays = s.retryableGetSymmetrixIDListAZ()
+	} else {
+		// Get the list of arrays
+		arrays = s.retryableGetSymmetrixIDList()
+  }
+
 	// for each array known to unisphere, ensure we have performed ISCSI login for our masking views
 	for _, array := range arrays.SymmetrixIDs {
 		pmaxClient, err := s.GetPowerMaxClient(array)
@@ -2620,6 +2625,13 @@ func (s *service) retryableUpdateHostInitiators(ctx context.Context, array strin
 func (s *service) retryableGetSymmetrixIDList() *types.SymmetrixIDList {
 	return &types.SymmetrixIDList{
 		SymmetrixIDs: s.opts.ManagedArrays,
+	}
+}
+
+// retryableGetSymmetrixIDList returns the list of arrays
+func (s *service) retryableGetSymmetrixIDListAZ() *types.SymmetrixIDList {
+	return &types.SymmetrixIDList{
+		SymmetrixIDs: symmetrixIDs,
 	}
 }
 
