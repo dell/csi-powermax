@@ -1060,12 +1060,13 @@ func setArrayConfigEnvs(ctx context.Context) error {
 func (s *service) filterArraysByZoneInfo(storageArrays map[string]StorageArrayConfig) []string {
 	results := make([]string, 0)
 
+	nodeLabels, err := s.k8sUtils.GetNodeLabels(s.opts.NodeFullName)
+	if err != nil {
+		log.Warnf("failed to get Node Labels with error '%s'", err.Error())
+	}
+
 	for arrayID, arrayConfig := range storageArrays {
 		arrayLabels := arrayConfig.Labels
-		nodeLabels, err := s.k8sUtils.GetNodeLabels(s.opts.NodeFullName)
-		if err != nil {
-			log.Infof("failed to get Node Labels with error '%s'", err.Error())
-		}
 
 		keepArray := true
 		if len(arrayLabels) != 0 {
