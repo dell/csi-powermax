@@ -1576,7 +1576,13 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		log.Debug("vmHost created successfully")
 	}
 
-	symmetrixIDs = s.filterArraysByZoneInfo(s.opts.StorageArrays)
+	// Get the symmetrix ID list from Secret
+	if s.opts.StorageArrays != nil {
+		symmetrixIDs = s.filterArraysByZoneInfo(s.opts.StorageArrays)
+	} else {
+		// Get the symmetrix ID list from Configmap
+		symmetrixIDs = s.retryableGetSymmetrixIDList().SymmetrixIDs
+	}
 	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
 
 	err = s.nodeHostSetup(ctx, portWWNs, IQNs, hostNQN, symmetrixIDs)
