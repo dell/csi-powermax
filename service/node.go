@@ -1577,7 +1577,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 	}
 
 	// Get the symmetrix ID list from Secret
-	if s.opts.StorageArrays != nil {
+	if len(s.opts.StorageArrays) != nil {
 		symmetrixIDs = s.filterArraysByZoneInfo(s.opts.StorageArrays)
 	} else {
 		// Get the symmetrix ID list from Configmap
