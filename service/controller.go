@@ -3524,7 +3524,7 @@ func (s *service) ControllerExpandVolume(
 
 	allocatedSize := vol.CapacityCYL
 	// check nodeExpansionRequired if any host mapping exists, if yes set to true else false
-	nodeExpansionRequired := false
+	/*nodeExpansionRequired := false
 	// find if volume is present in any masking view
 	for _, sgid := range vol.StorageGroupIDList {
 		sg, err := pmaxClient.GetStorageGroup(ctx, symID, sgid)
@@ -3536,7 +3536,7 @@ func (s *service) ControllerExpandVolume(
 			nodeExpansionRequired = true
 			break
 		}
-	}
+	}*/
 
 	if requestedSize < allocatedSize {
 		log.Errorf("Attempting to shrink size of volume (%s) from (%d) CYL to (%d) CYL",
