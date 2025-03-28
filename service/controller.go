@@ -3523,6 +3523,20 @@ func (s *service) ControllerExpandVolume(
 	log.WithFields(fields).Info("Executing ExpandVolume with following fields")
 
 	allocatedSize := vol.CapacityCYL
+	// check nodeExpansionRequired if any host mapping exists, if yes set to true else false
+	nodeExpansionRequired := false
+	// find if volume is present in any masking view
+	for _, sgid := range vol.StorageGroupIDList {
+		sg, err := pmaxClient.GetStorageGroup(ctx, symID, sgid)
+		if err != nil || sg == nil {
+			log.Error(fmt.Sprintf("Could not retrieve Storage Group %s/%s", symID, sgid))
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		if sg.NumOfMaskingViews > 0 {
+			nodeExpansionRequired = true
+			break
+		}
+	}
 
 	if requestedSize < allocatedSize {
 		log.Errorf("Attempting to shrink size of volume (%s) from (%d) CYL to (%d) CYL",
@@ -3535,7 +3549,7 @@ func (s *service) ControllerExpandVolume(
 			volName, requestedSize, allocatedSize)
 		return &csi.ControllerExpandVolumeResponse{
 			CapacityBytes:         int64(allocatedSize) * cylinderSizeInBytes,
-			NodeExpansionRequired: true,
+			NodeExpansionRequired: nodeExpansionRequired,
 		}, nil
 	}
 
@@ -3549,7 +3563,7 @@ func (s *service) ControllerExpandVolume(
 	// NodeExpandVolume subsequently
 	csiResp := &csi.ControllerExpandVolumeResponse{
 		CapacityBytes:         int64(vol.CapacityCYL) * cylinderSizeInBytes,
-		NodeExpansionRequired: true,
+		NodeExpansionRequired: nodeExpansionRequired,
 	}
 	return csiResp, nil
 }
