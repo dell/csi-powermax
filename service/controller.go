@@ -3499,6 +3499,13 @@ func (s *service) ControllerExpandVolume(
 	}
 	volName := vol.VolumeIdentifier
 
+	// check for host access if there is any host attached to the volume, if yes set to true else false
+	nodeExpansionRequired := false
+	// TODO: check here if the volume has 1 or more host access
+	if len(vol) >= 1 { // If the volume has 1 or more host access  then set nodeExpansionRequired as true
+		nodeExpansionRequired = true
+	}
+
 	// Get the required capacity in cylinders
 	requestedSize, err := s.validateVolSize(ctx, req.CapacityRange, "", "", pmaxClient)
 	if err != nil {
@@ -3535,7 +3542,7 @@ func (s *service) ControllerExpandVolume(
 			volName, requestedSize, allocatedSize)
 		return &csi.ControllerExpandVolumeResponse{
 			CapacityBytes:         int64(allocatedSize) * cylinderSizeInBytes,
-			NodeExpansionRequired: true,
+			NodeExpansionRequired: nodeExpansionRequired,
 		}, nil
 	}
 
