@@ -3549,7 +3549,7 @@ func (s *service) ControllerExpandVolume(
 			volName, requestedSize, allocatedSize)
 		return &csi.ControllerExpandVolumeResponse{
 			CapacityBytes:         int64(allocatedSize) * cylinderSizeInBytes,
-			NodeExpansionRequired: nodeExpansionRequired,
+			NodeExpansionRequired: false,
 		}, nil
 	}
 
@@ -3563,7 +3563,7 @@ func (s *service) ControllerExpandVolume(
 	// NodeExpandVolume subsequently
 	csiResp := &csi.ControllerExpandVolumeResponse{
 		CapacityBytes:         int64(vol.CapacityCYL) * cylinderSizeInBytes,
-		NodeExpansionRequired: nodeExpansionRequired,
+		NodeExpansionRequired: false,
 	}
 	return csiResp, nil
 }
