@@ -666,7 +666,7 @@ func (s *service) BeforeServe(
 	}
 	s.nvmetcpClient = gonvme.NewNVMe(nvmetcpOpts)
 
-	if s.isNode() {
+	if s.isNode() && len(s.opts.StorageArrays) > 0 {
 		s.opts.ManagedArrays = s.filterArraysByZoneInfo(s.opts.StorageArrays)
 		log.Infof("Node will have access to the following arrays: %v", s.opts.ManagedArrays)
 	}
