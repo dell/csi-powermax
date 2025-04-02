@@ -17,7 +17,7 @@ require (
 	github.com/dell/gofsutil v1.18.0
 	github.com/dell/goiscsi v1.11.1-0.20250313165902-65cabee40e17
 	github.com/dell/gonvme v1.10.2-0.20250318173615-ad76101d9f2b
-	github.com/dell/gopowermax/v2 v2.9.1-0.20250313152039-4e06099c2a0d
+	github.com/dell/gopowermax/v2 v2.9.1-0.20250402093222-1dba610086ec
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/golang/mock v1.6.0
 	github.com/gorilla/mux v1.8.1
