@@ -237,7 +237,7 @@ DRIVER="csi-powermax"
 SCRIPTDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 REPODIR="$( dirname "${SCRIPTDIR}" )"
 
-DRIVERVERSION="csi-powermax-2.13.0"
+DRIVERVERSION="csi-powermax-2.14.0"
 
 while getopts "cprv:h" opt; do
   case $opt in
