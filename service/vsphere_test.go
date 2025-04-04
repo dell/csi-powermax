@@ -55,12 +55,12 @@ func TestGetLocalMAC(t *testing.T) {
 }
 
 func TestGetSCSILuns(t *testing.T) {
-	simulator.Test(func(_ context.Context, c *vim25.Client) {
+	simulator.Test(func(ctx context.Context, c *vim25.Client) {
 		mockVMHost := &VMHost{
 			client: &govmomi.Client{
 				Client: c,
 			},
-			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+			VM:  object.NewVirtualMachine(c, simulator.Map(ctx).Any("VirtualMachine").Reference()),
 			Ctx: context.Background(),
 		}
 
@@ -85,7 +85,7 @@ func TestAttachRDM(t *testing.T) {
 				Client: c,
 			},
 			Ctx: context.Background(),
-			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+			VM:  object.NewVirtualMachine(c, simulator.Map(ctx).Any("VirtualMachine").Reference()),
 		}
 
 		// Power on the VM
@@ -115,13 +115,13 @@ func TestAttachRDM(t *testing.T) {
 }
 
 func TestDetachRDM(t *testing.T) {
-	simulator.Test(func(_ context.Context, c *vim25.Client) {
+	simulator.Test(func(ctx context.Context, c *vim25.Client) {
 		mockVMHost := &VMHost{
 			client: &govmomi.Client{
 				Client: c,
 			},
 			Ctx: context.Background(),
-			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+			VM:  object.NewVirtualMachine(c, simulator.Map(ctx).Any("VirtualMachine").Reference()),
 		}
 		t.Run("Device is not found in the list of available devices", func(t *testing.T) {
 			deviceNAA := "mpx.vmhba0:C0:T0:L0"
@@ -138,7 +138,7 @@ func TestRescanAllHba(t *testing.T) {
 				Client: c,
 			},
 			Ctx: context.Background(),
-			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+			VM:  object.NewVirtualMachine(c, simulator.Map(ctx).Any("VirtualMachine").Reference()),
 		}
 		t.Run("Successful rescan", func(t *testing.T) {
 			host, err := mockVMHost.VM.HostSystem(ctx)
@@ -151,13 +151,13 @@ func TestRescanAllHba(t *testing.T) {
 }
 
 func TestGetAvailableSCSIController(t *testing.T) {
-	simulator.Test(func(_ context.Context, c *vim25.Client) {
+	simulator.Test(func(ctx context.Context, c *vim25.Client) {
 		mockVMHost := &VMHost{
 			client: &govmomi.Client{
 				Client: c,
 			},
 			Ctx: context.Background(),
-			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+			VM:  object.NewVirtualMachine(c, simulator.Map(ctx).Any("VirtualMachine").Reference()),
 		}
 		t.Run("Successful GetAvailableSCSIController", func(t *testing.T) {
 			_, err := mockVMHost.getAvailableSCSIController()
@@ -167,13 +167,13 @@ func TestGetAvailableSCSIController(t *testing.T) {
 }
 
 func TestCreateController(t *testing.T) {
-	simulator.Test(func(_ context.Context, c *vim25.Client) {
+	simulator.Test(func(ctx context.Context, c *vim25.Client) {
 		mockVMHost := &VMHost{
 			client: &govmomi.Client{
 				Client: c,
 			},
 			Ctx: context.Background(),
-			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+			VM:  object.NewVirtualMachine(c, simulator.Map(ctx).Any("VirtualMachine").Reference()),
 		}
 
 		t.Run("Successful createController", func(t *testing.T) {
@@ -193,7 +193,7 @@ func TestRemoveLunDevice(t *testing.T) {
 				Client: c,
 			},
 			Ctx: ctx,
-			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+			VM:  object.NewVirtualMachine(c, simulator.Map(ctx).Any("VirtualMachine").Reference()),
 		}
 
 		// Retrieve valud SCSI LUNs from simulator.
