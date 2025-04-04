@@ -1,0 +1,18 @@
+---
+# This minimal YAML represents a StorageClass which can be used with
+# PowerMax zones. Any missing parameters such as SYMID can be provided
+# in the secret for the array. Consult the CSM Documentation for more
+# details.
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: powermax-zone
+parameters:
+  csi.storage.k8s.io/fstype: xfs
+provisioner: csi-powermax.dellemc.com
+reclaimPolicy: Delete
+# volumeBindingMode must be set to WaitForFirstConsumer for
+# volumes to be provisioned in the target zone.
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

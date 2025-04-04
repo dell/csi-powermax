@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -412,7 +411,7 @@ func (s *service) BeforeServe(
 	// get the SP's operating mode.
 	s.mode = csictx.Getenv(ctx, gocsi.EnvVarMode)
 
-	if s.mode == "node" {
+	if s.isNode() {
 		// Reading Topology filters from the config file
 		topoConfigFilePath, ok := csictx.LookupEnv(ctx, EnvTopoConfigFilePath)
 		if !ok {
@@ -667,40 +666,36 @@ func (s *service) BeforeServe(
 	}
 	s.nvmetcpClient = gonvme.NewNVMe(nvmetcpOpts)
 
-	// seed the random methods
-	rand.Seed(time.Now().Unix())
+	if s.isNode() && len(s.opts.StorageArrays) > 0 {
+		s.opts.ManagedArrays = s.filterArraysByZoneInfo(s.opts.StorageArrays)
+		log.Infof("Node will have access to the following arrays: %v", s.opts.ManagedArrays)
+	}
 
 	if _, ok := csictx.LookupEnv(ctx, "X_CSI_POWERMAX_NO_PROBE_ON_START"); !ok {
-		// Do a controller probe
-		if !strings.EqualFold(s.mode, "node") {
+		if s.isController() {
 			if err := s.controllerProbe(ctx); err != nil {
 				return err
 			}
 		}
 
-		// Do a node probe
-		if !strings.EqualFold(s.mode, "controller") {
+		if s.isNode() {
 			if err := s.nodeProbe(ctx); err != nil {
 				return err
 			}
 		}
 	}
 
-	// If this is a node, run the node startup logic
-	if !strings.EqualFold(s.mode, "controller") {
+	if s.isNode() {
 		if err := s.nodeStartup(ctx); err != nil {
 			return err
 		}
 	}
 
-	// Start the deletion worker thread
-	log.Printf("s.mode: %s", s.mode)
-	if !strings.EqualFold(s.mode, "node") {
+	if s.isController() {
 		s.NewDeletionWorker(s.opts.ClusterPrefix, s.opts.ManagedArrays)
 	}
 
-	// Start the snapshot housekeeping worker thread
-	if !strings.EqualFold(s.mode, "node") {
+	if s.isController() {
 		s.startSnapCleanupWorker() // #nosec G20
 		if s.snapCleaner == nil {
 			s.snapCleaner = new(snapCleanupWorker)
@@ -719,6 +714,14 @@ func (s *service) ParseConfig() {
 
 	log.Infof("proccessed allowed list: (%+v)", s.allowedTopologyKeys)
 	log.Infof("proccessed denied list: (%+v)", s.deniedTopologyKeys)
+}
+
+func (s *service) isNode() bool {
+	return strings.EqualFold(s.mode, "node")
+}
+
+func (s *service) isController() bool {
+	return strings.EqualFold(s.mode, "controller")
 }
 
 func readNodesRules(connections []NodeConfig) map[string][]string {
@@ -1060,12 +1063,13 @@ func setArrayConfigEnvs(ctx context.Context) error {
 func (s *service) filterArraysByZoneInfo(storageArrays map[string]StorageArrayConfig) []string {
 	results := make([]string, 0)
 
+	nodeLabels, err := s.k8sUtils.GetNodeLabels(s.opts.NodeFullName)
+	if err != nil {
+		log.Warnf("failed to get node labels: '%s'", err.Error())
+	}
+
 	for arrayID, arrayConfig := range storageArrays {
 		arrayLabels := arrayConfig.Labels
-		nodeLabels, err := s.k8sUtils.GetNodeLabels(s.opts.NodeFullName)
-		if err != nil {
-			log.Infof("failed to get Node Labels with error '%s'", err.Error())
-		}
 
 		keepArray := true
 		if len(arrayLabels) != 0 {
