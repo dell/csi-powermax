@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -3122,6 +3123,15 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 	var portListFromHost []string
 	var isValidHost bool
 	if host.HostType == "Fibre" {
+		scsiPortList, err := pmaxClient.GetPortListForSymmetrix(ctx, symID, "SCSI_FC")
+		if err != nil {
+			return "", fmt.Errorf("Failed to fetch SCSI_FC port for array: %s", symID)
+		}
+		var scsiPorts []string
+		for _, portKey := range scsiPortList.SymmetrixPortKey {
+			dirPort := fmt.Sprintf("%s:%s", portKey.DirectorID, portKey.PortID)
+			scsiPorts = append(scsiPorts, dirPort)
+		}
 		for _, initiator := range host.Initiators {
 			initList, err := pmaxClient.GetInitiatorList(ctx, symID, initiator, false, false)
 			if err != nil {
@@ -3130,7 +3140,8 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 			}
 			for _, initiatorID := range initList.InitiatorIDs {
 				_, dirPort, _, err := splitFibreChannelInitiatorID(initiatorID)
-				if err != nil {
+				// Filter SCSI_FC ports; skip the port if it is not a SCSI_FC port
+				if err != nil || !slices.Contains(scsiPorts, dirPort) {
 					continue
 				}
 				portListFromHost = appendIfMissing(portListFromHost, dirPort)
