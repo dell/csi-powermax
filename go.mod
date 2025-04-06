@@ -18,7 +18,7 @@ require (
 	github.com/dell/goiscsi v1.11.1-0.20250327070438-0d5eaba96f39
 	github.com/dell/gonvme v1.10.2-0.20250327070413-9877f9a59ca9
 	github.com/dell/gopowermax/v2 v2.9.1-0.20250313152039-4e06099c2a0d
-	github.com/fsnotify/fsnotify v1.8.0
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/golang/mock v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/kubernetes-csi/csi-lib-utils v0.11.0
