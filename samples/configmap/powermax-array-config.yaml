@@ -9,9 +9,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# ***DEPRECATION NOTICE*** The powermax-array-configmap has been deprecated
-# and will be removed in future release. It remains for backward
-# compatibility only. These values have been migrated to powermax sample yamls
+# ***DEPRECATION NOTICE*** The powermax-array-configmap won't be
+# supported after CSM 1.14 (May 2025) and will be deprecated by
+# CSM 1.16 (January 2026). It remains for backward compatibility only.
+# These values have been migrated to powermax sample yaml.
 # To create this configmap use: kubectl create -f powermax-array-config.yaml
 apiVersion: v1
 kind: ConfigMap
