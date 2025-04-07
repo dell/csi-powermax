@@ -2885,7 +2885,7 @@ func (f *feature) iCallNodeStageVolumeWithSimulator() error {
 				Client: c,
 			},
 			Ctx: context.Background(),
-			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+			VM:  object.NewVirtualMachine(c, simulator.Map(ctx).Any("VirtualMachine").Reference()),
 		}
 		vmHost = mockVMHost
 		_ = f.getNodePublishVolumeRequest()
@@ -2967,7 +2967,7 @@ func (f *feature) iCallNodeUnstageVolumeWithSimulator() error {
 				Client: c,
 			},
 			Ctx: context.Background(),
-			VM:  object.NewVirtualMachine(c, simulator.Map.Any("VirtualMachine").Reference()),
+			VM:  object.NewVirtualMachine(c, simulator.Map(ctx).Any("VirtualMachine").Reference()),
 		}
 		vmHost = mockVMHost
 		header := metadata.New(map[string]string{"csi.requestid": "1"})
