@@ -3121,9 +3121,8 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 	validPortGroupID := ""
 	hostID := host.HostID
 	var portListFromHost []string
-	var isValidHost bool
 	if host.HostType == "Fibre" {
-		scsiPortList, err := pmaxClient.GetPortListForSymmetrix(ctx, symID, "SCSI_FC")
+		scsiPortList, err := pmaxClient.GetPortListByProtocol(ctx, symID, "SCSI_FC")
 		if err != nil {
 			return "", fmt.Errorf("Failed to fetch SCSI_FC port for array: %s", symID)
 		}
@@ -3131,6 +3130,9 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 		for _, portKey := range scsiPortList.SymmetrixPortKey {
 			dirPort := fmt.Sprintf("%s:%s", portKey.DirectorID, portKey.PortID)
 			scsiPorts = append(scsiPorts, dirPort)
+		}
+		isSCSIFCPort := func(scsiPorts []string, port string) bool {
+			return slices.Contains(scsiPorts, port)
 		}
 		for _, initiator := range host.Initiators {
 			initList, err := pmaxClient.GetInitiatorList(ctx, symID, initiator, false, false)
@@ -3141,15 +3143,14 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 			for _, initiatorID := range initList.InitiatorIDs {
 				_, dirPort, _, err := splitFibreChannelInitiatorID(initiatorID)
 				// Filter SCSI_FC ports; skip the port if it is not a SCSI_FC port
-				if err != nil || !slices.Contains(scsiPorts, dirPort) {
+				if err != nil || !isSCSIFCPort(scsiPorts, dirPort) {
 					continue
 				}
 				portListFromHost = appendIfMissing(portListFromHost, dirPort)
-				isValidHost = true
 			}
 		}
 	}
-	if !isValidHost {
+	if len(portListFromHost) == 0 {
 		return "", fmt.Errorf("Failed to find a valid initiator for hostID %s from %s", hostID, symID)
 	}
 	fcPortGroupList, err := pmaxClient.GetPortGroupList(ctx, symID, "fibre")

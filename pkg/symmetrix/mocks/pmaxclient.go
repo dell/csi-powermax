@@ -1178,19 +1178,19 @@ func (mr *MockPmaxClientMockRecorder) GetPortList(ctx, symID, directorID, query 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPortList", reflect.TypeOf((*MockPmaxClient)(nil).GetPortList), ctx, symID, directorID, query)
 }
 
-// GetPortListForSymmetrix mocks base method.
-func (m *MockPmaxClient) GetPortListForSymmetrix(ctx context.Context, symID, protocol string) (*v100.PortList, error) {
+// GetPortListByProtocol mocks base method.
+func (m *MockPmaxClient) GetPortListByProtocol(ctx context.Context, symID, protocol string) (*v100.PortList, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPortListForSymmetrix", ctx, symID, protocol)
+	ret := m.ctrl.Call(m, "GetPortListByProtocol", ctx, symID, protocol)
 	ret0, _ := ret[0].(*v100.PortList)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetPortListForSymmetrix indicates an expected call of GetPortListForSymmetrix.
-func (mr *MockPmaxClientMockRecorder) GetPortListForSymmetrix(ctx, symID, protocol any) *gomock.Call {
+// GetPortListByProtocol indicates an expected call of GetPortListByProtocol.
+func (mr *MockPmaxClientMockRecorder) GetPortListByProtocol(ctx, symID, protocol any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPortListForSymmetrix", reflect.TypeOf((*MockPmaxClient)(nil).GetPortListForSymmetrix), ctx, symID, protocol)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPortListByProtocol", reflect.TypeOf((*MockPmaxClient)(nil).GetPortListByProtocol), ctx, symID, protocol)
 }
 
 // GetPrivVolumeByID mocks base method.
