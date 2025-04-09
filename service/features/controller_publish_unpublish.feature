@@ -38,6 +38,23 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.1.0
+     Scenario Outline: Publish volume with single writer for FC when PG is present and induced errors
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      And a valid CreateVolumeResponse is returned
+      And I set transport protocol to "FC"
+      And I have a Node "node1" with Host
+      And I have a FC PortGroup "PG1"
+      And I induce error <induced>
+      And I call PublishVolume with <access> to "node1"
+      And the error contains <errormsg>
+      Examples:
+       | "single-writer"             | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
+       | "single-node-single-writer" | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
+       | "single-node-multi-writer"  | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
+
+@controllerPublish
+@v1.1.0
      Scenario Outline: Publish volume with single writer for FC when PG is not present
       Given a PowerMax service
       And I call CreateVolume "volume1"
@@ -54,6 +71,22 @@ Feature: PowerMax CSI interface
 
 @controllerPublish
 @v1.1.0
+     Scenario Outline: Publish volume with single writer for FC when PG is not present and induced errors
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      And a valid CreateVolumeResponse is returned
+      And I set transport protocol to "FC"
+      And I have a Node "node1" with Host
+      And I induce error <induced>
+      And I call PublishVolume with <access> to "node1"
+      Then the error contains <errormsg>
+      Examples:
+       | "single-writer"             | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
+       | "single-node-single-writer" | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
+       | "single-node-multi-writer"  | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
+
+@controllerPublish
+@v1.1.0
      Scenario Outline: Publish volume with single writer for FC when PG is not present and initiator is mapped to lot of dir/ports
       Given a PowerMax service
       And I call CreateVolume "volume1"
@@ -67,6 +100,22 @@ Feature: PowerMax CSI interface
        | "single-writer"             |
        | "single-node-single-writer" |
        | "single-node-multi-writer"  |
+
+@controllerPublish
+@v1.1.0
+     Scenario Outline: Publish volume with single writer for FC when PG is not present and initiator is mapped to lot of dir/ports and induced errors
+      Given a PowerMax service
+      And I call CreateVolume "volume1"
+      And a valid CreateVolumeResponse is returned
+      And I set transport protocol to "FC"
+      And I have a Node "node1" with Host with Initiator mapped to multiple ports
+      And I induce error <induced>
+      And I call PublishVolume with <access> to "node1"
+      Then the error contains <errormsg>
+      Examples:
+       | "single-writer"             | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
+       | "single-node-single-writer" | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
+       | "single-node-multi-writer"  | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
 
 @controllerPublish
 @v1.0.0
@@ -118,6 +167,7 @@ Feature: PowerMax CSI interface
        | "CreateMaskingViewError"  | "Failed to create masking view"                  |
        | "UpdateStorageGroupError" | "Failed to add volume to storage group"          |
        | "GetStorageGroupError"    | "Failed to fetch SG details"                     |
+       | "GetPortError"            | "Failed to fetch SCSI_FC port for array"         |
 
 @controllerPublish
 @v1.0.0
