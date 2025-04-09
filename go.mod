@@ -18,7 +18,7 @@ require (
 	github.com/dell/goiscsi v1.11.1-0.20250327070438-0d5eaba96f39
 	github.com/dell/gonvme v1.10.2-0.20250327070413-9877f9a59ca9
 	github.com/dell/gopowermax/v2 v2.9.1-0.20250407125221-be5c9ff6cae9
-	github.com/fsnotify/fsnotify v1.8.0
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/golang/mock v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/kubernetes-csi/csi-lib-utils v0.11.0
@@ -27,7 +27,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/vmware/govmomi v0.49.0
 	go.uber.org/mock v0.5.0
-	golang.org/x/net v0.38.0
+	golang.org/x/net v0.39.0
 	google.golang.org/grpc v1.71.0
 	google.golang.org/protobuf v1.36.4
 	k8s.io/api v0.32.1
@@ -85,8 +85,8 @@ require (
 	golang.org/x/oauth2 v0.25.0 // indirect
 	golang.org/x/sync v0.13.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect
-	golang.org/x/term v0.30.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/term v0.31.0 // indirect
+	golang.org/x/text v0.24.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250106144421-5f5ef82da422 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250115164207-1a7da9e5054f // indirect
