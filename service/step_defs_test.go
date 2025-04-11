@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -2762,6 +2763,9 @@ func (f *feature) iCallNodeUnpublishVolume() error {
 }
 
 func (f *feature) thereAreNoRemainingMounts() error {
+	for _, m := range gofsutil.GOFSMockMounts {
+		fmt.Printf("Found unexpected mount point: %#v\n", m)
+	}
 	if len(gofsutil.GOFSMockMounts) > 0 {
 		return errors.New("expected all mounts to be removed but one or more remained")
 	}
@@ -5210,6 +5214,35 @@ func (f *feature) validateSnapshotSizeBytesMatchesVolumeCapacityGB() error {
 	return nil
 }
 
+// Restarting the driver node plugin container results in duplicated mount points.
+// For example, if there ara two mount points before restart:
+// 1. /path/to/priv/mount
+// 2. /volume/public/mount/path
+// Then after the restart the container will see 4 mount points:
+// 1. /path/to/priv/mount
+// 2. /noderoot/path/to/priv/mount
+// 3. /volume/public/mount/path
+// 4. /noderoot/volume/public/mount/path
+func (f *feature) restartDriver() error {
+	newMounts := []gofsutil.Info{}
+	for _, m := range gofsutil.GOFSMockMounts {
+		newMounts = append(newMounts, m)
+		//if m.Path != f.nodePublishVolumeRequest.TargetPath {
+		fmt.Printf("Duplicating mount point: %#v\n", m)
+		duplicate := gofsutil.Info{
+			Device: m.Device,
+			Path:   filepath.Join("/noderoot", m.Path),
+			Source: m.Source,
+			Type:   m.Type,
+			Opts:   m.Opts,
+		}
+		newMounts = append(newMounts, duplicate)
+		//}
+	}
+	gofsutil.GOFSMockMounts = newMounts
+	return nil
+}
+
 func FeatureContext(s *godog.ScenarioContext) {
 	f := &feature{}
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
@@ -5470,4 +5503,5 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call QueryArrayStatus with "([^"]*)" and "([^"]*)"$`, f.iCallQueryArrayStatus)
 	s.Step(`^I call ArrayMigrate with "([^"]*)", parameter "([^"]*)"$`, f.iCallArrayMigrate)
 	s.Step(`^I validate the snapshot SizeBytes matches the volume CapacityGB$`, f.validateSnapshotSizeBytesMatchesVolumeCapacityGB)
+	s.Step(`^I restart the driver$`, f.restartDriver)
 }
