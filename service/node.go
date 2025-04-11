@@ -96,8 +96,6 @@ var symToMaskingViewTargets sync.Map
 // Map to store if sym has fc connectivity or not
 var isSymConnFC sync.Map
 
-var symmetrixIDs []string
-
 // InvalidateSymToMaskingViewTargets - invalidates the cache
 // Only used for testing
 func (s *service) InvalidateSymToMaskingViewTargets() {
@@ -1325,7 +1323,7 @@ func (s *service) NodeGetInfo(
 		}
 		maxPowerMaxVolumesPerNode = s.opts.MaxVolumesPerNode
 	}
-	for _, array := range symmetrixIDs {
+	for _, array := range s.opts.ManagedArrays {
 		arrayLabels := s.opts.StorageArrays[array].Labels
 		for arrayLabelKey, arrayLabelVal := range arrayLabels {
 			log.Infof("adding label '%s' with value '%s' to the topology map", arrayLabelKey, arrayLabelVal)
@@ -1576,16 +1574,7 @@ func (s *service) nodeStartup(ctx context.Context) error {
 		log.Debug("vmHost created successfully")
 	}
 
-	// Get the symmetrix ID list from Secret
-	if len(s.opts.StorageArrays) > 0 {
-		symmetrixIDs = s.filterArraysByZoneInfo(s.opts.StorageArrays)
-	} else {
-		// Get the symmetrix ID list from Configmap
-		symmetrixIDs = s.retryableGetSymmetrixIDList().SymmetrixIDs
-	}
-	log.Debug(fmt.Sprintf("GetSymmetrixIDList returned: %v", symmetrixIDs))
-
-	err = s.nodeHostSetup(ctx, portWWNs, IQNs, hostNQN, symmetrixIDs)
+	err = s.nodeHostSetup(ctx, portWWNs, IQNs, hostNQN, s.opts.ManagedArrays)
 	if err != nil {
 		return err
 	} // #nosec G20
@@ -2254,6 +2243,7 @@ func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error 
 
 	// Get the list of arrays
 	arrays = s.retryableGetSymmetrixIDList()
+
 	// for each array known to unisphere, ensure we have performed ISCSI login for our masking views
 	for _, array := range arrays.SymmetrixIDs {
 		pmaxClient, err := s.GetPowerMaxClient(array)

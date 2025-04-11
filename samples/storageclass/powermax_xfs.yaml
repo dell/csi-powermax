@@ -23,7 +23,7 @@ parameters:
   # Optional: false
   # Examples: "DEFAULT_SRP" , "SRP_1"
   SRP: <SRP Name>
-  # Serial ID of the array that is used for provisioning
+  # ID of the array that is used for provisioning. Must quote SYMID.
   # If not provided and availability zones are used then the value specified in the
   # secret will be used
   # Optional: false
@@ -43,11 +43,11 @@ parameters:
   # HostLimitName: "HL1"
   # The MBs per Second Host IO limit for the storage class
   # Optional: true, Default: ""
-  # Examples: 100, 200, NOLIMIT
+  # Examples: "100", "200", NOLIMIT
   # HostIOLimitMBSec: ""
   # The IOs per Second Host IO limit for the storage class
   # Optional: true, Default: ""
-  # Examples: 100, 200, NOLIMIT
+  # Examples: "100", "200", NOLIMIT
   # HostIOLimitIOSec: ""
   # distribution of the Host IO limits for the storage class
   # Optional: true, Default: ""

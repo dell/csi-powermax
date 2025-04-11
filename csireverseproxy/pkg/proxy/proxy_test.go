@@ -66,7 +66,7 @@ func readProxySecret() (*config.ProxySecret, error) {
 func getProxyConfigFromSecret(t *testing.T) (*config.ProxyConfig, error) {
 	proxySecret, err := readProxySecret()
 	if err != nil {
-		t.Errorf(err.Error())
+		t.Errorf("%s", err.Error())
 		return nil, err
 	}
 	k8sUtils := k8smock.Init()
