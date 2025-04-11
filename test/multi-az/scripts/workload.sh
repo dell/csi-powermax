@@ -13,7 +13,7 @@
 
 # This script contains definitions for managing test workloads.
 
-. ./log_utils.sh
+source ./scripts/log_utils.sh
 
 APP_NAMESPACE=pmax-az-test
 SIMPLE_APP_IMG=quay.io/dell/container-storage-modules/csi-vxflexos:nightly
@@ -220,8 +220,9 @@ case $action in
     fi
     appname=$1
     storageclass=$2
+    echo "Creating app $appname with storage class $storageclass..."
 
-    add_zone_label $appname $storage_class
+    create_app $appname $storageclass
     ;;
   delete_app)
     if [ "$#" -ne 1 ]; then

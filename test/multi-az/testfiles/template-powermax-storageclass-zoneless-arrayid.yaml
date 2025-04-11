@@ -1,0 +1,15 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  # authorization expects this storage class name
+  # please do not change
+  name: pmax-mz-none-symid
+parameters:
+  SYMID: "REPLACE_STORAGE_ID_1"
+  SRP: "REPLACE_RESOURCE_POOL"
+  ServiceLevel: "REPLACE_SERVICE_LEVEL"
+provisioner: csi-powermax.dellemc.com
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+

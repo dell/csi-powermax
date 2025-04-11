@@ -25,6 +25,7 @@
 #############
 # SETUP
 #############
+CONFIGFILE="./config"
 # this will add zone label zoneA to worker-1 and zoneB to worker 2
 # since we want to support multi-AZ matching EVERY label, we're adding two separate labels
 echo "Adding labels to worker nodes for topology..."
@@ -36,18 +37,18 @@ echo "Generating temporary YAML files for kubectl..."
 mkdir ./testfiles/tmp
 
 # create the secret yaml file
-./scripts/replace.sh ./config ./testfiles/template-powermax-secret.yaml ./testfiles/tmp/secret.yaml
+./scripts/replace.sh $CONFIGFILE ./testfiles/template-powermax-secret.yaml ./testfiles/tmp/secret.yaml
 
 # Create the powermax-array-config configmap yaml file
-./scripts/replace.sh ./config ./testfiles/template-powermax-configmap.yaml ./testfiles/tmp/powermax-configmap.yaml
+./scripts/replace.sh $CONFIGFILE ./testfiles/template-powermax-configmap.yaml ./testfiles/tmp/powermax-configmap.yaml
 
 # Create the CSM object yaml file
-./scripts/replace.sh ./config ./testfiles/template-powermax-csm.yaml ./testfiles/tmp/powermax-csm.yaml
+./scripts/replace.sh $CONFIGFILE ./testfiles/template-powermax-csm.yaml ./testfiles/tmp/powermax-csm.yaml
 
 # Set up storageclasses-- two zoned in the SC and one without zoning
-./scripts/replace.sh ./config ./testfiles/template-powermax-storageclass-1.yaml  ./testfiles/tmp/sc1.yaml
-./scripts/replace.sh ./config ./testfiles/template-powermax-storageclass-2.yaml  ./testfiles/tmp/sc2.yaml
-./scripts/replace.sh ./config ./testfiles/template-powermax-storageclass-zoneless.yaml  ./testfiles/tmp/sc3.yaml
+./scripts/replace.sh $CONFIGFILE ./testfiles/template-powermax-storageclass-1.yaml  ./testfiles/tmp/sc1.yaml
+./scripts/replace.sh $CONFIGFILE ./testfiles/template-powermax-storageclass-2.yaml  ./testfiles/tmp/sc2.yaml
+./scripts/replace.sh $CONFIGFILE ./testfiles/template-powermax-storageclass-zoneless.yaml  ./testfiles/tmp/sc3.yaml
 
 #Create SSL secret for reverse proxy
 echo "Generating SSL secret..."
@@ -71,7 +72,7 @@ echo "Waiting for driver pods to be ready..."
 
 # Verify that all nodes that have a pod running have their labels accordingly
 echo "Verifying node labels match pods + secrets..."
-./scripts/modify_zoning_labels.sh validate-zoning
+./scripts/modify_zoning_labels.sh validate-zoning powermax
 
 #############
 # PROVISIONING TESTS
@@ -84,22 +85,22 @@ node2=${nodes[1]}
 
 # these will verify that zoning works using storage classes that have zone information
 echo "Creating zoned workloads..."
-./scripts/workload.sh create_app zoneATest pmax-mz-1
-./scripts/workload.sh create_app zoneBTest pmax-mz-2
+./scripts/workload.sh create_app zone-a-test pmax-mz-1
+./scripts/workload.sh create_app zone-b-test pmax-mz-2
 echo "Validating zoned workloads..."
-./scripts/workload.sh validate_app zoneATest $node1
-./scripts/workload.sh validate_app zoneBTest $node2
+./scripts/workload.sh validate_app zone-a-test $node1
+./scripts/workload.sh validate_app zone-b-test $node2
 echo "Removing zoned workloads..."
-./scripts/workload.sh delete_app zoneATest
-./scripts/workload.sh delete_app zoneBTest
+./scripts/workload.sh delete_app zone-a-test
+./scripts/workload.sh delete_app zone-b-test
 
 # this will verify that provisioning with no zone in storage class still works
 # no validate app step-- it coming online is sufficient, and we do not care which zone it's on
 # that will be decided by the allowed topologies of the node the workload is put on.
 echo "Creating workload with no specific zone in storage class..."
-./scripts/workload.sh create_app zonelessTest pmax-mz-none
+./scripts/workload.sh create_app zoneless-test pmax-mz-none
 echo "Removing workload after successful install..."
-./scripts/workload.sh delete_app zonelessTest
+./scripts/workload.sh delete_app zoneless-test
 
 
 #############
