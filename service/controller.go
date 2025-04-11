@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -3120,8 +3121,19 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 	validPortGroupID := ""
 	hostID := host.HostID
 	var portListFromHost []string
-	var isValidHost bool
 	if host.HostType == "Fibre" {
+		scsiPortList, err := pmaxClient.GetPortListByProtocol(ctx, symID, "SCSI_FC")
+		if err != nil {
+			return "", fmt.Errorf("Failed to fetch SCSI_FC port for array: %s", symID)
+		}
+		var scsiPorts []string
+		for _, portKey := range scsiPortList.SymmetrixPortKey {
+			dirPort := fmt.Sprintf("%s:%s", portKey.DirectorID, portKey.PortID)
+			scsiPorts = append(scsiPorts, dirPort)
+		}
+		isSCSIFCPort := func(scsiPorts []string, port string) bool {
+			return slices.Contains(scsiPorts, port)
+		}
 		for _, initiator := range host.Initiators {
 			initList, err := pmaxClient.GetInitiatorList(ctx, symID, initiator, false, false)
 			if err != nil {
@@ -3130,15 +3142,15 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 			}
 			for _, initiatorID := range initList.InitiatorIDs {
 				_, dirPort, _, err := splitFibreChannelInitiatorID(initiatorID)
-				if err != nil {
+				// Filter SCSI_FC ports; skip the port if it is not a SCSI_FC port
+				if err != nil || !isSCSIFCPort(scsiPorts, dirPort) {
 					continue
 				}
 				portListFromHost = appendIfMissing(portListFromHost, dirPort)
-				isValidHost = true
 			}
 		}
 	}
-	if !isValidHost {
+	if len(portListFromHost) == 0 {
 		return "", fmt.Errorf("Failed to find a valid initiator for hostID %s from %s", hostID, symID)
 	}
 	fcPortGroupList, err := pmaxClient.GetPortGroupList(ctx, symID, "fibre")
@@ -3289,11 +3301,14 @@ func (s *service) CreateSnapshot(
 			"Could not find source volume on the array")
 	}
 
+	snapBytes := int64(vol.CapacityGB * 1024 * 1024 * 1024)
+
 	// Is it an idempotent request?
 	snapInfo, err := pmaxClient.GetSnapshotInfo(ctx, symID, devID, snapID)
 	if err == nil && snapInfo.VolumeSnapshotSource != nil {
 		snapID = fmt.Sprintf("%s-%s-%s", snapID, symID, devID)
 		snapshot := &csi.Snapshot{
+			SizeBytes:      snapBytes,
 			SnapshotId:     snapID,
 			SourceVolumeId: volID, ReadyToUse: true,
 			CreationTime: timestamppb.Now(),
@@ -3329,7 +3344,7 @@ func (s *service) CreateSnapshot(
 	snapID = fmt.Sprintf("%s-%s-%s", snap.SnapshotName, symID, devID)
 	// populate response structure
 	snapshot := &csi.Snapshot{
-		SizeBytes:      int64(cylinderSizeInBytes * vol.CapacityCYL),
+		SizeBytes:      snapBytes,
 		SnapshotId:     snapID,
 		SourceVolumeId: volID,
 		ReadyToUse:     true,
