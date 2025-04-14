@@ -508,21 +508,17 @@ Feature: PowerMax CSI interface
     | "GOFSWWNToDevicePathError"              | "none"                                                      |
 
   @nodePublish
-  @v2.14.0 @wip
-  Scenario Outline: Node Unpublish with /noderoot mounts
+  @v2.14.0
+  Scenario: Node Unpublish with /noderoot mounts
     Given a PowerMax service
     And I have a Node "node1" with MaskingView
     And a controller published volume
-    And a capability with voltype <voltype> access <access> fstype <fstype>
+    And a capability with voltype "mount" access "single-writer" fstype "xfs"
     And I call NodePublishVolume
     And I restart the driver
     And I call NodeUnpublishVolume
     And there are no remaining mounts
     Then no error was received
-
-    Examples:
-      | voltype      | access                         | fstype     | errormsg                                     |
-      | "mount"      | "single-writer"                | "xfs"      | "none"                                       |
 
 @nodePublish
 @v1.0.0
