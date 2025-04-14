@@ -232,7 +232,7 @@ case $action in
     appname=$1
     delete_app $appname
     ;;
-  validate-app)
+  validate_app)
     if [ "$#" -ne 2 ]; then
       echo "Usage: $0 validate-app <app name> <node name>"
       exit 1

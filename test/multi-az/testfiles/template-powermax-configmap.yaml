@@ -9,7 +9,5 @@ data:
     X_CSI_POWERMAX_PORTGROUPS: "REPLACE_PORTGROUP"
     # Choose which transport protocol to use (ISCSI, FC, NVMETCP, auto) defaults to auto if nothing is specified
     X_CSI_TRANSPORT_PROTOCOL: "REPLACE_TRANSPORT_PROTOCOL"
-    # IP address of the Unisphere for PowerMax (Required), Defaults to https://0.0.0.0:8443
-    X_CSI_POWERMAX_ENDPOINT: "https://REPLACE_PRIMARY_ENDPOINT_1:REPLACE_PRIMARY_PORT_1"
     # List of comma-separated array ID(s) which will be managed by the driver (Required)
     X_CSI_MANAGED_ARRAYS: "REPLACE_STORAGE_ID_1,REPLACE_STORAGE_ID_2"

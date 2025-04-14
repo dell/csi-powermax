@@ -6,7 +6,7 @@ destination="$3"
 
 cp "$template" "$destination"
 
-while read line; do
+while IFS= read -r line || [ -n "$line" ]; do
     # Skip lines that begin with a # or are empty
     [[ $line == \#* || -z $line ]] && continue
 
