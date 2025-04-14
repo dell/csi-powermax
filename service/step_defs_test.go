@@ -5227,7 +5227,6 @@ func (f *feature) restartDriver() error {
 	newMounts := []gofsutil.Info{}
 	for _, m := range gofsutil.GOFSMockMounts {
 		newMounts = append(newMounts, m)
-		//if m.Path != f.nodePublishVolumeRequest.TargetPath {
 		fmt.Printf("Duplicating mount point: %#v\n", m)
 		duplicate := gofsutil.Info{
 			Device: m.Device,
@@ -5237,7 +5236,6 @@ func (f *feature) restartDriver() error {
 			Opts:   m.Opts,
 		}
 		newMounts = append(newMounts, duplicate)
-		//}
 	}
 	gofsutil.GOFSMockMounts = newMounts
 	return nil
