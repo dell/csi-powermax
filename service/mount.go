@@ -470,6 +470,7 @@ func unpublishVolume(
 		return lastUnmounted, status.Error(codes.InvalidArgument,
 			"target path required")
 	}
+	dupTarget := filepath.Join("/noderoot", target)
 
 	// make sure device is valid
 	sysDevice, err := GetDevice(device)
@@ -495,22 +496,22 @@ func unpublishVolume(
 			err.Error())
 	}
 
-	tgtMnt := false
+	var tgtMnt []string
 	privMnt := false
 	for _, m := range mnts {
 		// Added check for sysDevice.FullPath as that is used by multipath mapper
 		if m.Source == sysDevice.RealDev || m.Device == sysDevice.RealDev || m.Device == sysDevice.FullPath {
 			if m.Path == privTgt {
 				privMnt = true
-			} else if m.Path == target {
-				tgtMnt = true
+			} else if m.Path == target || m.Path == dupTarget {
+				tgtMnt = append(tgtMnt, m.Path)
 			}
 		}
 	}
 
-	if tgtMnt {
-		log.WithFields(f).Debug(fmt.Sprintf("Unmounting %s", target))
-		if err := gofsutil.Unmount(ctx, target); err != nil {
+	for _, t := range tgtMnt {
+		log.WithFields(f).Debugf("Unmounting %s", t)
+		if err := gofsutil.Unmount(ctx, t); err != nil {
 			return lastUnmounted, status.Errorf(codes.Internal,
 				"Error unmounting target: %s", err.Error())
 		}
@@ -538,11 +539,9 @@ func unmountPrivMount(
 	dev *Device,
 	target string,
 ) (bool, error) {
-	lastUnmounted := false
-
 	mnts, err := getDevMounts(dev)
 	if err != nil {
-		return lastUnmounted, err
+		return false, err
 	}
 
 	// Handle no private mount (which is odd because we had one to call here)
@@ -556,20 +555,30 @@ func unmountPrivMount(
 		return true, nil
 	}
 
+	privTgtDup := filepath.Join("/noderoot", target)
+
 	// remove private mount if we can (if there are no other mounts
-	if len(mnts) == 1 && mnts[0].Path == target {
-		if err := gofsutil.Unmount(ctx, target); err != nil {
-			return lastUnmounted, err
+	if len(mnts) == 1 || len(mnts) == 2 {
+		for i, m := range mnts {
+			if m.Path == target || m.Path == privTgtDup {
+				if err := gofsutil.Unmount(ctx, m.Path); err != nil {
+					return false, err
+				}
+				mnts[i].Path = ""
+			}
 		}
-		lastUnmounted = true
-		log.WithField("directory", target).Debug(
-			"removing directory")
+
+		log.WithField("directory", target).Debug("removing directory")
 		err := removeWithRetry(target)
 		if err != nil {
 			log.Error("error removing private mount target: " + err.Error())
 		}
-	} else {
-		for _, m := range mnts {
+	}
+
+	lastUnmounted := true
+	for _, m := range mnts {
+		if m.Path != "" {
+			lastUnmounted = false
 			log.Debug(fmt.Sprintf("remaining dev mount: %#v", m))
 		}
 	}
