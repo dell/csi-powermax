@@ -11,6 +11,8 @@ All of the following will be necessary to perform the test.
     - This cluster must have a valid kubeconfig file in place on the machine running the test to access it via `kubectl`
 - `openssl` installed on the build machine for TLS secret generation (PowerMax requirement)
 - Two PowerMax storage arrays (one for each zone to verify zoning functionality)
+    - These storage arrays must be on the same Unisphere/have a common port group for ISCSI connection. PowerMax driver does not currently support storage arrays with differing port groups.
+    - Routes must be established between the Unisphere and the Kubernetes nodes under test so that they can connect to the storage arrays.
 
 ## Running the Test 
 Running the tests is intended to be a simple process: fill in a configuration file with real PowerMax storage array values, run the included `run.sh` shell script with CSM Operator installed to manage driver deployments, and receive a passing or failing result. 
