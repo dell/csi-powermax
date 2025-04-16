@@ -185,8 +185,8 @@ validate_zoning_powermax() {
 # validating zoning is configured on the cluster - powerflex
 validate_zoning_powerflex() {
   # read the secret and extract zone information
-  secret_name="vxflexos-config"
-  namespace="vxflexos"
+  secret_name="test-vxflexos-config"
+  namespace="test-vxflexos"
   secret_content=$(read_secret $secret_name $namespace)
 
   # parse the secret content to extract zones

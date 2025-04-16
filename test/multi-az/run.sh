@@ -89,14 +89,10 @@ echo "Testing zone 1..."
 ./scripts/workload.sh validate_app zone-a-test $node1
 ./scripts/workload.sh delete_app zone-a-test
 
-sleep 30
-
 echo "Testing zone 2..."
 ./scripts/workload.sh create_app zone-b-test pmax-mz-2
 ./scripts/workload.sh validate_app zone-b-test $node2
 ./scripts/workload.sh delete_app zone-b-test
-
-sleep 30
 
 # this will verify that provisioning with no zone in storage class still works
 # no validate app step-- it coming online is sufficient, and we do not care which zone it's on
@@ -105,9 +101,6 @@ echo "Creating workload with no specific zone in storage class..."
 ./scripts/workload.sh create_app zoneless-test pmax-mz-none
 echo "Removing workload after successful install..."
 ./scripts/workload.sh delete_app zoneless-test
-
-sleep 30
-
 
 #############
 # CLEANUP
