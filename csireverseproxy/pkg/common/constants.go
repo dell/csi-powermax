@@ -26,7 +26,7 @@ const (
 	TestConfigDir               = "test-config"
 	TempConfigDir               = "test-config/tmp"
 	TestConfigFileName          = "config.yaml"
-	TestSecretFileName          = "secret-config.yaml"
+	TestSecretFileName          = "secret-config.yaml" // #nosec G101
 	EnvCertDirName              = "X_CSI_REVPROXY_CERT_DIR"
 	EnvTLSCertDirName           = "X_CSI_REVPROXY_TLS_CERT_DIR"
 	EnvWatchNameSpace           = "X_CSI_REVPROXY_WATCH_NAMESPACE"
@@ -34,15 +34,15 @@ const (
 	EnvConfigDirName            = "X_CSI_REVPROXY_CONFIG_DIR"
 	EnvInClusterConfig          = "X_CSI_REVPROXY_IN_CLUSTER"
 	EnvIsLeaderElectionEnabled  = "X_CSI_REVPROXY_IS_LEADER_ENABLED"
-	EnvSecretFilePath           = "X_CSI_REVPROXY_SECRET_FILEPATH"
-	EnvReverseProxyUseSecret    = "X_CSI_REVPROXY_USE_SECRET"
+	EnvSecretFilePath           = "X_CSI_REVPROXY_SECRET_FILEPATH" // #nosec G101
+	EnvReverseProxyUseSecret    = "X_CSI_REVPROXY_USE_SECRET"      // #nosec G101
 	EnvPowermaxConfigPath       = "X_CSI_POWERMAX_CONFIG_PATH"
 	DefaultNameSpace            = "powermax"
 	MaxActiveReadRequests       = 5
 	MaxOutStandingWriteRequests = 50
 	MaxActiveWriteRequests      = 4
 	MaxOutStandingReadRequests  = 50
-	DefaultSecretPath           = "/etc/powermax/config"
+	DefaultSecretPath           = "/etc/powermax/config" // #nosec G101
 	// EnvSidecarProxyPort is the port on which the reverse proxy
 	// server run, if run as a sidecar container
 	EnvSidecarProxyPort = "X_CSI_POWERMAX_SIDECAR_PROXY_PORT"
