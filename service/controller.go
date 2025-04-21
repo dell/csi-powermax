@@ -2856,11 +2856,6 @@ func (s *service) GetCapacity(
 	}
 
 	params := req.GetParameters()
-	if len(params) <= 0 {
-		log.Error("GetCapacity: Required StoragePool and SymID in parameters")
-		return nil, status.Errorf(codes.InvalidArgument, "GetCapacity: Required StoragePool and SymID in parameters")
-	}
-
 	symmetrixID := params[SymmetrixIDParam]
 	if symmetrixID == "" {
 		accessibilityTopology := req.GetAccessibleTopology()
