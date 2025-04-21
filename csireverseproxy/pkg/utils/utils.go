@@ -104,12 +104,12 @@ func WriteHTTPResponse(w http.ResponseWriter, val interface{}) {
 	if err != nil {
 		fmt.Println("error:", err)
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
+		_, _ = w.Write([]byte(err.Error()))
 		return
 	}
 	_, err = w.Write(jsonBytes)
 	if err != nil {
-		w.Write([]byte(err.Error()))
+		_, _ = w.Write([]byte(err.Error()))
 		log.Error("Couldn't write to ResponseWriter")
 		w.WriteHeader(http.StatusInternalServerError)
 	}
