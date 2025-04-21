@@ -4439,6 +4439,10 @@ func (s *service) getArrayIDFromTopology(topology *csi.Topology) string {
 func (s *service) resolveParameter(params map[string]string, arrayID, param, defaultValue string) string {
 	if len(params) > 0 {
 		if result, ok := params[param]; ok {
+			if len(result) == 0 {
+				log.Warnf("empty value for parameter '%s' for array '%s'", param, arrayID)
+			}
+
 			return result
 		}
 	}
