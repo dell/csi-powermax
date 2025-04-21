@@ -703,14 +703,28 @@ func ConfigMapConfigChangeTest(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.modifyFunc(tt)
-			got, err := tt.expectFunc()
-			if tt.expectErr != (err != nil) {
-				t.Errorf("got: %v, want: %v", err, tt.expectErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("got: %v, want: %v", got, tt.want)
-				return
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			for {
+				select {
+				case <-ctx.Done():
+					t.Errorf("timed out waiting for want: %s", tt.want)
+					return
+				default:
+				}
+
+				got, err := tt.expectFunc()
+				if tt.expectErr != (err != nil) {
+					t.Logf("got: %v, want: %v", err, tt.expectErr)
+					continue
+				}
+				if got != tt.want {
+					t.Logf("got: %v, want: %v", got, tt.want)
+					continue
+				}
+				break
 			}
 		})
 	}
@@ -755,7 +769,7 @@ func SecretConfigChangeTest(t *testing.T) {
 			afterFunc: func() {
 				configSecret, err := readYAMLSecret(tmpSAConfigFile, common.TempConfigDir)
 				if err != nil {
-					t.Error("Failed to read config")
+					t.Errorf("Failed to read config: %v", err)
 					return
 				}
 
@@ -778,14 +792,28 @@ func SecretConfigChangeTest(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.modifyFunc(tt)
-			got, err := tt.expectFunc()
-			if tt.expectErr != (err != nil) {
-				t.Errorf("got: %v, want: %v", err, tt.expectErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("got: %v, want: %v", got, tt.want)
-				return
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			for {
+				select {
+				case <-ctx.Done():
+					t.Errorf("timed out waiting for want: %s", tt.want)
+					return
+				default:
+				}
+
+				got, err := tt.expectFunc()
+				if tt.expectErr != (err != nil) {
+					t.Logf("got: %v, want: %v", err, tt.expectErr)
+					continue
+				}
+				if got != tt.want {
+					t.Logf("got: %v, want: %v", got, tt.want)
+					continue
+				}
+				break
 			}
 			tt.afterFunc()
 		})
