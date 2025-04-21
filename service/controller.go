@@ -4432,7 +4432,7 @@ func (s *service) getArrayIDFromTopology(topology *csi.Topology) string {
 	return s.getArrayIDFromTopologyRequirement(TopologyRequirement)
 }
 
-// resolveParamater will evaluate the paramater and return the
+// resolveParameter will evaluate the parameter and return the
 // value based on the priority of sources. The value from the
 // params map is first chosen. If not found, the value from the
 // array secret is used. If not found, the default value is used.
