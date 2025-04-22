@@ -2856,11 +2856,6 @@ func (s *service) GetCapacity(
 	}
 
 	params := req.GetParameters()
-	if len(params) <= 0 {
-		log.Error("GetCapacity: Required StoragePool and SymID in parameters")
-		return nil, status.Errorf(codes.InvalidArgument, "GetCapacity: Required StoragePool and SymID in parameters")
-	}
-
 	symmetrixID := params[SymmetrixIDParam]
 	if symmetrixID == "" {
 		accessibilityTopology := req.GetAccessibleTopology()
@@ -4437,13 +4432,17 @@ func (s *service) getArrayIDFromTopology(topology *csi.Topology) string {
 	return s.getArrayIDFromTopologyRequirement(TopologyRequirement)
 }
 
-// resolveParamater will evaluate the paramater and return the
+// resolveParameter will evaluate the parameter and return the
 // value based on the priority of sources. The value from the
 // params map is first chosen. If not found, the value from the
 // array secret is used. If not found, the default value is used.
 func (s *service) resolveParameter(params map[string]string, arrayID, param, defaultValue string) string {
 	if len(params) > 0 {
 		if result, ok := params[param]; ok {
+			if len(result) == 0 {
+				log.Warnf("empty value for parameter '%s' for array '%s'", param, arrayID)
+			}
+
 			return result
 		}
 	}
