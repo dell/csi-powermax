@@ -19,3 +19,4 @@ allowedTopologies:
       - key: zone.topology.kubernetes.io/zone
         values:
           - zoneD
+          
