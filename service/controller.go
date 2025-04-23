@@ -347,6 +347,7 @@ func (s *service) CreateVolume(
 	for _, val := range validSLO {
 		if serviceLevel == val {
 			found = true
+			break
 		}
 	}
 	if !found {
