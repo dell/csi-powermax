@@ -1061,7 +1061,8 @@ func setArrayConfigEnvs(ctx context.Context) error {
 }
 
 func (s *service) filterArraysByZoneInfo(storageArrays map[string]StorageArrayConfig) []string {
-	results := make([]string, 0)
+	zonedArrays := make([]string, 0, 1)
+	unzonedArrays := make([]string, 0, len(storageArrays))
 
 	nodeLabels, err := s.k8sUtils.GetNodeLabels(s.opts.NodeFullName)
 	if err != nil {
@@ -1070,7 +1071,6 @@ func (s *service) filterArraysByZoneInfo(storageArrays map[string]StorageArrayCo
 
 	for arrayID, arrayConfig := range storageArrays {
 		arrayLabels := arrayConfig.Labels
-
 		keepArray := true
 		if len(arrayLabels) != 0 {
 			for arrayLabelKey, arrayLabelVal := range arrayLabels {
@@ -1079,16 +1079,23 @@ func (s *service) filterArraysByZoneInfo(storageArrays map[string]StorageArrayCo
 					break
 				}
 			}
-		}
 
-		if keepArray {
-			results = append(results, arrayID)
+			if keepArray {
+				zonedArrays = append(zonedArrays, arrayID)
+			}
+		} else {
+			unzonedArrays = append(unzonedArrays, arrayID)
 		}
 	}
 
-	if len(results) == 0 {
-		log.Warn("No arrays match the node labels")
+	if len(zonedArrays) > 1 {
+		log.Error("More than one zoned arrays found, only one zoned array per node is supported")
+		return nil
 	}
 
-	return results
+	if len(zonedArrays) == 1 {
+		return zonedArrays
+	}
+
+	return unzonedArrays
 }
