@@ -240,8 +240,7 @@ func TestFilterArraysByZoneInfo(t *testing.T) {
 				"array1": {
 					Labels: map[string]interface{}{"topology.kubernetes.io/zone": "Z1"},
 				},
-				"array2": {
-				},
+				"array2": {},
 				"array3": {
 					Labels: map[string]interface{}{"topology.kubernetes.io/zone": "Z2"},
 				},
@@ -256,8 +255,7 @@ func TestFilterArraysByZoneInfo(t *testing.T) {
 				return mockUtilsInterface
 			},
 			storageArrays: map[string]StorageArrayConfig{
-				"array1": {
-				},
+				"array1": {},
 				"array2": {
 					Labels: map[string]interface{}{"topology.kubernetes.io/zone": "Z1"},
 				},
@@ -276,12 +274,9 @@ func TestFilterArraysByZoneInfo(t *testing.T) {
 				return mockUtilsInterface
 			},
 			storageArrays: map[string]StorageArrayConfig{
-				"array1": {
-				},
-				"array2": {
-				},
-				"array3": {
-				},
+				"array1": {},
+				"array2": {},
+				"array3": {},
 			},
 			expectedArrays: []string{"array1", "array2", "array3"},
 		},
@@ -290,23 +285,20 @@ func TestFilterArraysByZoneInfo(t *testing.T) {
 			initFunc: func() *k8smock.MockUtilsInterface {
 				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
 				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{
-					"topology.kubernetes.io/zone": "Z1",
+					"topology.kubernetes.io/zone":   "Z1",
 					"topology.kubernetes.io/region": "R1",
-					}, nil)
+				}, nil)
 				return mockUtilsInterface
 			},
 			storageArrays: map[string]StorageArrayConfig{
-				"array1": {
-				},
+				"array1": {},
 				"array2": {
 					Labels: map[string]interface{}{
-						"topology.kubernetes.io/zone": "Z1",
+						"topology.kubernetes.io/zone":   "Z1",
 						"topology.kubernetes.io/region": "R1",
 					},
-
 				},
-				"array3": {
-				},
+				"array3": {},
 			},
 			expectedArrays: []string{"array2"},
 		},
@@ -315,22 +307,20 @@ func TestFilterArraysByZoneInfo(t *testing.T) {
 			initFunc: func() *k8smock.MockUtilsInterface {
 				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
 				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{
-					"topology.kubernetes.io/zone": "Z1",
+					"topology.kubernetes.io/zone":   "Z1",
 					"topology.kubernetes.io/region": "R2",
-					}, nil)
+				}, nil)
 				return mockUtilsInterface
 			},
 			storageArrays: map[string]StorageArrayConfig{
-				"array1": {
-				},
+				"array1": {},
 				"array2": {
 					Labels: map[string]interface{}{
-						"topology.kubernetes.io/zone": "Z1",
+						"topology.kubernetes.io/zone":   "Z1",
 						"topology.kubernetes.io/region": "R1",
 					},
 				},
-				"array3": {
-				},
+				"array3": {},
 			},
 			expectedArrays: []string{"array1", "array3"},
 		},
