@@ -345,7 +345,7 @@ Feature: PowerMax CSI interface
      Scenario: Call GetCapacity without specifying Parameters
       Given a PowerMax service
       And I call GetCapacity without Parameters
-      Then the error contains "Required StoragePool and SymID in parameters"
+      Then the error contains "A SYMID parameter is required"
 
 @v1.0.0
      Scenario: Call GetCapacity with invalid capabilities
