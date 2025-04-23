@@ -285,6 +285,55 @@ func TestFilterArraysByZoneInfo(t *testing.T) {
 			},
 			expectedArrays: []string{"array1", "array2", "array3"},
 		},
+		{
+			name: "Multiple labels all matching",
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{
+					"topology.kubernetes.io/zone": "Z1",
+					"topology.kubernetes.io/region": "R1",
+					}, nil)
+				return mockUtilsInterface
+			},
+			storageArrays: map[string]StorageArrayConfig{
+				"array1": {
+				},
+				"array2": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/zone": "Z1",
+						"topology.kubernetes.io/region": "R1",
+					},
+
+				},
+				"array3": {
+				},
+			},
+			expectedArrays: []string{"array2"},
+		},
+		{
+			name: "Multiple labels some matching",
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{
+					"topology.kubernetes.io/zone": "Z1",
+					"topology.kubernetes.io/region": "R2",
+					}, nil)
+				return mockUtilsInterface
+			},
+			storageArrays: map[string]StorageArrayConfig{
+				"array1": {
+				},
+				"array2": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/zone": "Z1",
+						"topology.kubernetes.io/region": "R1",
+					},
+				},
+				"array3": {
+				},
+			},
+			expectedArrays: []string{"array1", "array3"},
+		},
 	}
 
 	for _, tc := range testCases {
