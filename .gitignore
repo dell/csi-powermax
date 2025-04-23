@@ -3,6 +3,7 @@ pmax/c.out
 service/test/
 service/c.out
 test/integration/c.linux.out
+csm-common.mk
 
 # binaries and temporary files
 csi-powermax

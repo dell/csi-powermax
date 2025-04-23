@@ -1924,7 +1924,6 @@ func TestNodeGetInfo(t *testing.T) {
 			},
 			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
 			initFunc: func() *k8smock.MockUtilsInterface {
-				symmetrixIDs = []string{"array1"}
 				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
 				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{"regionlabel": "R1", "zonelabel": "Z1"}, nil).AnyTimes()
 				return mockUtilsInterface
