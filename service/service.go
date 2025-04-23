@@ -1070,8 +1070,8 @@ func (s *service) filterArraysByZoneInfo(storageArrays map[string]StorageArrayCo
 	}
 
 	for arrayID, arrayConfig := range storageArrays {
-		arrayLabels := arrayConfig.Labels
 		keepArray := true
+		arrayLabels := arrayConfig.Labels
 		if len(arrayLabels) != 0 {
 			for arrayLabelKey, arrayLabelVal := range arrayLabels {
 				if nodeLabelVal, ok := nodeLabels[arrayLabelKey]; !ok || nodeLabelVal != arrayLabelVal.(string) {
@@ -1090,7 +1090,7 @@ func (s *service) filterArraysByZoneInfo(storageArrays map[string]StorageArrayCo
 
 	if len(zonedArrays) > 1 {
 		log.Error("More than one zoned arrays found, only one zoned array per node is supported")
-		return nil
+		return []string{}
 	}
 
 	if len(zonedArrays) == 1 {
