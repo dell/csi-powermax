@@ -1088,13 +1088,13 @@ func (s *service) filterArraysByZoneInfo(storageArrays map[string]StorageArrayCo
 		}
 	}
 
+	if len(zonedArrays) == 1 {
+		return zonedArrays
+	}
+
 	if len(zonedArrays) > 1 {
 		log.Error("More than one zoned arrays found, only one zoned array per node is supported")
 		return []string{}
-	}
-
-	if len(zonedArrays) == 1 {
-		return zonedArrays
 	}
 
 	return unzonedArrays
