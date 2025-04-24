@@ -4392,6 +4392,14 @@ func (s *service) getArrayIDFromTopologyRequirement(topologyRequirement *csi.Top
 			matchedLabels := 0
 
 			if len(arrayConfig.Labels) == 0 {
+				// We know this array isn't zoned, but that doesn't mean the topology requirements are not met, since NodeGetInfo will add topology keys
+
+				// NodeGetInfo will appened a topology key in this format: csi-powermax.dellemc.com/<arrayID> with value=csi-powermax.dellemc.com
+				// We will check for that key and value in the topology requirements
+				arrayKey := s.getDriverName() + "/" + id
+				if segmentValue, ok := topology.Segments[arrayKey]; ok && strings.EqualFold(segmentValue, s.getDriverName()) {
+					candidates = append(candidates, id)
+				}
 				continue
 			}
 
