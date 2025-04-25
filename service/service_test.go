@@ -21,6 +21,7 @@ import (
 	_ "net/http/pprof" // #nosec G108
 	"os"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -337,6 +338,9 @@ func TestFilterArraysByZoneInfo(t *testing.T) {
 			}
 			filteredArrays := s.filterArraysByZoneInfo(tc.storageArrays)
 			log.Debugf("Filtered arrays: %v", filteredArrays)
+			// Sort both slices before comparison
+			sort.Strings(tc.expectedArrays)
+			sort.Strings(filteredArrays)
 			if !reflect.DeepEqual(filteredArrays, tc.expectedArrays) {
 				t.Errorf("Expected %v, got %v", tc.expectedArrays, filteredArrays)
 			}
