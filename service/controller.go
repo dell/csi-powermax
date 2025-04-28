@@ -4391,8 +4391,7 @@ func (s *service) getArrayIDFromTopologyRequirement(topologyRequirement *csi.Top
 
 	// If there's no preferred requirements, try requisite requirements.
 	if len(candidates) == 0 {
-		log.Warnf("No suitable arrays could be found from preffered accessibility requirements: %v", topologyRequirement.GetPreferred())
-		log.Infof("Will check check requisite accessibility requirements: %v", topologyRequirement.GetRequisite())
+		log.Warnf("No suitable arrays could be found from preffered accessibility requirements, checking requisite accessibility requirements")
 		candidates = s.checkTopologyRequirements(topologyRequirement.GetRequisite())
 		if len(candidates) == 0 {
 			log.Warnf("No suitable arrays could be found from requisite requirements: %v", topologyRequirement.GetRequisite())
