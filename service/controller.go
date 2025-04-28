@@ -617,8 +617,8 @@ func (s *service) CreateVolume(
 	if err != nil || sg == nil {
 		log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
 		hostLimitsParam := &types.SetHostIOLimitsParam{
-			HostIOLimitMBSec:    hostIOsec,
-			HostIOLimitIOSec:    hostMBsec,
+			HostIOLimitMBSec:    hostMBsec,
+			HostIOLimitIOSec:    hostIOsec,
 			DynamicDistribution: hostDynDistribution,
 		}
 		optionalPayload := make(map[string]interface{})
@@ -4452,7 +4452,7 @@ func (s *service) resolveParameter(params map[string]string, arrayID, param, def
 		if array, ok := s.opts.StorageArrays[arrayID]; ok {
 			for k, value := range array.Parameters {
 				if strings.EqualFold(param, k) {
-					return value.(string)
+					return fmt.Sprintf("%v", value)
 				}
 			}
 		}
