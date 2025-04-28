@@ -2688,6 +2688,76 @@ func Test_service_getArrayIDFromTopologyRequirement(t *testing.T) {
 			},
 			want: "000000000002",
 		},
+		{
+			name: "multiple arrays with sone unlabelled",
+			topologyRequirement: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+							"topology.kubernetes.io/zone":   "zone2",
+						},
+					},
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+				"000000000002": {
+					Labels: map[string]interface{}{},
+				},
+				"000000000003": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone2",
+					},
+				},
+			},
+			want: "000000000003",
+		},
+		{
+			name: "match not in preferred but in requisite list",
+			topologyRequirement: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+							"topology.kubernetes.io/zone":   "zone1",
+						},
+					},
+				},
+				Requisite: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+							"topology.kubernetes.io/zone":   "zone2",
+						},
+					},
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+				"000000000002": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone2",
+					},
+				},
+				"000000000003": {
+					Labels: map[string]interface{}{},
+				},
+			},
+			want: "000000000002",
+		},
 	}
 
 	for _, tt := range tests {
