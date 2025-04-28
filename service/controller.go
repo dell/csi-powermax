@@ -4376,7 +4376,7 @@ func (s *service) GetStorageProtectionGroupStatus(ctx context.Context, req *csie
 // topology requirements. Returns an empty string if no PowerMax ID is
 // found or if more than one matching array is found.
 func (s *service) getArrayIDFromTopologyRequirement(topologyRequirement *csi.TopologyRequirement) string {
-	if topologyRequirement == nil || len(topologyRequirement.Requisite) == 0 {
+	if topologyRequirement == nil || (len(topologyRequirement.GetRequisite()) == 0  && len(topologyRequirement.GetPreferred()) == 0) {
 		log.Warn("no topology requirements specified")
 		return ""
 	}
@@ -4448,7 +4448,7 @@ func (s *service) getArrayIDFromTopology(topology *csi.Topology) string {
 	}
 
 	TopologyRequirement := &csi.TopologyRequirement{
-		Requisite: []*csi.Topology{
+		Preferred: []*csi.Topology{
 			topology,
 		},
 	}

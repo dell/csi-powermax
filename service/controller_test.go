@@ -2446,7 +2446,7 @@ func Test_service_getSymmetrixIDFromLabels(t *testing.T) {
 		{
 			name: "topology requirements but no labelled array",
 			topologyRequirement: &csi.TopologyRequirement{
-				Requisite: []*csi.Topology{
+				Preferred: []*csi.Topology{
 					{
 						Segments: map[string]string{
 							"topology.kubernetes.io/region": "region1",
@@ -2461,7 +2461,7 @@ func Test_service_getSymmetrixIDFromLabels(t *testing.T) {
 		{
 			name: "basic test with one array and simple region zone labels",
 			topologyRequirement: &csi.TopologyRequirement{
-				Requisite: []*csi.Topology{
+				Preferred: []*csi.Topology{
 					{
 						Segments: map[string]string{
 							"topology.kubernetes.io/region": "region1",
@@ -2483,7 +2483,7 @@ func Test_service_getSymmetrixIDFromLabels(t *testing.T) {
 		{
 			name: "multiple arrays and simple region zone labels",
 			topologyRequirement: &csi.TopologyRequirement{
-				Requisite: []*csi.Topology{
+				Preferred: []*csi.Topology{
 					{
 						Segments: map[string]string{
 							"topology.kubernetes.io/region": "region2",
@@ -2517,7 +2517,7 @@ func Test_service_getSymmetrixIDFromLabels(t *testing.T) {
 		{
 			name: "single region segment in topology requirements",
 			topologyRequirement: &csi.TopologyRequirement{
-				Requisite: []*csi.Topology{
+				Preferred: []*csi.Topology{
 					{
 						Segments: map[string]string{
 							"topology.kubernetes.io/region": "region2",
@@ -2544,7 +2544,7 @@ func Test_service_getSymmetrixIDFromLabels(t *testing.T) {
 		{
 			name: "single region segment in topology requirements, multiple candidates",
 			topologyRequirement: &csi.TopologyRequirement{
-				Requisite: []*csi.Topology{
+				Preferred: []*csi.Topology{
 					{
 						Segments: map[string]string{
 							"topology.kubernetes.io/region": "region2",
@@ -2577,7 +2577,7 @@ func Test_service_getSymmetrixIDFromLabels(t *testing.T) {
 		{
 			name: "region and zone segments in topology requirements, multiple candidates",
 			topologyRequirement: &csi.TopologyRequirement{
-				Requisite: []*csi.Topology{
+				Preferred: []*csi.Topology{
 					{
 						Segments: map[string]string{
 							"topology.kubernetes.io/region": "region2",
@@ -2606,12 +2606,12 @@ func Test_service_getSymmetrixIDFromLabels(t *testing.T) {
 					},
 				},
 			},
-			want: "",
+			want: "000000000002",
 		},
 		{
 			name: "multiple segments in topology requirements, single candidate",
 			topologyRequirement: &csi.TopologyRequirement{
-				Requisite: []*csi.Topology{
+				Preferred: []*csi.Topology{
 					{
 						Segments: map[string]string{
 							"topology.kubernetes.io/region": "region2",
@@ -2651,7 +2651,7 @@ func Test_service_getSymmetrixIDFromLabels(t *testing.T) {
 		{
 			name: "multiple segments in topology requirements, multiple candidates",
 			topologyRequirement: &csi.TopologyRequirement{
-				Requisite: []*csi.Topology{
+				Preferred: []*csi.Topology{
 					{
 						Segments: map[string]string{
 							"topology.kubernetes.io/region": "region2",
@@ -2686,7 +2686,7 @@ func Test_service_getSymmetrixIDFromLabels(t *testing.T) {
 					},
 				},
 			},
-			want: "",
+			want: "000000000002",
 		},
 	}
 
