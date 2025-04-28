@@ -4376,7 +4376,7 @@ func (s *service) GetStorageProtectionGroupStatus(ctx context.Context, req *csie
 // topology requirements. Returns an empty string if no PowerMax ID is
 // found or if more than one matching array is found.
 func (s *service) getArrayIDFromTopologyRequirement(topologyRequirement *csi.TopologyRequirement) string {
-	if topologyRequirement == nil || len(topologyRequirement.Requisite) == 0 {
+	if topologyRequirement == nil || (len(topologyRequirement.GetRequisite()) == 0 && len(topologyRequirement.GetPreferred()) == 0) {
 		log.Warn("no topology requirements specified")
 		return ""
 	}
@@ -4386,10 +4386,10 @@ func (s *service) getArrayIDFromTopologyRequirement(topologyRequirement *csi.Top
 		return ""
 	}
 
-	// First try to get preferred requirements
+	// First try to get preferred requirements.
 	candidates := s.checkTopologyRequirements(topologyRequirement.GetPreferred())
 
-	// If there's no preferred requirements, try requisite requirements
+	// If there's no preferred requirements, try requisite requirements.
 	if len(candidates) == 0 {
 		log.Warnf("No suitable arrays could be found from preffered accessibility requirements: %v", topologyRequirement.GetPreferred())
 		log.Infof("Will check check requisite accessibility requirements: %v", topologyRequirement.GetRequisite())
@@ -4400,7 +4400,7 @@ func (s *service) getArrayIDFromTopologyRequirement(topologyRequirement *csi.Top
 		}
 	}
 
-	// if using a SC without a systemID or topology section, K8s may give all topology labels on the nodes as accessibility requirements
+	// If using a SC without a systemID or topology section, K8s may give all topology labels on the nodes as accessibility requirements
 	// leaving it up to the driver to decide the array. For now, we will always return the first in the list.
 	if len(candidates) > 1 {
 		log.Warnf("topology requirements matched %d storage arrays, expected one got %v", len(candidates), candidates)
@@ -4448,7 +4448,7 @@ func (s *service) getArrayIDFromTopology(topology *csi.Topology) string {
 	}
 
 	TopologyRequirement := &csi.TopologyRequirement{
-		Requisite: []*csi.Topology{
+		Preferred: []*csi.Topology{
 			topology,
 		},
 	}
