@@ -2417,7 +2417,7 @@ func Test_service_ControllerUnpublishVolume(t *testing.T) {
 	})
 }
 
-func Test_service_getSymmetrixIDFromLabels(t *testing.T) {
+func Test_service_getArrayIDFromTopologyRequirement(t *testing.T) {
 	tests := []struct {
 		name                string
 		topologyRequirement *csi.TopologyRequirement
