@@ -4376,7 +4376,7 @@ func (s *service) GetStorageProtectionGroupStatus(ctx context.Context, req *csie
 // topology requirements. Returns an empty string if no PowerMax ID is
 // found or if more than one matching array is found.
 func (s *service) getArrayIDFromTopologyRequirement(topologyRequirement *csi.TopologyRequirement) string {
-	if topologyRequirement == nil || len(topologyRequirement.Requisite) == 0 {
+	if topologyRequirement == nil || (len(topologyRequirement.GetRequisite()) == 0 && len(topologyRequirement.GetPreferred()) == 0) {
 		log.Warn("no topology requirements specified")
 		return ""
 	}
@@ -4386,11 +4386,34 @@ func (s *service) getArrayIDFromTopologyRequirement(topologyRequirement *csi.Top
 		return ""
 	}
 
+	// First try to get preferred requirements.
+	candidates := s.checkTopologyRequirements(topologyRequirement.GetPreferred())
+
+	// If there's no preferred requirements, try requisite requirements.
+	if len(candidates) == 0 {
+		log.Warnf("No suitable arrays could be found from preffered accessibility requirements, checking requisite accessibility requirements")
+		candidates = s.checkTopologyRequirements(topologyRequirement.GetRequisite())
+		if len(candidates) == 0 {
+			log.Warnf("No suitable arrays could be found from requisite requirements: %v", topologyRequirement.GetRequisite())
+			return ""
+		}
+	}
+
+	// If using a SC without a systemID or topology section, K8s may give all topology labels on the nodes as accessibility requirements
+	// leaving it up to the driver to decide the array. For now, we will always return the first in the list.
+	if len(candidates) > 1 {
+		log.Warnf("topology requirements matched %d storage arrays, expected one got %v", len(candidates), candidates)
+	}
+
+	log.Infof("returning %s as ArrayID", candidates[0])
+	return candidates[0]
+}
+
+func (s *service) checkTopologyRequirements(topologyRequirements []*csi.Topology) []string {
 	candidates := make([]string, 0, 1)
-	for _, topology := range topologyRequirement.GetRequisite() {
+	for _, topology := range topologyRequirements {
 		for id, arrayConfig := range s.opts.StorageArrays {
 			matchedLabels := 0
-
 			if len(arrayConfig.Labels) == 0 {
 				continue
 			}
@@ -4406,13 +4429,12 @@ func (s *service) getArrayIDFromTopologyRequirement(topologyRequirement *csi.Top
 			}
 		}
 	}
-
-	if len(candidates) != 1 {
-		log.Warnf("topology requirements matched %d storage arrays, expected one got %v", len(candidates), candidates)
-		return ""
+	if len(candidates) == 0 {
+		log.Infof("No suitable arrays could be found from requirements: %v", topologyRequirements)
 	}
 
-	return candidates[0]
+	// log.Infof("returning %s as ArrayID", candidates[0])
+	return candidates
 }
 
 // getArrayIDFromTopology returns the PowerMax ID based on topology.
@@ -4425,7 +4447,7 @@ func (s *service) getArrayIDFromTopology(topology *csi.Topology) string {
 	}
 
 	TopologyRequirement := &csi.TopologyRequirement{
-		Requisite: []*csi.Topology{
+		Preferred: []*csi.Topology{
 			topology,
 		},
 	}
