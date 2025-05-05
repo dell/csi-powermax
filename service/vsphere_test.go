@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,7 +33,7 @@ func TestNewVMHost(t *testing.T) {
 		user := s.URL.User.Username()
 		pass, _ := s.URL.User.Password()
 
-		_, err = NewVMHost(true, s.URL.Host, user, pass)
+		_, err = NewVMHost(true, s.URL.Host, user, pass, nil)
 		assert.ErrorContains(t, err, "Could not find VM with specified MAC Address")
 	})
 
@@ -42,13 +43,13 @@ func TestNewVMHost(t *testing.T) {
 		user := ""
 		pass := ""
 
-		_, err := NewVMHost(insecure, hostURLparam, user, pass)
+		_, err := NewVMHost(insecure, hostURLparam, user, pass, nil)
 		assert.Error(t, err)
 	})
 }
 
 func TestGetLocalMAC(t *testing.T) {
-	mac, err := getLocalMAC()
+	mac, err := getLocalMAC(net.Interfaces, nil)
 	if mac != "" {
 		assert.NoError(t, err)
 	}
