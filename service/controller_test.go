@@ -2416,3 +2416,565 @@ func Test_service_ControllerUnpublishVolume(t *testing.T) {
 		assert.Empty(t, resp)
 	})
 }
+
+func Test_service_getArrayIDFromTopologyRequirement(t *testing.T) {
+	tests := []struct {
+		name                string
+		topologyRequirement *csi.TopologyRequirement
+		storageArrayConfig  map[string]StorageArrayConfig
+		want                string
+	}{
+		{
+			name:                "no topology requirements nor array config",
+			topologyRequirement: &csi.TopologyRequirement{},
+			storageArrayConfig:  map[string]StorageArrayConfig{},
+			want:                "",
+		},
+		{
+			name:                "no topology requirements",
+			topologyRequirement: &csi.TopologyRequirement{},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+			},
+			want: "",
+		},
+		{
+			name: "topology requirements but no labelled array",
+			topologyRequirement: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region1",
+							"topology.kubernetes.io/zone":   "zone1",
+						},
+					},
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{},
+			want:               "",
+		},
+		{
+			name: "basic test with one array and simple region zone labels",
+			topologyRequirement: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region1",
+							"topology.kubernetes.io/zone":   "zone1",
+						},
+					},
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+			},
+			want: "000000000001",
+		},
+		{
+			name: "multiple arrays and simple region zone labels",
+			topologyRequirement: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+							"topology.kubernetes.io/zone":   "zone2",
+						},
+					},
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+				"000000000002": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone2",
+					},
+				},
+				"000000000003": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region3",
+						"topology.kubernetes.io/zone":   "zone3",
+					},
+				},
+			},
+			want: "000000000002",
+		},
+		{
+			name: "single region segment in topology requirements",
+			topologyRequirement: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+						},
+					},
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+				"000000000002": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone2",
+					},
+				},
+			},
+			want: "",
+		},
+		{
+			name: "single region segment in topology requirements, multiple candidates",
+			topologyRequirement: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+						},
+					},
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+				"000000000002": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+				"000000000003": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+			},
+			want: "",
+		},
+		{
+			name: "region and zone segments in topology requirements, multiple candidates",
+			topologyRequirement: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+							"topology.kubernetes.io/zone":   "zone2",
+						},
+					},
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+				"000000000002": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone2",
+					},
+				},
+				"000000000003": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone2",
+					},
+				},
+			},
+			want: "000000000002",
+		},
+		{
+			name: "multiple segments in topology requirements, single candidate",
+			topologyRequirement: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+							"topology.kubernetes.io/zone":   "zone1",
+						},
+					},
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+							"topology.kubernetes.io/zone":   "zone2",
+						},
+					},
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+				"000000000002": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone2",
+					},
+				},
+				"000000000003": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone3",
+					},
+				},
+			},
+			want: "000000000002",
+		},
+		{
+			name: "multiple segments in topology requirements, multiple candidates",
+			topologyRequirement: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+							"topology.kubernetes.io/zone":   "zone1",
+						},
+					},
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+							"topology.kubernetes.io/zone":   "zone2",
+						},
+					},
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+				"000000000002": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+				"000000000003": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone2",
+					},
+				},
+			},
+			want: "000000000002",
+		},
+		{
+			name: "multiple arrays with sone unlabelled",
+			topologyRequirement: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+							"topology.kubernetes.io/zone":   "zone2",
+						},
+					},
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+				"000000000002": {
+					Labels: map[string]interface{}{},
+				},
+				"000000000003": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone2",
+					},
+				},
+			},
+			want: "000000000003",
+		},
+		{
+			name: "match not in preferred but in requisite list",
+			topologyRequirement: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+							"topology.kubernetes.io/zone":   "zone1",
+						},
+					},
+				},
+				Requisite: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							"topology.kubernetes.io/region": "region2",
+							"topology.kubernetes.io/zone":   "zone2",
+						},
+					},
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+				"000000000002": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region2",
+						"topology.kubernetes.io/zone":   "zone2",
+					},
+				},
+				"000000000003": {
+					Labels: map[string]interface{}{},
+				},
+			},
+			want: "000000000002",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				opts: Opts{
+					StorageArrays: tt.storageArrayConfig,
+				},
+			}
+
+			got := s.getArrayIDFromTopologyRequirement(tt.topologyRequirement)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_service_getArrayIDFromTopology(t *testing.T) {
+	tests := []struct {
+		name               string
+		storageArrayConfig map[string]StorageArrayConfig
+		topology           *csi.Topology
+		want               string
+	}{
+		{
+			name:               "nil topology",
+			topology:           nil,
+			storageArrayConfig: nil,
+			want:               "",
+		},
+		{
+			name:               "nil topology segments",
+			topology:           &csi.Topology{Segments: nil},
+			storageArrayConfig: nil,
+			want:               "",
+		},
+		{
+			name: "basic test of successful match",
+			topology: &csi.Topology{
+				Segments: map[string]string{
+					"topology.kubernetes.io/region": "region1",
+					"topology.kubernetes.io/zone":   "zone1",
+				},
+			},
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+			},
+			want: "000000000001",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				opts: Opts{
+					StorageArrays: tt.storageArrayConfig,
+				},
+			}
+
+			got := s.getArrayIDFromTopology(tt.topology)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_service_resolveParameter(t *testing.T) {
+	tests := []struct {
+		name               string
+		storageArrayConfig map[string]StorageArrayConfig
+		arrayID            string
+		params             map[string]string
+		paramName          string
+		defaultValue       string
+		want               string
+	}{
+		{
+			name:               "nil storage array",
+			storageArrayConfig: nil,
+			params:             map[string]string{},
+			arrayID:            "000000000001",
+			paramName:          "UTParamName",
+			want:               "",
+		},
+		{
+			name:               "nil storage array and params",
+			storageArrayConfig: nil,
+			params:             nil,
+			arrayID:            "000000000001",
+			paramName:          "UTParamName",
+			want:               "",
+		},
+		{
+			name:               "no array ID",
+			storageArrayConfig: nil,
+			params:             nil,
+			arrayID:            "",
+			paramName:          "UTParamName",
+			want:               "",
+		},
+		{
+			name:               "no parameter provided anywhere",
+			storageArrayConfig: map[string]StorageArrayConfig{},
+			params:             map[string]string{},
+			arrayID:            "000000000001",
+			paramName:          "UTParamName",
+			want:               "",
+		},
+		{
+			name:               "parameter provided in params",
+			storageArrayConfig: map[string]StorageArrayConfig{},
+			params:             map[string]string{"UTParamName": "UTParam"},
+			arrayID:            "000000000001",
+			paramName:          "UTParamName",
+			want:               "UTParam",
+		},
+		{
+			name: "parameter provided in secret",
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Parameters: map[string]interface{}{
+						"utparamname": "UTSecret",
+					},
+				},
+			},
+			params:    map[string]string{},
+			arrayID:   "000000000001",
+			paramName: "UTParamName",
+			want:      "UTSecret",
+		},
+		{
+			name: "parameter in params should override secret",
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Parameters: map[string]interface{}{
+						"utparamname": "UTSecret",
+					},
+				},
+			},
+			params:    map[string]string{"UTParamName": "UTParam"},
+			arrayID:   "000000000001",
+			paramName: "UTParamName",
+			want:      "UTParam",
+		},
+		{
+			name:               "default value provided",
+			storageArrayConfig: nil,
+			params:             nil,
+			arrayID:            "000000000001",
+			paramName:          "UTParamName",
+			defaultValue:       "UTParam",
+			want:               "UTParam",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				opts: Opts{
+					StorageArrays: tt.storageArrayConfig,
+				},
+			}
+
+			got := s.resolveParameter(tt.params, tt.arrayID, tt.paramName, tt.defaultValue)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_service_addZoneLabelsToVolumeAttributes(t *testing.T) {
+	tests := []struct {
+		name               string
+		storageArrayConfig map[string]StorageArrayConfig
+		arrayID            string
+		params             map[string]string
+		want               map[string]string
+	}{
+		{
+			name:               "no storage array",
+			storageArrayConfig: nil,
+			params:             map[string]string{"source": "UT"},
+			arrayID:            "000000000001",
+			want:               map[string]string{"source": "UT"},
+		},
+		{
+			name: "basic addition",
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000000000001": {
+					Labels: map[string]interface{}{
+						"topology.kubernetes.io/region": "region1",
+						"topology.kubernetes.io/zone":   "zone1",
+					},
+				},
+			},
+			params:  map[string]string{"source": "UT"},
+			arrayID: "000000000001",
+			want: map[string]string{
+				"source":                        "UT",
+				"topology.kubernetes.io/region": "region1",
+				"topology.kubernetes.io/zone":   "zone1",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				opts: Opts{
+					StorageArrays: tt.storageArrayConfig,
+				},
+			}
+
+			s.addZoneLabelsToVolumeAttributes(tt.params, tt.arrayID)
+			assert.Equal(t, tt.want, tt.params)
+		})
+	}
+}
