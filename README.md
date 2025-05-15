@@ -23,8 +23,6 @@ This project may be compiled as a stand-alone binary using Golang that, when run
 * [Security](https://github.com/dell/csm/blob/main/docs/SECURITY.md)
 * [Building](#building)
 * [Runtime Dependecies](#runtime-dependencies)
-* [Driver Installation](#driver-installation)
-* [Using Driver](#using-driver)
 * [Documentation](#documentation)
 
 ## Support
@@ -43,11 +41,6 @@ You can run an integration test on a Linux system by populating the file `env.sh
 ## Runtime Dependencies
 For a complete list of dependencies, please visit [Prerequisites](https://dell.github.io/csm-docs/docs/deployment/helm/drivers/installation/powermax/#prerequisites)
 
-## Driver Installation
-Please consult the [Installation Guide](https://dell.github.io/csm-docs/docs/deployment/)
-
-## Using Driver
-Please refer to the section `Testing Drivers` in the [Documentation](https://dell.github.io/csm-docs/docs/csidriver/test/) for more info.
 
 ## Documentation
 For more detailed information on the driver, please refer to [Container Storage Modules documentation](https://dell.github.io/csm-docs/).
