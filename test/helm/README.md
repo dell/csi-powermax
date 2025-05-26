@@ -15,7 +15,7 @@ Additionally, some tests create cloned volumes using a source `Volume` or a `Vol
 |10vols	  | Creates 10 filesystem mounts |
 |xfspre   | Create an XFS formated PV and attaches to a pod |
 |2block | Create 2 raw block volumes and attach to a pod |
-| 2vols + clone | 
+| 2vols + clone | Creates 2 initial volumes and a third volume that is a clone of one of the initial volumes |
 
 
 ## Scripts
@@ -48,14 +48,23 @@ If you don't provide the storage class name, the test scripts will default to `p
 The starttest.sh script is used to deploy Helm charts that test the deployment of a simple pod
 with various storage configurations. The stoptest.sh script will delete the Helm chart and cleanup after the test.
 Procedure
-1. Navigate to the test/helm directory, which contains the starttest.sh and various Helm charts.
+1. Navigate to the `test/helm` directory, which contains the `starttest.sh` and various Helm charts.
 
-2. Run the starttest.sh script with an argument of the specific Helm chart to deploy and test. For example:
-> bash starttest.sh -t <testname> -n <namespance> -s <sc-name>
-  Example  -> bash starttest.sh -t 2vols -n test -s powermax	
-3. After the test has completed, run the stoptest.sh script to delete the Helm chart and cleanup the volumes.
-> bash stoptest.sh -t <testname> -n <namespace>
- Example -> bash stoptest.sh -t 2vols -n test 
+2. Run the `starttest.sh` script with an argument of the specific Helm chart to deploy and test: `bash starttest.sh -t <testname> -n <namespance> -s <sc-name>`
+
+Example:
+
+```
+bash starttest.sh -t 2vols -n test -s powermax	
+```
+
+3. After the test has completed, run the stoptest.sh script to delete the Helm chart and cleanup the volumes: `bash stoptest.sh -t <testname> -n <namespace>`
+
+Example:
+
+```
+bash stoptest.sh -t 2vols -n test 
+```
 
 ### Other scripts
 The following set of scripts have been provided to help test additonal CSI functionalities like snapshots, clones, volume expansion.
@@ -67,7 +76,9 @@ The following set of scripts have been provided to help test additonal CSI funct
 
 To run these tests, follow the procedure given below:
 1. Navigate to the test/helm directory
-2. Run the desired script with the following command
-    ```
-   bash <script-name> -n <namespace> -s <sc-name>
-    ```
+
+2. Run the desired script with the following command:
+
+```
+bash <script-name> -n <namespace> -s <sc-name>
+```
