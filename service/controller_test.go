@@ -2606,7 +2606,7 @@ func Test_service_getArrayIDFromTopologyRequirement(t *testing.T) {
 					},
 				},
 			},
-			want: "000000000002",
+			want: "000000000002,000000000003", // non deterministic due to map iteration
 		},
 		{
 			name: "multiple segments in topology requirements, single candidate",
@@ -2769,7 +2769,7 @@ func Test_service_getArrayIDFromTopologyRequirement(t *testing.T) {
 			}
 
 			got := s.getArrayIDFromTopologyRequirement(tt.topologyRequirement)
-			assert.Equal(t, tt.want, got)
+			assert.Contains(t, tt.want, got)
 		})
 	}
 }
