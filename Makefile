@@ -25,8 +25,9 @@ format:
 	@gofmt -w -s .
 
 clean:
-	rm -f core/core_generated.go
+	rm -f core/core_generated.go go-code-tester *.log *.out cover* 
 	go clean
+	make -C csireverseproxy clean
 
 build:
 	go generate
@@ -53,9 +54,10 @@ docker-no-cache:
 push:	docker
 	make -f docker.mk push
 
-# Run unit tests and skip the BDD tests
-unit-test:
-	( cd service; go clean -cache; CGO_ENABLED=0 go test -v -coverprofile=c.out ./... )
+# Run unit tests
+unit-test: go-code-tester
+	GITHUB_OUTPUT=/dev/null \
+	./go-code-tester 85 "." "" "true" "" "" "./core|./k8smock|./test/integration|./pkg/symmetrix/mocks|./pkg/config/mocks"
 
 # Run BDD tests. Need to be root to run as tests require some system access, need to fix
 bdd-test:
@@ -86,6 +88,10 @@ actions: ## Run all GitHub Action checks that run on a pull request creation
 		echo "Running workflow: $${WF}"; \
 		act pull_request --no-cache-server --platform ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --job "$${WF}"; \
 	done
+
+go-code-tester:
+	curl -o go-code-tester -L https://raw.githubusercontent.com/dell/common-github-actions/main/go-code-tester/entrypoint.sh \
+	&& chmod +x go-code-tester
 
 action-help: ## Echo instructions to run one specific workflow locally
 	@echo "GitHub Workflows can be run locally with the following command:"

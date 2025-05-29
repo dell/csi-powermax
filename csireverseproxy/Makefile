@@ -19,6 +19,7 @@ format:
 	@gofmt -w -s .
 
 clean:
+	rm -f cover.out coverage.txt
 	go clean
 
 build:
