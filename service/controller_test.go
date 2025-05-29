@@ -18,6 +18,7 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -2606,7 +2607,7 @@ func Test_service_getArrayIDFromTopologyRequirement(t *testing.T) {
 					},
 				},
 			},
-			want: "000000000002",
+			want: "000000000002,000000000003", // non deterministic due to map iteration
 		},
 		{
 			name: "multiple segments in topology requirements, single candidate",
@@ -2769,7 +2770,12 @@ func Test_service_getArrayIDFromTopologyRequirement(t *testing.T) {
 			}
 
 			got := s.getArrayIDFromTopologyRequirement(tt.topologyRequirement)
-			assert.Equal(t, tt.want, got)
+			options := strings.Split(tt.want, ",")
+			if len(options) > 1 {
+				assert.Contains(t, options, got)
+			} else {
+				assert.Equal(t, tt.want, got)
+			}
 		})
 	}
 }
