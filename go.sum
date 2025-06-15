@@ -110,8 +110,8 @@ github.com/dell/dell-csi-extensions/podmon v1.8.0 h1:393bE3EKmV3oYJk1pNwW733rh+j
 github.com/dell/dell-csi-extensions/podmon v1.8.0/go.mod h1:gXtib/WVKemgbncbAinHW+D/fFJAr0VE1mVIaNrIAQg=
 github.com/dell/dell-csi-extensions/replication v1.11.0 h1:Fn/4Xa6Up7Duz5P8MxiMJJ3JtlRA2fNJFzFHHSwWxgU=
 github.com/dell/dell-csi-extensions/replication v1.11.0/go.mod h1:4ckSKNS4P2PnPXtscOFeHdbjemjnh4tdbNWtJTbbwsQ=
-github.com/dell/gobrick v1.14.0 h1:uB/Hb7k8kva9p1vX8LoplCUEdifdw/ixLJkmK0b2NFs=
-github.com/dell/gobrick v1.14.0/go.mod h1:kZdqQaOJpAz7PK8rgVYrmDN0qYrkR/8KiljaPl3N3Tg=
+github.com/dell/gobrick v1.14.1-0.20250609143219-09849b48fa97 h1:i0+FWQ55tQdR8sw333LBxK9Qqw8prrGWk7PRDoYNWLU=
+github.com/dell/gobrick v1.14.1-0.20250609143219-09849b48fa97/go.mod h1:ZS4p5DReCH1Gh9y9H+s92+5MkhdIkL9RrLu3fprgmyQ=
 github.com/dell/gocsi v1.14.0 h1:DinuonGUvr4P898+xX0zk/ZHAvetJrr48GhKyHS3PL0=
 github.com/dell/gocsi v1.14.0/go.mod h1:YhF+LnH5S8t96qotoLk6wUjMzCwSy8rmnqvx7h4Nc3s=
 github.com/dell/gofsutil v1.19.0 h1:41Hx24Tlie37UbOwatHgNAV0nq+KQysrhABXCnpOs+E=
