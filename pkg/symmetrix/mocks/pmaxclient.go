@@ -11,7 +11,6 @@ package mocks
 
 import (
 	context "context"
-	"fmt"
 	http "net/http"
 	reflect "reflect"
 
