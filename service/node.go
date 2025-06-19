@@ -1119,6 +1119,7 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 	topology := map[string]string{}
 	iscsiArrays := make([]string, 0)
 	nvmeTCPArrays := make([]string, 0)
+	nfsArrays := make([]string, 0)
 	var protocol string
 	var ok bool
 
@@ -1130,6 +1131,26 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 			log.Error(err.Error())
 			continue
 		}
+
+		if nfsServerList, err := pmaxClient.GetNFSServerList(ctx, id); err != nil {
+			log.Errorf("failed to get the NFS server list, error: %s", err.Error())
+		} else if nfsServerList != nil {
+			for _, nfs := range nfsServerList.Entries {
+				nfsServer, err := pmaxClient.GetNFSServerByID(ctx, id, nfs.ID)
+				if err != nil {
+					log.Errorf("failed to get the NFS server %s by id, error: %s", nfs.ID, err.Error())
+					continue
+				}
+
+				if nfsServer != nil {
+					if nfsServer.NFSV3Enabled || nfsServer.NFSV4Enabled {
+						nfsArrays = append(nfsArrays, id)
+						break
+					}
+				}
+			}
+		}
+
 		if s.arrayTransportProtocolMap != nil {
 			if protocol, ok = s.arrayTransportProtocolMap[id]; ok && (protocol == FcTransportProtocol || protocol == Vsphere) {
 				continue
@@ -1190,7 +1211,6 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 		if protocol == FcTransportProtocol && s.checkIfArrayProtocolValid(nodeName, array, strings.ToLower(FcTransportProtocol)) {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(FcTransportProtocol)] = s.getDriverName()
-			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(NFS)] = s.getDriverName()
 		}
 		if protocol == Vsphere {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
@@ -1203,7 +1223,6 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 			s.checkIfArrayProtocolValid(nodeName, array, strings.ToLower(IscsiTransportProtocol)) {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(IscsiTransportProtocol)] = s.getDriverName()
-			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(NFS)] = s.getDriverName()
 		}
 	}
 
@@ -1212,8 +1231,12 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 			s.checkIfArrayProtocolValid(nodeName, array, strings.ToLower(NvmeTCPTransportProtocol)) {
 			topology[s.getDriverName()+"/"+array] = s.getDriverName()
 			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(NvmeTCPTransportProtocol)] = s.getDriverName()
-			topology[s.getDriverName()+"/"+array+"."+strings.ToLower(NFS)] = s.getDriverName()
 		}
+	}
+
+	for _, array := range nfsArrays {
+		topology[s.getDriverName()+"/"+array] = s.getDriverName()
+		topology[s.getDriverName()+"/"+array+"."+strings.ToLower(NFS)] = s.getDriverName()
 	}
 
 	log.Infof("Topology for node (%s) : %+v", nodeName, topology)
