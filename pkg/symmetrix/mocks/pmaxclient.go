@@ -2243,3 +2243,32 @@ func (mr *MockPmaxClientMockRecorder) WithSymmetrixID(symmetrixID any) *gomock.C
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithSymmetrixID", reflect.TypeOf((*MockPmaxClient)(nil).WithSymmetrixID), symmetrixID)
 }
+
+// GetNFSServerList mocks base method.
+func (m *MockPmaxClient) GetNFSServerList(ctx context.Context, symID string) (*v100.NFSServerIterator, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNFSServerList", ctx, symID)
+	ret0, _ := ret[0].(*v100.NFSServerIterator)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNFSServerList indicates an expected call of GetNFSServerList.
+func (mr *MockPmaxClientMockRecorder) GetNFSServerList(ctx, symID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNFSServerList", reflect.TypeOf((*MockPmaxClient)(nil).GetNFSServerList), ctx, symID)
+}
+
+func (m *MockPmaxClient) GetNFSServerByID(ctx context.Context, symID, nfsID string) (*v100.NFSServer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNFSServerByID", ctx, symID, nfsID)
+	ret0, _ := ret[0].(*v100.NFSServer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNFSServerByID indicates an expected call of GetNFSServerByID.
+func (mr *MockPmaxClientMockRecorder) GetNFSServerByID(ctx, symID, nfsID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNFSServerByID", reflect.TypeOf((*MockPmaxClient)(nil).GetNFSServerByID), ctx, symID, nfsID)
+}
