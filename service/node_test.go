@@ -1369,6 +1369,7 @@ func TestCreateTopologyMap(t *testing.T) {
 						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
 					},
 				}, nil)
+				c.EXPECT().GetNFSServerList(gmock.All(), "array1").AnyTimes().Return(nil, nil)
 				symmetrix.Initialize([]string{"array1"}, c)
 				return c
 			},
@@ -1406,6 +1407,7 @@ func TestCreateTopologyMap(t *testing.T) {
 						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
 					},
 				}, nil)
+				c.EXPECT().GetNFSServerList(gmock.All(), "array1").AnyTimes().Return(nil, nil)
 				symmetrix.Initialize([]string{"array1"}, c)
 				return c
 			},
@@ -1444,6 +1446,7 @@ func TestCreateTopologyMap(t *testing.T) {
 						TCPPort:     9090,
 					},
 				}, nil)
+				c.EXPECT().GetNFSServerList(gmock.All(), "array3").AnyTimes().Return(nil, nil)
 				symmetrix.Initialize([]string{"array3"}, c)
 				return c
 			},
@@ -1482,6 +1485,7 @@ func TestCreateTopologyMap(t *testing.T) {
 						Identifier:  "iqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
 					},
 				}, nil)
+				c.EXPECT().GetNFSServerList(gmock.All(), "array1").AnyTimes().Return(nil, nil)
 				symmetrix.Initialize([]string{"array1"}, c)
 				return c
 			},
@@ -1519,6 +1523,7 @@ func TestCreateTopologyMap(t *testing.T) {
 						Identifier:  "iqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
 					},
 				}, nil)
+				c.EXPECT().GetNFSServerList(gmock.All(), "array1").AnyTimes().Return(nil, nil)
 				symmetrix.Initialize([]string{"array1"}, c)
 				return c
 			},
@@ -1600,6 +1605,7 @@ func TestCreateTopologyMap(t *testing.T) {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
 				c.EXPECT().WithSymmetrixID("array2").AnyTimes().Return(c)
 				c.EXPECT().GetPortGroupByID(gmock.All(), "array2", "portgroup1").MaxTimes(1).Return(nil, errors.New("portgroup not found"))
+				c.EXPECT().GetNFSServerList(gmock.All(), "array2").AnyTimes().Return(nil, nil)
 				symmetrix.Initialize([]string{"array2"}, c)
 				return c
 			},
@@ -1613,6 +1619,146 @@ func TestCreateTopologyMap(t *testing.T) {
 			loggedInArrays:     map[string]bool{},
 			loggedInNVMeArrays: map[string]bool{},
 			portGroups:         []string{"portgroup1"},
+			wantErr:            true,
+		},
+		{
+			name: "Success case NFS, nfs server details are returned correctly",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array4").AnyTimes().Return(c)
+				c.EXPECT().GetNFSServerList(gmock.All(), "array4").AnyTimes().Return(&types.NFSServerIterator{
+					Entries: []types.NFSServerList{
+						{
+							ID: "nfs1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetNFSServerByID(gmock.All(), "array4", "nfs1").AnyTimes().Return(&types.NFSServer{
+					ID:           "nfs1",
+					NFSV3Enabled: true,
+					NFSV4Enabled: true,
+				}, nil)
+
+				symmetrix.Initialize([]string{"array4"}, c)
+				return c
+			},
+			managedArrays:             []string{"array4"},
+			arrayTransportProtocolMap: map[string]string{},
+			nvmeTCPClient:             gonvme.NewMockNVMe(map[string]string{}),
+			iscsiClient:               goiscsi.NewMockISCSI(map[string]string{}),
+			initFunc: func() {
+			},
+			loggedInArrays:     map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{},
+			portGroups:         []string{},
+			wantErr:            false,
+		},
+		{
+			name: "Success case NFS, ISCSI, issci details returned correctly but not nfs server",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array5").AnyTimes().Return(c)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array5", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array5", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "iqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				c.EXPECT().GetNFSServerList(gmock.All(), "array5").AnyTimes().Return(nil, errors.New("failed to get NFS server list"))
+				symmetrix.Initialize([]string{"array5"}, c)
+				return c
+			},
+			managedArrays: []string{"array5"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": IscsiTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			iscsiClient:   goiscsi.NewMockISCSI(map[string]string{}),
+			initFunc: func() {
+			},
+			loggedInArrays: map[string]bool{
+				"array5": true,
+			},
+			loggedInNVMeArrays: map[string]bool{},
+			portGroups:         []string{"portgroup1"},
+			wantErr:            false,
+		},
+		{
+			name: "Success case NFS, ISCSI, issci and nfs server details are returned correctly",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array6").AnyTimes().Return(c)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array6", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{
+						{
+							DirectorID: "director1",
+							PortID:     "port1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array6", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "iqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				c.EXPECT().GetNFSServerList(gmock.All(), "array6").AnyTimes().Return(&types.NFSServerIterator{
+					Entries: []types.NFSServerList{
+						{
+							ID: "nfs1",
+						},
+					},
+				}, nil)
+				c.EXPECT().GetNFSServerByID(gmock.All(), "array6", "nfs1").AnyTimes().Return(&types.NFSServer{
+					ID:           "nfs1",
+					NFSV3Enabled: true,
+					NFSV4Enabled: true,
+				}, nil)
+				symmetrix.Initialize([]string{"array6"}, c)
+				return c
+			},
+			managedArrays: []string{"array6"},
+			arrayTransportProtocolMap: map[string]string{
+				"array6": IscsiTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			iscsiClient:   goiscsi.NewMockISCSI(map[string]string{}),
+			initFunc: func() {
+			},
+			loggedInArrays: map[string]bool{
+				"array6": true,
+			},
+			loggedInNVMeArrays: map[string]bool{},
+			portGroups:         []string{"portgroup1"},
+			wantErr:            false,
+		},
+		{
+			name: "failure case NFS, no valid servers present",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array7").AnyTimes().Return(c)
+				c.EXPECT().GetNFSServerList(gmock.All(), "array7").AnyTimes().Return(nil, nil)
+
+				symmetrix.Initialize([]string{"array7"}, c)
+				return c
+			},
+			managedArrays:             []string{"array7"},
+			arrayTransportProtocolMap: map[string]string{},
+			nvmeTCPClient:             gonvme.NewMockNVMe(map[string]string{}),
+			iscsiClient:               goiscsi.NewMockISCSI(map[string]string{}),
+			initFunc: func() {
+			},
+			loggedInArrays:     map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{},
+			portGroups:         []string{},
 			wantErr:            true,
 		},
 	}
