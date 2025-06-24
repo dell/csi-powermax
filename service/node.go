@@ -168,7 +168,7 @@ func (s *service) NodeStageVolume(
 	// Save volume WWN to node disk
 	err = s.writeWWNFile(id, volumeWWN)
 	if err != nil {
-		log.Error("Could not write WWN file: " + volumeWWN)
+		log.Errorf("Could not write WWN file: %s: %v", volumeWWN, err)
 	}
 
 	// Attach RDM
@@ -415,6 +415,8 @@ func (s *service) connectNVMeTCPDevice(ctx context.Context, data publishContextD
 	for _, t := range data.nvmetcpTargets {
 		targets = append(targets, gobrick.NVMeTargetInfo{Target: t.Target, Portal: t.Portal})
 	}
+
+	log.Debugf("connectNVMeTCPDevice: connecting volume with targets %v", targets)
 	// separate context to prevent 15 seconds cancel from kubernetes
 	connectorCtx, cFunc := context.WithTimeout(context.Background(), time.Second*120)
 	connectorCtx = setLogFields(connectorCtx, logFields)
@@ -3116,7 +3118,7 @@ func (s *service) writeWWNFile(id, volumeWWN string) error {
 	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
 	err := ioutil.WriteFile(wwnFileName, []byte(volumeWWN), 0o644) // #nosec G306
 	if err != nil {
-		return status.Errorf(codes.Internal, "Could not read WWN file: %s", wwnFileName)
+		return status.Errorf(codes.Internal, "Could not write WWN file %s: %v", wwnFileName, err)
 	}
 	return nil
 }
@@ -3127,7 +3129,7 @@ func (s *service) readWWNFile(id string) (string, error) {
 	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
 	wwnBytes, err := ioutil.ReadFile(wwnFileName) // #nosec G304
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "Could not read WWN file: %s", wwnFileName)
+		return "", status.Errorf(codes.Internal, "Could not read WWN file %s: %v", wwnFileName, err)
 	}
 	volumeWWN := string(wwnBytes)
 	return volumeWWN, nil
