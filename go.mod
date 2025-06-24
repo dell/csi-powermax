@@ -14,11 +14,11 @@ require (
 	github.com/dell/dell-csi-extensions/migration v1.8.0
 	github.com/dell/dell-csi-extensions/podmon v1.8.0
 	github.com/dell/dell-csi-extensions/replication v1.11.0
-	github.com/dell/gobrick v1.14.0
+	github.com/dell/gobrick v1.14.1-0.20250624004701-1c68c8c05f2f
 	github.com/dell/gocsi v1.14.0
 	github.com/dell/gofsutil v1.19.0
 	github.com/dell/goiscsi v1.12.0
-	github.com/dell/gonvme v1.11.0
+	github.com/dell/gonvme v1.11.1-0.20250623220042-71afc9447376
 	github.com/dell/gopowermax/v2 v2.10.1-0.20250618232101-be8479ebaf9b
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/golang/mock v1.6.0

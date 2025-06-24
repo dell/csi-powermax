@@ -112,6 +112,8 @@ github.com/dell/dell-csi-extensions/replication v1.11.0 h1:Fn/4Xa6Up7Duz5P8MxiMJ
 github.com/dell/dell-csi-extensions/replication v1.11.0/go.mod h1:4ckSKNS4P2PnPXtscOFeHdbjemjnh4tdbNWtJTbbwsQ=
 github.com/dell/gobrick v1.14.0 h1:uB/Hb7k8kva9p1vX8LoplCUEdifdw/ixLJkmK0b2NFs=
 github.com/dell/gobrick v1.14.0/go.mod h1:kZdqQaOJpAz7PK8rgVYrmDN0qYrkR/8KiljaPl3N3Tg=
+github.com/dell/gobrick v1.14.1-0.20250624004701-1c68c8c05f2f h1:u2zZw6k1GhapS1ex8PyfZtIBTRldF3kHTxxLVM5xxSU=
+github.com/dell/gobrick v1.14.1-0.20250624004701-1c68c8c05f2f/go.mod h1:ML2lu6+tPdLeE+4eF/+Fytl/C8Ekce2qT/AKijjXqFs=
 github.com/dell/gocsi v1.14.0 h1:DinuonGUvr4P898+xX0zk/ZHAvetJrr48GhKyHS3PL0=
 github.com/dell/gocsi v1.14.0/go.mod h1:YhF+LnH5S8t96qotoLk6wUjMzCwSy8rmnqvx7h4Nc3s=
 github.com/dell/gofsutil v1.19.0 h1:41Hx24Tlie37UbOwatHgNAV0nq+KQysrhABXCnpOs+E=
@@ -120,6 +122,8 @@ github.com/dell/goiscsi v1.12.0 h1:hxY9SaJLS/WQiDKQ9Vplguvg6jcF8wqTFGk5VzgFVj8=
 github.com/dell/goiscsi v1.12.0/go.mod h1:nMLnEG6QBpouHxFRMxpmJA6X+Nrr3KeN9mr5n2gV+5M=
 github.com/dell/gonvme v1.11.0 h1:nt5jL4mNDNtvWftM2U2WqGtFiBIgKHvloLOMN9NYOqc=
 github.com/dell/gonvme v1.11.0/go.mod h1:3bgVCRevHuVWR4UOV2uv5UksaJP5SiCzrgQZHqihaYA=
+github.com/dell/gonvme v1.11.1-0.20250623220042-71afc9447376 h1:W8KGEWIUGNvHs0sP9ewd9M0/Tv/rvfjp2BzkzUNzpBA=
+github.com/dell/gonvme v1.11.1-0.20250623220042-71afc9447376/go.mod h1:lzVtOeQBoq0Jedw66MMawBTjVmQSNsKExMC0HhuZ47c=
 github.com/dell/gopowermax/v2 v2.10.0 h1:eu8VmBU5P3PN2HHi7+/zptNrDdRG971/NWEYl8B7Dx8=
 github.com/dell/gopowermax/v2 v2.10.0/go.mod h1:5CDcZJLGZV6ghCNjuOjp9tmiZ8Y5nDIUNNzE8iho1tg=
 github.com/dell/gopowermax/v2 v2.10.1-0.20250618232101-be8479ebaf9b h1:D2k/szfAOpeXs1r/jDsipTwDez5YqygqsoobxzalE2Y=
