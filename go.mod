@@ -15,11 +15,11 @@ require (
 	github.com/dell/dell-csi-extensions/podmon v1.8.0
 	github.com/dell/dell-csi-extensions/replication v1.11.0
 	github.com/dell/gobrick v1.14.1-0.20250624004701-1c68c8c05f2f
-	github.com/dell/gocsi v1.14.0
+	github.com/dell/gocsi v1.14.1-0.20250701150109-1da4fb20c6c5
 	github.com/dell/gofsutil v1.19.0
 	github.com/dell/goiscsi v1.12.0
-	github.com/dell/gonvme v1.11.1-0.20250623220042-71afc9447376
-	github.com/dell/gopowermax/v2 v2.10.1-0.20250618232101-be8479ebaf9b
+	github.com/dell/gonvme v1.11.1-0.20250701150147-3adc18df98ba
+	github.com/dell/gopowermax/v2 v2.10.1-0.20250623084658-428c02f12973
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/golang/mock v1.6.0
 	github.com/gorilla/mux v1.8.1
@@ -57,6 +57,7 @@ require (
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-memdb v1.3.4 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
@@ -77,9 +78,9 @@ require (
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	go.etcd.io/etcd/api/v3 v3.5.17 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.5.17 // indirect
-	go.etcd.io/etcd/client/v3 v3.5.17 // indirect
+	go.etcd.io/etcd/api/v3 v3.6.1 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.6.1 // indirect
+	go.etcd.io/etcd/client/v3 v3.6.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/oauth2 v0.28.0 // indirect
