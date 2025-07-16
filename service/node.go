@@ -632,10 +632,12 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		cancel()
 		time.Sleep(disconnectVolumeRetryTime)
 
-		// Check that the /sys/block/DeviceName actually exists
-		if _, err := ioutil.ReadDir(sysBlock + deviceName); err != nil {
-			// If not, make sure the symlink is removed
-			os.Remove(symlinkPath) // #nosec G20
+		if s.arrayTransportProtocolMap[symID] != NvmeTCPTransportProtocol {
+			// Check that the /sys/block/DeviceName actually exists
+			if _, err := os.ReadDir(sysBlock + deviceName); err != nil {
+				// If not, make sure the symlink is removed
+				os.Remove(symlinkPath) // #nosec G20
+			}
 		}
 	}
 
