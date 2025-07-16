@@ -627,21 +627,21 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		case IscsiTransportProtocol:
 			_ = s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
 		case NvmeTCPTransportProtocol:
-			err := s.nvmeTCPConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
-			log.WithFields(f).Infof("NVMEDEBUG DisconnectVolumeByDeviceName error %v", err)
+			_ = s.nvmeTCPConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+			devPath, err := os.Readlink(symlinkPath)
+			log.WithFields(f).Infof("NVMEDEBUG devPath %s, error %v", devPath, err)
+			_, err = os.ReadDir(sysBlock + deviceName)
+			log.WithFields(f).Infof("NVMEDEBUG os.ReadDir %s, error %v", sysBlock + deviceName, err)
+			cancel()
+			return nil
 		}
 		cancel()
 		time.Sleep(disconnectVolumeRetryTime)
 
-		devPath, err := os.Readlink(symlinkPath)
-		log.WithFields(f).Infof("NVMEDEBUG devPath %s, error %v", devPath, err)
-
-		if s.arrayTransportProtocolMap[symID] != NvmeTCPTransportProtocol {
-			// Check that the /sys/block/DeviceName actually exists
-			if _, err := os.ReadDir(sysBlock + deviceName); err != nil {
-				// If not, make sure the symlink is removed
-				os.Remove(symlinkPath) // #nosec G20
-			}
+		// Check that the /sys/block/DeviceName actually exists
+		if _, err := os.ReadDir(sysBlock + deviceName); err != nil {
+			// If not, make sure the symlink is removed
+			os.Remove(symlinkPath) // #nosec G20
 		}
 	}
 
