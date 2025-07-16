@@ -628,13 +628,13 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 			_ = s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
 		case NvmeTCPTransportProtocol:
 			err := s.nvmeTCPConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
-			log.WithFields(f).Infof("NVMEDEBUG DisconnectVolumeByDeviceName error %s", err.Error())
+			log.WithFields(f).Infof("NVMEDEBUG DisconnectVolumeByDeviceName error %v", err)
 		}
 		cancel()
 		time.Sleep(disconnectVolumeRetryTime)
 
 		devPath, err := os.Readlink(symlinkPath)
-		log.WithFields(f).Infof("NVMEDEBUG devPath %s, error %s", devPath, err.Error())
+		log.WithFields(f).Infof("NVMEDEBUG devPath %s, error %v", devPath, err)
 
 		if s.arrayTransportProtocolMap[symID] != NvmeTCPTransportProtocol {
 			// Check that the /sys/block/DeviceName actually exists
