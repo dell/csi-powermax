@@ -628,11 +628,11 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 			_ = s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
 		case NvmeTCPTransportProtocol:
 			err := s.nvmeTCPConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+			cancel()
 			if err != nil {
 				log.WithFields(f).Errorf("failed to disconnect volume by device name %s with error %s", deviceName, err.Error())
 				continue
 			}
-			cancel()
 			return nil
 		}
 		cancel()
