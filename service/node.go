@@ -627,13 +627,19 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		case IscsiTransportProtocol:
 			_ = s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
 		case NvmeTCPTransportProtocol:
-			_ = s.nvmeTCPConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+			err := s.nvmeTCPConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+			cancel()
+			if err != nil {
+				log.WithFields(f).Errorf("failed to disconnect volume by device name %s with error %s", deviceName, err.Error())
+				continue
+			}
+			return nil
 		}
 		cancel()
 		time.Sleep(disconnectVolumeRetryTime)
 
 		// Check that the /sys/block/DeviceName actually exists
-		if _, err := ioutil.ReadDir(sysBlock + deviceName); err != nil {
+		if _, err := os.ReadDir(sysBlock + deviceName); err != nil {
 			// If not, make sure the symlink is removed
 			os.Remove(symlinkPath) // #nosec G20
 		}
