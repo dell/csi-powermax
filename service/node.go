@@ -168,7 +168,7 @@ func (s *service) NodeStageVolume(
 	// Save volume WWN to node disk
 	err = s.writeWWNFile(id, volumeWWN)
 	if err != nil {
-		log.Error("Could not write WWN file: " + volumeWWN)
+		log.Errorf("Could not write WWN file: %s: %v", volumeWWN, err)
 	}
 
 	// Attach RDM
@@ -415,6 +415,8 @@ func (s *service) connectNVMeTCPDevice(ctx context.Context, data publishContextD
 	for _, t := range data.nvmetcpTargets {
 		targets = append(targets, gobrick.NVMeTargetInfo{Target: t.Target, Portal: t.Portal})
 	}
+
+	log.Debugf("connectNVMeTCPDevice: connecting volume with targets %v", targets)
 	// separate context to prevent 15 seconds cancel from kubernetes
 	connectorCtx, cFunc := context.WithTimeout(context.Background(), time.Second*120)
 	connectorCtx = setLogFields(connectorCtx, logFields)
@@ -625,13 +627,19 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		case IscsiTransportProtocol:
 			_ = s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
 		case NvmeTCPTransportProtocol:
-			_ = s.nvmeTCPConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+			err := s.nvmeTCPConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+			cancel()
+			if err != nil {
+				log.WithFields(f).Errorf("failed to disconnect volume by device name %s with error %s", deviceName, err.Error())
+				continue
+			}
+			return nil
 		}
 		cancel()
 		time.Sleep(disconnectVolumeRetryTime)
 
 		// Check that the /sys/block/DeviceName actually exists
-		if _, err := ioutil.ReadDir(sysBlock + deviceName); err != nil {
+		if _, err := os.ReadDir(sysBlock + deviceName); err != nil {
 			// If not, make sure the symlink is removed
 			os.Remove(symlinkPath) // #nosec G20
 		}
@@ -3116,7 +3124,7 @@ func (s *service) writeWWNFile(id, volumeWWN string) error {
 	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
 	err := ioutil.WriteFile(wwnFileName, []byte(volumeWWN), 0o644) // #nosec G306
 	if err != nil {
-		return status.Errorf(codes.Internal, "Could not read WWN file: %s", wwnFileName)
+		return status.Errorf(codes.Internal, "Could not write WWN file %s: %v", wwnFileName, err)
 	}
 	return nil
 }
@@ -3127,7 +3135,7 @@ func (s *service) readWWNFile(id string) (string, error) {
 	wwnFileName := fmt.Sprintf("%s/%s.wwn", s.privDir, id)
 	wwnBytes, err := ioutil.ReadFile(wwnFileName) // #nosec G304
 	if err != nil {
-		return "", status.Errorf(codes.Internal, "Could not read WWN file: %s", wwnFileName)
+		return "", status.Errorf(codes.Internal, "Could not read WWN file %s: %v", wwnFileName, err)
 	}
 	volumeWWN := string(wwnBytes)
 	return volumeWWN, nil

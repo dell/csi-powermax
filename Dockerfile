@@ -35,7 +35,7 @@ LABEL vendor="Dell Technologies" \
     name="csi-powermax" \
     summary="CSI Driver for Dell EMC PowerMax" \
     description="CSI Driver for provisioning persistent storage from Dell EMC PowerMax" \
-    release="1.14.0" \
-    version="2.14.0" \
+    release="1.14.1" \
+    version="2.14.1" \
     license="Apache-2.0"
 COPY ./licenses /licenses
