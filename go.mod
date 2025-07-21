@@ -15,7 +15,7 @@ require (
 	github.com/dell/dell-csi-extensions/podmon v1.8.0
 	github.com/dell/dell-csi-extensions/replication v1.11.0
 	github.com/dell/gobrick v1.14.1-0.20250624004701-1c68c8c05f2f
-	github.com/dell/gocsi v1.14.1-0.20250701150109-1da4fb20c6c5
+	github.com/dell/gocsi v1.14.1-0.20250717201424-c79f876a35fe
 	github.com/dell/gofsutil v1.19.0
 	github.com/dell/goiscsi v1.12.0
 	github.com/dell/gonvme v1.11.1-0.20250701150147-3adc18df98ba
