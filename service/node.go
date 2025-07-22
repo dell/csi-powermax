@@ -2155,8 +2155,8 @@ func (s *service) loginIntoNVMeTCPTargets(array string, targets []maskingViewNVM
 
 func (s *service) UpdateLoggedInNVMeArrays(array string, value bool) {
 	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
 	s.loggedInNVMeArrays[array] = value
-	s.cacheMutex.Unlock()
 }
 
 func (s *service) GetLoggedInNVMeArrays(array string) (isLoggedIn bool, ok bool) {
@@ -2307,7 +2307,6 @@ func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error 
 			}
 		} else if s.useNVMeTCP {
 			log.Debugf("(ISCSI) No logins were done earlier for %s", array)
-			s.cacheMutex.Unlock()
 			_, _, mvName := s.GetNVMETCPHostSGAndMVIDFromNodeID(s.opts.NodeName)
 			log.Infof("Checking if MV %s exists", mvName)
 			err = s.performNVMETCPLoginOnSymID(ctx, array, mvName, pmaxClient)
