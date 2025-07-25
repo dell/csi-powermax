@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -130,6 +131,7 @@ type Opts struct {
 	NonDefaultRetries          bool   // Indicates if non-default retry values to be used for deletion worker, only for unit testing
 	NodeNameTemplate           string
 	ModifyHostName             bool
+	IfaceExcludeFilter         *regexp.Regexp // regex of interface names to exclude from consideration
 	ReplicationContextPrefix   string // Enables sidecars to read required information from volume context
 	ReplicationPrefix          string // Used as a prefix to find out if replication is enabled
 	IsHealthMonitorEnabled     bool   // used to check if health monitor for volume is enabled
@@ -522,6 +524,9 @@ func (s *service) BeforeServe(
 		opts.ReplicationPrefix = replicationPrefix
 	} else {
 		opts.ReplicationPrefix = ReplicationPrefix
+	}
+	if ifaceExcludeFilter, ok := csictx.LookupEnv(ctx, EnvIfaceExcludeFilter); ok {
+		opts.IfaceExcludeFilter = regexp.MustCompile(ifaceExcludeFilter)
 	}
 
 	if MaxVolumesPerNode, ok := csictx.LookupEnv(ctx, EnvMaxVolumesPerNode); ok {
