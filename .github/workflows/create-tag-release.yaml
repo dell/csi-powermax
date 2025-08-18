@@ -1,4 +1,4 @@
-name: Release CSI-Powermax
+name: Create Tag and Release
 # Invocable as a reusable workflow
 # Can be manually triggered
 on:  # yamllint disable-line rule:truthy
@@ -56,9 +56,21 @@ jobs:
           echo "versionEnv=minor" >> $GITHUB_OUTPUT
   csm-release:
     needs: [process-inputs]
-    uses: dell/common-github-actions/.github/workflows/csm-release-driver-module.yaml@main
-    name: Release CSM Drivers and Modules
+    uses: dell/common-github-actions/.github/workflows/create-tag-release.yaml@main
+    name: Create Tag and Release
     with:
       version: ${{ needs.process-inputs.outputs.processedVersion }}
       images: ${{ github.event.inputs.reverseproxyCheckInput == 'true' && 'csi-powermax,csipowermax-reverseproxy' || 'csi-powermax' }}
     secrets: inherit
+
+  next-steps:
+    name: 📌 Next Steps for Release Process
+    runs-on: ubuntu-latest
+    needs: csm-release
+    steps:
+      - name: Share next steps with user
+        run: |
+          echo "✅ Tag and release completed."
+          echo "➡️ Please manually trigger the Jenkins image build job: CSM-Images-Build-Nightly."
+          echo "🚀 Once the Jenkins image build job is successful, trigger the Release Image workflow from GitHub Actions."
+          
