@@ -26,6 +26,7 @@ on:  # yamllint disable-line rule:truthy
         required: false
   repository_dispatch:
     types: [auto-release-workflow]
+
 jobs:
   process-inputs:
     name: Process Inputs
@@ -54,13 +55,14 @@ jobs:
           fi
           # if neither option nor version is provided, then minor release is taken by default (Auto-release)
           echo "versionEnv=minor" >> $GITHUB_OUTPUT
+
   csm-release:
     needs: [process-inputs]
     uses: dell/common-github-actions/.github/workflows/create-tag-release.yaml@main
     name: Create Tag and Release
     with:
       version: ${{ needs.process-inputs.outputs.processedVersion }}
-      images: ${{ github.event.inputs.reverseproxyCheckInput == 'true' && 'csi-powermax,csipowermax-reverseproxy' || 'csi-powermax' }}
+      images: ${{ github.event.inputs.reverseproxyCheckInput == true && 'csi-powermax,csipowermax-reverseproxy' || 'csi-powermax' }}
     secrets: inherit
 
   next-steps:
@@ -73,4 +75,3 @@ jobs:
           echo "✅ Tag and release completed."
           echo "➡️ Please manually trigger the Jenkins image build job: CSM-Images-Build-Nightly."
           echo "🚀 Once the Jenkins image build job is successful, trigger the Release Image workflow from GitHub Actions."
-          
