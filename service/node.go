@@ -1920,9 +1920,31 @@ func (s *service) setupArrayForNVMeTCP(ctx context.Context, array string, NQNs [
 		log.Error(err.Error())
 		return err
 	}
-	updatesHostNQNs, err := s.updateNQNWithHostID(ctx, array, NQNs, pmaxClient)
-	if err != nil || updatesHostNQNs == nil {
-		return fmt.Errorf(" Error updating NQN with HostID, len of updatedNQN: %d", len(updatesHostNQNs))
+
+	// It may take some time for the array to start reporting the newly logged in initiators.
+	// To accommodate this, retry a few times before erroring out.
+
+	var updatesHostNQNs []string
+	retriesCount := 36 // 36 retries, 5 seconds between each, 3 minutes total
+	for {
+		updatesHostNQNs, err = s.updateNQNWithHostID(ctx, array, NQNs, pmaxClient)
+		if err != nil {
+			return fmt.Errorf("error updating NQN with HostID: %v", err)
+		}
+		if len(updatesHostNQNs) == len(NQNs) {
+			break
+		}
+		// Wait and retry
+		retriesCount--
+		if retriesCount == 0 {
+			return fmt.Errorf("error updating NQN with HostID, len of updatedNQN: %d", len(updatesHostNQNs))
+		}
+		select {
+		case <-time.After(5 * time.Second):
+			log.Infof("Retrying updating NQN with HostID (%d retries left)", retriesCount)
+		case <-ctx.Done():
+			return fmt.Errorf("error updating NQN with HostID: context timeout")
+		}
 	}
 
 	// Create or update the NVMe Host and Initiators dummy
@@ -1949,7 +1971,7 @@ func (s *service) updateNQNWithHostID(ctx context.Context, symID string, NQNs []
 		log.Error("Failed to fetch initiator list for the SYM :" + symID)
 		return nil, err
 	}
-	log.Infof("Host Initiators: %+v", hostInitiators)
+	log.Infof("Host initiators: %+v", hostInitiators)
 
 	for _, hostInitiator := range hostInitiators.InitiatorIDs {
 		// hostInitiator = OR-1C:001:nqn.2014-08.org.nvmexpress:uuid:csi_master:76B04D56EAB26A2E1509A7E98D3DFDB6
@@ -1958,12 +1980,11 @@ func (s *service) updateNQNWithHostID(ctx context.Context, symID string, NQNs []
 			if strings.Contains(hostInitiator, nqn) {
 				initiator, err := pmaxClient.GetInitiatorByID(ctx, symID, hostInitiator)
 				if err != nil {
-					log.Errorf("Failed to fetch InitiatorID details for the initiator %s", initiator.InitiatorID)
-				} else {
-					hostID := initiator.HostID
-					nqn = nqn + ":" + hostID
-					log.Infof("updated host nqn is: %s", nqn)
+					return nil, fmt.Errorf("failed to fetch initiator details for NQN %s: %v", nqn, err)
 				}
+				hostID := initiator.HostID
+				nqn = nqn + ":" + hostID
+				log.Infof("Updated host NQN is: %s", nqn)
 				updatesHostNQNs = append(updatesHostNQNs, nqn)
 			}
 		}
