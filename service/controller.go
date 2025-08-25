@@ -3881,18 +3881,6 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 			remoteSymID, remoteVolumeID, err.Error())
 	}
 
-	// Set the volume identifier on the remote volume to be same as local volume
-	if remoteVol.VolumeIdentifier == "" {
-		remoteVol, err = pmaxClient.RenameVolume(ctx, remoteSymID, remoteVol.VolumeID, vol.VolumeIdentifier)
-		errorMsg := ""
-		if err != nil {
-			errorMsg = err.Error()
-		}
-		if err != nil || vol == nil {
-			return nil, status.Errorf(codes.InvalidArgument, "RenameRemoteVolume: Failed to rename volume %s %s", remoteVolumeID, errorMsg)
-		}
-	}
-
 	remoteProtectionGroupID := s.GetProtectedStorageGroupID(remoteVol.StorageGroupIDList, remoteRDFGroup+"-"+repMode)
 	if remoteProtectionGroupID == "" {
 		errorMsg := fmt.Sprintf("CreateRemoteVolume failed with (%s) for devID (%s)", "Failed to find protected remote storage group", remoteVolumeID)
@@ -3928,6 +3916,18 @@ func (s *service) CreateRemoteVolume(ctx context.Context, req *csiext.CreateRemo
 		if err != nil {
 			log.Error(fmt.Sprintf("Could not add volume in SG on R2: %s: %s", remoteVolumeID, err.Error()))
 			return nil, status.Errorf(codes.Internal, "Could not add volume in SG on R2: %s: %s", remoteVolumeID, err.Error())
+		}
+	}
+
+	// Set the volume identifier on the remote volume to be same as local volume
+	if remoteVol.VolumeIdentifier == "" {
+		remoteVol, err = pmaxClient.RenameVolume(ctx, remoteSymID, remoteVol.VolumeID, vol.VolumeIdentifier)
+		errorMsg := ""
+		if err != nil {
+			errorMsg = err.Error()
+		}
+		if err != nil || vol == nil {
+			return nil, status.Errorf(codes.InvalidArgument, "RenameRemoteVolume: Failed to rename volume %s %s", remoteVolumeID, errorMsg)
 		}
 	}
 
