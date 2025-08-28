@@ -7,30 +7,30 @@ toolchain go1.24.5
 require (
 	github.com/akutz/goof v0.1.2
 	github.com/container-storage-interface/spec v1.6.0
-	github.com/coreos/go-systemd/v22 v22.5.0
+	github.com/coreos/go-systemd/v22 v22.6.0
 	github.com/cucumber/godog v0.15.0
 	github.com/cucumber/messages-go/v10 v10.0.3
-	github.com/dell/dell-csi-extensions/common v1.8.1-0.20250811191959-eb2cab02fb75
-	github.com/dell/dell-csi-extensions/migration v1.8.1-0.20250811191959-eb2cab02fb75
-	github.com/dell/dell-csi-extensions/podmon v1.8.1-0.20250811191959-eb2cab02fb75
-	github.com/dell/dell-csi-extensions/replication v1.11.1-0.20250811191959-eb2cab02fb75
+	github.com/dell/dell-csi-extensions/common v1.8.1-0.20250819061805-75a74ddc3cba
+	github.com/dell/dell-csi-extensions/migration v1.8.1-0.20250819061805-75a74ddc3cba
+	github.com/dell/dell-csi-extensions/podmon v1.8.1-0.20250819061805-75a74ddc3cba
+	github.com/dell/dell-csi-extensions/replication v1.11.1-0.20250819061805-75a74ddc3cba
 	github.com/dell/gobrick v1.14.0
-	github.com/dell/gocsi v1.14.1-0.20250814142855-75596c20cbec
-	github.com/dell/gofsutil v1.19.1-0.20250812102612-38ce511bc840
-	github.com/dell/goiscsi v1.12.0
-	github.com/dell/gonvme v1.11.1-0.20250812153009-7dca68734c51
-	github.com/dell/gopowermax/v2 v2.10.1-0.20250623084658-428c02f12973
+	github.com/dell/gocsi v1.14.1-0.20250819131305-b1e701f09007
+	github.com/dell/gofsutil v1.19.1-0.20250819055627-f3c46eb76ffe
+	github.com/dell/goiscsi v1.12.1-0.20250819061735-a01d8763f641
+	github.com/dell/gonvme v1.11.1-0.20250819061410-1c006e069862
+	github.com/dell/gopowermax/v2 v2.10.1-0.20250819060431-d564b2c30fb8
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/golang/mock v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/kubernetes-csi/csi-lib-utils v0.11.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.20.1
-	github.com/stretchr/testify v1.10.0
-	github.com/vmware/govmomi v0.51.0
-	go.uber.org/mock v0.5.0
+	github.com/stretchr/testify v1.11.0
+	github.com/vmware/govmomi v0.52.0
+	go.uber.org/mock v0.6.0
 	golang.org/x/net v0.43.0
-	google.golang.org/grpc v1.74.2
+	google.golang.org/grpc v1.75.0
 	google.golang.org/protobuf v1.36.6
 	k8s.io/api v0.33.0
 	k8s.io/apimachinery v0.33.0
@@ -89,8 +89,8 @@ require (
 	golang.org/x/term v0.34.0 // indirect
 	golang.org/x/text v0.28.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250528174236-200df99c418a // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250528174236-200df99c418a // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
