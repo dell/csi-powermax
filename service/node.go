@@ -2599,7 +2599,7 @@ func (s *service) createOrUpdateNVMeTCPHost(ctx context.Context, array string, n
 		log.Infof("NVMe Host %s does not exist. Creating it.", nodeName)
 		host, err = s.retryableCreateHost(ctx, array, nodeName, NQNs, nil, pmaxClient)
 		if err != nil {
-			return nil, fmt.Errorf("Unable to create Host: %v", err)
+			return nil, fmt.Errorf("unable to create host: %v", err)
 		}
 	} else {
 		// Make sure we fetch only the NVMe hosts
@@ -2640,13 +2640,13 @@ func (s *service) retryableCreateHost(ctx context.Context, array string, nodeNam
 			}
 			// #nosec G115
 			time.Sleep(time.Second << uint(tries)) // incremental back-off
-			log.Debug(fmt.Sprintf("failed to create Host; retrying..."))
+			log.Debugf("Retrying creating host on array...")
 			continue
 		}
 		break
 	}
 	if err != nil {
-		return &types.Host{}, fmt.Errorf("Unable to create Host: %s", err)
+		return nil, fmt.Errorf("unable to create host on array %s: %s", array, err)
 	}
 	return host, nil
 }
