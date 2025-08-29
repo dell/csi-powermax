@@ -51,6 +51,7 @@ import (
 	migrext "github.com/dell/dell-csi-extensions/migration"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 	pmax "github.com/dell/gopowermax/v2"
+	"runtime"
 )
 
 // Constants for the service
@@ -86,6 +87,11 @@ var Manifest = map[string]string{
 	"semver": core.SemVer,
 	"commit": core.CommitSha32,
 	"formed": core.CommitTime.Format(time.RFC1123),
+}
+
+// Makes logrus add the _short_ file name and line number to the log message
+var callerPrettyfier = func(f *runtime.Frame) (function string, file string) {
+	return "", fmt.Sprintf("%s:%d", filepath.Base(f.File), f.Line)
 }
 
 // Service is the CSI Mock service provider.
@@ -242,12 +248,14 @@ func updateDriverConfigParams(v *viper.Viper) {
 	var formatter log.Formatter
 	// Use text logger as default
 	formatter = &log.TextFormatter{
-		DisableColors: true,
-		FullTimestamp: true,
+		DisableColors:    true,
+		FullTimestamp:    true,
+		CallerPrettyfier: callerPrettyfier,
 	}
 	if strings.EqualFold(logFormatFromConfig, "json") {
 		formatter = &log.JSONFormatter{
-			TimestampFormat: time.RFC3339Nano,
+			TimestampFormat:  time.RFC3339Nano,
+			CallerPrettyfier: callerPrettyfier,
 		}
 	} else if !strings.EqualFold(logFormatFromConfig, "text") && (logFormatFromConfig != "") {
 		log.Warningf("Unsupported CSI_LOG_FORMAT: %s supplied. Defaulting to text", logFormatFromConfig)
@@ -277,6 +285,7 @@ func updateDriverConfigParams(v *viper.Viper) {
 }
 
 func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
+	log.SetReportCaller(true) // Enable file:line in logs
 	log.SetFormatter(logFormat)
 	log.Infof("Setting log level to %v", level)
 	log.SetLevel(level)
@@ -389,8 +398,9 @@ func (s *service) BeforeServe(
 	if err != nil {
 		log.WithError(err).Error("unable to read config file")
 		setLogFormatAndLevel(&log.TextFormatter{
-			DisableColors: true,
-			FullTimestamp: true,
+			DisableColors:    true,
+			FullTimestamp:    true,
+			CallerPrettyfier: callerPrettyfier,
 		}, log.DebugLevel)
 		// set X_CSI_LOG_LEVEL so that gocsi doesn't overwrite the loglevel set by us
 		_ = os.Setenv(gocsi.EnvVarLogLevel, log.DebugLevel.String())
@@ -1001,8 +1011,9 @@ func setArrayConfigEnvs(ctx context.Context) error {
 	if err != nil {
 		log.WithError(err).Error("unable to read array config file")
 		setLogFormatAndLevel(&log.TextFormatter{
-			DisableColors: true,
-			FullTimestamp: true,
+			DisableColors:    true,
+			FullTimestamp:    true,
+			CallerPrettyfier: callerPrettyfier,
 		}, log.DebugLevel)
 	}
 	portgroups := paramsViper.GetString(PortGroups)

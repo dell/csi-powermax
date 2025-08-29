@@ -68,8 +68,9 @@ var (
 	nodePendingState            = pendingState{
 		pendingMutex: &sync.Mutex{},
 	}
-	sysBlock = "/sys/block" // changed for unit testing
-	dev      = "/dev/"
+	sysBlock         = "/sys/block" // changed for unit testing
+	dev              = "/dev/"
+	nqnQueryAttempts = 30
 )
 
 type maskingViewTargetInfo struct {
@@ -1924,31 +1925,31 @@ func (s *service) setupArrayForNVMeTCP(ctx context.Context, array string, NQNs [
 	// It may take some time for the array to start reporting the newly logged in initiators.
 	// To accommodate this, retry a few times before erroring out.
 
-	var updatesHostNQNs []string
-	retriesCount := 36 // 36 retries, 5 seconds between each, 3 minutes total
-	for {
-		updatesHostNQNs, err = s.updateNQNWithHostID(ctx, array, NQNs, pmaxClient)
+	var updatedHostNQNs []string
+
+	// Wait for up to 5 minutes for the NQNs to appear as in the array initiators list
+	for attempt := 1; attempt <= nqnQueryAttempts; attempt++ {
+		if attempt > 1 { // First attempt does not need to wait
+			// Sleep 10 seconds or until context is closed
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("error updating NQN with HostID: context timeout")
+			case <-time.After(10 * time.Second):
+				log.Infof("Re-trying updating NQN with HostID (%d)", attempt)
+			}
+		}
+		updatedHostNQNs, err = s.updateNQNWithHostID(ctx, array, NQNs, pmaxClient)
 		if err != nil {
 			return fmt.Errorf("error updating NQN with HostID: %v", err)
 		}
-		if len(updatesHostNQNs) == len(NQNs) {
-			break
-		}
-		// Wait and retry
-		retriesCount--
-		if retriesCount == 0 {
-			return fmt.Errorf("error updating NQN with HostID, len of updatedNQN: %d", len(updatesHostNQNs))
-		}
-		select {
-		case <-time.After(5 * time.Second):
-			log.Infof("Retrying updating NQN with HostID (%d retries left)", retriesCount)
-		case <-ctx.Done():
-			return fmt.Errorf("error updating NQN with HostID: context timeout")
+		// Each initiator should have at least one path to the array
+		if len(updatedHostNQNs) >= len(NQNs) {
+			break // Success
 		}
 	}
 
 	// Create or update the NVMe Host and Initiators dummy
-	_, err = s.createOrUpdateNVMeTCPHost(ctx, array, hostName, updatesHostNQNs, pmaxClient)
+	_, err = s.createOrUpdateNVMeTCPHost(ctx, array, hostName, updatedHostNQNs, pmaxClient)
 	if err != nil {
 		log.Error(err.Error())
 		return err
@@ -1964,33 +1965,34 @@ func (s *service) setupArrayForNVMeTCP(ctx context.Context, array string, NQNs [
 }
 
 func (s *service) updateNQNWithHostID(ctx context.Context, symID string, NQNs []string, pmaxClient pmax.Pmax) ([]string, error) {
-	updatesHostNQNs := make([]string, 0)
+	var updatedHostNQNs []string
 	// Process the NQN to append hostId
 	hostInitiators, err := pmaxClient.GetInitiatorList(ctx, symID, "", false, false)
-	if err != nil {
+	if err != nil || hostInitiators == nil {
 		log.Error("Failed to fetch initiator list for the SYM :" + symID)
 		return nil, err
 	}
-	log.Infof("Host initiators: %+v", hostInitiators)
+	log.Debugf("Host initiators: %v", hostInitiators.InitiatorIDs)
 
 	for _, hostInitiator := range hostInitiators.InitiatorIDs {
 		// hostInitiator = OR-1C:001:nqn.2014-08.org.nvmexpress:uuid:csi_master:76B04D56EAB26A2E1509A7E98D3DFDB6
 		for _, nqn := range NQNs {
 			// nqn = [nqn.2014-08.org.nvmexpress:uuid:csi_master]
 			if strings.Contains(hostInitiator, nqn) {
+				log.Infof("Found initiator %s for local NQN %s on array %s", hostInitiator, nqn, symID)
 				initiator, err := pmaxClient.GetInitiatorByID(ctx, symID, hostInitiator)
 				if err != nil {
-					return nil, fmt.Errorf("failed to fetch initiator details for NQN %s: %v", nqn, err)
+					return nil, fmt.Errorf("failed to fetch NVMe initiator details for ID %s: %v", hostInitiator, err)
 				}
 				hostID := initiator.HostID
 				nqn = nqn + ":" + hostID
+				updatedHostNQNs = append(updatedHostNQNs, nqn)
 				log.Infof("Updated host NQN is: %s", nqn)
-				updatesHostNQNs = append(updatesHostNQNs, nqn)
 			}
 		}
 	}
-	log.Infof("Updated NQNs are: %+v", updatesHostNQNs)
-	return updatesHostNQNs, nil
+	log.Infof("Updated NQNs are: %v", updatedHostNQNs)
+	return updatedHostNQNs, nil
 }
 
 // getAndConfigureMaskingViewTargets - Returns a list of ISCSITargets for a given masking view
@@ -2523,7 +2525,7 @@ func (s *service) createOrUpdateFCHost(ctx context.Context, array string, nodeNa
 		log.Infof("Array %s FC Host %s does not exist. Creating it.", array, nodeName)
 		host, err = s.retryableCreateHost(ctx, array, nodeName, hostInitiators, nil, pmaxClient)
 		if err != nil {
-			return host, err
+			return nil, err
 		}
 	} else {
 		// make sure we don't update an iscsi host
@@ -2534,7 +2536,7 @@ func (s *service) createOrUpdateFCHost(ctx context.Context, array string, nodeNa
 			log.Infof("updating host: %s initiators to: %s", nodeName, hostInitiators)
 			_, err := s.retryableUpdateHostInitiators(ctx, array, host, portWWNs, pmaxClient)
 			if err != nil {
-				return host, err
+				return nil, err
 			}
 		}
 	}
@@ -2544,13 +2546,13 @@ func (s *service) createOrUpdateFCHost(ctx context.Context, array string, nodeNa
 func (s *service) createOrUpdateIscsiHost(ctx context.Context, array string, nodeName string, IQNs []string, pmaxClient pmax.Pmax) (*types.Host, error) {
 	log.Debug(fmt.Sprintf("Processing Iscsi Host array: %s, nodeName: %s, initiators: %v", array, nodeName, IQNs))
 	if array == "" {
-		return &types.Host{}, fmt.Errorf("createOrUpdateHost: No array specified")
+		return nil, fmt.Errorf("createOrUpdateHost: No array specified")
 	}
 	if nodeName == "" {
-		return &types.Host{}, fmt.Errorf("createOrUpdateHost: No nodeName specified")
+		return nil, fmt.Errorf("createOrUpdateHost: No nodeName specified")
 	}
 	if len(IQNs) == 0 {
-		return &types.Host{}, fmt.Errorf("createOrUpdateHost: No IQNs specified")
+		return nil, fmt.Errorf("createOrUpdateHost: No IQNs specified")
 	}
 
 	host, err := pmaxClient.GetHostByID(ctx, array, nodeName)
@@ -2560,7 +2562,7 @@ func (s *service) createOrUpdateIscsiHost(ctx context.Context, array string, nod
 		log.Infof("ISCSI Host %s does not exist. Creating it.", nodeName)
 		host, err = s.retryableCreateHost(ctx, array, nodeName, IQNs, nil, pmaxClient)
 		if err != nil {
-			return &types.Host{}, fmt.Errorf("Unable to create Host: %v", err)
+			return nil, fmt.Errorf("Unable to create Host: %v", err)
 		}
 	} else {
 		// Make sure we don't update an FC host
@@ -2569,7 +2571,7 @@ func (s *service) createOrUpdateIscsiHost(ctx context.Context, array string, nod
 		if len(hostInitiators) != 0 && !stringSlicesEqual(hostInitiators, IQNs) {
 			log.Infof("updating host: %s initiators to: %s", nodeName, IQNs)
 			if _, err := s.retryableUpdateHostInitiators(ctx, array, host, IQNs, pmaxClient); err != nil {
-				return host, err
+				return nil, err
 			}
 		}
 	}
@@ -2579,13 +2581,13 @@ func (s *service) createOrUpdateIscsiHost(ctx context.Context, array string, nod
 func (s *service) createOrUpdateNVMeTCPHost(ctx context.Context, array string, nodeName string, NQNs []string, pmaxClient pmax.Pmax) (*types.Host, error) {
 	log.Debug(fmt.Sprintf("Processing NVMeTCP Host array: %s, nodeName: %s, initiators: %v", array, nodeName, NQNs))
 	if array == "" {
-		return &types.Host{}, fmt.Errorf("createOrUpdateHost: No array specified")
+		return nil, fmt.Errorf("createOrUpdateHost: No array specified")
 	}
 	if nodeName == "" {
-		return &types.Host{}, fmt.Errorf("createOrUpdateHost: No nodeName specified")
+		return nil, fmt.Errorf("createOrUpdateHost: No nodeName specified")
 	}
 	if len(NQNs) == 0 {
-		return &types.Host{}, fmt.Errorf("createOrUpdateHost: No NQNs specified")
+		return nil, fmt.Errorf("createOrUpdateHost: No NQNs specified")
 	}
 
 	// process the NQNs
@@ -2597,7 +2599,7 @@ func (s *service) createOrUpdateNVMeTCPHost(ctx context.Context, array string, n
 		log.Infof("NVMe Host %s does not exist. Creating it.", nodeName)
 		host, err = s.retryableCreateHost(ctx, array, nodeName, NQNs, nil, pmaxClient)
 		if err != nil {
-			return &types.Host{}, fmt.Errorf("Unable to create Host: %v", err)
+			return nil, fmt.Errorf("Unable to create Host: %v", err)
 		}
 	} else {
 		// Make sure we fetch only the NVMe hosts
@@ -2606,7 +2608,7 @@ func (s *service) createOrUpdateNVMeTCPHost(ctx context.Context, array string, n
 		if len(hostInitiators) != 0 && !stringSlicesEqual(hostInitiators, NQNs) {
 			log.Infof("updating host: %s initiators to: %s", nodeName, NQNs)
 			if _, err := s.retryableUpdateHostInitiators(ctx, array, host, NQNs, pmaxClient); err != nil {
-				return host, err
+				return nil, err
 			}
 		}
 	}
@@ -2618,19 +2620,27 @@ func (s *service) retryableCreateHost(ctx context.Context, array string, nodeNam
 	var err error
 	var host *types.Host
 	deadline := time.Now().Add(time.Duration(s.GetPmaxTimeoutSeconds()) * time.Second)
+	log.Infof("Creating host %s with initiators %v on array %s with retries until %v",
+		nodeName, hostInitiators, array, deadline)
 	for tries := 0; time.Now().Before(deadline); tries++ {
 		host, err = pmaxClient.CreateHost(ctx, array, nodeName, hostInitiators, nil)
 		if err != nil {
-			// Retry on this error
+			log.Errorf("Failed to create host on array: %v", err)
 			if strings.Contains(err.Error(), "is not in the format of a valid NQN:HostID") {
-				hostInitiators, err = s.updateNQNWithHostID(ctx, array, hostInitiators, pmaxClient)
+				log.Errorf("Rejected NQNs format: %v", hostInitiators)
+				updatedNQNs, err := s.updateNQNWithHostID(ctx, array, hostInitiators, pmaxClient)
 				if err != nil {
-					log.Debug(fmt.Sprintf("failed to update host nqn; retrying..."))
+					log.Errorf("Failed to update NQN format: %v", err)
+				} else if len(updatedNQNs) < len(hostInitiators) {
+					log.Errorf("Failed to update all NQNs format, updated NQNs: %v", updatedNQNs)
+				} else {
+					hostInitiators = updatedNQNs
+					log.Infof("Will retry creating host with updated NQNs format: %v", hostInitiators)
 				}
 			}
-			log.Debug(fmt.Sprintf("failed to create Host; retrying..."))
 			// #nosec G115
 			time.Sleep(time.Second << uint(tries)) // incremental back-off
+			log.Debug(fmt.Sprintf("failed to create Host; retrying..."))
 			continue
 		}
 		break

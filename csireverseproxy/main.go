@@ -39,6 +39,8 @@ import (
 	"github.com/spf13/viper"
 
 	corev1 "k8s.io/api/core/v1"
+	"runtime"
+	"fmt"
 )
 
 // RevProxy - interface which is implemented by the different proxy implementations
@@ -264,14 +266,20 @@ func (s *Server) SignalHandler(k8sUtils k8sutils.UtilsInterface) {
 func updateRevProxyLogParams(format, logLevel string) {
 	logFormatFromConfig := strings.ToLower(format)
 	var formatter log.Formatter
+	// Makes logrus add the _short_ file name and line number to the log message
+	callerPrettyfier := func(f *runtime.Frame) (function string, file string) {
+		return "", fmt.Sprintf("%s:%d", filepath.Base(f.File), f.Line)
+	}
 	// Use text logger as default
 	formatter = &log.TextFormatter{
-		DisableColors: true,
-		FullTimestamp: true,
+		DisableColors:    true,
+		FullTimestamp:    true,
+		CallerPrettyfier: callerPrettyfier,
 	}
 	if strings.EqualFold(logFormatFromConfig, "json") {
 		formatter = &log.JSONFormatter{
-			TimestampFormat: time.RFC3339Nano,
+			TimestampFormat:  time.RFC3339Nano,
+			CallerPrettyfier: callerPrettyfier,
 		}
 	} else if !strings.EqualFold(logFormatFromConfig, "text") && (logFormatFromConfig != "") {
 		log.Printf("Unsupported logFormat: %s supplied. Defaulting to text", logFormatFromConfig)
@@ -293,6 +301,7 @@ func updateRevProxyLogParams(format, logLevel string) {
 }
 
 func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
+	log.SetReportCaller(true) // Enable file:line in logs
 	log.SetFormatter(logFormat)
 	log.Infof("Setting log level to %v", level)
 	log.SetLevel(level)
