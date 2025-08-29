@@ -272,7 +272,8 @@ func (s *service) NodeStageVolume(
 			remotePublishContextData.fcTargets = remFcTargets
 		} else if remUseNVMe {
 			s.initNVMeTCPConnector(nodeCHRoot)
-			localPublishContextData.nvmetcpTargets = remNVMeTCPTargets
+			remotePublishContextData.deviceWWN = volumeWWN
+			remotePublishContextData.nvmetcpTargets = remNVMeTCPTargets
 		} else {
 			s.initISCSIConnector(nodeCHRoot)
 			remotePublishContextData.iscsiTargets = remIscsiTargets
@@ -2944,15 +2945,20 @@ func (s *service) getArrayTargets(ctx context.Context, targetIdentifiers string,
 }
 
 func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayTargets []string, symID string, pmaxClient pmax.Pmax) []NVMeTCPTargetInfo {
+	log.Debugf("Entering getAndConfigureArrayNVMeTCPTargets for symID: %s, arrayTargets: %+v", symID, arrayTargets)
+
 	nvmetcpTargets := make([]NVMeTCPTargetInfo, 0)
 	allTargets, _ := s.getNVMeTCPTargets(ctx, symID, pmaxClient)
+	log.Debugf("allTargets  %+v", allTargets)
 
 	targetsFromCache, ok := symToMaskingViewTargets.Load(symID)
 	if ok {
+		log.Debugf("targetsFromCache found for symID: %s", symID)
 		found := false
 		switch targetsFromCache.(type) {
 		case []maskingViewNVMeTargetInfo:
 			cachedTargets := targetsFromCache.([]maskingViewNVMeTargetInfo)
+			log.Debugf("cachedTargets  %+v", cachedTargets)
 			// Check if the array targets are all present in the cache
 			for _, arrayTarget := range arrayTargets {
 				for _, cachedTgt := range cachedTargets {
@@ -2967,10 +2973,12 @@ func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayT
 				}
 
 				if !found {
+					log.Debugf("Target %s not found in cache for symID: %s", arrayTarget, symID)
 					// Some array targets are not present in cache
 					// This mostly means that the Port group was modified post
 					// driver boot. Invalidate the cache
 					symToMaskingViewTargets.Delete(symID)
+					log.Debugf("Invalidated cache for symID: %s", symID)
 					// Look in the cache for all targets on the array
 					isFound := false
 					for _, tgt := range allTargets {
@@ -2984,22 +2992,25 @@ func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayT
 						}
 					}
 					if !isFound {
+						log.Debugf("Target %s not found in allTargets for symID: %s", arrayTarget, symID)
 						// This will be an extremely rare case
 						// A new ISCSI target/portal IP has been configured
 						// on the array and added to the Port Group
 						// after the node driver cache information
 						// Invalidate the cache. Return whatever targets we have found until now
 						symToAllNVMeTCPTargets.Delete(symID)
+						log.Debugf("Invalidated allTargets cache for symID: %s", symID)
 						break
 					}
 				}
 			}
-			log.Infof("returned cached information")
+			log.Infof("returned cached information: %+v", nvmetcpTargets)
 			return nvmetcpTargets
 		default:
 			log.Infof("Invalidate cache as it not the right type.")
 			symToAllNVMeTCPTargets.Delete(symID)
-			log.Infof("Failed to find ISCSI targets in cache.")
+			log.Debugf("Invalidated allTargets cache for symID: %s", symID)
+			log.Infof("Failed to find NVMe targets in cache.")
 			// symToMaskingViewTargets.Delete(symID)
 			// do nothing, will fall through and rebuild the cache
 		}
@@ -3007,6 +3018,7 @@ func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayT
 	log.Infof("There is no cached info, build it")
 	// There is no cached information
 	_, _, mvName := s.GetNVMETCPHostSGAndMVIDFromNodeID(s.opts.NodeName)
+	log.Debugf("mvName: %s", mvName)
 	// Get the Masking View Targets and configure CHAP if required
 	// This call updates the cache as well
 	goNVMETCPTargets, err := s.getAndConfigureMaskingViewTargetsNVMeTCP(ctx, symID, mvName, pmaxClient)
