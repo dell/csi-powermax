@@ -16,10 +16,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -39,8 +41,6 @@ import (
 	"github.com/spf13/viper"
 
 	corev1 "k8s.io/api/core/v1"
-	"runtime"
-	"fmt"
 )
 
 // RevProxy - interface which is implemented by the different proxy implementations
