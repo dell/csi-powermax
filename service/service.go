@@ -59,7 +59,6 @@ const (
 	Name                       = "csi-powermax.dellemc.com"         // Name is the name of the CSI plug-in.
 	ApplicationName            = "CSI Driver for Dell EMC PowerMax" // ApplicationName is the name used to register with Powermax REST APIs
 	defaultPrivDir             = "/dev/disk/csi-powermax"
-	defaultPmaxTimeout         = 120
 	defaultLockCleanupDuration = 4
 	csiPrefix                  = "csi-"
 	logFields                  = "logFields"
@@ -72,9 +71,8 @@ const (
 	ReplicationPrefix          = "replication.storage.dell.com"
 	PortGroups                 = "X_CSI_POWERMAX_PORTGROUPS"
 	Protocol                   = "X_CSI_TRANSPORT_PROTOCOL"
-	// PmaxEndPoint               = "X_CSI_POWERMAX_ENDPOINT"
-	ManagedArrays   = "X_CSI_MANAGED_ARRAYS"
-	defaultCertFile = "tls.crt"
+	ManagedArrays              = "X_CSI_MANAGED_ARRAYS"
+	defaultCertFile            = "tls.crt"
 )
 
 type contextKey string // specific string type used for context keys
@@ -176,8 +174,6 @@ type TopologyConfig struct {
 type service struct {
 	opts Opts
 	mode string
-	// amount of time to retry unisphere calls
-	pmaxTimeoutSeconds int64
 	// replace this with Unisphere client
 	adminClient    pmax.Pmax
 	deletionWorker *deletionWorker
@@ -234,7 +230,6 @@ func New() Service {
 		nvmeTargets:        new(sync.Map),
 	}
 	svc.sgSvc = newStorageGroupService(svc)
-	svc.pmaxTimeoutSeconds = defaultPmaxTimeout
 	svc.probeStatus = new(sync.Map)
 	return svc
 }
@@ -835,16 +830,6 @@ func (s *service) getTransportProtocolFromEnv() string {
 		log.Errorf("Invalid transport protocol: %s, valid values AUTO, FC, ISCSI or NVMETCP", tp)
 		return ""
 	}
-}
-
-// get the amount of time to retry pmax calls
-func (s *service) GetPmaxTimeoutSeconds() int64 {
-	return s.pmaxTimeoutSeconds
-}
-
-// SetPmaxTimeoutSeconds sets the maximum amount of time to retry pmax calls
-func (s *service) SetPmaxTimeoutSeconds(seconds int64) {
-	s.pmaxTimeoutSeconds = seconds
 }
 
 // parseCommaSeperatedList validates and splits a comma seperated list

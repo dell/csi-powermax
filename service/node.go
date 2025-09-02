@@ -68,9 +68,10 @@ var (
 	nodePendingState            = pendingState{
 		pendingMutex: &sync.Mutex{},
 	}
-	sysBlock         = "/sys/block" // changed for unit testing
-	dev              = "/dev/"
-	nqnQueryAttempts = 30
+	sysBlock = "/sys/block" // changed for unit testing
+	dev      = "/dev/"
+	// Maximum number of re-tries for some Unisphere calls (reduced in unit-tests)
+	pmaxQueryAttempts = 30
 )
 
 type maskingViewTargetInfo struct {
@@ -1928,24 +1929,29 @@ func (s *service) setupArrayForNVMeTCP(ctx context.Context, array string, NQNs [
 	var updatedHostNQNs []string
 
 	// Wait for up to 5 minutes for the NQNs to appear as in the array initiators list
-	for attempt := 1; attempt <= nqnQueryAttempts; attempt++ {
+	for attempt := 1; attempt <= pmaxQueryAttempts; attempt++ {
 		if attempt > 1 { // First attempt does not need to wait
 			// Sleep 10 seconds or until context is closed
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("error updating NQN with HostID: context timeout")
+				return fmt.Errorf("failed to update NQN with host ID: context timeout")
 			case <-time.After(10 * time.Second):
-				log.Infof("Re-trying updating NQN with HostID (%d)", attempt)
 			}
 		}
+		log.Infof("Attempting to update NQNs with host ID (%d)", attempt)
+
 		updatedHostNQNs, err = s.updateNQNWithHostID(ctx, array, NQNs, pmaxClient)
 		if err != nil {
-			return fmt.Errorf("error updating NQN with HostID: %v", err)
+			return fmt.Errorf("failed to update NQN with host ID: %v", err)
 		}
 		// Each initiator should have at least one path to the array
 		if len(updatedHostNQNs) >= len(NQNs) {
 			break // Success
 		}
+		log.Errorf("Not all initiators were fetched from array %s", array)
+	}
+	if len(updatedHostNQNs) < len(NQNs) {
+		return fmt.Errorf("failed to fetch all NVMe initiators from array after %d attempts", pmaxQueryAttempts)
 	}
 
 	// Create or update the NVMe Host and Initiators dummy
@@ -1970,7 +1976,7 @@ func (s *service) updateNQNWithHostID(ctx context.Context, symID string, NQNs []
 	hostInitiators, err := pmaxClient.GetInitiatorList(ctx, symID, "", false, false)
 	if err != nil || hostInitiators == nil {
 		log.Error("Failed to fetch initiator list for the SYM :" + symID)
-		return nil, err
+		return nil, fmt.Errorf("failed to get NVMe initiator list: %v", err)
 	}
 	log.Debugf("Host initiators: %v", hostInitiators.InitiatorIDs)
 
@@ -2619,59 +2625,52 @@ func (s *service) createOrUpdateNVMeTCPHost(ctx context.Context, array string, n
 func (s *service) retryableCreateHost(ctx context.Context, array string, nodeName string, hostInitiators []string, _ *types.HostFlags, pmaxClient pmax.Pmax) (*types.Host, error) {
 	var err error
 	var host *types.Host
-	deadline := time.Now().Add(time.Duration(s.GetPmaxTimeoutSeconds()) * time.Second)
-	log.Infof("Creating host %s with initiators %v on array %s with retries until %v",
-		nodeName, hostInitiators, array, deadline)
-	for tries := 0; time.Now().Before(deadline); tries++ {
-		host, err = pmaxClient.CreateHost(ctx, array, nodeName, hostInitiators, nil)
-		if err != nil {
-			log.Errorf("Failed to create host on array: %v", err)
-			if strings.Contains(err.Error(), "is not in the format of a valid NQN:HostID") {
-				log.Errorf("Rejected NQNs format: %v", hostInitiators)
-				updatedNQNs, err := s.updateNQNWithHostID(ctx, array, hostInitiators, pmaxClient)
-				if err != nil {
-					log.Errorf("Failed to update NQN format: %v", err)
-				} else if len(updatedNQNs) < len(hostInitiators) {
-					log.Errorf("Failed to update all NQNs format, updated NQNs: %v", updatedNQNs)
-				} else {
-					hostInitiators = updatedNQNs
-					log.Infof("Will retry creating host with updated NQNs format: %v", hostInitiators)
-				}
+
+	// Retry for up to 5 minutes to create host on array
+	for attempt := 1; attempt <= pmaxQueryAttempts; attempt++ {
+		if attempt > 1 { // First attempt does not need to wait
+			// Sleep 10 seconds or until context is closed
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("failed to create host on array: context timeout")
+			case <-time.After(10 * time.Second):
 			}
-			// #nosec G115
-			time.Sleep(time.Second << uint(tries)) // incremental back-off
-			log.Debugf("Retrying creating host on array...")
-			continue
 		}
-		break
+		log.Infof("Attempting to create host %s with initiators %v on array %s (%d)",
+			nodeName, hostInitiators, array, attempt)
+		host, err = pmaxClient.CreateHost(ctx, array, nodeName, hostInitiators, nil)
+		if err == nil {
+			return host, nil
+		}
+		log.Errorf("Failed to create host on array: %v", err)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("unable to create host on array %s: %s", array, err)
-	}
-	return host, nil
+	return nil, fmt.Errorf("failed to create host on array after %d attempts", pmaxQueryAttempts)
 }
 
 // retryableUpdateHostInitiators wraps UpdateHostInitiators in a retry loop
 func (s *service) retryableUpdateHostInitiators(ctx context.Context, array string, host *types.Host, initiators []string, pmaxClient pmax.Pmax) (*types.Host, error) {
 	var err error
 	var updatedHost *types.Host
-	deadline := time.Now().Add(time.Duration(s.GetPmaxTimeoutSeconds()) * time.Second)
-	for tries := 0; time.Now().Before(deadline); tries++ {
-		updatedHost, err = pmaxClient.UpdateHostInitiators(ctx, array, host, initiators)
-		if err != nil {
-			// Retry on this error
-			log.Debug(fmt.Sprintf("failed to update Host; retrying..."))
-			// #nosec G115
-			time.Sleep(time.Second << uint(tries)) // incremental back-off
-			continue
+
+	// Retry for up to 5 minutes to update host on array
+	for attempt := 1; attempt <= pmaxQueryAttempts; attempt++ {
+		if attempt > 1 { // First attempt does not need to wait
+			// Sleep 10 seconds or until context is closed
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("failed to update host initiators on array: context timeout")
+			case <-time.After(10 * time.Second):
+			}
 		}
-		host = updatedHost
-		break
+		log.Infof("Attempting to update host %s with initiators %v on array %s (%d)",
+			host.HostID, initiators, array, attempt)
+		updatedHost, err = pmaxClient.UpdateHostInitiators(ctx, array, host, initiators)
+		if err == nil {
+			return updatedHost, nil
+		}
+		log.Errorf("Failed to update host initiators on array: %v", err)
 	}
-	if err != nil {
-		return &types.Host{}, fmt.Errorf("Unable to update Host: %v", err)
-	}
-	return updatedHost, nil
+	return nil, fmt.Errorf("failed to update host initiators on array after %d attempts", pmaxQueryAttempts)
 }
 
 // retryableGetSymmetrixIDList returns the list of arrays

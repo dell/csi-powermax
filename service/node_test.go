@@ -1115,6 +1115,11 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 			wantErr: false,
 		},
 	}
+
+	// Disable re-tries
+	pmaxQueryAttempts = 1
+	defer func() { pmaxQueryAttempts = 30 }()
+
 	// Run the tests
 	for _, tc := range testCases {
 		tc.pmaxClient = tc.getClient()
@@ -1126,7 +1131,6 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				nvmetcpClient:      gonvme.NewMockNVMe(map[string]string{}),
 				nvmeTargets:        &sync.Map{},
 				loggedInNVMeArrays: map[string]bool{},
-				pmaxTimeoutSeconds: 1,
 			}
 			got, err := s.createOrUpdateNVMeTCPHost(context.Background(), tc.array, tc.nodeName, tc.NQNs, tc.pmaxClient)
 			if tc.wantErr && err == nil {
