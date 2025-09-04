@@ -68,8 +68,9 @@ var (
 	nodePendingState            = pendingState{
 		pendingMutex: &sync.Mutex{},
 	}
-	sysBlock = "/sys/block" // changed for unit testing
-	dev      = "/dev/"
+	sysBlock             = "/sys/block" // changed for unit testing
+	dev                  = "/dev/"
+	maxDisconnectRetries = 3
 )
 
 type maskingViewTargetInfo struct {
@@ -592,66 +593,92 @@ func (s *service) detachRDM(volID, volumeWWN string) error {
 	return nil
 }
 
-// / disconnectVolume disconnects a volume from a node and will verify it is disconnected
-// by no more /dev/disk/by-id entry, retrying if necessary.
+// disconnectVolume disconnects a volume from a node and will verify it is disconnected
+// by no more error in disconnectVolumeByWWN call retrying if necessary.
 func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error {
-	for i := 0; i < 3; i++ {
-		var deviceName, symlinkPath, devicePath string
-		symlinkPath, devicePath, _ = gofsutil.WWNToDevicePathX(context.Background(), volumeWWN)
-		if devicePath == "" {
-			if i == 0 {
-				log.Infof("NodeUnstage Note- Didn't find device path for volume %s", volumeWWN)
+	if s.arrayTransportProtocolMap[symID] == FcTransportProtocol {
+		var err error
+		symlinkPath, _, _ := gofsutil.WWNToDevicePathX(context.Background(), volumeWWN)
+		for i := 1; i <= maxDisconnectRetries; i++ {
+			f := log.Fields{
+				"CSIRequestID": reqID,
+				"DeviceID":     devID,
+				"Retry":        i,
+				"SymmetrixID":  symID,
+				"symlinkPath":  symlinkPath,
+				"WWN":          volumeWWN,
 			}
-			return nil
-		}
-		devicePathComponents := strings.Split(devicePath, "/")
-		deviceName = devicePathComponents[len(devicePathComponents)-1]
-		f := log.Fields{
-			"CSIRequestID": reqID,
-			"DeviceID":     devID,
-			"DeviceName":   deviceName,
-			"DevicePath":   devicePath,
-			"Retry":        i,
-			"SymmetrixID":  symID,
-			"WWN":          volumeWWN,
-		}
-		log.WithFields(f).Info("NodeUnstageVolume disconnectVolume")
-
-		// Disconnect the volume using device name
-		nodeUnstageCtx, cancel := context.WithTimeout(context.Background(), time.Second*120)
-		nodeUnstageCtx = setLogFields(nodeUnstageCtx, f)
-		switch s.arrayTransportProtocolMap[symID] {
-		case Vsphere:
-			_ = s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
-		case FcTransportProtocol:
-			_ = s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
-		case IscsiTransportProtocol:
-			_ = s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
-		case NvmeTCPTransportProtocol:
-			err := s.nvmeTCPConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+			log.WithFields(f).Info("NodeUnstageVolume disconnect volume FC")
+			// Disconnect the volume using device name
+			nodeUnstageCtx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+			nodeUnstageCtx = setLogFields(nodeUnstageCtx, f)
+			if err = s.fcConnector.DisconnectVolumeByWWN(nodeUnstageCtx, volumeWWN); err == nil {
+				cancel()
+				log.Debugf("DisconnectVolumeByWWN complete for %s", volumeWWN)
+				os.Remove(symlinkPath)
+				return nil
+			}
+			log.Errorf("error disconnecting volumefor retry: %d with error: %s", i, err)
 			cancel()
-			if err != nil {
-				log.WithFields(f).Errorf("failed to disconnect volume by device name %s with error %s", deviceName, err.Error())
-				continue
+			time.Sleep(disconnectVolumeRetryTime)
+		}
+		return status.Errorf(codes.Internal, "disconnectVolume exceeded retry limit WWN %s", volumeWWN)
+	} else {
+		for i := 1; i <= maxDisconnectRetries; i++ {
+			var deviceName, symlinkPath, devicePath string
+			symlinkPath, devicePath, _ = gofsutil.WWNToDevicePathX(context.Background(), volumeWWN)
+			if devicePath == "" {
+				if i == 0 {
+					log.Infof("NodeUnstage Note- Didn't find device path for volume %s", volumeWWN)
+				}
+				return nil
 			}
+			devicePathComponents := strings.Split(devicePath, "/")
+			deviceName = devicePathComponents[len(devicePathComponents)-1]
+			f := log.Fields{
+				"CSIRequestID": reqID,
+				"DeviceID":     devID,
+				"DeviceName":   deviceName,
+				"DevicePath":   devicePath,
+				"Retry":        i,
+				"SymmetrixID":  symID,
+				"WWN":          volumeWWN,
+			}
+			log.WithFields(f).Info("NodeUnstageVolume disconnectVolume")
+
+			// Disconnect the volume using device name
+			nodeUnstageCtx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+			nodeUnstageCtx = setLogFields(nodeUnstageCtx, f)
+			switch s.arrayTransportProtocolMap[symID] {
+			case Vsphere:
+				_ = s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+			case IscsiTransportProtocol:
+				_ = s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+			case NvmeTCPTransportProtocol:
+				err := s.nvmeTCPConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
+				cancel()
+				if err != nil {
+					log.WithFields(f).Errorf("failed to disconnect volume by device name %s with error %s", deviceName, err.Error())
+					continue
+				}
+				return nil
+			}
+			cancel()
+			time.Sleep(disconnectVolumeRetryTime)
+
+			// Check that the /sys/block/DeviceName actually exists
+			if _, err := os.ReadDir(sysBlock + deviceName); err != nil {
+				// If not, make sure the symlink is removed
+				os.Remove(symlinkPath) // #nosec G20
+			}
+		}
+		// Recheck volume disconnected
+		devPath, _ := gofsutil.WWNToDevicePath(context.Background(), volumeWWN)
+		if devPath == "" {
 			return nil
 		}
-		cancel()
-		time.Sleep(disconnectVolumeRetryTime)
-
-		// Check that the /sys/block/DeviceName actually exists
-		if _, err := os.ReadDir(sysBlock + deviceName); err != nil {
-			// If not, make sure the symlink is removed
-			os.Remove(symlinkPath) // #nosec G20
-		}
+		return status.Errorf(codes.Internal, "disconnectVolume exceeded retry limit WWN %s devPath %s", volumeWWN, devPath)
 	}
-
-	// Recheck volume disconnected
-	devPath, _ := gofsutil.WWNToDevicePath(context.Background(), volumeWWN)
-	if devPath == "" {
-		return nil
-	}
-	return status.Errorf(codes.Internal, "disconnectVolume exceeded retry limit WWN %s devPath %s", volumeWWN, devPath)
 }
 
 // NodePublishVolume handles the CSI request to publish a volume to a target directory.
