@@ -70,7 +70,6 @@ const (
 type serviceFields struct {
 	opts                      Opts
 	mode                      string
-	pmaxTimeoutSeconds        int64
 	adminClient               pmax.Pmax
 	deletionWorker            *deletionWorker
 	iscsiClient               goiscsi.ISCSIinterface
@@ -712,13 +711,15 @@ func Test_service_createMetroVolume(t *testing.T) {
 		},
 	}
 
+	pmaxQueryAttempts = 1
+	defer func() { pmaxQueryAttempts = 30 }()
+
 	// initialize the client used by all these tests
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -841,12 +842,15 @@ func Test_service_getStoragePoolCapacities(t *testing.T) {
 			wantErr: true,
 		},
 	}
+
+	pmaxQueryAttempts = 1
+	defer func() { pmaxQueryAttempts = 30 }()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -999,12 +1003,14 @@ func Test_service_validateVolSize(t *testing.T) {
 			wantErr: true,
 		},
 	}
+	pmaxQueryAttempts = 1
+	defer func() { pmaxQueryAttempts = 30 }()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1096,12 +1102,14 @@ func Test_service_controllerProbe(t *testing.T) {
 			wantErrMsg: "missing Unisphere password",
 		},
 	}
+	pmaxQueryAttempts = 1
+	defer func() { pmaxQueryAttempts = 30 }()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1193,12 +1201,14 @@ func Test_service_requireProbe(t *testing.T) {
 			wantErrMsg: "failed to probe/init plugin",
 		},
 	}
+	pmaxQueryAttempts = 1
+	defer func() { pmaxQueryAttempts = 30 }()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1289,12 +1299,14 @@ func Test_service_SelectOrCreatePortGroup(t *testing.T) {
 			wantErr: false,
 		},
 	}
+	pmaxQueryAttempts = 1
+	defer func() { pmaxQueryAttempts = 30 }()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1429,12 +1441,14 @@ func Test_service_CreateRemoteVolume(t *testing.T) {
 			wantErrMsg: "",
 		},
 	}
+	pmaxQueryAttempts = 1
+	defer func() { pmaxQueryAttempts = 30 }()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1540,12 +1554,14 @@ func Test_service_GetPortIdentifier(t *testing.T) {
 			wantErr: false,
 		},
 	}
+	pmaxQueryAttempts = 1
+	defer func() { pmaxQueryAttempts = 30 }()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1762,12 +1778,14 @@ func Test_service_CreateSnapshot(t *testing.T) {
 			wantErrMsg: "not licensed",
 		},
 	}
+	pmaxQueryAttempts = 1
+	defer func() { pmaxQueryAttempts = 30 }()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,

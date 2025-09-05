@@ -103,7 +103,10 @@ func (s *service) Probe(
 				maximumStartupDelay = 1
 			}
 			// Initialize the node
-			_ = s.nodeStartup(ctx)
+			err := s.nodeStartup(ctx)
+			if err != nil {
+				log.Errorf("Failed to initialize node service: %v", err)
+			}
 		}
 	}
 	ready := new(wrapperspb.BoolValue)

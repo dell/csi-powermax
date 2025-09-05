@@ -789,14 +789,14 @@ func TestCreateDbusConnection(t *testing.T) {
 	tests := []struct {
 		name                       string
 		dBusConn                   *mockDbusConnection
-		mockdbusNewWithContextFunc func() (*dbus.Conn, error)
+		mockdbusNewWithContextFunc func() (dBusConn, error)
 		expectedErr                error
 	}{
 		{
 			name:        "Successful connection",
 			dBusConn:    nil,
 			expectedErr: nil,
-			mockdbusNewWithContextFunc: func() (*dbus.Conn, error) {
+			mockdbusNewWithContextFunc: func() (dBusConn, error) {
 				return &dbus.Conn{}, nil
 			},
 		},
@@ -804,7 +804,7 @@ func TestCreateDbusConnection(t *testing.T) {
 			name:        "Error connection",
 			dBusConn:    nil,
 			expectedErr: errMockErr,
-			mockdbusNewWithContextFunc: func() (*dbus.Conn, error) {
+			mockdbusNewWithContextFunc: func() (dBusConn, error) {
 				return nil, errMockErr
 			},
 		},
