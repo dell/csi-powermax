@@ -1023,18 +1023,13 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
 				c.EXPECT().GetHostByID(gmock.All(), "array1", "host1").AnyTimes().Return(nil, errors.New("host not found"))
 				c.EXPECT().CreateHost(gmock.All(), "array1", "host1", gmock.Any(), gmock.Any()).AnyTimes().Return(nil, errors.New("create host failed"))
-				c.EXPECT().GetInitiatorList(gmock.All(), "array1", "", false, false).AnyTimes().Return(&types.InitiatorList{}, nil)
-				c.EXPECT().GetInitiatorByID(gmock.All(), "array1", "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001").AnyTimes().Return(
-					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil)
-				c.EXPECT().UpdateHostInitiators(gmock.All(), "array1", "host1", gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				return c
 			},
-			wantErr: false,
-			want:    &types.Host{},
+			wantErr: true,
+			want:    nil,
 		},
 		{
 			// This is really bizarre condition in the code to test, but it is what it is.
-			// When createHost fails, it should return and error from the code, but instead returning nil host and no error.
 			name:     "create host failure, with bad NQNs error",
 			array:    "array1",
 			nodeName: "host1",
@@ -1050,10 +1045,9 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				}, nil)
 				c.EXPECT().GetInitiatorByID(gmock.All(), "array1", "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001").AnyTimes().Return(
 					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil)
-				c.EXPECT().UpdateHostInitiators(gmock.All(), "array1", "host1", gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				return c
 			},
-			wantErr: false,
+			wantErr: true,
 			want:    nil,
 		},
 		{
@@ -1066,7 +1060,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				return c
 			},
 			wantErr: true,
-			want:    &types.Host{},
+			want:    nil,
 		},
 		{
 			name:     "nodename empty case",
@@ -1078,7 +1072,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				return c
 			},
 			wantErr: true,
-			want:    &types.Host{},
+			want:    nil,
 		},
 		{
 			name:     "len NQNs zero case",
@@ -1090,7 +1084,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				return c
 			},
 			wantErr: true,
-			want:    &types.Host{},
+			want:    nil,
 		},
 		{
 			name:     "Host exists, add new initiators",
@@ -1121,6 +1115,11 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 			wantErr: false,
 		},
 	}
+
+	// Disable re-tries
+	pmaxQueryAttempts = 1
+	defer func() { pmaxQueryAttempts = 30 }()
+
 	// Run the tests
 	for _, tc := range testCases {
 		tc.pmaxClient = tc.getClient()
@@ -1132,11 +1131,13 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				nvmetcpClient:      gonvme.NewMockNVMe(map[string]string{}),
 				nvmeTargets:        &sync.Map{},
 				loggedInNVMeArrays: map[string]bool{},
-				pmaxTimeoutSeconds: 1,
 			}
 			got, err := s.createOrUpdateNVMeTCPHost(context.Background(), tc.array, tc.nodeName, tc.NQNs, tc.pmaxClient)
-			if err == nil && tc.wantErr {
-				t.Errorf("Expected: %v, but got no error", tc.wantErr)
+			if tc.wantErr && err == nil {
+				t.Errorf("Expected error, but got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("Expected no error, but got: %v", err)
 			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("Expected: %v, but got: %v", tc.want, got)

@@ -498,10 +498,10 @@ Feature: PowerMax CSI interface
       | "testhost"         |"NoArray"             | "none"                | "No array specified"             | 0     |
       | "testhost"         |"NoNodeName"          | "none"                | "No nodeName specified"          | 0     |
       | "testhost"         |"NoIQNs"              | "none"                | "No port WWNs specified"         | 0     |
-      | "testhost"         |"GetHostError"        | "CreateHostError"     | "Unable to create Host"          | 0     |
+      | "testhost"         |"GetHostError"        | "CreateHostError"     | "failed to create host"          | 0     |
       | "testhost"         |"none"                | "none"                | "none"                           | 1     |
       | "CSI-Test-Node-2"  |"GetInitiatorError"   | "none"                | "Error retrieving Initiator(s)"  | 0     |
-      | "CSI-Test-Node-2"  |"UpdateHostError"     | "CreateHostError"     | "Unable to"                      | 0     |
+      | "CSI-Test-Node-2"  |"UpdateHostError"     | "CreateHostError"     | "failed to create host           | 0     |
       | "CSI-Test-Node-2"  |"UpdateHostError"     | "ResetAfterFirstError"| "none"                           | 1     |
       | "CSI-Test-Node-2"  |"GetHostError"        | "none"                | "none"                           | 1     |
 

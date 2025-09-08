@@ -395,7 +395,7 @@ func (f *feature) aPowerMaxService() error {
 	// get or reuse the cached service
 	f.getService()
 	f.service.storagePoolCacheDuration = 4 * time.Hour
-	f.service.SetPmaxTimeoutSeconds(3)
+	pmaxQueryAttempts = 1
 
 	// create the mock iscsi client
 	f.service.iscsiClient = goiscsi.NewMockISCSI(map[string]string{})
@@ -531,11 +531,13 @@ ip6t_rpfilter          12595  1
 	svc.iscsiConnector = &mockISCSIGobrick{}
 	svc.nvmetcpClient = &gonvme.MockNVMe{}
 	svc.nvmeTCPConnector = &mockNVMeTCPConnector{}
-	svc.dBusConn = &mockDbusConnection{}
 	svc.k8sUtils = k8smock.Init()
 	mockGobrickReset()
 	mockgosystemdReset()
 	disconnectVolumeRetryTime = 10 * time.Millisecond
+	dbusNewConnectionFunc = func() (dBusConn, error) {
+		return &mockDbusConnection{}, nil
+	}
 	f.service = svc
 	return svc
 }
@@ -3394,7 +3396,6 @@ func (f *feature) aValidPortGroupIsReturned() error {
 }
 
 func (f *feature) iInvokeCreateOrUpdateIscsiHost(hostName string) error {
-	f.service.SetPmaxTimeoutSeconds(3)
 	symID := f.symmetrixID
 	if inducedErrors.noSymID {
 		symID = ""
@@ -3417,12 +3418,15 @@ func (f *feature) iInvokeCreateOrUpdateIscsiHost(hostName string) error {
 		initiators = initiators[:0]
 	}
 	f.host, f.err = f.service.createOrUpdateIscsiHost(context.Background(), symID, hostID, initiators, f.service.adminClient)
-	f.initiators = f.host.Initiators
+	if f.err != nil || f.host == nil {
+		f.initiators = []string{}
+	} else {
+		f.initiators = f.host.Initiators
+	}
 	return nil
 }
 
 func (f *feature) iInvokeCreateOrUpdateFCHost(hostName string) error {
-	f.service.SetPmaxTimeoutSeconds(3)
 	symID := f.symmetrixID
 	if inducedErrors.noSymID {
 		symID = ""
@@ -3470,7 +3474,6 @@ func (f *feature) iInvokeNodeHostSetupWithAService(mode string) error {
 	f.service.useIscsi = false
 	f.service.useFC = false
 	f.service.useNVMeTCP = false
-	f.service.SetPmaxTimeoutSeconds(10)
 	f.err = f.service.nodeHostSetup(context.Background(), fcInitiators, iscsiInitiators, nvmetcpinitiators, symmetrixIDs)
 	return nil
 }
@@ -3652,7 +3655,6 @@ func (f *feature) thereAreNoArraysLoggedIn() error {
 }
 
 func (f *feature) arraysAreLoggedInWithProtocol(protocol string) error {
-	f.service.SetPmaxTimeoutSeconds(3)
 	s.cacheMutex.Lock()
 	defer s.cacheMutex.Unlock()
 	if protocol == "FC" {
@@ -3668,7 +3670,6 @@ func (f *feature) arraysAreLoggedInWithProtocol(protocol string) error {
 }
 
 func (f *feature) iInvokeEnsureLoggedIntoEveryArray() error {
-	f.service.SetPmaxTimeoutSeconds(3)
 	isSymConnFC.Clear()
 	// Ensure none of the other test marked the array as FC
 	f.err = f.service.ensureLoggedIntoEveryArray(context.Background(), false)

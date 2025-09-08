@@ -107,7 +107,7 @@ func (s *service) createDbusConnection() error {
 	return nil
 }
 
-var dbusNewConnectionFunc = func() (*dbus.Conn, error) {
+var dbusNewConnectionFunc = func() (dBusConn, error) {
 	return dbus.New()
 }
 
