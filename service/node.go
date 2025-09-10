@@ -68,8 +68,9 @@ var (
 	nodePendingState            = pendingState{
 		pendingMutex: &sync.Mutex{},
 	}
-	sysBlock = "/sys/block" // changed for unit testing
-	dev      = "/dev/"
+	sysBlock             = "/sys/block" // changed for unit testing
+	dev                  = "/dev/"
+	maxDisconnectRetries = 3
 )
 
 type maskingViewTargetInfo struct {
@@ -592,10 +593,38 @@ func (s *service) detachRDM(volID, volumeWWN string) error {
 	return nil
 }
 
-// / disconnectVolume disconnects a volume from a node and will verify it is disconnected
-// by no more /dev/disk/by-id entry, retrying if necessary.
+// disconnectVolume disconnects a volume from a node and will verify it is disconnected
+// by no more error in disconnectVolumeByWWN call retrying if necessary.
 func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error {
-	for i := 0; i < 3; i++ {
+	if s.arrayTransportProtocolMap[symID] == FcTransportProtocol {
+		var err error
+		symlinkPath, _, _ := gofsutil.WWNToDevicePathX(context.Background(), volumeWWN)
+		for i := 1; i <= maxDisconnectRetries; i++ {
+			f := log.Fields{
+				"CSIRequestID": reqID,
+				"DeviceID":     devID,
+				"Retry":        i,
+				"SymmetrixID":  symID,
+				"symlinkPath":  symlinkPath,
+				"WWN":          volumeWWN,
+			}
+			log.WithFields(f).Info("NodeUnstageVolume disconnect volume FC")
+			// Disconnect the volume using device name
+			nodeUnstageCtx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+			nodeUnstageCtx = setLogFields(nodeUnstageCtx, f)
+			if err = s.fcConnector.DisconnectVolumeByWWN(nodeUnstageCtx, volumeWWN); err == nil {
+				cancel()
+				log.Debugf("DisconnectVolumeByWWN complete for %s", volumeWWN)
+				os.Remove(symlinkPath) // #nosec G20
+				return nil
+			}
+			log.Errorf("error disconnecting volumefor retry: %d with error: %s", i, err)
+			cancel()
+			time.Sleep(disconnectVolumeRetryTime)
+		}
+		return status.Errorf(codes.Internal, "disconnectVolume exceeded retry limit WWN %s", volumeWWN)
+	}
+	for i := 1; i <= maxDisconnectRetries; i++ {
 		var deviceName, symlinkPath, devicePath string
 		symlinkPath, devicePath, _ = gofsutil.WWNToDevicePathX(context.Background(), volumeWWN)
 		if devicePath == "" {
@@ -623,8 +652,6 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		switch s.arrayTransportProtocolMap[symID] {
 		case Vsphere:
 			_ = s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
-		case FcTransportProtocol:
-			_ = s.fcConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
 		case IscsiTransportProtocol:
 			_ = s.iscsiConnector.DisconnectVolumeByDeviceName(nodeUnstageCtx, deviceName)
 		case NvmeTCPTransportProtocol:
@@ -645,7 +672,6 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 			os.Remove(symlinkPath) // #nosec G20
 		}
 	}
-
 	// Recheck volume disconnected
 	devPath, _ := gofsutil.WWNToDevicePath(context.Background(), volumeWWN)
 	if devPath == "" {
