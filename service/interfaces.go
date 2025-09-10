@@ -48,10 +48,11 @@ type fcConnector interface {
 	ConnectVolume(ctx context.Context, info gobrick.FCVolumeInfo) (gobrick.Device, error)
 	DisconnectVolumeByDeviceName(ctx context.Context, name string) error
 	GetInitiatorPorts(ctx context.Context) ([]string, error)
+	DisconnectVolumeByWWN(ctx context.Context, wwn string) error
 }
 
-// NVMeTCPConnector is wrapper of gobrick.NVMEConnector interface.
-// It allows to connect NVMe volumes to the node.
+// NVMeTCPConnector is a wrapper of gobrick.NVMEConnector interface.
+// It allows connecting NVMe volumes to the node.
 type NVMeTCPConnector interface {
 	ConnectVolume(ctx context.Context, info gobrick.NVMeVolumeInfo, useFC bool) (gobrick.Device, error)
 	DisconnectVolumeByDeviceName(ctx context.Context, name string) error

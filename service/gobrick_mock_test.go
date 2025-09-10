@@ -35,6 +35,17 @@ func mockGobrickReset() {
 
 type mockFCGobrick struct{}
 
+func (g *mockFCGobrick) DisconnectVolumeByWWN(ctx context.Context, _ string) error {
+	if mockGobrickInducedErrors.DisconnectVolumeError {
+		return fmt.Errorf("induced DisconnectVolumeByWWN")
+	}
+	logger := &customLogger{}
+	logger.Info(ctx, "Removing WWN %s to path entry", nodePublishWWN)
+	delete(gofsutil.GOFSMockWWNToDevice, nodePublishWWN)
+
+	return nil
+}
+
 func (g *mockFCGobrick) ConnectVolume(_ context.Context, info gobrick.FCVolumeInfo) (gobrick.Device, error) {
 	dev := gobrick.Device{
 		WWN:         nodePublishWWN,
