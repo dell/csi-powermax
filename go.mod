@@ -8,16 +8,16 @@ require (
 	github.com/coreos/go-systemd/v22 v22.6.0
 	github.com/cucumber/godog v0.15.0
 	github.com/cucumber/messages-go/v10 v10.0.3
-	github.com/dell/dell-csi-extensions/common v1.8.1-0.20250905054742-ad01c425487b
-	github.com/dell/dell-csi-extensions/migration v1.8.1-0.20250905054742-ad01c425487b
-	github.com/dell/dell-csi-extensions/podmon v1.8.1-0.20250905054742-ad01c425487b
-	github.com/dell/dell-csi-extensions/replication v1.11.1-0.20250905054742-ad01c425487b
-	github.com/dell/gobrick v1.14.1-0.20250909162938-b1e0af838b13
-	github.com/dell/gocsi v1.14.1-0.20250905061753-91bcfb5340eb
-	github.com/dell/gofsutil v1.19.1-0.20250905055737-9760342d7345
-	github.com/dell/goiscsi v1.12.1-0.20250905060008-55acbdc24de2
-	github.com/dell/gonvme v1.11.1
-	github.com/dell/gopowermax/v2 v2.10.1-0.20250905055843-a9fb8b3b902c
+	github.com/dell/dell-csi-extensions/common v1.9.0
+	github.com/dell/dell-csi-extensions/migration v1.9.0
+	github.com/dell/dell-csi-extensions/podmon v1.9.0
+	github.com/dell/dell-csi-extensions/replication v1.12.0
+	github.com/dell/gobrick v1.15.0
+	github.com/dell/gocsi v1.15.0
+	github.com/dell/gofsutil v1.20.0
+	github.com/dell/goiscsi v1.13.0
+	github.com/dell/gonvme v1.12.0
+	github.com/dell/gopowermax/v2 v2.11.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/golang/mock v1.6.0
 	github.com/gorilla/mux v1.8.1
@@ -73,7 +73,7 @@ require (
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.12.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
-	github.com/spf13/pflag v1.0.6 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.etcd.io/etcd/api/v3 v3.6.1 // indirect
