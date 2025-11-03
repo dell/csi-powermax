@@ -576,9 +576,22 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 	storageArrayIdentifiers := make(map[url.URL][]string)
 	ipAddresses := make([]string, 0)
 
-	for _, mgmtServer := range config.ManagementServerConfig {
-		ipAddresses = append(ipAddresses, mgmtServer.Endpoint)
+	for i := range config.ManagementServerConfig {
+		sanitizedPath := utils.SanitizeURLPath(config.ManagementServerConfig[i].Endpoint)
+		config.ManagementServerConfig[i].Endpoint = sanitizedPath
+		ipAddresses = append(ipAddresses, sanitizedPath)
 	}
+
+	for i := range config.StorageArrayConfig {
+		// sanitize primary endpoint
+		sanitizedPrimary := utils.SanitizeURLPath(config.StorageArrayConfig[i].PrimaryEndpoint)
+		config.StorageArrayConfig[i].PrimaryEndpoint = sanitizedPrimary
+
+		// sanitize backup endpoint
+		sanitizedBackup := utils.SanitizeURLPath(config.StorageArrayConfig[i].BackupEndpoint)
+		config.StorageArrayConfig[i].BackupEndpoint = sanitizedBackup
+	}
+
 	for _, array := range config.StorageArrayConfig {
 		if array.PrimaryEndpoint == "" {
 			return fmt.Errorf("primary endpoint not configured for array: %s", array.StorageArrayID)

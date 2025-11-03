@@ -82,6 +82,9 @@ type maskingViewNVMeTargetInfo struct {
 	target gonvme.NVMeTarget
 }
 
+// Mockable function variable for unit testing
+var getIPInterfaces func(ctx context.Context, symID string, portGroups []string, pmaxClient pmax.Pmax) (map[string]int32, error) = getIPInterfacesImpl
+
 // Mapping between symid and all remote targets on the sym
 // key - string, value - []NVMETCPTarget
 var symToAllNVMeTCPTargets sync.Map
@@ -1113,7 +1116,7 @@ func (s *service) NodeGetCapabilities(
 	}, nil
 }
 
-func (s *service) getIPInterfaces(ctx context.Context, symID string, portGroups []string, pmaxClient pmax.Pmax) (map[string]int32, error) {
+func getIPInterfacesImpl(ctx context.Context, symID string, portGroups []string, pmaxClient pmax.Pmax) (map[string]int32, error) {
 	ipInterfaces := make(map[string]int32)
 	for _, pg := range portGroups {
 		portGroup, err := pmaxClient.GetPortGroupByID(ctx, symID, pg)
@@ -1192,7 +1195,7 @@ func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[st
 			}
 		}
 
-		ipInterfaces, err := s.getIPInterfaces(ctx, id, s.opts.PortGroups, pmaxClient)
+		ipInterfaces, err := getIPInterfaces(ctx, id, s.opts.PortGroups, pmaxClient)
 		if err != nil {
 			log.Errorf("unable to fetch ip interfaces for %s: %s", id, err.Error())
 			continue
@@ -1984,7 +1987,7 @@ func (s *service) updateNQNWithHostID(ctx context.Context, symID string, NQNs []
 			if strings.Contains(hostInitiator, nqn) {
 				initiator, err := pmaxClient.GetInitiatorByID(ctx, symID, hostInitiator)
 				if err != nil {
-					log.Errorf("Failed to fetch InitiatorID details for the initiator %s", initiator.InitiatorID)
+					log.Errorf("Failed to fetch InitiatorID details for the initiator %s", hostInitiator)
 				} else {
 					hostID := initiator.HostID
 					nqn = nqn + ":" + hostID
@@ -2066,15 +2069,17 @@ func (s *service) getAndConfigureMaskingViewTargetsNVMeTCP(ctx context.Context, 
 
 // setupNVMeTCPTargetDiscovery is called to discover NVMe targets from the host/node
 func (s *service) setupNVMeTCPTargetDiscovery(ctx context.Context, array string, pmaxClient pmax.Pmax) error {
-	loggedInAll := true
-	ipInterfaces, err := s.getIPInterfaces(ctx, array, s.opts.PortGroups, pmaxClient)
+	var combinedErrors []string
+	atLeastOneLoggedIn := false
+	var totalTargetsDiscovered int
+	ipInterfaces, err := getIPInterfaces(ctx, array, s.opts.PortGroups, pmaxClient)
 	if err != nil {
-		log.Errorf("unable to fetch ip interfaces for %s: %s", array, err.Error())
+		log.Errorf("unable to fetch IP interfaces for %s: %s", array, err.Error())
 		return err
 	}
 
 	if len(ipInterfaces) == 0 {
-		return fmt.Errorf("couldn't find any ip interfaces on any of the port-groups %s", s.opts.PortGroups)
+		return fmt.Errorf("couldn't find any IP interfaces on any of the port-groups %s", s.opts.PortGroups)
 	}
 	for ip := range ipInterfaces {
 		// Attempt target discovery from host
@@ -2083,62 +2088,61 @@ func (s *service) setupNVMeTCPTargetDiscovery(ctx context.Context, array string,
 		if discoveryError != nil {
 			log.Errorf("Failed to discover the NVMe target: %s. Error: %s",
 				ip, discoveryError.Error())
-			err = discoveryError
-			loggedInAll = false
+			combinedErrors = append(combinedErrors, fmt.Sprintf("target IP: %s, Error: %s", ip, discoveryError.Error()))
 		} else {
-			log.Infof("Successfully logged into target IP: %s ", ip)
+			log.Infof("Successfully logged into target IP: %s", ip)
+			atLeastOneLoggedIn = true
+			totalTargetsDiscovered++
 		}
 	}
 
-	if loggedInAll {
-		return nil
+	if !atLeastOneLoggedIn {
+		return fmt.Errorf("failed to discover NVMe targets on any of the port-groups %s. Errors: %s",
+			s.opts.PortGroups, strings.Join(combinedErrors, "; "))
 	}
-	return err
+	log.Infof("Discovered %d NVMe targets out of %d from port-groups %s",
+		totalTargetsDiscovered, len(ipInterfaces), strings.Join(s.opts.PortGroups, ", "))
+	return nil
 }
 
 // loginIntoISCSITargets - for a given array id and list of masking view targets
 // attempt login. The login method is different if CHAP is enabled
 // also update the logged in arrays cache
 func (s *service) loginIntoISCSITargets(array string, targets []maskingViewTargetInfo) error {
+	var combinedErrors []string
+	atLeastOneLoggedIn := false
+	var totalTargetsDiscovered int
 	var err error
-	loggedInAll := true
-	if s.opts.EnableCHAP {
-		// CHAP is already enabled on the array, discovery will not work,
-		// so we need to do a login (as we have already setup the database(s) successfully
-		for _, tgt := range targets {
-			loginError := s.iscsiClient.PerformLogin(tgt.target)
-			if loginError != nil {
-				log.Errorf("Failed to perform ISCSI login for target: %s. Error: %s",
-					tgt.target.Target, loginError.Error())
-				err = loginError
-				loggedInAll = false
-			} else {
-				s.iscsiTargets[array] = append(s.iscsiTargets[array], tgt.target.Target)
-				log.Infof("Successfully logged into target: %s", tgt.target.Target)
-			}
+
+	for _, tgt := range targets {
+		if s.opts.EnableCHAP {
+			err = s.iscsiClient.PerformLogin(tgt.target)
+		} else {
+			_, err = s.iscsiClient.DiscoverTargets(tgt.target.Portal, true)
 		}
-	} else {
-		for _, tgt := range targets {
-			// If CHAP is not enabled, attempt a discovery login
-			log.Debugf("Discovering iSCSI targets on %s", tgt.target.Portal)
-			_, discoveryError := s.iscsiClient.DiscoverTargets(tgt.target.Portal, true)
-			if discoveryError != nil {
-				log.Errorf("Failed to discover the ISCSI target: %s. Error: %s",
-					tgt.target.Target, discoveryError.Error())
-				err = discoveryError
-				loggedInAll = false
-			} else {
-				s.iscsiTargets[array] = append(s.iscsiTargets[array], tgt.target.Target)
-				log.Infof("Successfully logged into target: %s on portal :%s",
-					tgt.target.Target, tgt.target.Portal)
-			}
+		if err != nil {
+			log.Errorf("Failed to login to target %s: %v",
+				tgt.target.Target, err)
+			combinedErrors = append(combinedErrors, fmt.Sprintf("target: %s, Error: %v",
+				tgt.target.Target, err))
+		} else {
+			s.iscsiTargets[array] = append(s.iscsiTargets[array], tgt.target.Target)
+			log.Infof("Successfully logged to target: %s", tgt.target.Target)
+			atLeastOneLoggedIn = true
+			totalTargetsDiscovered++
 		}
 	}
-	// If we successfully logged into all targets, then marked the array as logged in
-	if loggedInAll {
+
+	// If we successfully logged into at least one target, then mark the array as logged in
+	if atLeastOneLoggedIn {
 		s.UpdateLoggedInArrays(array, true)
+	} else {
+		return fmt.Errorf("failed to login to ISCSI targets on any of the portals. Errors: %s",
+			strings.Join(combinedErrors, "; "))
 	}
-	return err
+	log.Infof("Logged into %d ISCSI targets out of %d on array %s",
+		totalTargetsDiscovered, len(targets), array)
+	return nil
 }
 
 func (s *service) UpdateLoggedInArrays(array string, value bool) {
