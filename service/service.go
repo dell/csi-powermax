@@ -991,11 +991,9 @@ func setArrayConfigEnvs(ctx context.Context) error {
 	if !ok {
 		return errors.New("unable to read X_CSI_POWERMAX_ARRAY_CONFIG_PATH from env")
 	}
-
 	paramsViper := viper.New()
 	paramsViper.SetConfigFile(configFilePath)
 	paramsViper.SetConfigType("yaml")
-
 	err := paramsViper.ReadInConfig()
 	// if unable to read configuration file, set defaults
 	if err != nil {
@@ -1017,6 +1015,11 @@ func setArrayConfigEnvs(ctx context.Context) error {
 	}
 	endpoint := paramsViper.GetString(EnvEndpoint)
 	if endpoint != "" {
+		// Clean up endpoint by removing spaces or trailing slash
+		endpoint = strings.TrimSpace(endpoint)
+		if strings.HasSuffix(endpoint, "/") {
+			endpoint = strings.TrimRight(endpoint, "/")
+		}
 		log.Info("Read endpoint from config file:", endpoint)
 		_ = os.Setenv(EnvEndpoint, endpoint)
 	}
