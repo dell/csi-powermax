@@ -1,5 +1,4 @@
 //go:build linux && plugin
-// +build linux,plugin
 
 /*
  Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
