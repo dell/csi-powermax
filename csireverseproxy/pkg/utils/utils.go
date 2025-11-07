@@ -199,3 +199,12 @@ func RemoveTempFiles() error {
 	}
 	return nil
 }
+
+// SanitizeURLPath - removes trailing slash from URL and trim the whitespaces
+func SanitizeURLPath(path string) string {
+	path = strings.TrimSpace(path)
+	if strings.HasSuffix(path, "/") {
+		return strings.TrimRight(path, "/")
+	}
+	return path
+}

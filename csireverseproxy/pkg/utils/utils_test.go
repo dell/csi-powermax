@@ -348,3 +348,26 @@ func TestGetListenAddress(t *testing.T) {
 		t.Errorf("Expected %s, but got %s", expectedListenAddress, listenAddress)
 	}
 }
+
+func TestSanitizeURLPath(t *testing.T) {
+	// Test case for good https://example.com/path
+	goodURL := "https://example.com/path"
+	sanitizedURl := SanitizeURLPath(goodURL)
+	if sanitizedURl != goodURL {
+		t.Errorf("Expected %s, but got %s", goodURL, sanitizedURl)
+	}
+
+	// Test case for bad URL with spaces  ' https://example.com/path '
+	badURL := " https://example.com/path "
+	sanitizedURl = SanitizeURLPath(badURL)
+	if sanitizedURl != goodURL {
+		t.Errorf("Expected %s, but got %s", goodURL, sanitizedURl)
+	}
+
+	// Test case for bad URL with trailing ///  https://example.com/path///
+	badURL = "https://example.com/path////"
+	sanitizedURl = SanitizeURLPath(badURL)
+	if sanitizedURl != goodURL {
+		t.Errorf("Expected %s, but got %s", goodURL, sanitizedURl)
+	}
+}

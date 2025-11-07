@@ -15,7 +15,7 @@ port: 2222
 config:
   storageArrays:
     - storageArrayId: "000000000001"
-      primaryURL: https://primary-3.unisphe.re:8443
+      primaryURL: https://primary-3.unisphe.re:8443/
       backupURL: https://backup-3.unisphe.re:8443
       proxyCredentialSecrets:
         - primary-unisphere-secret-1

@@ -2486,18 +2486,8 @@ func TestGetIPIntefaces(t *testing.T) {
 	for _, tc := range testCases {
 		tc.pmaxClient = tc.getClient()
 		t.Run(tc.name, func(t *testing.T) {
-			s := &service{
-				opts: Opts{
-					UseProxy:          true,
-					TransportProtocol: tc.transportProtocol,
-				},
-				nvmetcpClient:      gonvme.NewMockNVMe(map[string]string{}),
-				nvmeTargets:        &sync.Map{},
-				loggedInNVMeArrays: map[string]bool{},
-			}
-
 			tc.init()
-			got, _ := s.getIPInterfaces(context.Background(), tc.symID, tc.portGroups, tc.pmaxClient)
+			got, _ := getIPInterfaces(context.Background(), tc.symID, tc.portGroups, tc.pmaxClient)
 			if len(got) != len(tc.want) {
 				t.Errorf("Expected: %v, but got: %v", len(tc.want), len(got))
 			}
@@ -2550,4 +2540,208 @@ func TestReachableEndPoint(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSetupNVMeTCPTargetDiscovery(t *testing.T) {
+	twoInterfaces := func() (map[string]int32, error) {
+		return map[string]int32{
+			"ip1": 100,
+			"ip2": 200,
+		}, nil
+	}
+
+	tests := []struct {
+		name             string
+		getIPInterfaces  func() (map[string]int32, error)
+		getDiscoverError func(address string) error
+		wantErr          bool
+	}{
+		{
+			name:             "Successful discovery",
+			getIPInterfaces:  twoInterfaces,
+			getDiscoverError: func(_ string) error { return nil },
+			wantErr:          false,
+		},
+		{
+			name: "Error fetching IP interfaces",
+			getIPInterfaces: func() (map[string]int32, error) {
+				return nil, errors.New("unable to fetch IP interfaces")
+			},
+			getDiscoverError: nil, // should not be called
+			wantErr:          true,
+		},
+		{
+			name:            "All targets failed to discover",
+			getIPInterfaces: twoInterfaces,
+			getDiscoverError: func(_ string) error {
+				return errors.New("unable to discover NVMe targets")
+			},
+			wantErr: true,
+		},
+		{
+			name:            "First of two targets failed to discover",
+			getIPInterfaces: twoInterfaces,
+			getDiscoverError: func(address string) error {
+				if address == "ip1" {
+					return errors.New("unable to discover NVMe target")
+				}
+				return nil
+			},
+			wantErr: false,
+		},
+	}
+
+	origGetIPInterfaces := getIPInterfaces
+	defer func() {
+		getIPInterfaces = origGetIPInterfaces
+	}()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gmock.NewController(t)
+			c := mocks.NewMockPmaxClient(ctrl)
+
+			s := &service{
+				nvmetcpClient: &nmveClientMock{
+					getDiscoverError: tt.getDiscoverError,
+				},
+			}
+
+			getIPInterfaces = func(_ context.Context, _ string, _ []string, _ pmax.Pmax) (map[string]int32, error) {
+				return tt.getIPInterfaces()
+			}
+
+			err := s.setupNVMeTCPTargetDiscovery(context.Background(), "sym1", c)
+			if (err != nil) && !tt.wantErr {
+				t.Errorf("Got unexpected setupNVMeTCPTargetDiscovery() error = %v", err)
+			} else if (err == nil) && tt.wantErr {
+				t.Errorf("Expected setupNVMeTCPTargetDiscovery() error, but got nil")
+			}
+		})
+	}
+}
+
+type nmveClientMock struct {
+	gonvme.NVMEinterface
+	getDiscoverError func(address string) error
+}
+
+func (c *nmveClientMock) DiscoverNVMeTCPTargets(address string, _ bool) ([]gonvme.NVMeTarget, error) {
+	if err := c.getDiscoverError(address); err != nil {
+		return nil, err
+	}
+	return []gonvme.NVMeTarget{}, nil
+}
+
+func TestLoginIntoISCSITargets(t *testing.T) {
+	twoTargets := []maskingViewTargetInfo{
+		{
+			target: goiscsi.ISCSITarget{
+				Target: "target1",
+				Portal: "portal1",
+			},
+		},
+		{
+			target: goiscsi.ISCSITarget{
+				Target: "target2",
+				Portal: "portal2",
+			},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		enableCHAP    bool
+		getLoginError func(portal string) error
+		wantLoggedIn  []string
+		wantErr       bool
+	}{
+		{
+			name:          "Successful login",
+			enableCHAP:    false,
+			getLoginError: func(_ string) error { return nil },
+			wantLoggedIn: []string{
+				"portal1",
+				"portal2",
+			},
+			wantErr: false,
+		},
+		{
+			name:          "Successful login with CHAP",
+			enableCHAP:    true,
+			getLoginError: func(_ string) error { return nil },
+			wantLoggedIn: []string{
+				"portal1",
+				"portal2",
+			},
+			wantErr: false,
+		},
+		{
+			name: "All targets failed to login",
+			getLoginError: func(_ string) error {
+				return errors.New("unable to login to ISCSI target")
+			},
+			wantLoggedIn: nil,
+			wantErr:      true,
+		},
+		{
+			name: "First of two targets failed to login",
+			getLoginError: func(portal string) error {
+				if portal == "portal1" {
+					return errors.New("unable to login to ISCSI target")
+				}
+				return nil
+			},
+			wantLoggedIn: []string{
+				"portal2", // only the second target is expected to log in
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				opts: Opts{
+					EnableCHAP: tt.enableCHAP,
+				},
+				iscsiClient:    &iscsiClientMock{getLoginError: tt.getLoginError},
+				iscsiTargets:   map[string][]string{},
+				loggedInArrays: map[string]bool{},
+			}
+
+			err := s.loginIntoISCSITargets("sym1", twoTargets)
+			if (err != nil) && !tt.wantErr {
+				t.Errorf("Got unexpected loginIntoISCSITargets() error = %v", err)
+			} else if (err == nil) && tt.wantErr {
+				t.Errorf("Expected loginIntoISCSITargets() error, but got nil")
+			}
+
+			if !tt.wantErr {
+				if len(s.loggedInArrays) != 1 || s.loggedInArrays["sym1"] != true {
+					t.Errorf("Unexpected logged in arrays: %v", s.loggedInArrays)
+				}
+			} else {
+				if len(s.loggedInArrays) > 0 {
+					t.Errorf("Unexpected logged in arrays: %v", s.loggedInArrays)
+				}
+			}
+		})
+	}
+}
+
+type iscsiClientMock struct {
+	goiscsi.ISCSIinterface
+	getLoginError func(portal string) error
+}
+
+func (c *iscsiClientMock) PerformLogin(target goiscsi.ISCSITarget) error {
+	return c.getLoginError(target.Portal)
+}
+
+func (c *iscsiClientMock) DiscoverTargets(portal string, _ bool) ([]goiscsi.ISCSITarget, error) {
+	if err := c.getLoginError(portal); err != nil {
+		return nil, err
+	}
+	return []goiscsi.ISCSITarget{}, nil
 }
