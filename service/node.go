@@ -1468,6 +1468,7 @@ func (s *service) NodeGetVolumeStats(
 		isMounted, err := isVolumeMounted(ctx, volName, volPath)
 		log.Debug("---- isMounted ----", isMounted)
 		if err != nil {
+			log.Error(err.Error())
 			abnormal = true
 			msg = fmt.Sprintf("Error getting mount info for volume %s", id)
 		}
