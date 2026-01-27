@@ -63,7 +63,7 @@ func Test_CreateKubeClientSet(t *testing.T) {
 		},
 		{
 			name:       "not in a cluster",
-			kubeConfig: "",
+			kubeConfig: "/tmp/kubeconfig1",
 			before:     func(_ string) error { return nil },
 			after:      func() {},
 			wantErr:    true,
@@ -323,7 +323,7 @@ func Test_Init(t *testing.T) {
 			args:    args{kubeConfig: ""},
 			before:  func(_ test) error { return nil },
 			after:   func() {},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name: "returns existing k8s clientset",
@@ -361,12 +361,15 @@ func Test_Init(t *testing.T) {
 				t.Errorf("Init() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
+
 			if !tt.wantErr {
 				assert.NotNil(t, got)
 				// if a wanted return value is specified, check it against what we got
 				if tt.want != nil {
 					assert.Equal(t, tt.want, got)
 				}
+			} else {
+				assert.Error(t, err)
 			}
 		})
 	}

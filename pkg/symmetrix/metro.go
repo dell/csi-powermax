@@ -21,9 +21,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dell/csmlog"
+
 	pmax "github.com/dell/gopowermax/v2"
-	log "github.com/sirupsen/logrus"
 )
+
+var log = csmlog.GetLogger()
 
 var metroClients sync.Map
 

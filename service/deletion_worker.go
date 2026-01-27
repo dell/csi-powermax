@@ -26,7 +26,6 @@ import (
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	log "github.com/sirupsen/logrus"
 )
 
 // Constants used by deletion worker
@@ -367,7 +366,7 @@ func (queue *deletionQueue) cleanupSnapshots(pmaxClient pmax.Pmax) bool {
 			if len(symVol.StorageGroupIDList) == 0 {
 				device.updateStatus(deletionStateDeleteVol, "")
 			} else {
-				log.Warningf("%s: Unexpected error. Moving back volume to disAssociateSG step", device.print())
+				log.Warnf("%s: Unexpected error. Moving back volume to disAssociateSG step", device.print())
 				device.updateStatus(deletionStateDisAssociateSG, "")
 			}
 		} else {
@@ -412,7 +411,7 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 						continue
 					}
 					if sg.NumOfMaskingViews > 0 {
-						log.Warningf("%s: SG: %s in masking view. Can't proceed with deletion of devices",
+						log.Warnf("%s: SG: %s in masking view. Can't proceed with deletion of devices",
 							device.print(), storageGroupID)
 						device.updateStatus(device.Status.State, "device is in masking view, can't delete")
 						continue
@@ -829,7 +828,7 @@ func (worker *deletionWorker) populateDeletionQueue() {
 		for _, id := range volList {
 			volume, err := pmaxClient.GetVolumeByID(context.Background(), symID, id)
 			if err != nil {
-				log.Warningf("Could not retrieve details for volume: %s. Ignoring it", id)
+				log.Warnf("Could not retrieve details for volume: %s. Ignoring it", id)
 				continue
 			}
 			// Put volume on the queue if appropriate
@@ -841,7 +840,7 @@ func (worker *deletionWorker) populateDeletionQueue() {
 					}
 				}()
 			} else {
-				log.Warningf("(Device ID: %s, SymID: %s): skipping as it is not tagged for deletion",
+				log.Warnf("(Device ID: %s, SymID: %s): skipping as it is not tagged for deletion",
 					volume.VolumeID, symID)
 			}
 		}

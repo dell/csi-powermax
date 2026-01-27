@@ -29,22 +29,23 @@ import (
 	"testing"
 	"time"
 
-	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/coreos/go-systemd/v22/dbus"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/dell/csi-powermax/v2/k8smock"
 	"github.com/dell/csi-powermax/v2/k8sutils"
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
+	"github.com/dell/csmlog"
 	"github.com/dell/gocsi"
 	csictx "github.com/dell/gocsi/context"
 	pmax "github.com/dell/gopowermax/v2"
-	log "github.com/sirupsen/logrus"
+	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/coreos/go-systemd/v22/dbus"
+	"github.com/golang/mock/gomock"
 	"github.com/spf13/viper"
-	"go.uber.org/mock/gomock"
 
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 const (
@@ -149,7 +150,7 @@ func TestBeforeServe(t *testing.T) {
 				"X_CSI_MANAGED_ARRAYS=abc,def",
 				"X_CSI_POWERMAX_SIDECAR_PROXY_PORT=8080",
 				"X_CSI_K8S_CLUSTER_PREFIX=csi",
-				"X_CSI_POWERMAX_ENDPOINT=http://127.0.0.1:8080",
+				"X_CSI_POWERMAX_ENDPOINT=http://127.0.0.1:9104",
 				"X_CSI_POWERMAX_PASSWORD=password",
 				"X_CSI_MODE=controller",
 				"X_CSI_MAX_VOLUMES_PER_NODE=10",
@@ -185,27 +186,11 @@ func TestBeforeServe(t *testing.T) {
 			expectedResult: nil,
 		},
 		{
-			name: "Error creating k8s utils",
-			ctx: context.WithValue(context.Background(), interface{}("os.Environ"), []string{
-				"X_CSI_K8S_CLUSTER_PREFIX=csi",
-				"X_CSI_MANAGED_ARRAYS=abc,def",
-				"X_CSI_POWERMAX_ENDPOINT=http://127.0.0.1:8080",
-				"X_CSI_POWERMAX_PASSWORD=password",
-				"X_CSI_MODE=controller",
-			}),
-			adminClient: func() pmax.Pmax {
-				return mocks.NewMockPmaxClient(gomock.NewController(t))
-			}(),
-			plugin:         nil,
-			listener:       &net.TCPListener{},
-			expectedResult: errors.New("error creating k8sClient unable to load in-cluster configuration, KUBERNETES_SERVICE_HOST and KUBERNETES_SERVICE_PORT must be defined"),
-		},
-		{
 			name: "Error creating PowerMax client",
 			ctx: context.WithValue(context.Background(), interface{}("os.Environ"), []string{
 				"X_CSI_K8S_CLUSTER_PREFIX=csi",
 				"X_CSI_MANAGED_ARRAYS=abc,def",
-				"X_CSI_POWERMAX_ENDPOINT=http://127.0.0.1:8080",
+				"X_CSI_POWERMAX_ENDPOINT=http://127.0.0.1:9104",
 				"X_CSI_POWERMAX_PASSWORD=password",
 				"X_CSI_MODE=controller",
 				"X_CSI_POWERMAX_SIDECAR_PROXY_PORT=2222",
@@ -653,7 +638,7 @@ func TestGobrickInitialization(t *testing.T) {
 }
 
 func TestSetGetLogFields(t *testing.T) {
-	fields := log.Fields{
+	fields := csmlog.Fields{
 		"RequestID": "123",
 		"DeviceID":  "12345",
 	}

@@ -1,5 +1,5 @@
 /*
- Copyright © 2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2025-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
@@ -23,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/dell/csi-powermax/v2/k8sutils"
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
@@ -32,9 +32,10 @@ import (
 	"github.com/dell/gonvme"
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
+	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/golang/mock/gomock"
+	gmock "github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
-	gmock "go.uber.org/mock/gomock"
 	"golang.org/x/net/context"
 )
 
@@ -488,6 +489,69 @@ func Test_service_createMetroVolume(t *testing.T) {
 			wantErrMsg: "couldn't find volume",
 		},
 		{
+			name:   "when the client fails to get the source volume for enhanced api",
+			fields: serviceFields{},
+			args: args{
+				ctx: context.Background(),
+				req: &csi.CreateVolumeRequest{
+					AccessibilityRequirements: &csi.TopologyRequirement{},
+					CapacityRange:             goodCapacityRange,
+					VolumeContentSource: &csi.VolumeContentSource{
+						Type: &csi.VolumeContentSource_Snapshot{
+							Snapshot: &csi.VolumeContentSource_SnapshotSource{
+								SnapshotId: validLocalVolumeID,
+							},
+						},
+					},
+				},
+				symID:         symIDLocal,
+				remoteSymID:   symIDRemote,
+				storagePoolID: "POOL_1",
+				remoteSRPID:   "POOL_1",
+			},
+			setup: func() {
+				initDefaultClient()
+				// local powermax has enough space to continue
+				pmaxClient.EXPECT().GetStoragePool(gomock.Any(), symIDLocal, "POOL_1").Times(1).Return(&types.StoragePool{SrpCap: goodSrpCapacity}, nil)
+				// remote powermax does not have enough space and should trigger an error
+				pmaxClient.EXPECT().GetStoragePool(gomock.Any(), symIDRemote, "POOL_1").Times(1).Return(&types.StoragePool{SrpCap: goodSrpCapacity}, nil)
+				pmaxClient.EXPECT().IsAllowedArray(gomock.Any()).Times(1).Return(true, nil)
+				pmaxClient.EXPECT().GetReplicationCapabilities(gomock.Any()).Times(1).Return(&types.SymReplicationCapabilities{
+					SymmetrixCapability: []types.SymmetrixCapability{
+						{
+							SymmetrixID:   symIDLocal,
+							SnapVxCapable: true,
+						},
+					},
+				}, nil)
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), "000120000001", "011AB").Times(1).Return(&types.Volume{}, nil)
+				pmaxClient.EXPECT().
+					GetVolumesByIdentifier(
+						gomock.Any(),
+						gomock.Eq("000120000001"),
+						gomock.Eq("csi-CSM-csivol-7599623185-default"),
+					).
+					AnyTimes().
+					Return(&types.Volumev1{
+						Volumes: []types.VolumeEnhanced{
+							{
+								ID:         validLocalVolumeID,
+								CapCyl:     600, // source volume capacity in cylinders
+								Identifier: "csi-CSM-csivol-7599623185-default",
+								Type:       "Snapshot",         // or "Volume" depending on your logic
+								System:     types.SystemInfo{}, // optional
+								StorageGroups: []types.StorageGroupID{
+									{StorageGroupID: "SG_1"},
+								},
+							},
+						},
+					}, nil)
+			},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "Name cannot be empty",
+		},
+		{
 			name:   "when requested capacity is smaller than the source",
 			fields: serviceFields{},
 			args: args{
@@ -531,6 +595,70 @@ func Test_service_createMetroVolume(t *testing.T) {
 			want:       nil,
 			wantErr:    true,
 			wantErrMsg: "Requested capacity is smaller than the source",
+		},
+		{
+			name:   "when requested capacity is smaller than the source for enhanced api",
+			fields: serviceFields{},
+			args: args{
+				ctx: context.Background(),
+				req: &csi.CreateVolumeRequest{
+					AccessibilityRequirements: &csi.TopologyRequirement{},
+					CapacityRange:             goodCapacityRange,
+					VolumeContentSource: &csi.VolumeContentSource{
+						Type: &csi.VolumeContentSource_Snapshot{
+							Snapshot: &csi.VolumeContentSource_SnapshotSource{
+								SnapshotId: validLocalVolumeID,
+							},
+						},
+					},
+				},
+				symID:         symIDLocal,
+				remoteSymID:   symIDRemote,
+				storagePoolID: "POOL_1",
+				remoteSRPID:   "POOL_1",
+			},
+			setup: func() {
+				initDefaultClient()
+				// local powermax has enough space to continue
+				pmaxClient.EXPECT().GetStoragePool(gomock.Any(), symIDLocal, "POOL_1").Times(1).Return(&types.StoragePool{SrpCap: goodSrpCapacity}, nil)
+				// remote powermax does not have enough space and should trigger an error
+				pmaxClient.EXPECT().GetStoragePool(gomock.Any(), symIDRemote, "POOL_1").Times(1).Return(&types.StoragePool{SrpCap: goodSrpCapacity}, nil)
+				pmaxClient.EXPECT().IsAllowedArray(gomock.Any()).Times(1).Return(true, nil)
+				pmaxClient.EXPECT().GetReplicationCapabilities(gomock.Any()).Times(1).Return(&types.SymReplicationCapabilities{
+					SymmetrixCapability: []types.SymmetrixCapability{
+						{
+							SymmetrixID:   symIDLocal,
+							SnapVxCapable: true,
+						},
+					},
+				}, nil)
+
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), "000120000001", "011AB").Times(1).Return(&types.Volume{}, nil)
+				pmaxClient.EXPECT().
+					GetVolumesByIdentifier(
+						gomock.Any(),
+						gomock.Eq("000120000001"),
+						gomock.Eq("csi-CSM-csivol-7599623185-default"),
+					).
+					AnyTimes().
+					Return(&types.Volumev1{
+						Volumes: []types.VolumeEnhanced{
+							{
+								ID:         validLocalVolumeID,
+								CapCyl:     600, // source volume capacity in cylinders
+								Identifier: "csi-CSM-csivol-7599623185-default",
+								Type:       "Snapshot",         // or "Volume" depending on your logic
+								System:     types.SystemInfo{}, // optional
+								StorageGroups: []types.StorageGroupID{
+									{StorageGroupID: "SG_1"},
+								},
+							},
+						},
+					}, nil)
+			},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "Name cannot be empty",
 		},
 		{
 			name: "the volume is block but block is not enabled",
@@ -606,6 +734,51 @@ func Test_service_createMetroVolume(t *testing.T) {
 			wantErrMsg: "Name cannot be empty",
 		},
 		{
+			name: "fails to get protected storage group",
+			fields: serviceFields{
+				opts: Opts{
+					EnableBlock: true,
+				},
+			},
+			args: args{
+				ctx: context.Background(),
+				req: &csi.CreateVolumeRequest{
+					AccessibilityRequirements: &csi.TopologyRequirement{},
+					Name:                      "csivol-01234abcde",
+					CapacityRange:             goodCapacityRange,
+					VolumeCapabilities: []*csi.VolumeCapability{
+						{
+							AccessType: &csi.VolumeCapability_Block{
+								Block: &csi.VolumeCapability_BlockVolume{},
+							},
+						},
+					},
+				},
+				symID:             symIDLocal,
+				remoteSymID:       symIDRemote,
+				storagePoolID:     "POOL_1",
+				remoteSRPID:       "POOL_1",
+				namespace:         "my-test-service",
+				applicationPrefix: "my-test-db",
+				hostLimitName:     "a-host-limit-name",
+			},
+			setup: func() {
+				requestLockFunc = func(_, _ string) int {
+					return 0
+				}
+				releaseLockFunc = func(_, _ string, _ int) {}
+
+				initDefaultClient()
+				pmaxClient.EXPECT().GetStoragePool(gomock.Any(), symIDLocal, "POOL_1").Times(1).Return(&types.StoragePool{SrpCap: goodSrpCapacity}, nil)
+				pmaxClient.EXPECT().GetStoragePool(gomock.Any(), symIDRemote, "POOL_1").Times(1).Return(&types.StoragePool{SrpCap: goodSrpCapacity}, nil)
+				pmaxClient.EXPECT().GetProtectedStorageGroup(gomock.Any(), symIDLocal, gomock.Any()).Times(1).
+					Return(&types.RDFStorageGroup{}, errors.New("error retrieving storage group"))
+			},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "error retrieving storage group",
+		},
+		{
 			name: "fails to create a protected storage group",
 			fields: serviceFields{
 				opts: Opts{
@@ -646,7 +819,7 @@ func Test_service_createMetroVolume(t *testing.T) {
 				// remote powermax does not have enough space and should trigger an error
 				pmaxClient.EXPECT().GetStoragePool(gomock.Any(), symIDRemote, "POOL_1").Times(1).Return(&types.StoragePool{SrpCap: goodSrpCapacity}, nil)
 				pmaxClient.EXPECT().GetProtectedStorageGroup(gomock.Any(), symIDLocal, gomock.Any()).Times(1).
-					Return(&types.RDFStorageGroup{}, errors.New("failed to get storage group"))
+					Return(&types.RDFStorageGroup{}, errors.New("cannot be found"))
 				pmaxClient.EXPECT().GetStorageGroupIDList(gomock.Any(), symIDLocal, gomock.Any(), false).Times(1).
 					Return(nil, errors.New("failed to get storage group ID list"))
 			},
@@ -2981,6 +3154,180 @@ func Test_service_addZoneLabelsToVolumeAttributes(t *testing.T) {
 
 			s.addZoneLabelsToVolumeAttributes(tt.params, tt.arrayID)
 			assert.Equal(t, tt.want, tt.params)
+		})
+	}
+}
+
+func TestGetDynamicSG(t *testing.T) {
+	tests := []struct {
+		name                  string
+		arrayID               string
+		initializeArray       string
+		baseSGName            string
+		mockClient            *mocks.MockPmaxClient
+		expectedSGName        string
+		expectedNeedsCreation bool
+		expectedErr           error
+	}{
+		{
+			name:            "successful get base SG name as new dynamic SG when no SGs exist",
+			arrayID:         "sg-array1",
+			initializeArray: "sg-array1",
+			baseSGName:      "csi-W55-Diamond-SRP_1-SG",
+			mockClient: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(client)
+				client.EXPECT().GetStorageGroupVolumeCounts(gomock.Any(), "sg-array1", "csi-W55-Diamond-SRP_1-SG").Return(&types.StorageGroupVolumeCounts{
+					StorageGroups: []types.StorageGroupVolumeCount{},
+				}, nil)
+				return client
+			}(),
+			expectedSGName:        "csi-W55-Diamond-SRP_1-SG",
+			expectedNeedsCreation: true,
+			expectedErr:           nil,
+		},
+		{
+			name:            "successful get existing dynamic SG with space",
+			arrayID:         "sg-array1",
+			initializeArray: "sg-array1",
+			baseSGName:      "csi-W55-Diamond-SRP_1-SG",
+			mockClient: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(client)
+				client.EXPECT().GetStorageGroupVolumeCounts(gomock.Any(), "sg-array1", "csi-W55-Diamond-SRP_1-SG").Return(&types.StorageGroupVolumeCounts{
+					StorageGroups: []types.StorageGroupVolumeCount{
+						{ID: "csi-W55-Diamond-SRP_1-SG", VolumeCount: 1},
+					},
+				}, nil)
+				return client
+			}(),
+			expectedSGName:        "csi-W55-Diamond-SRP_1-SG",
+			expectedNeedsCreation: false,
+			expectedErr:           nil,
+		},
+		{
+			name:            "successful get new dynamic SG when no space in existing SGs",
+			arrayID:         "sg-array1",
+			initializeArray: "sg-array1",
+			baseSGName:      "csi-W55-Diamond-SRP_1-SG",
+			mockClient: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(client)
+				client.EXPECT().GetStorageGroupVolumeCounts(gomock.Any(), "sg-array1", "csi-W55-Diamond-SRP_1-SG").Return(&types.StorageGroupVolumeCounts{
+					StorageGroups: []types.StorageGroupVolumeCount{
+						{ID: "csi-W55-Diamond-SRP_1-SG", VolumeCount: 2},
+					},
+				}, nil)
+				return client
+			}(),
+			expectedSGName:        "csi-W55-Diamond-SRP_1-SG--1",
+			expectedNeedsCreation: true,
+			expectedErr:           nil,
+		},
+		{
+			name:            "successful get existing dynamic SG with minimal vol count",
+			arrayID:         "sg-array1",
+			initializeArray: "sg-array1",
+			baseSGName:      "csi-W55-Diamond-SRP_1-SG",
+			mockClient: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(client)
+				client.EXPECT().GetStorageGroupVolumeCounts(gomock.Any(), "sg-array1", "csi-W55-Diamond-SRP_1-SG").Return(&types.StorageGroupVolumeCounts{
+					StorageGroups: []types.StorageGroupVolumeCount{
+						{ID: "csi-W55-Diamond-SRP_1-SG", VolumeCount: 2},
+						{ID: "csi-W55-Diamond-SRP_1-SG--1", VolumeCount: 0},
+						{ID: "csi-W55-Diamond-SRP_1-SG--2", VolumeCount: 1},
+					},
+				}, nil)
+				return client
+			}(),
+			expectedSGName:        "csi-W55-Diamond-SRP_1-SG--1",
+			expectedNeedsCreation: false,
+			expectedErr:           nil,
+		},
+		{
+			name:            "error getting PowerMax client",
+			arrayID:         "sg-array1",
+			initializeArray: "",
+			baseSGName:      "csi-W55-Diamond-SRP_1-SG",
+			mockClient: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(nil)
+				return client
+			}(),
+			expectedSGName:        "",
+			expectedNeedsCreation: false,
+			expectedErr:           fmt.Errorf("failed to get PowerMax client for array sg-array1: array: sg-array1 not found"),
+		},
+		{
+			name:            "error getting storage group volume counts for array",
+			arrayID:         "sg-array1",
+			initializeArray: "sg-array1",
+			baseSGName:      "csi-W55-Diamond-SRP_1-SG",
+			mockClient: func() *mocks.MockPmaxClient {
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(client)
+				client.EXPECT().GetStorageGroupVolumeCounts(gomock.Any(), "sg-array1", "csi-W55-Diamond-SRP_1-SG").Return(nil, errors.New("error getting sg"))
+
+				return client
+			}(),
+			expectedSGName:        "",
+			expectedNeedsCreation: false,
+			expectedErr:           fmt.Errorf("failed to get storage group volume counts for array sg-array1: error getting sg"),
+		},
+		{
+			name:            "handle huge number of SGs",
+			arrayID:         "sg-array1",
+			initializeArray: "sg-array1",
+			baseSGName:      "csi-W55-Diamond-SRP_1-SG",
+			mockClient: func() *mocks.MockPmaxClient {
+				sgs := make([]types.StorageGroupVolumeCount, 102)
+				sgs[0] = types.StorageGroupVolumeCount{
+					ID:          "csi-W55-Diamond-SRP_1-SG",
+					VolumeCount: 2,
+				}
+				for i := 1; i < 101; i++ {
+					sgs[i] = types.StorageGroupVolumeCount{
+						ID:          fmt.Sprintf("csi-W55-Diamond-SRP_1-SG--%d", i),
+						VolumeCount: 2,
+					}
+				}
+				client := mocks.NewMockPmaxClient(gomock.NewController(t))
+				client.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(client)
+				client.EXPECT().GetStorageGroupVolumeCounts(gomock.Any(), "sg-array1", "csi-W55-Diamond-SRP_1-SG").Return(&types.StorageGroupVolumeCounts{
+					StorageGroups: sgs,
+				}, nil)
+				return client
+			}(),
+			expectedSGName:        "csi-W55-Diamond-SRP_1-SG--101",
+			expectedNeedsCreation: true,
+			expectedErr:           nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sgVolumeLimit = 2
+			s := &service{
+				adminClient: tt.mockClient,
+			}
+			_ = symmetrix.Initialize([]string{tt.initializeArray}, tt.mockClient)
+			defer symmetrix.RemoveClient(tt.initializeArray)
+
+			sgName, needsCreation, err := getDynamicSG(context.Background(), tt.arrayID, tt.baseSGName, s)
+			if err != nil && tt.expectedErr != nil {
+				if err.Error() != tt.expectedErr.Error() {
+					t.Errorf("expected error %v, but got %v", tt.expectedErr, err)
+				}
+			} else if err != nil {
+				t.Errorf("expected no error, but got %v", err)
+			}
+			if sgName != tt.expectedSGName {
+				t.Errorf("expected storage group name %v, but got %v", tt.expectedSGName, sgName)
+			}
+			if needsCreation != tt.expectedNeedsCreation {
+				t.Errorf("expected needs creation %v, but got %v", tt.expectedNeedsCreation, needsCreation)
+			}
 		})
 	}
 }

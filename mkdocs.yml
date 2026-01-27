@@ -1,0 +1,7 @@
+site_name: 'csi-powermax'
+site_description: 'csi-powermax Documentation.'
+docs_dir: docs
+plugins:
+  - techdocs-core
+theme:
+  name: material

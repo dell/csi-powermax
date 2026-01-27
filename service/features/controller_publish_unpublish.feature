@@ -19,6 +19,22 @@ Feature: PowerMax CSI interface
        | "single-node-single-writer" |
        | "single-node-multi-writer"  |
 
+ @controllerPublish
+ @v1.0.0
+     Scenario Outline: Publish volume with single writer, enhanced API
+      Given a PowerMax service
+      And I call CreateVolumeEnhanced "volume1"
+      When I request a PortGroup
+      And a valid CreateVolumeEnhancedResponse is returned
+      And I have a Node "node1" with MaskingView
+      And I call PublishVolume with <access> to "node1"
+      Then a valid PublishVolumeResponse is returned
+      Examples:
+       | access                      |
+       | "single-writer"             |
+       | "single-node-single-writer" |
+       | "single-node-multi-writer"  |
+
 @controllerPublish
 @v1.1.0
      Scenario Outline: Publish volume with single writer for FC when PG is present
@@ -481,7 +497,7 @@ Feature: PowerMax CSI interface
       And no error was received
       And I call UnpublishVolume from "node1"
       And no error was received
-      Then a valid UnpublishVolumeResponse is returned 
+      Then a valid UnpublishVolumeResponse is returned
 
 @controllerPublish
 @v1.0.0
@@ -608,8 +624,8 @@ Feature: PowerMax CSI interface
       When I call requestAddVolumeToSGMV <node> mv <mv>
       And I induce error <induced>
       And I call runAddVolumesToSGMV
-      Then the error contains <errormsg> 
-     
+      Then the error contains <errormsg>
+
       Examples:
       | node     |  mv        | induced                 | errormsg                                      |
       | "node1"  |  "default" | "none"                  | "none"                                        |
@@ -627,8 +643,8 @@ Feature: PowerMax CSI interface
       When I call requestAddVolumeToSGMV <node> mv <mv>
       And I induce error <induced>
       And I call runAddVolumesToSGMV
-      Then the error contains <errormsg> 
-     
+      Then the error contains <errormsg>
+
       Examples:
       | node     |  mv        | induced                 | errormsg                                      |
       | "node1"  |  "default" | "GetHostError"          | "Failed to fetch host details"                |
@@ -646,8 +662,8 @@ Feature: PowerMax CSI interface
       And I call requestAddVolumeToSGMV <node> mv <mv>
       And I induce error <induced>
       And I call handleAddVolumeToSGMVError
-      Then the error contains <errormsg> 
-     
+      Then the error contains <errormsg>
+
       Examples:
       | node     |  mv        | induced                 | errormsg                                      |
       | "node1"  |  "default" | "none"                  | "none"                                        |
@@ -667,8 +683,8 @@ Feature: PowerMax CSI interface
       And I call runAddVolumesToSGMV
       And I induce error <induced>
       And I call handleAddVolumeToSGMVError
-      Then the error contains <errormsg> 
-     
+      Then the error contains <errormsg>
+
       Examples:
       | node     |  mv1       | mv2       | induced                 | errormsg                                      |
       | "node1"  |  "badmv"   | "default" | "none"                  | "none"                                        |
@@ -688,8 +704,8 @@ Feature: PowerMax CSI interface
       When I call requestRemoveVolumeFromSGMV <node> mv <mv>
       And I induce error <induced>
       And I call runRemoveVolumesFromSGMV
-      Then the error contains <errormsg> 
-     
+      Then the error contains <errormsg>
+
       Examples:
       | node     |  mv        | induced                 | errormsg                                      |
       | "node1"  |  "default" | "none"                  | "none"                                        |
@@ -710,8 +726,8 @@ Feature: PowerMax CSI interface
       And I call requestRemoveVolumeFromSGMV <node> mv <mv>
       And I induce error <induced>
       And I call handleRemoveVolumeFromSGMVError
-      Then the error contains <errormsg> 
-     
+      Then the error contains <errormsg>
+
       Examples:
       | node     |  mv        | induced                 | errormsg                                      |
       | "node1"  |  "default" | "none"                  | "none"                                        |
@@ -733,8 +749,8 @@ Feature: PowerMax CSI interface
       And I call runRemoveVolumesFromSGMV
       And I induce error <induced>
       And I call handleRemoveVolumeFromSGMVError
-      Then the error contains <errormsg> 
-     
+      Then the error contains <errormsg>
+
       Examples:
       | node     |  mv1       | mv2       | induced                 | errormsg                                      |
       | "node1"  |  "badmv"   | "default" | "none"                  | "none"                                        |

@@ -1,0 +1,27 @@
+{
+  "volumes": [
+    {
+      "id": "00001",
+      "type": "TDEV",
+      "system": {
+        "id": "000197900048"
+      },
+      "identifier": "Vol00001",
+      "storage_groups": [
+        {
+          "id": "csi-TST-Optimized-SRP_1-SG"
+        },
+        {
+          "id": "SG_FCSCSI_DL366064"
+        }
+      ],
+      "num_of_masking_views": 0,
+      "masking_views": [],
+      "cap_cyl": 54614,
+      "srp": {
+        "id": "SRP_1"
+      },
+      "volume_host_paths": []
+    }
+  ]
+}

@@ -27,8 +27,7 @@ import (
 	"time"
 
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
-
-	log "github.com/sirupsen/logrus"
+	"github.com/dell/csmlog"
 )
 
 // Constants for util package
@@ -40,9 +39,12 @@ const (
 	StatusProxyBusy     = 504
 	StatusNotFound      = 404
 	Prefix              = "/univmax/restapi"
+	PrefixV1            = "/univmax/rest/v1"
 	PrivatePrefix       = "/univmax/restapi/private"
 	InternalPrefix      = Prefix + "/internal"
 )
+
+var log = csmlog.GetLogger()
 
 // WriteHTTPError - given a statuscode and error message, writes a HTTP error using the
 // ResponseWriter

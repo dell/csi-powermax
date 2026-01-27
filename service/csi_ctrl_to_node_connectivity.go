@@ -21,8 +21,6 @@ import (
 	"io"
 	"net/http"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // ArrayConnectivityStatus Status of the array probe
@@ -38,9 +36,10 @@ const (
 
 // QueryArrayStatus make API call to the specified url to retrieve connection status
 func (s *service) QueryArrayStatus(ctx context.Context, url string) (bool, error) {
+	log := log.WithContext(ctx)
 	defer func() {
 		if err := recover(); err != nil {
-			log.Println("panic occurred in queryStatus:", err)
+			log.Infof("panic occurred in queryStatus: %v", err)
 		}
 	}()
 	client := http.Client{

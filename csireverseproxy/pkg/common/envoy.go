@@ -18,8 +18,6 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // Envoy is an interface for failover/failback enabled proxy clients
@@ -36,7 +34,7 @@ type Envoy interface {
 	GetActiveHTTPClient() *http.Client
 	RemoveBackupProxy()
 	RemoveBackupHTTPClient()
-	ConfigureHealthParams(int, int, time.Duration)
+	ConfigureHealthParams(int, int, int, time.Duration)
 	HasHealthDeteriorated() bool
 }
 
@@ -173,8 +171,8 @@ func (e *envoy) RemoveBackupHTTPClient() {
 }
 
 // ConfigureHealthParams set the threshold params for enovy health
-func (e *envoy) ConfigureHealthParams(failureCount, successCount int, failureDuration time.Duration) {
-	e.healthMonitor.SetThreshold(failureCount, successCount, failureDuration)
+func (e *envoy) ConfigureHealthParams(failureCount, consecutiveFC, successCount int, failureDuration time.Duration) {
+	e.healthMonitor.SetThreshold(failureCount, consecutiveFC, successCount, failureDuration)
 }
 
 // HasHealthDeteriorated checks if evnoy has encountered any error while using primary proxy

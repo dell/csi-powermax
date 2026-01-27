@@ -23,10 +23,11 @@ import (
 	"time"
 
 	"github.com/dell/csi-powermax/v2/pkg/migration"
+	"github.com/dell/csmlog"
 
 	csimgr "github.com/dell/dell-csi-extensions/migration"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	log "github.com/sirupsen/logrus"
+
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -34,6 +35,7 @@ import (
 )
 
 func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRequest) (*csimgr.VolumeMigrateResponse, error) {
+	log := log.WithContext(ctx)
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -108,7 +110,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 	}
 
 	migrateType := req.GetType()
-	fields := log.Fields{
+	fields := csmlog.Fields{
 		"RequestID":   reqID,
 		"SymmetrixID": symID,
 		"RemoteSymID": sourceScParams[path.Join(s.opts.ReplicationPrefix, RemoteSymIDParam)],
@@ -158,6 +160,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 }
 
 func nonReplToRepl(ctx context.Context, params map[string]string, _ map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
+	log := log.WithContext(ctx)
 	var replicationEnabled string
 	var remoteSymID string
 	var localRDFGrpNo string
@@ -241,7 +244,7 @@ func nonReplToRepl(ctx context.Context, params map[string]string, _ map[string]s
 		log.Debugf("RDF: Found Rdf enabled")
 		// remote storage group name is kept same as local storage group name
 		// Check if volume is already added in SG, else add it
-		log.Debug("StorageGroupName", storageGroupName, "localSGID", localProtectionGroupID, "remoteSGID", remoteProtectionGroupID)
+		log.Debug("StorageGroupName: " + storageGroupName + " localSGID: " + localProtectionGroupID + " remoteSGID: " + remoteProtectionGroupID)
 		sg, err := pmaxClient.GetStorageGroup(ctx, symID, storageGroupName)
 		if err != nil || sg == nil {
 			log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
@@ -282,6 +285,7 @@ func nonReplToRepl(ctx context.Context, params map[string]string, _ map[string]s
 }
 
 func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams map[string]string, _, _, _, _, symID string, s *service, vol *types.Volume) error {
+	log := log.WithContext(ctx)
 	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
 		log.Error(err.Error())
@@ -319,6 +323,7 @@ func versionUpgrade(_ context.Context, _ map[string]string, _ map[string]string,
 }
 
 func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequest) (*csimgr.ArrayMigrateResponse, error) {
+	log := log.WithContext(ctx)
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {

@@ -31,7 +31,8 @@ import (
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/proxy"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/dell/csmlog"
+	"github.com/sirupsen/logrus"
 
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
 
@@ -40,6 +41,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 )
+
+var log = csmlog.GetLogger()
 
 // RevProxy - interface which is implemented by the different proxy implementations
 type RevProxy interface {
@@ -130,18 +133,18 @@ func (s *Server) Config() *config.ProxyConfig {
 func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 	// Read the config from secret if secret provided
 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
-		log.Printf("Reading config using secret")
+		log.Info("Reading config using secret")
 
 		vs := viper.New()
 		proxySecret, err := config.ReadConfigFromSecret(vs)
 		if err != nil {
-			log.Printf("Error while reading config from secret: %v\n", err)
+			log.Errorf("Error while reading config from secret: %v", err)
 			return err
 		}
 
 		proxyConfig, err := config.NewProxyConfigFromSecret(proxySecret, k8sUtils)
 		if err != nil {
-			log.Printf("Error while creating proxy config from secret: %v\n", err)
+			log.Errorf("Error while creating proxy config from secret: %v", err)
 			return err
 		}
 		s.CertFile = filepath.Join(s.Opts.TLSCertDir, s.Opts.CertFile)
@@ -150,11 +153,11 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 		s.Port = proxyConfig.Port
 		proxy, err := proxy.NewProxy(*proxyConfig)
 		if err != nil {
-			log.Printf("Error while creating proxy instance from secret: %v\n", err)
+			log.Errorf("Error while creating proxy instance from secret: %v", err)
 			return err
 		}
 
-		log.Infof("Setting up watcher for mounted secret")
+		log.Info("Setting up watcher for mounted secret")
 		s.SetupConfigWatcher(k8sUtils, vs, s.configChangeSecret)
 
 		// params config map
@@ -162,7 +165,7 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 		paramsFilePath := getEnv(common.EnvPowermaxConfigPath, "")
 		paramsConfig, err := config.ReadParamsConfigMapFromPath(paramsFilePath, vcp)
 		if err != nil {
-			log.Printf("Error while reading from params config map: %v\n", err)
+			log.Errorf("Error while reading from params config map: %v", err)
 			return err
 		}
 		if paramsConfig.Port != "" {
@@ -171,7 +174,7 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 			proxyConfig.Port = paramsConfig.Port
 		}
 
-		log.Infof("Setting up watcher for mounted params config map")
+		log.Info("Setting up watcher for mounted params config map")
 		s.SetupConfigWatcher(k8sUtils, vcp, s.configChangeParamsConfigMap)
 
 		s.Proxy = proxy
@@ -180,7 +183,7 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 
 	} else {
 		// Read the config from config map
-		log.Printf("Reading config using config map")
+		log.Info("Reading config using config map")
 		vcm := viper.New()
 		proxyConfigMap, err := config.ReadConfig(s.Opts.ConfigFileName, s.Opts.ConfigDir, vcm)
 		if err != nil {
@@ -196,11 +199,11 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 		s.Port = proxyConfig.Port
 		proxy, err := proxy.NewProxy(*proxyConfig)
 		if err != nil {
-			log.Printf("Error while creating proxy instance from config map: %v\n", err)
+			log.Errorf("Error while creating proxy instance from config map: %v", err)
 			return err
 		}
 
-		log.Infof("Setting up watcher for mounted reverse proxy config map")
+		log.Info("Setting up watcher for mounted reverse proxy config map")
 
 		s.SetupConfigWatcher(k8sUtils, vcm, s.configChangeConfigMap)
 
@@ -263,36 +266,36 @@ func (s *Server) SignalHandler(k8sUtils k8sutils.UtilsInterface) {
 
 func updateRevProxyLogParams(format, logLevel string) {
 	logFormatFromConfig := strings.ToLower(format)
-	var formatter log.Formatter
+	var formatter logrus.Formatter
 	// Use text logger as default
-	formatter = &log.TextFormatter{
+	formatter = &logrus.TextFormatter{
 		DisableColors: true,
 		FullTimestamp: true,
 	}
 	if strings.EqualFold(logFormatFromConfig, "json") {
-		formatter = &log.JSONFormatter{
+		formatter = &logrus.JSONFormatter{
 			TimestampFormat: time.RFC3339Nano,
 		}
 	} else if !strings.EqualFold(logFormatFromConfig, "text") && (logFormatFromConfig != "") {
-		log.Printf("Unsupported logFormat: %s supplied. Defaulting to text", logFormatFromConfig)
+		log.Infof("Unsupported logFormat: %s supplied. Defaulting to text", logFormatFromConfig)
 	}
-	level := log.DebugLevel // Use debug as default
+	level := csmlog.DebugLevel // Use debug as default
 	if logLevel != "" {
 		logLevel = strings.ToLower(logLevel)
-		l, err := log.ParseLevel(logLevel)
+		l, err := csmlog.ParseLevel(logLevel)
 		if err != nil {
-			log.WithError(err).Errorf("logLevel %s value not recognized, error: %s, Setting to default: %s",
+			log.Errorf("logLevel %s value not recognized, error: %s, Setting to default: %s",
 				logLevel, err.Error(), level)
 		} else {
 			level = l
 		}
 	} else {
-		log.Print("Couldn't read logLevel from config file. Using debug level as default")
+		log.Info("Couldn't read logLevel from config file. Using debug level as default")
 	}
 	setLogFormatAndLevel(formatter, level)
 }
 
-func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
+func setLogFormatAndLevel(logFormat logrus.Formatter, level csmlog.Level) {
 	log.SetFormatter(logFormat)
 	log.Infof("Setting log level to %v", level)
 	log.SetLevel(level)

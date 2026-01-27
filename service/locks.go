@@ -18,8 +18,6 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type lockWorkers struct{}
@@ -68,7 +66,7 @@ func LockRequestHandler() {
 					// ResourceID not present in fifolocks map
 					if request.Unlock {
 						// Invalid unlock request as there is no entry for the resource ID in the fifolocks map
-						log.Warning("There is no lock to be released!")
+						log.Warn("There is no lock to be released!")
 					} else {
 						// Create an entry in the fifolocks map as this is the first call for this resource id
 						waitChannels := make(chan LockRequestInfo, 100)
@@ -105,13 +103,13 @@ func LockRequestHandler() {
 						} else {
 							// This is a request to lock
 							// Invalid lock request as a lock is already held for the same resource id and request id
-							log.Warning("Invalid request. There is a lock held with the same request")
+							log.Warn("Invalid request. There is a lock held with the same request")
 						}
 					} else {
 						// RequestID doesn't match with the CurrentRequestID for the resourceID
 						if request.Unlock {
 							// Attempt to release a lock not held by the caller
-							log.Warning("You don't hold the lock")
+							log.Warn("You don't hold the lock")
 						} else {
 							if len(lockInfo.LockRequests) == 0 && (lockInfo.CurrentLockNumber == -1) {
 								// Entry for resource ID already present in fifolocks

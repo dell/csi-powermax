@@ -1,5 +1,5 @@
 /*
-Copyright © 2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+Copyright © 2025-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,8 +26,8 @@ import (
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
 	csimgr "github.com/dell/dell-csi-extensions/migration"
 	types "github.com/dell/gopowermax/v2/types/v100"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -50,7 +50,7 @@ func TestVolumeMigrate(t *testing.T) {
 	c.EXPECT().GetFreeLocalAndRemoteRDFg(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.NextFreeRDFGroup{LocalRdfGroup: []int{42}, RemoteRdfGroup: []int{42}}, nil)
 	c.EXPECT().GetLocalOnlineRDFDirs(gomock.Any(), gomock.Any()).AnyTimes().Return(&types.RDFDirList{RdfDirs: []string{}}, nil)
 	c.EXPECT().ExecuteCreateRDFGroup(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
-	c.EXPECT().GetProtectedStorageGroup(gomock.Any(), "0001", gomock.Any()).AnyTimes().Return(nil, errors.New("error"))
+	c.EXPECT().GetProtectedStorageGroup(gomock.Any(), "0001", gomock.Any()).AnyTimes().Return(nil, errors.New("cannot be found"))
 	c.EXPECT().GetStorageGroupIDList(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("error"))
 
 	symmetrix.Initialize([]string{"0001"}, c)

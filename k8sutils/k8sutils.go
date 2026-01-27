@@ -24,12 +24,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
-	log "github.com/sirupsen/logrus"
 
+	"github.com/dell/csmlog"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
+
+var log = csmlog.GetLogger()
 
 // UtilsInterface - interface which provides helper methods related to k8s
 type UtilsInterface interface {

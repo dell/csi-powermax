@@ -22,7 +22,6 @@ import (
 
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -40,6 +39,7 @@ const (
 	QueryAsync    = "Asynchronous"
 	QuerySync     = "Synchronous"
 	QueryMetro    = "Active"
+	DefaultRDF    = 1
 )
 
 func getQueryMode(mode string) string {
@@ -94,6 +94,7 @@ func LocalRDFPortsNotAdded(createRDFPayload *types.RDFGroupCreate, localSymID st
 // 5. Choose all Ports associated with the remoteSite Provided
 // 6. Use all the details above to create a RDFg
 func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, remoteSymID string, repMode string, namespace string, pmaxClient pmax.Pmax) (string, string, error) {
+	log := log.WithContext(ctx)
 	createRDFgPayload := new(types.RDFGroupCreate)
 	proceedWithCreate := false
 	rdfLabel := ""
@@ -107,36 +108,57 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 		QueryRemSymID: remoteSymID,
 	})
 	if err != nil {
-		log.Errorf("Failed to fetch RDF pre existing group, Error (%s)", err.Error())
-		return "", "", err
+		if strings.Contains(err.Error(), "No SRDF Groups found for Array") {
+			log.Warnf("Failed to find any RDF groups on array: %s, will attempt to create", localSymID)
+		} else {
+			log.Errorf("Failed to fetch RDF pre existing group, Error (%s)", err.Error())
+			return "", "", err
+		}
 	}
-	for _, rDFGID := range rDFGList.RDFGroupIDs {
-		if strings.Compare(rdfLabel, rDFGID.Label) == 0 {
-			log.Debugf("found pre existing label for given array pair and RDF mode: %+v", rDFGID)
-			rDFG, err := pmaxClient.GetRDFGroupByID(ctx, localSymID, strconv.Itoa(rDFGID.RDFGNumber))
-			if err != nil {
-				log.Errorf("Failed to fetch RDF pre existing group, Error (%s)", err.Error())
-				return "", "", err
+	if rDFGList != nil {
+		for _, rDFGID := range rDFGList.RDFGroupIDs {
+			if strings.Compare(rdfLabel, rDFGID.Label) == 0 {
+				log.Debugf("found pre existing label for given array pair and RDF mode: %+v", rDFGID)
+				rDFG, err := pmaxClient.GetRDFGroupByID(ctx, localSymID, strconv.Itoa(rDFGID.RDFGNumber))
+				if err != nil {
+					log.Errorf("Failed to fetch RDF pre existing group, Error (%s)", err.Error())
+					return "", "", err
+				}
+				log.Debugf("found pre-existing RDF group with label: %s", rDFGID.Label)
+				return strconv.Itoa(rDFG.RdfgNumber), strconv.Itoa(rDFG.RemoteRdfgNumber), nil
 			}
-			log.Debugf("found pre-existing RDF group with label: %s", rDFGID.Label)
-			return strconv.Itoa(rDFG.RdfgNumber), strconv.Itoa(rDFG.RemoteRdfgNumber), nil
 		}
 	}
 
 	// Create new RDFG pair, no pre-existing pair for symIDs and rep mode
 	nextFreeRDFG, err := pmaxClient.GetFreeLocalAndRemoteRDFg(ctx, localSymID, "")
+	localRDFG := 0
+	remoteRDFG := 0
 	if err != nil {
-		log.Error(fmt.Sprintf("Failed to fetch free RDF groups, Error (%s)", err.Error()))
-		return "", "", err
+		if strings.Contains(err.Error(), "No SRDF Groups found for Array") {
+			log.Warnf("Failed to fetch free RDF groups on array: %s, will use default group number: %d", localSymID, DefaultRDF)
+			localRDFG = DefaultRDF
+		} else {
+			log.Error(fmt.Sprintf("Failed to fetch free RDF groups, Error (%s)", err.Error()))
+			return "", "", err
+		}
+	} else {
+		localRDFG = nextFreeRDFG.LocalRdfGroup[0]
 	}
-	localRDFG := nextFreeRDFG.LocalRdfGroup[0]
+
 	// Create new RDFG pair, no pre-existing pair for symIDs and rep mode
 	nextFreeRDFG, err = pmaxClient.GetFreeLocalAndRemoteRDFg(ctx, remoteSymID, "")
 	if err != nil {
-		log.Error(fmt.Sprintf("Failed to fetch free RDF groups, Error (%s)", err.Error()))
-		return "", "", err
+		if strings.Contains(err.Error(), "No SRDF Groups found for Array") {
+			log.Warnf("Failed to fetch free RDF groups on array: %s, will use default group number: %d", remoteSymID, DefaultRDF)
+			remoteRDFG = DefaultRDF
+		} else {
+			log.Error(fmt.Sprintf("Failed to fetch free RDF groups, Error (%s)", err.Error()))
+			return "", "", err
+		}
+	} else {
+		remoteRDFG = nextFreeRDFG.LocalRdfGroup[0]
 	}
-	remoteRDFG := nextFreeRDFG.LocalRdfGroup[0]
 	log.Infof("Fetched Local RDFg:(%d), remote RDFg:(%d)", localRDFG, remoteRDFG)
 
 	// We are only bothered about ONLINE RDF dirs, so get only those
@@ -210,6 +232,7 @@ func (s *service) GetOrCreateRDFGroup(ctx context.Context, localSymID string, re
 
 // GetRDFDevicePairInfo returns the RDF informtaion of a volume
 func (s *service) GetRDFDevicePairInfo(ctx context.Context, symID, rdfGrpNo, localVolID string, pmaxClient pmax.Pmax) (*types.RDFDevicePair, error) {
+	log := log.WithContext(ctx)
 	rdfPair, err := pmaxClient.GetRDFDevicePairInfo(ctx, symID, rdfGrpNo, localVolID)
 	if err != nil {
 		log.Error(fmt.Sprintf("Failed to fetch rdf pair information for (%s) - Error (%s)", localVolID, err.Error()))
@@ -221,6 +244,7 @@ func (s *service) GetRDFDevicePairInfo(ctx context.Context, symID, rdfGrpNo, loc
 // ProtectStorageGroup protects a local SG based on the given RDF Information
 // This will create a remote storage group, RDF pairs and add the volumes in their respective SG
 func (s *service) ProtectStorageGroup(ctx context.Context, symID, remoteSymID, storageGroupName, remoteStorageGroupName, remoteServiceLevel, rdfGrpNo, rdfMode, localVolID, reqID string, bias bool, pmaxClient pmax.Pmax) error {
+	log := log.WithContext(ctx)
 	lockHandle := fmt.Sprintf("%s%s", storageGroupName, symID)
 	lockNum := RequestLock(lockHandle, reqID)
 	defer ReleaseLock(lockHandle, reqID, lockNum)
@@ -263,6 +287,7 @@ func (s *service) ProtectStorageGroup(ctx context.Context, symID, remoteSymID, s
 // As CreateSGReplica needs that no storage group should be present on remote sym.
 // So we delete the remote SG only if it has zero volumes.
 func (s *service) verifyAndDeleteRemoteStorageGroup(ctx context.Context, remoteSymID, remoteStorageGroupName string, pmaxClient pmax.Pmax) error {
+	log := log.WithContext(ctx)
 	sg, err := pmaxClient.GetStorageGroup(ctx, remoteSymID, remoteStorageGroupName)
 	if err != nil || sg == nil {
 		log.Debug("Can not found Remote storage group, proceed")
@@ -292,6 +317,7 @@ func (s *service) GetRemoteVolumeID(ctx context.Context, symID, rdfGrpNo, localV
 
 // VerifyProtectedGroupDirection returns the direction of protected SG
 func (s *service) VerifyProtectedGroupDirection(ctx context.Context, symID, localProtectionGroupID, localRdfGrpNo string, pmaxClient pmax.Pmax) error {
+	log := log.WithContext(ctx)
 	sgRDFInfo, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, localProtectionGroupID, localRdfGrpNo)
 	if err != nil {
 		log.Errorf("GetStorageGroupRDFInfo failed:(%s)", err.Error())
@@ -311,7 +337,7 @@ func GetRDFInfoFromSGID(storageGroupID string) (namespace string, rDFGno string,
 	compLength := len(sgComponents)
 	if compLength < 5 || !strings.Contains(storageGroupID, CsiRepSGPrefix) {
 		err = fmt.Errorf("The protected SGID %s is not formed correctly", storageGroupID)
-		return
+		return namespace, rDFGno, repMode, err
 	}
 	if compLength > 5 {
 		// this is ASYNC/SYNC rep sg, it will have namespace
@@ -319,7 +345,7 @@ func GetRDFInfoFromSGID(storageGroupID string) (namespace string, rDFGno string,
 	}
 	rDFGno = sgComponents[compLength-2]
 	repMode = sgComponents[compLength-1]
-	return
+	return namespace, rDFGno, repMode, err
 }
 
 func isValidStateForFailOver(state string) bool {
@@ -365,6 +391,7 @@ func getStateAndSRDFPersonality(psg *types.StorageGroupRDFG) (string, bool, bool
 func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, pmaxClient pmax.Pmax, toLocal,
 	unplanned, withoutSwap bool,
 ) (bool, *types.StorageGroupRDFG, error) {
+	log := log.WithContext(ctx)
 	psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, sgName, rdfGrpNo)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
@@ -400,7 +427,7 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 					return false, nil, nil
 				} else if state == FailedOver {
 					// Idempotent operation, return success
-					log.Warningf("SG Name: %s, state: %s already in the desired state", sgName, state)
+					log.Warnf("SG Name: %s, state: %s already in the desired state", sgName, state)
 					return true, psg, nil
 				}
 				// We try a best effort failover & if it doesn't succeed, then return a failed precondition
@@ -435,12 +462,12 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 				if state == Consistent {
 					// Already reprotected at site
 					// log a warning but don't throw an error
-					log.Warningf("SG name: %s, state: %s, volumes already protected at the desired site. Nothing to do here",
+					log.Warnf("SG name: %s, state: %s, volumes already protected at the desired site. Nothing to do here",
 						sgName, state)
 					return true, psg, nil
 				} else if state == Suspended {
 					// idempotent call
-					log.Warningf("SG name: %s, state: %s, idempotent operation. Nothing to do here", sgName, state)
+					log.Warnf("SG name: %s, state: %s, idempotent operation. Nothing to do here", sgName, state)
 					return true, psg, nil
 				}
 				// We don't know what to do here
@@ -488,7 +515,7 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 	} else {
 		if (isR1 && toLocal) || (!isR1 && !toLocal) {
 			// Nothing to do here
-			log.Warningf("SG name: %s, state: %s, idempotent operation. Nothing to do here", sgName, state)
+			log.Warnf("SG name: %s, state: %s, idempotent operation. Nothing to do here", sgName, state)
 			return true, psg, nil
 		}
 		err = pmaxClient.ExecuteReplicationActionOnSG(ctx, symID, FailOver, sgName, rdfGrpNo, true, true, false)
@@ -507,6 +534,7 @@ func (s *service) Failover(ctx context.Context, symID, sgName, rdfGrpNo string, 
 func (s *service) Failback(ctx context.Context, symID, sgName, rdfGrpNo string, pmaxClient pmax.Pmax,
 	toLocal bool,
 ) (bool, *types.StorageGroupRDFG, error) {
+	log := log.WithContext(ctx)
 	psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, sgName, rdfGrpNo)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
@@ -533,12 +561,12 @@ func (s *service) Failback(ctx context.Context, symID, sgName, rdfGrpNo string, 
 		// Both these scenarios are valid
 		if state == Consistent || state == Synchronized {
 			// Already in desired state
-			log.Warningf("SG name: %s, state: %s, idempotent operation. Nothing to do here", sgName, state)
+			log.Warnf("SG name: %s, state: %s, idempotent operation. Nothing to do here", sgName, state)
 			return true, psg, nil
 		}
 		if state != FailedOver {
 			// Log a warning and do a best effort failback
-			log.Warningf("SG name: %s, state: %s, incorrect state for performing failback as it may fail", sgName, state)
+			log.Warnf("SG name: %s, state: %s, incorrect state for performing failback as it may fail", sgName, state)
 		}
 		err := pmaxClient.ExecuteReplicationActionOnSG(ctx, symID, FailBack, sgName, rdfGrpNo, false, true, false)
 		if err != nil {
@@ -567,6 +595,7 @@ func (s *service) Failback(ctx context.Context, symID, sgName, rdfGrpNo string, 
 func (s *service) Reprotect(ctx context.Context, symID, sgName, rdfGrpNo string, pmaxClient pmax.Pmax,
 	toLocal bool,
 ) (bool, *types.StorageGroupRDFG, error) {
+	log := log.WithContext(ctx)
 	psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, sgName, rdfGrpNo)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
@@ -593,13 +622,13 @@ func (s *service) Reprotect(ctx context.Context, symID, sgName, rdfGrpNo string,
 		// These are the valid states for running a reprotect
 		if state == Consistent || state == Synchronized {
 			// Nothing to do, idempotent call
-			log.Warningf("SG name: %s, state: %s, idempotent operation. Nothing to do here", sgName, state)
+			log.Warnf("SG name: %s, state: %s, idempotent operation. Nothing to do here", sgName, state)
 			return true, psg, nil
 		}
 		if state == Suspended || state == Split {
 			log.Infof("SG name: %s, state: %s, Attempting to resume replication", sgName, state)
 		} else {
-			log.Warningf("SG name: %s, state: %s, incorrect state for performing Reprotect as it may fail",
+			log.Warnf("SG name: %s, state: %s, incorrect state for performing Reprotect as it may fail",
 				sgName, state)
 		}
 		err := pmaxClient.ExecuteReplicationActionOnSG(ctx, symID, Resume, sgName, rdfGrpNo,
@@ -630,6 +659,7 @@ func (s *service) Reprotect(ctx context.Context, symID, sgName, rdfGrpNo string,
 func (s *service) Swap(ctx context.Context, symID, sgName, rdfGrpNo string, pmaxClient pmax.Pmax,
 	toLocal bool,
 ) (bool, *types.StorageGroupRDFG, error) {
+	log := log.WithContext(ctx)
 	psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, sgName, rdfGrpNo)
 	if err != nil {
 		errorMsg := fmt.Sprintf("Failed to fetch replication state for SG (%s) - Error (%s)", sgName, err.Error())
@@ -669,7 +699,7 @@ func (s *service) Swap(ctx context.Context, symID, sgName, rdfGrpNo string, pmax
 			// Swap & R1
 			// if state is suspended, then it is an idempotent call
 			if state == Suspended {
-				log.Warningf("SG name: %s, state: %s, idempotent operation. Nothing to do here", sgName, state)
+				log.Warnf("SG name: %s, state: %s, idempotent operation. Nothing to do here", sgName, state)
 				return true, psg, nil
 			}
 			// Any other state, we don't know what to do
@@ -683,6 +713,7 @@ func (s *service) Swap(ctx context.Context, symID, sgName, rdfGrpNo string, pmax
 }
 
 func suspend(ctx context.Context, symID, sgName, rdfGrpNo string, pmaxClient pmax.Pmax) error {
+	log := log.WithContext(ctx)
 	inDesiredState, err := validateRDFState(ctx, symID, Suspend, sgName, rdfGrpNo, pmaxClient)
 	if err != nil {
 		return err
@@ -704,6 +735,7 @@ func (s *service) Suspend(ctx context.Context, symID, sgName, rdfGrpNo string, p
 }
 
 func establish(ctx context.Context, symID, sgName, rdfGrpNo string, bias bool, pmaxClient pmax.Pmax) error {
+	log := log.WithContext(ctx)
 	inDesiredState, err := validateRDFState(ctx, symID, Establish, sgName, rdfGrpNo, pmaxClient)
 	if err != nil {
 		return err
@@ -726,6 +758,7 @@ func (s *service) Establish(ctx context.Context, symID, sgName, rdfGrpNo string,
 
 // Resume validates current state of replication & executes 'Resume' on storage group replication link
 func (s *service) Resume(ctx context.Context, symID, sgName, rdfGrpNo string, pmaxClient pmax.Pmax) error {
+	log := log.WithContext(ctx)
 	inDesiredState, err := validateRDFState(ctx, symID, Resume, sgName, rdfGrpNo, pmaxClient)
 	if err != nil {
 		return err
@@ -743,6 +776,7 @@ func (s *service) Resume(ctx context.Context, symID, sgName, rdfGrpNo string, pm
 
 // ValidateRDFState checks if the given action is permissible on the protected storage group based on its current state
 func validateRDFState(ctx context.Context, symID, action, sgName, rdfGrpNo string, pmaxClient pmax.Pmax) (bool, error) {
+	log := log.WithContext(ctx)
 	// validate appropriateness of current link state to the action
 	psg, err := pmaxClient.GetStorageGroupRDFInfo(ctx, symID, sgName, rdfGrpNo)
 	if err != nil {
@@ -781,6 +815,7 @@ func validateRDFState(ctx context.Context, symID, action, sgName, rdfGrpNo strin
 }
 
 func (s *service) addVolumesToProtectedStorageGroup(ctx context.Context, reqID, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID string, force bool, volID string, pmaxClient pmax.Pmax) error {
+	log := log.WithContext(ctx)
 	lockHandle := fmt.Sprintf("%s%s", localProtectionGroupID, symID)
 	lockNum := RequestLock(lockHandle, reqID)
 	defer ReleaseLock(lockHandle, reqID, lockNum)

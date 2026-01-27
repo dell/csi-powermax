@@ -27,12 +27,14 @@ import (
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 
+	"github.com/dell/csmlog"
 	"github.com/mitchellh/mapstructure"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/spf13/viper"
 	corev1 "k8s.io/api/core/v1"
 )
+
+var log = csmlog.GetLogger()
 
 // ConfigManager is an interface used for testing, satisfied by viper.Viper.
 //
@@ -210,26 +212,26 @@ func (pc *ProxyConfig) DeepCopy() *ProxyConfig {
 
 // Log - logs the Proxy Config
 func (pc *ProxyConfig) Log() {
-	log.Println("---------------------")
-	log.Printf("port ::: %+s\n", pc.Port)
-	log.Println("---------------------")
-	log.Println("managedArrays")
+	log.Infof("---------------------")
+	log.Infof("port ::: %+s", pc.Port)
+	log.Infof("---------------------")
+	log.Infof("managedArrays")
 	for key, val := range pc.managedArrays {
-		log.Printf("%s ::: %+v\n", key, val)
+		log.Infof("%s ::: %+v", key, val)
 	}
-	log.Println("---------------------")
-	log.Println("---------------------")
-	log.Println("managementServers")
+	log.Infof("---------------------")
+	log.Infof("---------------------")
+	log.Infof("managementServers")
 	for key, val := range pc.managementServers {
-		log.Printf("%v ::: %+v\n", key, val)
+		log.Infof("%v ::: %+v", key, val)
 	}
-	log.Println("---------------------")
-	log.Println("---------------------")
-	log.Println("proxyCredentials")
+	log.Infof("---------------------")
+	log.Infof("---------------------")
+	log.Infof("proxyCredentials")
 	for key, val := range pc.proxyCredentials {
-		log.Printf("%s ::: %+v\n", key, val)
+		log.Infof("%s ::: %+v", key, val)
 	}
-	log.Println("---------------------")
+	log.Infof("---------------------")
 }
 
 func (pc *ProxyConfig) updateProxyCredentials(creds common.Credentials, storageArrayIdentifier string) {
@@ -915,7 +917,7 @@ func ReadConfigFromSecret(vs *viper.Viper) (*ProxySecret, error) {
 	secretFilePath := getEnv(common.EnvSecretFilePath, common.DefaultSecretPath)
 	secretFileName := filepath.Base(secretFilePath)
 	secretFileDir := filepath.Dir(secretFilePath)
-	log.Printf("Reading secret: %s from path: %s \n", secretFileName, secretFileDir)
+	log.Infof("Reading secret: %s from path: %s ", secretFileName, secretFileDir)
 	vs.SetConfigName(secretFileName)
 	vs.SetConfigType("yaml")
 	vs.AddConfigPath(secretFileDir)
@@ -933,7 +935,7 @@ func ReadConfigFromSecret(vs *viper.Viper) (*ProxySecret, error) {
 
 // ReadParamsConfigMapFromPath - read config map for params
 func ReadParamsConfigMapFromPath(configFilePath string, vcp ConfigManager) (*ParamsConfigMap, error) {
-	log.Printf("Reading params config map: %s from path: %s", filepath.Base(configFilePath), filepath.Dir(configFilePath))
+	log.Infof("Reading params config map: %s from path: %s", filepath.Base(configFilePath), filepath.Dir(configFilePath))
 
 	vcp.SetConfigName(filepath.Base(configFilePath))
 	vcp.SetConfigType("yaml")

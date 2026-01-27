@@ -278,11 +278,16 @@ Feature: PowerMax CSI Interface
     And I induce error <induced>
     When I call RDF enabled CreateVolume "volume2" in namespace "test", mode "ASYNC" and RDFGNo 13 from volume
     Then the error contains <errormsg>
+    
     Examples:
-      | induced               | errormsg                                   |
-      | "none"                | "none"                                     |
-      | "LinkSnapshotError"   | "Failed to create SRDF volume from volume" |
-      | "MaxSnapSessionError" | "Failed to create SRDF volume from volume" |
+      | induced                | errorMsg                          |
+      | none                   |                                   |
+      | noVolumeSource         | missing source volume ID         |
+      | nonExistentVolume      | source volume does not exist     |
+      | invalidVolumeID        | invalid volume ID provided       |
+      | wrongCapacity          | capacity mismatch error          |
+      | wrongStoragePool       | invalid storage pool specified   |
+
 
   @srdf
   @v2.9.0
@@ -343,10 +348,13 @@ Feature: PowerMax CSI Interface
     When I call RDF enabled CreateVolume "volume2" in namespace "test", mode "METRO" and RDFGNo 14 from volume
     Then the error contains <errormsg>
     Examples:
-      | induced               | errormsg                                   |
-      | "none"                | "none"                                     |
-      | "LinkSnapshotError"   | "Failed to create SRDF volume from volume" |
-      | "MaxSnapSessionError" | "Failed to create SRDF volume from volume" |
+      | induced                | errorMsg                          |
+      | none                   |                                   |
+      | noVolumeSource         | missing source volume ID         |
+      | nonExistentVolume      | source volume does not exist     |
+      | invalidVolumeID        | invalid volume ID provided       |
+      | wrongCapacity          | capacity mismatch error          |
+      | wrongStoragePool       | invalid storage pool specified   |
 
   @srdf
   @v2.9.0

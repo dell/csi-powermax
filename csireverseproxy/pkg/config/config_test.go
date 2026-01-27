@@ -27,7 +27,6 @@ import (
 	mock_config "github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config/mocks"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"

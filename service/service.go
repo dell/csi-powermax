@@ -1,5 +1,5 @@
 /*
- Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -26,24 +26,25 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dell/csmlog"
 	"github.com/dell/gonvme"
 
 	"github.com/dell/csi-powermax/v2/k8sutils"
 
 	"github.com/dell/dell-csi-extensions/podmon"
 	"github.com/fsnotify/fsnotify"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 
 	"google.golang.org/grpc"
 
-	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/dell/gocsi"
 	csictx "github.com/dell/gocsi/context"
 	"github.com/dell/goiscsi"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	log "github.com/sirupsen/logrus"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -72,21 +73,28 @@ const (
 	PortGroups                 = "X_CSI_POWERMAX_PORTGROUPS"
 	Protocol                   = "X_CSI_TRANSPORT_PROTOCOL"
 	// PmaxEndPoint               = "X_CSI_POWERMAX_ENDPOINT"
-	ManagedArrays   = "X_CSI_MANAGED_ARRAYS"
-	defaultCertFile = "tls.crt"
+	ManagedArrays        = "X_CSI_MANAGED_ARRAYS"
+	defaultCertFile      = "tls.crt"
+	defaultSgVolumeLimit = 4000
 )
 
 type contextKey string // specific string type used for context keys
 
 var inducedMockReverseProxy bool // for testing only
 
+// Update when the manifest version changes.
+var ManifestSemver string
+
 // Manifest is the SP's manifest.
 var Manifest = map[string]string{
-	"url":    "http://github.com/dell/csi-powermax",
-	"semver": core.SemVer,
-	"commit": core.CommitSha32,
+	"semver": ManifestSemver,
 	"formed": core.CommitTime.Format(time.RFC1123),
 }
+
+var (
+	log           = csmlog.GetLogger()
+	sgVolumeLimit = defaultSgVolumeLimit
+)
 
 // Service is the CSI Mock service provider.
 type Service interface {
@@ -147,6 +155,8 @@ type Opts struct {
 	PodmonPollingFreq          string // indicates the polling frequency to check array connectivity
 	TLSCertDir                 string
 	StorageArrays              map[string]StorageArrayConfig
+	dynamicSGEnabled           bool
+	sgVolumeLimit              int
 }
 
 // StorageArrayConfig represents the configuration of a storage array in the config file
@@ -239,20 +249,21 @@ func updateDriverConfigParams(v *viper.Viper) {
 	if v.IsSet(CSILogFormatParam) && logFormatFromConfig != "" {
 		log.Infof("Read CSI_LOG_FORMAT: %s from configuration file", logFormatFromConfig)
 	}
-	var formatter log.Formatter
+	var formatter logrus.Formatter
+
 	// Use text logger as default
-	formatter = &log.TextFormatter{
+	formatter = &logrus.TextFormatter{
 		DisableColors: true,
 		FullTimestamp: true,
 	}
 	if strings.EqualFold(logFormatFromConfig, "json") {
-		formatter = &log.JSONFormatter{
+		formatter = &logrus.JSONFormatter{
 			TimestampFormat: time.RFC3339Nano,
 		}
 	} else if !strings.EqualFold(logFormatFromConfig, "text") && (logFormatFromConfig != "") {
-		log.Warningf("Unsupported CSI_LOG_FORMAT: %s supplied. Defaulting to text", logFormatFromConfig)
+		log.Warnf("Unsupported CSI_LOG_FORMAT: %s supplied. Defaulting to text", logFormatFromConfig)
 	}
-	level := log.DebugLevel // Use debug as default
+	level := csmlog.DebugLevel // Use debug as default
 	if v.IsSet(CSILogLevelParam) {
 		logLevel := v.GetString(CSILogLevelParam)
 		if logLevel != "" {
@@ -260,23 +271,23 @@ func updateDriverConfigParams(v *viper.Viper) {
 			log.Infof("Read CSI_LOG_LEVEL: %s from config file", logLevel)
 			var err error
 
-			l, err := log.ParseLevel(logLevel)
+			l, err := csmlog.ParseLevel(logLevel)
 			if err != nil {
-				log.WithError(err).Errorf("CSI_LOG_LEVEL %s value not recognized, error: %s, Setting to default: %s",
+				log.Errorf("CSI_LOG_LEVEL %s value not recognized, error: %s, Setting to default: %s",
 					logLevel, err.Error(), level)
 			} else {
 				level = l
 			}
 		}
 	} else {
-		log.Warning("Couldn't read CSI_LOG_LEVEL from config file. Using debug level as default")
+		log.Warn("Couldn't read CSI_LOG_LEVEL from config file. Using debug level as default")
 	}
 	setLogFormatAndLevel(formatter, level)
 	// set X_CSI_LOG_LEVEL so that gocsi doesn't overwrite the loglevel set by us
 	_ = os.Setenv(gocsi.EnvVarLogLevel, level.String())
 }
 
-func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
+func setLogFormatAndLevel(logFormat logrus.Formatter, level csmlog.Level) {
 	log.SetFormatter(logFormat)
 	log.Infof("Setting log level to %v", level)
 	log.SetLevel(level)
@@ -293,13 +304,13 @@ func setLogFormatAndLevel(logFormat log.Formatter, level log.Level) {
 // Otherwise, it processes each storage array, extracting labels and parameters.
 func GetStorageArrays(secretParams *viper.Viper, opts *Opts) {
 	if secretParams.Get("storagearrays") == nil {
-		log.Println("No storage arrays declared.")
+		log.Info("No storage arrays declared.")
 		return
 	}
 	storageArrays := secretParams.Get("storagearrays").([]interface{})
 
 	if len(storageArrays) == 0 {
-		log.Println("No storage array declared.")
+		log.Info("No storage array declared.")
 	} else {
 		for _, storageArray := range storageArrays {
 			storageArrayMap := storageArray.(map[string]interface{})
@@ -322,6 +333,7 @@ func GetStorageArrays(secretParams *viper.Viper, opts *Opts) {
 func (s *service) BeforeServe(
 	ctx context.Context, _ *gocsi.StoragePlugin, _ net.Listener,
 ) error {
+	log := log.WithContext(ctx)
 	defer func() {
 		fields := map[string]interface{}{
 			"endpoint":                 s.opts.Endpoint,
@@ -377,7 +389,7 @@ func (s *service) BeforeServe(
 
 	configFilePath, ok := csictx.LookupEnv(ctx, EnvConfigFilePath)
 	if !ok {
-		log.Warningf("Unable to read X_CSI_POWERMAX_CONFIG_PATH from env. Continuing with default values")
+		log.Warnf("Unable to read X_CSI_POWERMAX_CONFIG_PATH from env. Continuing with default values")
 	}
 
 	paramsViper := viper.New()
@@ -387,19 +399,19 @@ func (s *service) BeforeServe(
 	err := paramsViper.ReadInConfig()
 	// if unable to read configuration file, set defaults
 	if err != nil {
-		log.WithError(err).Error("unable to read config file")
-		setLogFormatAndLevel(&log.TextFormatter{
+		log.Errorf("Unable to read config file: %v", err)
+		setLogFormatAndLevel(&logrus.TextFormatter{
 			DisableColors: true,
 			FullTimestamp: true,
-		}, log.DebugLevel)
+		}, csmlog.DebugLevel)
 		// set X_CSI_LOG_LEVEL so that gocsi doesn't overwrite the loglevel set by us
-		_ = os.Setenv(gocsi.EnvVarLogLevel, log.DebugLevel.String())
+		_ = os.Setenv(gocsi.EnvVarLogLevel, csmlog.DebugLevel.String())
 	} else {
 		updateDriverConfigParams(paramsViper)
 	}
 	paramsViper.WatchConfig()
 	paramsViper.OnConfigChange(func(e fsnotify.Event) {
-		log.Println("Received event for config file change:", e.Name)
+		log.Info("Received event for config file change: " + e.Name)
 		updateDriverConfigParams(paramsViper)
 	})
 
@@ -415,11 +427,11 @@ func (s *service) BeforeServe(
 		// Reading Topology filters from the config file
 		topoConfigFilePath, ok := csictx.LookupEnv(ctx, EnvTopoConfigFilePath)
 		if !ok {
-			log.Warningf("Unable to read X_CSI_POWERMAX_TOPOLOGY_CONFIG_PATH from env. Continuing with default topology keys")
+			log.Warnf("Unable to read X_CSI_POWERMAX_TOPOLOGY_CONFIG_PATH from env. Continuing with default topology keys")
 		} else {
 			s.topologyConfig, err = ReadConfig(topoConfigFilePath)
 			if err != nil {
-				log.Warningf("continuing with default topology keys")
+				log.Warnf("continuing with default topology keys")
 			} else {
 				log.Debug("processing topology config map")
 				s.ParseConfig()
@@ -471,7 +483,7 @@ func (s *service) BeforeServe(
 			opts.User = User
 			opts.Password = Password
 		} else {
-			log.Println("No management servers found.")
+			log.Info("No management servers found.")
 		}
 
 		opts.StorageArrays = make(map[string]StorageArrayConfig)
@@ -527,7 +539,7 @@ func (s *service) BeforeServe(
 	if MaxVolumesPerNode, ok := csictx.LookupEnv(ctx, EnvMaxVolumesPerNode); ok {
 		val, err := strconv.ParseInt(MaxVolumesPerNode, 10, 64)
 		if err != nil {
-			log.Warningf("error while parsing env variable '%s', %s, defaulting to 0", EnvMaxVolumesPerNode, err)
+			log.Warnf("error while parsing env variable '%s', %s, defaulting to 0", EnvMaxVolumesPerNode, err)
 			opts.MaxVolumesPerNode = 0
 		} else {
 			opts.MaxVolumesPerNode = val
@@ -585,8 +597,7 @@ func (s *service) BeforeServe(
 		if v, ok := csictx.LookupEnv(ctx, n); ok {
 			b, err := strconv.ParseBool(v)
 			if err != nil {
-				log.WithField(n, v).Debug(
-					"invalid boolean value. defaulting to false")
+				log.Debugf("invalid boolean value (%s) for %s. defaulting to false", v, n)
 				return false
 			}
 			return b
@@ -702,6 +713,23 @@ func (s *service) BeforeServe(
 		}
 	}
 
+	if dynamicSGEnabled, ok := csictx.LookupEnv(ctx, EnvDynamicSGEnabled); ok && dynamicSGEnabled == "true" {
+		s.opts.dynamicSGEnabled = true
+	}
+	log.Infof("Dynamic SG enabled: %v", s.opts.dynamicSGEnabled)
+
+	if s.opts.dynamicSGEnabled && s.isController() {
+		SgVolLimitStr, ok := csictx.LookupEnv(ctx, EnvSGVolumeLimit)
+		if ok {
+			sgVolLimit, err := strconv.Atoi(SgVolLimitStr)
+			if err != nil {
+				log.Errorf("unable to parse %s as duration: %s", EnvSGVolumeLimit, err.Error())
+			} else {
+				sgVolumeLimit = sgVolLimit
+			}
+		}
+		log.Infof("%s set to %v", EnvSGVolumeLimit, sgVolumeLimit)
+	}
 	return nil
 }
 
@@ -736,7 +764,7 @@ func readNodesRules(connections []NodeConfig) map[string][]string {
 				array = ""
 			}
 			if len(arrayHW) < 2 {
-				log.Warningf("incorrect config for %s skipping rule (%s)", nodeName, rule)
+				log.Warnf("incorrect config for %s skipping rule (%s)", nodeName, rule)
 				continue
 			}
 			hws := strings.Split(arrayHW[1], "/")
@@ -761,13 +789,13 @@ func ReadConfig(configPath string) (*TopologyConfig, error) {
 	err := topoViper.ReadInConfig()
 	// if unable to read configuration file, set defaults
 	if err != nil {
-		log.WithError(err).Error("unable to read topology config file")
+		log.Errorf("unable to read topology config file: %s", err.Error())
 		return nil, err
 	}
 	var config TopologyConfig
 	err = topoViper.Unmarshal(&config)
 	if err != nil {
-		log.WithError(err).Error("unable to unmarshal topology config")
+		log.Errorf("unable to unmarshal topology config: %s", err.Error())
 		return nil, err
 	}
 	return &config, nil
@@ -798,7 +826,7 @@ func (s *service) getProxySettingsFromEnv() (string, string, bool) {
 			if sp, ok := csictx.LookupEnv(context.Background(), servicePortEnv); ok {
 				servicePort = sp
 				if serviceHost == "" || servicePort == "" {
-					log.Warning("Either ServiceHost and ServicePort is set to empty")
+					log.Warn("Either ServiceHost and ServicePort is set to empty")
 					return "", "", false
 				}
 				return serviceHost, servicePort, true
@@ -851,6 +879,7 @@ func (s *service) parseCommaSeperatedList(values string) ([]string, error) {
 }
 
 func (s *service) createPowerMaxClients(ctx context.Context) error {
+	log := log.WithContext(ctx)
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	endPoint := ""
@@ -862,7 +891,7 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 
 	// Create our PowerMax API client, if needed
 	if s.adminClient == nil {
-		applicationName := ApplicationName + "/" + "v" + core.SemVer
+		applicationName := ApplicationName + "/" + "v" + ManifestSemver
 		tlsCertFile := filepath.Join(s.opts.TLSCertDir, defaultCertFile)
 		c, err := pmax.NewClientWithArgs(endPoint, applicationName, s.opts.Insecure, !s.opts.DisableCerts, tlsCertFile)
 		if err != nil {
@@ -927,6 +956,14 @@ func (s *service) getCSIVolume(vol *types.Volume) *csi.Volume {
 	return vi
 }
 
+func (s *service) buildCSIVolume(vol *types.VolumeEnhanced) *csi.Volume {
+	vi := &csi.Volume{
+		VolumeId:      vol.ID,
+		CapacityBytes: int64(vol.CapCyl) * cylinderSizeInBytes,
+	}
+	return vi
+}
+
 func (s *service) getClusterPrefix() string {
 	return s.opts.ClusterPrefix
 }
@@ -938,17 +975,17 @@ func (s *service) getDriverName() string {
 	return s.opts.DriverName
 }
 
-func setLogFields(ctx context.Context, fields log.Fields) context.Context {
+func setLogFields(ctx context.Context, fields csmlog.Fields) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	return context.WithValue(ctx, contextKey(logFields), fields)
 }
 
-func getLogFields(ctx context.Context) log.Fields {
-	fields, ok := ctx.Value(contextKey(logFields)).(log.Fields)
+func getLogFields(ctx context.Context) csmlog.Fields {
+	fields, ok := ctx.Value(contextKey(logFields)).(csmlog.Fields)
 	if !ok {
-		fields = log.Fields{}
+		fields = csmlog.Fields{}
 	}
 
 	csiReqID, ok := ctx.Value(csictx.RequestIDKey).(string)
@@ -962,6 +999,7 @@ func getLogFields(ctx context.Context) log.Fields {
 
 // SetPollingFrequency reads the pollingFrequency from Env, sets default vale if ENV not found
 func (s *service) SetPollingFrequency(ctx context.Context) int64 {
+	log := log.WithContext(ctx)
 	var pollingFrequency int64
 	s.pollingFrequencyMutex.Lock()
 	defer s.pollingFrequencyMutex.Unlock()
@@ -985,6 +1023,7 @@ func (s *service) GetPollingFrequency() int64 {
 }
 
 func setArrayConfigEnvs(ctx context.Context) error {
+	log := log.WithContext(ctx)
 	log.Info("---------Inside setArrayConfigEnvs function----------")
 	// set additional driver configs moved from envs.
 	configFilePath, ok := csictx.LookupEnv(ctx, EnvArrayConfigPath)
@@ -997,20 +1036,20 @@ func setArrayConfigEnvs(ctx context.Context) error {
 	err := paramsViper.ReadInConfig()
 	// if unable to read configuration file, set defaults
 	if err != nil {
-		log.WithError(err).Error("unable to read array config file")
-		setLogFormatAndLevel(&log.TextFormatter{
+		log.Errorf("unable to read array config file: %s", err.Error())
+		setLogFormatAndLevel(&logrus.TextFormatter{
 			DisableColors: true,
 			FullTimestamp: true,
-		}, log.DebugLevel)
+		}, csmlog.DebugLevel)
 	}
 	portgroups := paramsViper.GetString(PortGroups)
 	if portgroups != "" {
-		log.Info("Read PortGroups from config file:", portgroups)
+		log.Info("Read PortGroups from config file: " + portgroups)
 		_ = os.Setenv(PortGroups, portgroups)
 	}
 	protocol := paramsViper.GetString(Protocol)
 	if protocol != "" {
-		log.Info("Read protocol from config file:", protocol)
+		log.Info("Read protocol from config file: " + protocol)
 		_ = os.Setenv(Protocol, protocol)
 	}
 	endpoint := paramsViper.GetString(EnvEndpoint)
@@ -1020,12 +1059,12 @@ func setArrayConfigEnvs(ctx context.Context) error {
 		if strings.HasSuffix(endpoint, "/") {
 			endpoint = strings.TrimRight(endpoint, "/")
 		}
-		log.Info("Read endpoint from config file:", endpoint)
+		log.Info("Read endpoint from config file: " + endpoint)
 		_ = os.Setenv(EnvEndpoint, endpoint)
 	}
 	managedArrays := paramsViper.GetString(ManagedArrays)
 	if managedArrays != "" {
-		log.Info("Managed arrays from config file:", managedArrays)
+		log.Info("Managed arrays from config file: " + managedArrays)
 		_ = os.Setenv(ManagedArrays, managedArrays)
 	}
 
