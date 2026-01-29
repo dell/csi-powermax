@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
-	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/dell/csmlog"
 	"github.com/dell/gofsutil"
-	log "github.com/sirupsen/logrus"
+	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -65,8 +65,7 @@ func GetDevice(path string) (*Device, error) {
 	if unitTestEmulateBlockDevice {
 		// For unit testing only, emulate a block device on windows
 		dm = dm | os.ModeDevice
-	}
-	if dm&os.ModeDevice == 0 {
+	} else if dm&os.ModeDevice == 0 { // Execute only if not in unit test
 		return nil, fmt.Errorf(
 			"%s is not a block device", path)
 	}
@@ -146,7 +145,7 @@ func publishVolume(
 	// MOUNT only ===================================================================================================
 	// Path to mount device to
 
-	f := log.Fields{
+	f := csmlog.Fields{
 		"id":           id,
 		"volumePath":   sysDevice.FullPath,
 		"device":       sysDevice.RealDev,
@@ -155,6 +154,7 @@ func publishVolume(
 		"privateMount": privTgt,
 	}
 	ctx := context.WithValue(context.Background(), gofsutil.ContextKey("RequestID"), reqID)
+	log := log.WithContext(ctx)
 
 	// Check if device is already mounted
 	devMnts, err := getDevMounts(sysDevice)
@@ -278,7 +278,7 @@ func publishVolume(
 					rwo = "ro"
 				}
 				if rwo != "" && !contains(m.Opts, rwo) {
-					log.WithFields(f).Printf("mount %#v rwo %s\n", m, rwo)
+					log.WithFields(f).Infof("mount %#v rwo %s", m, rwo)
 					return status.Error(codes.Internal, "volume previously published with different mount options")
 
 				}
@@ -322,12 +322,17 @@ func publishVolume(
 
 // cleanupPrivateTarget unmounts and removes the private directory for the retry so clean start next time.
 func cleanupPrivateTarget(reqID, privTgt string) {
-	log.WithField("CSIRequestID", reqID).WithField("privTgt", privTgt).Info("Cleaning up private target")
+	fields := map[string]interface{}{
+		"CSIRequestID": reqID,
+		"privTgt":      privTgt,
+	}
+	log := log.WithFields(fields)
+	log.Info("Cleaning up private target")
 	if privErr := gofsutil.Unmount(context.Background(), privTgt); privErr != nil {
-		log.WithField("CSIRequestID", reqID).Printf("Error unmounting privTgt %s: %s", privTgt, privErr)
+		log.Errorf("Error unmounting privTgt %s: %s", privTgt, privErr)
 	}
 	if privErr := removeWithRetry(privTgt); privErr != nil {
-		log.WithField("CSIRequestID", reqID).Printf("Error removing privTgt %s: %s", privTgt, privErr)
+		log.Errorf("Error removing privTgt %s: %s", privTgt, privErr)
 	}
 }
 
@@ -407,16 +412,14 @@ func mkfile(path string) (bool, error) {
 		if os.IsNotExist(err) {
 			file, err := os.OpenFile(path, os.O_CREATE, 0o600) // #nosec G304
 			if err != nil {
-				log.WithField("path", path).WithError(
-					err).Error("Unable to create file")
+				log.Errorf("Unable to create file: %s with error: %s", path, err.Error())
 			} else {
 				file.Close() // #nosec G20
-				log.WithField("path", path).Debug("created file")
+				log.Debugf("created file: %s", path)
 				return true, nil
 			}
 		} else {
-			log.WithField("path", path).WithError(
-				err).Error("Unable to create file")
+			log.Errorf("Unable to create file: %s  error: %s", path, err.Error())
 		}
 		return false, err
 	}
@@ -433,15 +436,13 @@ func mkdir(path string) (bool, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			if err := os.Mkdir(path, 0o750); err != nil {
-				log.WithField("dir", path).WithError(
-					err).Error("Unable to create dir")
+				log.Errorf("Unable to create directory: %s with error: %s", path, err.Error())
 			} else {
-				log.WithField("path", path).Debug("created directory")
+				log.Debugf("created directory: %s", path)
 				return true, nil
 			}
 		} else {
-			log.WithField("path", path).WithError(
-				err).Error("Unable to create dir")
+			log.Errorf("Unable to create directory: %s  error: %s", path, err.Error())
 		}
 		return false, err
 	}
@@ -463,6 +464,7 @@ func unpublishVolume(
 	lastUnmounted := false
 
 	ctx := context.Background()
+	log := log.WithContext(ctx)
 	id := req.GetVolumeId()
 
 	target := req.GetTargetPath()
@@ -482,7 +484,7 @@ func unpublishVolume(
 	// Path to mount device to
 	privTgt := getPrivateMountPoint(privDir, id)
 
-	f := log.Fields{
+	f := csmlog.Fields{
 		"device":       sysDevice.RealDev,
 		"privTgt":      privTgt,
 		"CSIRequestID": reqID,
@@ -539,6 +541,7 @@ func unmountPrivMount(
 	dev *Device,
 	target string,
 ) (bool, error) {
+	log := log.WithContext(ctx)
 	mnts, err := getDevMounts(dev)
 	if err != nil {
 		return false, err
@@ -568,7 +571,7 @@ func unmountPrivMount(
 			}
 		}
 
-		log.WithField("directory", target).Debug("removing directory")
+		log.Debugf("Removing directory: %s", target)
 		err := removeWithRetry(target)
 		if err != nil {
 			log.Error("error removing private mount target: " + err.Error())

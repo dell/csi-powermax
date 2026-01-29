@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/dell/csmlog"
 )
 
 // Cache is the interface for a timed key-value store
@@ -28,7 +28,10 @@ type Cache interface {
 	Remove(string)
 }
 
-var _ Cache = new(cache)
+var (
+	_   Cache = new(cache)
+	log       = csmlog.GetLogger()
+)
 
 // New creates instance of timed key-value store.
 func New(name string, ttl time.Duration) Cache {

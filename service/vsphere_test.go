@@ -237,6 +237,7 @@ func TestRemoveLunDevice(t *testing.T) {
 					Label: "test device",
 				},
 			})
+
 			mapSDI["lunUUID"] = &types.ScsiLun{
 				CanonicalName: "deviceNAA",
 			}
@@ -260,6 +261,7 @@ func TestRemoveLunDevice(t *testing.T) {
 					Label: "test device",
 				},
 			})
+
 			mapSDI["lunUUID"] = &types.ScsiLun{
 				CanonicalName: "deviceNAA",
 			}

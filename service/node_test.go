@@ -26,19 +26,19 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/dell/csi-powermax/v2/k8smock"
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
 	"github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 
 	gonvme "github.com/dell/gonvme"
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	gomock "github.com/golang/mock/gomock"
+	"github.com/golang/mock/gomock"
+	gmock "github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
-	gmock "go.uber.org/mock/gomock"
 )
 
 func TestGetNVMeTCPTargets(t *testing.T) {
@@ -605,7 +605,7 @@ func TestGetAndConfigureISCSITargets(t *testing.T) {
 					},
 				}, nil)
 				c.EXPECT().GetMaskingViewByID(gmock.All(), "array1", "csi-mv--").AnyTimes().Return(&types.MaskingView{
-					MaskingViewID: "csi-mv--",
+					MaskingViewID: "csi-mv",
 					PortGroupID:   "portgroup1",
 				}, nil)
 

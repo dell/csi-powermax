@@ -25,10 +25,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cucumber/godog"
 	"github.com/dell/csi-powermax/v2/k8smock"
+	"github.com/cucumber/godog"
 	gomock "github.com/golang/mock/gomock"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 

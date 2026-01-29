@@ -22,7 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/dell/csmlog"
 )
 
 const (
@@ -32,7 +32,11 @@ const (
 	MaximumFailureDurationForFailover = 1 * time.Minute
 	// MinimumSuccessCount - minimum number of successes to reset the proxy health
 	MinimumSuccessCount = 5
+	// MaximumConsecutiveFailureCountForFailover - max consecutive failure count irrespective of time to do failover.
+	MaximumConsecutiveFailureCountForFailover = 10
 )
+
+var log = csmlog.GetLogger()
 
 // Credentials represent a pair of username and password
 type Credentials struct {
@@ -45,30 +49,33 @@ type Credentials struct {
 type ProxyHealth interface {
 	ReportFailure() bool
 	ReportSuccess()
-	SetThreshold(int, int, time.Duration)
+	SetThreshold(int, int, int, time.Duration)
 	HasDeteriorated() bool
 }
 
 // NewProxyHealth - creates and returns a new proxyHealth instance
 func NewProxyHealth() ProxyHealth {
 	ph := &proxyHealth{
-		minimumFailureCount:    MinimumFailureCountForFailover,
-		maximumFailureDuration: MaximumFailureDurationForFailover,
-		minimumSuccessCount:    MinimumSuccessCount,
+		minimumFailureCount:     MinimumFailureCountForFailover,
+		maximumFailureDuration:  MaximumFailureDurationForFailover,
+		minimumSuccessCount:     MinimumSuccessCount,
+		maximumConsFailureCount: MaximumConsecutiveFailureCountForFailover,
 	}
 	ph.hasDeteriorated.Store(false)
 	return ph
 }
 
 type proxyHealth struct {
-	failureCount           int
-	successCount           int
-	firstFailure           time.Time
-	minimumFailureCount    int
-	minimumSuccessCount    int
-	maximumFailureDuration time.Duration
-	healthMutex            sync.Mutex
-	hasDeteriorated        atomic.Value
+	failureCount            int
+	successCount            int
+	consecutiveFailureCount int
+	firstFailure            time.Time
+	minimumFailureCount     int
+	minimumSuccessCount     int
+	maximumConsFailureCount int
+	maximumFailureDuration  time.Duration
+	healthMutex             sync.Mutex
+	hasDeteriorated         atomic.Value
 }
 
 func (health *proxyHealth) reset() {
@@ -80,9 +87,15 @@ func (health *proxyHealth) reset() {
 // ReportSuccess resets the proxy health if the successCount
 // reaches a certain threshold
 func (health *proxyHealth) ReportSuccess() {
+	health.healthMutex.Lock()
+	defer health.healthMutex.Unlock()
+	// reset the consecutive counter for success
+	if health.consecutiveFailureCount > 0 {
+		health.consecutiveFailureCount = 0
+	}
+
+	// if the proxy is already in a deteriorated state, check for success count and reset based on minimumSuccessCount
 	if health.hasDeteriorated.Load().(bool) {
-		health.healthMutex.Lock()
-		defer health.healthMutex.Unlock()
 		if health.successCount < health.minimumSuccessCount {
 			health.successCount++
 		} else {
@@ -92,7 +105,7 @@ func (health *proxyHealth) ReportSuccess() {
 }
 
 // ReportFailure - updates the health of the proxy in case of failure
-// or clears the failure count if error threshold is not met after maximum
+// or clears the failure count if the error threshold is not met after maximum
 // failure duration
 func (health *proxyHealth) ReportFailure() bool {
 	health.healthMutex.Lock()
@@ -101,15 +114,26 @@ func (health *proxyHealth) ReportFailure() bool {
 		health.hasDeteriorated.Store(true)
 		health.firstFailure = time.Now()
 		health.failureCount = 1
+		health.consecutiveFailureCount++
 		return false
 	}
+	health.consecutiveFailureCount++
+	// if the continuous failure count is greater than the maximum failure count, return true
+	if health.consecutiveFailureCount > health.maximumConsFailureCount {
+		log.Debugf("consecutive failure reached!")
+		health.consecutiveFailureCount = 0
+		health.reset()
+		return true
+	}
 	timeElapsed := time.Since(health.firstFailure)
+	// if the time elapsed is greater than the maximum failure duration, check for failure count
 	if timeElapsed < health.maximumFailureDuration {
 		health.failureCount++
 		return false
 	}
 	failureCount := health.failureCount
 	health.reset()
+	// if the failure count is less than the minimum failure counts, return false as a threshold not met
 	if failureCount < health.minimumFailureCount {
 		return false
 	}
@@ -117,10 +141,11 @@ func (health *proxyHealth) ReportFailure() bool {
 }
 
 // SetThreshold - sets the threshold values for proxy health
-func (health *proxyHealth) SetThreshold(failureCount, successCount int, duration time.Duration) {
+func (health *proxyHealth) SetThreshold(failureCount, consecutiveFC, successCount int, duration time.Duration) {
 	health.maximumFailureDuration = duration
 	health.minimumFailureCount = failureCount
 	health.minimumSuccessCount = successCount
+	health.maximumConsFailureCount = consecutiveFC
 }
 
 // HasDeteriorated returns true if the proxyHealth object has recorded even a single failure

@@ -20,21 +20,23 @@ import (
 	"github.com/coreos/go-systemd/v22/dbus"
 
 	"github.com/dell/gobrick"
-	log "github.com/sirupsen/logrus"
 )
 
 type customLogger struct{}
 
 func (lg *customLogger) Info(ctx context.Context, format string, args ...interface{}) {
-	log.WithFields(getLogFields(ctx)).Infof(format, args...)
+	log := log.WithContext(ctx)
+	log.Infof(format, args...)
 }
 
 func (lg *customLogger) Debug(ctx context.Context, format string, args ...interface{}) {
-	log.WithFields(getLogFields(ctx)).Debugf(format, args...)
+	log := log.WithContext(ctx)
+	log.Debugf(format, args...)
 }
 
 func (lg *customLogger) Error(ctx context.Context, format string, args ...interface{}) {
-	log.WithFields(getLogFields(ctx)).Errorf(format, args...)
+	log := log.WithContext(ctx)
+	log.Errorf(format, args...)
 }
 
 type iSCSIConnector interface {

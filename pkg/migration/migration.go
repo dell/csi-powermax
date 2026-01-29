@@ -23,9 +23,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dell/csmlog"
+
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -41,6 +42,8 @@ var localSGVolumeList map[string]*types.VolumeIterator
 
 // CacheReset is flag for cache
 var CacheReset bool
+
+var log = csmlog.GetLogger()
 
 const (
 	// CsiNoSrpSGPrefix to be used as filter
@@ -75,6 +78,7 @@ func ListContains(a []string, x string) bool {
 }
 
 func getOrCreateSGMigration(ctx context.Context, symID, remoteSymID, storageGroupID string, pmaxClient pmax.Pmax) (*types.MigrationSession, error) {
+	log := log.WithContext(ctx)
 	migrationSG, err := pmaxClient.GetStorageGroupMigrationByID(ctx, symID, storageGroupID)
 	if err != nil {
 		if strings.Contains(err.Error(), "is not in a migration") || migrationSG == nil {
@@ -97,6 +101,7 @@ func getOrCreateSGMigration(ctx context.Context, symID, remoteSymID, storageGrou
 // 2. Create migration session for no-srp SG
 // 3. Create default SRP storage group on remote array, and maintain a list of volumes to be added.
 var StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, clusterPrefix string, pmaxClient pmax.Pmax) (bool, error) {
+	log := log.WithContext(ctx)
 	// Before running no-srp-sg migrate call, remove the volumes from srp SG
 	// for all the SG for this cluster on local sym ID
 	localSgList, err := pmaxClient.GetStorageGroupIDList(ctx, symID, CsiVolumePrefix+clusterPrefix, true)
@@ -197,6 +202,7 @@ var StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, cluste
 // StorageGroupCommit does a "commit" on all the migration session SG
 // Returns true if not sessions found, all migration completed
 var StorageGroupCommit = func(ctx context.Context, symID, action string, pmaxClient pmax.Pmax) (bool, error) {
+	log := log.WithContext(ctx)
 	// for all the SG in saved local SG
 	mgSGList, err := pmaxClient.GetStorageGroupMigration(ctx, symID)
 	if err != nil {
@@ -225,6 +231,7 @@ var StorageGroupCommit = func(ctx context.Context, symID, action string, pmaxCli
 
 // AddVolumesToRemoteSG adds remote volumes to default SRP SG on remote array
 var AddVolumesToRemoteSG = func(ctx context.Context, remoteSymID string, pmaxClient pmax.Pmax) (bool, error) {
+	log := log.WithContext(ctx)
 	// add all the volumes in SGtoRemoteVols
 	log.Debugf("SGToRemoteVols: %v", SGToRemoteVols)
 	if len(SGToRemoteVols) == 0 {

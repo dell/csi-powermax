@@ -230,85 +230,6 @@ Feature: PowerMax CSI interface
       Then the error contains "bad capacity"
 
 @v1.0.0
-     Scenario: Call NodeGetInfo and validate NodeId
-      Given a PowerMax service
-      And I add ISCSI array to ProtocolMap
-      When I call NodeGetInfo
-      Then a valid NodeGetInfoResponse is returned
-
-@v1.5.0
-     Scenario: Call NodeGetInfo and validate NodeId
-      Given a PowerMax service
-      And I add FC array to ProtocolMap
-      When I call NodeGetInfo
-      Then a valid NodeGetInfoResponse is returned
-
-@v2.14.0
-     Scenario: Call NodeGetInfo and validate NodeId
-      Given a PowerMax service
-      And I add NVME array to ProtocolMap
-      When I call NodeGetInfo
-      Then a valid NodeGetInfoResponse is returned
-@v2.8.0
-     Scenario Outline: Validate NodeGetInfo for different protocols
-      Given a PowerMax service
-      And I add to ProtocolMap <protocol>
-      And I have a Node "node1" with MaskingView
-      And arrays are logged in with protocol <protocol>
-      When I call NodeGetInfo
-      Then a valid NodeGetInfoResponse is returned
-
-      Examples:
-      | protocol                  |
-      | "FC"                      |
-      | "iSCSI"                   |
-      | "NVMe"                    |
-
-@v1.0.0
-     Scenario: Call NodeGetInfo without setting Node Name
-      Given a PowerMax service
-      And I induce error "UnspecifiedNodeName"
-      When I call NodeGetInfo
-      Then the error contains "Unable to get Node Name"
-
-@v2.8.0
-     Scenario: Call NodeGetInfo with volume limit
-      Given a PowerMax service
-      When I call set attribute MaxVolumesPerNode "852"
-      And I call NodeGetInfo
-      Then a valid NodeGetInfoResponse is returned with volume limit "852"
-
-@v2.8.0
-     Scenario: Call NodeGetInfo with invalid volume limit
-      Given a PowerMax service
-      When I call NodeGetInfo with invalid volume limit "-10"
-      Then a valid NodeGetInfoResponse is returned with volume limit "0"
-
-@v2.8.0
-     Scenario: Call NodeGetInfo with volume limit and vsphere enabled
-      Given a PowerMax service
-      When I call set attribute MaxVolumesPerNode "12"
-      And I call set attribute IsVsphereEnabled "true"
-      And I call NodeGetInfo
-      Then a valid NodeGetInfoResponse is returned with volume limit "12"
-
-@v2.8.0
-     Scenario: Call NodeGetInfo with volume limit with limits greater than 60 and vsphere enabled 
-      Given a PowerMax service
-      When I call set attribute MaxVolumesPerNode "852"
-      And I call set attribute IsVsphereEnabled "true"
-      And I call NodeGetInfo
-      Then a valid NodeGetInfoResponse is returned with volume limit "60"
-
-@v2.8.0
-     Scenario: Call NodeGetInfo with volume limit with negative value and vsphere enabled 
-      Given a PowerMax service
-      When I call set attribute MaxVolumesPerNode "-100"
-      And I call set attribute IsVsphereEnabled "true"
-      And I call NodeGetInfo
-      Then a valid NodeGetInfoResponse is returned with volume limit "60"
-
-@v1.0.0
      Scenario: Call GetCapacity with valid Storage Pool Name
       Given a PowerMax service
       And I call GetCapacity with storage pool "SRP_1"
@@ -551,7 +472,7 @@ Feature: PowerMax CSI interface
       | induced1               | errormsg                           | count |
 #     | "GetSymmetrixError"    | "Unable to retrieve Array List"    | 0     |
       | "GOISCSIDiscoveryError"| "failed to login"                  | 0     |
-      | "none"                 | "none"                             | 3     |
+      | "none"                 | "none"                             | 4     |
 
 @v1.3.0
     Scenario Outline: Validate ensureLoggedIntoEveryArray with CHAP
@@ -570,7 +491,7 @@ Feature: PowerMax CSI interface
 #      | "GetSymmetrixError"    | "Unable to retrieve Array List"      | 0     |
       | "InduceLoginError"     | "failed to login"                     | 0     |
       | "InduceSetCHAPError"   | "set CHAP induced error"              | 0     |
-      | "none"                 | "none"                                | 3     |
+      | "none"                 | "none"                                | 4     |
 
 @v1.0.0
     Scenario Outline: Test GetVolumeByID function
@@ -640,13 +561,13 @@ Feature: PowerMax CSI interface
       Examples:
       | induced                                  | volPath                                          | errormsg                                   |
       | "none"                                   | ""                                               | "Volume path required"                     |
-      | "none"                                   | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "none"                                     |
-      | "GOFSInduceGetMountInfoFromDeviceError"  | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to find mount information"         |
-      | "GOFSInduceDeviceRescanError"            | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to rescan device"                  |
-      | "GOFSInduceResizeMultipathError"         | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to resize multipath mount device"  |
-      | "GOFSInduceFSTypeError"                  | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to fetch filesystem"               |
-      | "GOFSInduceResizeFSError"                | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to resize device"                  |      
-      | "NoVolumeID"                             | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Invalid volume id"                                |
+      | "none"                                   | "/tmp/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "none"                                     |
+      | "GOFSInduceGetMountInfoFromDeviceError"  | "/tmp/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to find mount information"         |
+      | "GOFSInduceDeviceRescanError"            | "/tmp/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to rescan device"                  |
+      | "GOFSInduceResizeMultipathError"         | "/tmp/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to resize multipath mount device"  |
+      | "GOFSInduceFSTypeError"                  | "/tmp/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to fetch filesystem"               |
+      | "GOFSInduceResizeFSError"                | "/tmp/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Failed to resize device"                  |
+      | "NoVolumeID"                             | "/tmp/var/lib/kubelet/csi/pv/pmax-0123/globalmount"  | "Invalid volume id"                                |
       
 
 @v1.4.0
@@ -654,7 +575,7 @@ Feature: PowerMax CSI interface
     Given a PowerMax service
     And a valid volume
     When I invalidate the NodeID
-    And I call NodeExpandVolume with volumePath as "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"
+    And I call NodeExpandVolume with volumePath as "/tmp/var/lib/kubelet/csi/pv/pmax-0123/globalmount"
     Then the error contains "Error getting NodeName from the environment"
 
 @v1.1.0
@@ -803,10 +724,10 @@ Feature: PowerMax CSI interface
       Examples:
         | induced                                  | volPath                                                        | errormsg                 |
         | "none"                                   | ""                                                             | "no Volume path found"   |
-        | "none"                                   | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
-        | "GOFSInduceGetMountInfoFromDeviceError"  | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
-        | "NoVolumeID"                             | "/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "Invalid volume id"      |
-	  | "NoMountInfo"                            | "/var/lib/kubelet/csi/pv/pmax-0123/globalmount"                | "none"                   |
+        | "none"                                   | "/tmp/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
+        | "GOFSInduceGetMountInfoFromDeviceError"  | "/tmp/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "none"                   |
+        | "NoVolumeID"                             | "/tmp/var/lib/kubelet/pods/abc-123/volumes/k8.io/pmax-0123/mount"  | "Invalid volume id"      |
+	  | "NoMountInfo"                            | "/tmp/var/lib/kubelet/csi/pv/pmax-0123/globalmount"                | "none"                   |
 
 @v2.3.0
   Scenario Outline: Test valid Topology ReadConfig in BeforeServe

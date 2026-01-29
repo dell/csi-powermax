@@ -148,7 +148,7 @@ func TestRemoveBackupHTTPClient(t *testing.T) {
 
 func TestConfigureHealthParams(t *testing.T) {
 	e := &envoy{healthMonitor: NewProxyHealth()}
-	e.ConfigureHealthParams(3, 2, time.Second)
+	e.ConfigureHealthParams(3, 10, 2, time.Second)
 	// Assuming SetThreshold properly sets parameters, no assertion needed
 }
 

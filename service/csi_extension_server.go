@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/dell/dell-csi-extensions/podmon"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -32,6 +31,7 @@ const OneHour int64 = 3600000
 var metricsQuery = []string{"HostMBs", "MBRead", "MBWritten", "IoRate", "Reads", "Writes", "ResponseTime"}
 
 func (s *service) ValidateVolumeHostConnectivity(ctx context.Context, req *podmon.ValidateVolumeHostConnectivityRequest) (*podmon.ValidateVolumeHostConnectivityResponse, error) {
+	log := log.WithContext(ctx)
 	log.Infof("ValidateVolumeHostConnectivity called %+v", req)
 	rep := &podmon.ValidateVolumeHostConnectivityResponse{
 		Messages: make([]string, 0),
@@ -106,6 +106,7 @@ func (s *service) ValidateVolumeHostConnectivity(ctx context.Context, req *podmo
 // checkIfNodeIsConnected looks at the 'nodeId' to determine if there is connectivity to the 'arrayId' array.
 // The 'rep' object will be filled with the results of the check.
 func (s *service) checkIfNodeIsConnected(ctx context.Context, symID string, nodeID string, rep *podmon.ValidateVolumeHostConnectivityResponse) error {
+	log := log.WithContext(ctx)
 	log.Infof("Checking if array %s is connected to node %s", symID, nodeID)
 	var message string
 	rep.Connected = false
@@ -137,6 +138,7 @@ func (s *service) checkIfNodeIsConnected(ctx context.Context, symID string, node
 
 // IsIOInProgress function check the IO operation status on array
 func (s *service) IsIOInProgress(ctx context.Context, volID, symID string) (err error) {
+	log := log.WithContext(ctx)
 	// Call PerformanceMetricsByVolume or PerformanceMetricsByFileSystem in gopowermax based on the volume type
 	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
@@ -164,6 +166,9 @@ func (s *service) IsIOInProgress(ctx context.Context, volID, symID string) (err 
 			log.Errorf("Error %v while checking IsIOInProgress for array having symID %s for volumeID/fileSystemID %s", err.Error(), symID, volID)
 			return fmt.Errorf("error %v while while checking IsIOInProgress", err.Error())
 		}
+		if resp == nil || len(resp.ResultList.Result) == 0 {
+			return fmt.Errorf("no IOInProgress - no performance results returned for FileSystem (NFS) volume %s on array %s", volID, symID)
+		}
 		// check last four entries status received in the response
 		fileMetrics := resp.ResultList.Result
 		for i := 0; i < len(fileMetrics); i++ {
@@ -172,6 +177,9 @@ func (s *service) IsIOInProgress(ctx context.Context, volID, symID string) (err 
 			}
 		}
 		return fmt.Errorf("no IOInProgress")
+	}
+	if resp == nil || len(resp.ResultList.Result) == 0 {
+		return fmt.Errorf("no IOInProgress - no performance results returned for volume %s on array %s", volID, symID)
 	}
 	// check last four entries status received in the response
 	for i := len(resp.ResultList.Result[0].VolumeResult) - 1; i >= (len(resp.ResultList.Result[0].VolumeResult)-4) && i >= 0; i-- {

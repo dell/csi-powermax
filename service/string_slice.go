@@ -18,8 +18,6 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // stringSlicesEqual returns true IFF two slices contain same members

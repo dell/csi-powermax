@@ -34,13 +34,15 @@ import (
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/dell/csmlog"
 
 	types "github.com/dell/gopowermax/v2/types/v100"
 	"github.com/gorilla/mux"
 )
 
 const clientSymID = "proxyClientSymID"
+
+var log = csmlog.GetLogger()
 
 // Proxy - represents a  Proxy
 type Proxy struct {
@@ -112,7 +114,7 @@ func newTLSConfig(mgmtServer config.ManagementServer) *tls.Config {
 	if !mgmtServer.SkipCertificateValidation {
 		caCert, err := os.ReadFile(mgmtServer.CertFile)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("%v", err)
 		}
 		caCertPool := x509.NewCertPool()
 		caCertPool.AppendCertsFromPEM(caCert)
@@ -181,7 +183,7 @@ func (revProxy *Proxy) getAuthorisedArrays(res http.ResponseWriter, req *http.Re
 		utils.WriteHTTPError(res, "No managed arrays under this user", utils.StatusUnAuthorized)
 		return nil, fmt.Errorf("no managed arrays under this user")
 	}
-	log.Printf("Authorized arrays - %s\n", symIDs)
+	log.Infof("Authorized arrays - %s", symIDs)
 	return symIDs, nil
 }
 
@@ -214,6 +216,48 @@ func (revProxy *Proxy) setIteratorID(resp *http.Response, URL url.URL, symID str
 	return volumeIterator, nil
 }
 
+func (revProxy *Proxy) setVolumeListID(resp *http.Response, URL url.URL, symID string) (*types.Volumev1, error) {
+	log.Debugf("Decoding Volumev1 response for Symmetrix ID: %s, URL: %v", symID, URL)
+	volumev1 := &types.Volumev1{}
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(volumev1); err != nil {
+		log.Errorf("Failed to decode Volumev1 response: %v", err)
+		return nil, err
+	}
+	log.Debugf("Successfully decoded Volumev1 response for Symmetrix ID: %s, URL: %v", symID, URL)
+
+	log.Debugf("Setting iterator cache for %d volumes", len(volumev1.Volumes))
+	for _, vol := range volumev1.Volumes {
+		log.Debugf("Setting iterator cache for volume ID: %s, Symmetrix ID: %s, URL: %v", vol.ID, symID, URL)
+		revProxy.iteratorCache.Set(vol.ID, common.SymmURL{
+			SymmetrixID: symID,
+			URL:         URL,
+		})
+		log.Debugf("Added Volume (%s) to iterator cache", vol.ID)
+	}
+	log.Debugf("Successfully set iterator cache for Symmetrix ID: %s, URL: %v", symID, URL)
+	return volumev1, nil
+}
+
+func (revProxy *Proxy) setPortGroups(resp *http.Response, URL url.URL, symID string) (*types.PortGroupListResult, error) {
+	log.Debugf("Decoding PortGroupListResult: %s, URL: %v", symID, URL)
+
+	portGroups := &types.PortGroupListResult{}
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(portGroups); err != nil {
+		log.Errorf("Failed to decode port groups response: %v", err)
+		return nil, err
+	}
+	for _, pg := range portGroups.Results {
+		log.Debugf("Port Group ID: %s", pg.ID)
+		for _, port := range pg.Ports {
+			log.Debugf("  Port ID: %s, Type: %s, Director ID: %s", port.PortID, port.Type, port.Director.ID)
+		}
+	}
+	log.Debugf("Successfully decoded port groups: %s", symID)
+	return portGroups, nil
+}
+
 func (revProxy *Proxy) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqID := revProxy.getRequestID()
@@ -240,15 +284,18 @@ func (revProxy *Proxy) getResponseIfAuthorised(res http.ResponseWriter, req *htt
 	if req.URL.RawQuery != "" {
 		path = path + "?" + req.URL.RawQuery
 	}
+
+	requestID := req.Header.Get("RequestID")
 	req, err = http.NewRequest(req.Method, path, req.Body)
 	if err != nil {
 		http.Error(res, err.Error(), 500)
 		return nil, err
 	}
+
+	req.Header.Set("RequestID", requestID)
 	revProxy.modifyHTTPRequest(res, req, proxy.URL)
 	lockID := proxy.URL.String()
-	requestID := req.Header.Get("RequestID")
-	restCall := fmt.Sprintf("%s %s\n", req.Method, req.URL)
+	restCall := fmt.Sprintf("%s %s", req.Method, req.URL)
 	lockType := utils.GetRequestType(req)
 	defer utils.Elapsed(requestID, restCall)()
 	lock := utils.Lock{
@@ -377,6 +424,9 @@ func (revProxy *Proxy) updateConfig(proxyConfig config.ProxyConfig) {
 func (revProxy *Proxy) GetRouter() http.Handler {
 	router := mux.NewRouter()
 	router.Use(revProxy.symIDMiddleware)
+	router.Path(utils.PrefixV1 + "/systems/{symid}/volumes").HandlerFunc(revProxy.GetVolumes)
+	router.Path(utils.PrefixV1 + "/systems/{symid}/port-groups").HandlerFunc(revProxy.GetPortGroups)
+	router.Path(utils.PrefixV1 + "/systems/{symid}/storage-groups").HandlerFunc(revProxy.ServeReverseProxy)
 	router.Path(utils.Prefix + "/{version}/sloprovisioning/symmetrix/{symid}/volume").HandlerFunc(revProxy.ServeVolume)
 	router.PathPrefix(utils.Prefix + "/{version}/sloprovisioning/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 	router.PathPrefix(utils.Prefix + "/{version}/system/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
@@ -405,6 +455,26 @@ func (revProxy *Proxy) GetRouter() http.Handler {
 
 	// migration
 	router.PathPrefix(utils.Prefix + "/{version}/migration/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
+
+	log.Info("started print path")
+	err := router.Walk(func(route *mux.Route, r *mux.Router, ancestors []*mux.Route) error {
+		pathTemplate, err := route.GetPathTemplate()
+		if err != nil {
+			pathTemplate = "<unknown>"
+		}
+
+		methods, err := route.GetMethods()
+		if err != nil {
+			methods = []string{"ANY"}
+		}
+
+		log.Infof("Registered Route: %s Methods: %v", pathTemplate, methods)
+
+		return nil
+	})
+	if err != nil {
+		log.Errorf("Error walking routes: %v", err)
+	}
 
 	return revProxy.loggingMiddleware(router)
 }
@@ -618,7 +688,7 @@ func (revProxy *Proxy) ServeIterator(res http.ResponseWriter, req *http.Request)
 	revProxy.modifyRequest(res, req, u4p.URL)
 	lockID := u4p.URL.String()
 	requestID := req.Header.Get("RequestID")
-	restCall := fmt.Sprintf("%s %s\n", req.Method, req.URL)
+	restCall := fmt.Sprintf("%s %s", req.Method, req.URL)
 	lockType := utils.GetRequestType(req)
 	defer utils.Elapsed(requestID, restCall)()
 	lock := utils.Lock{
@@ -739,4 +809,94 @@ func (revProxy *Proxy) ServeVolume(res http.ResponseWriter, req *http.Request) {
 		}
 		utils.WriteHTTPResponse(res, volumeIterator)
 	}
+}
+
+func (revProxy *Proxy) GetVolumes(res http.ResponseWriter, req *http.Request) {
+	log.Debugf("Entering GetVolumes function")
+	symID, _ := revProxy.getSymID(req)
+	log.Debugf("Got symID: %s", symID)
+	err := revProxy.isAuthorized(res, req, symID)
+	if err != nil {
+		log.Errorf("Failed to authorize: %s", err.Error())
+		return
+	}
+	log.Debugf("Authorized successfully")
+	resp, err := revProxy.getResponseIfAuthorised(res, req, symID)
+	if err != nil {
+		log.Errorf("Failed to get response: %s", err.Error())
+		return
+	}
+
+	log.Debugf("Got response from getResponseIfAuthorised")
+	defer resp.Body.Close()
+	err = utils.IsValidResponse(resp)
+	if err != nil {
+		log.Errorf("Invalid response: %s", err.Error())
+		utils.WriteHTTPError(res, err.Error(), resp.StatusCode)
+		log.Errorf("Get Volume step fails for: (%s) symID with error (%s)", symID, err.Error())
+	} else {
+		log.Debugf("Response is valid")
+		proxy, err := revProxy.getProxyBySymmID(symID)
+		if err != nil {
+			log.Errorf("Failed to get proxy: %s", err.Error())
+			utils.WriteHTTPError(res, err.Error(), utils.StatusNotFound)
+			log.Errorf("Get Proxy for: (%s) symID with error (%s)", symID, err.Error())
+			return
+		}
+		log.Debugf("Got proxy successfully")
+		volumeList, err := revProxy.setVolumeListID(resp, proxy.URL, symID)
+		if err != nil {
+			log.Errorf("Failed to set volume list ID: %s", err.Error())
+			utils.WriteHTTPError(res, err.Error(), utils.StatusInternalError)
+			log.Errorf("Setting iterator failed for: (%s) symID with error (%s)", symID, err.Error())
+		}
+		log.Debugf("Set volume list ID successfully")
+		utils.WriteHTTPResponse(res, volumeList)
+	}
+	log.Debugf("Exiting GetVolumes function")
+}
+
+func (revProxy *Proxy) GetPortGroups(res http.ResponseWriter, req *http.Request) {
+	log.Debugf("Entering GetPortGroups function")
+	symID, _ := revProxy.getSymID(req)
+	log.Debugf("Got symID: %s", symID)
+	err := revProxy.isAuthorized(res, req, symID)
+	if err != nil {
+		log.Errorf("Failed to authorize: %s", err.Error())
+		return
+	}
+	log.Debugf("Authorized successfully")
+	resp, err := revProxy.getResponseIfAuthorised(res, req, symID)
+	if err != nil {
+		log.Errorf("Failed to get response: %s", err.Error())
+		return
+	}
+
+	log.Debugf("Got response from getResponseIfAuthorised")
+	defer resp.Body.Close()
+	err = utils.IsValidResponse(resp)
+	if err != nil {
+		log.Errorf("Invalid response: %s", err.Error())
+		utils.WriteHTTPError(res, err.Error(), resp.StatusCode)
+		log.Errorf("Get Volume step fails for: (%s) symID with error (%s)", symID, err.Error())
+	} else {
+		log.Debugf("Response is valid")
+		proxy, err := revProxy.getProxyBySymmID(symID)
+		if err != nil {
+			log.Errorf("Failed to get proxy: %s", err.Error())
+			utils.WriteHTTPError(res, err.Error(), utils.StatusNotFound)
+			log.Errorf("Get Proxy for: (%s) symID with error (%s)", symID, err.Error())
+			return
+		}
+		log.Debugf("Got proxy successfully")
+		portgroups, err := revProxy.setPortGroups(resp, proxy.URL, symID)
+		if err != nil {
+			log.Errorf("Failed to set port groups: %s", err.Error())
+			utils.WriteHTTPError(res, err.Error(), utils.StatusInternalError)
+			log.Errorf("Setting iterator failed for: (%s) symID with error (%s)", symID, err.Error())
+		}
+		log.Debugf("Set port groups successfully")
+		utils.WriteHTTPResponse(res, portgroups)
+	}
+	log.Debugf("Exiting GetPortGroups function")
 }

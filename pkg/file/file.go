@@ -22,11 +22,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/dell/csmlog"
+
 	"github.com/dell/gofsutil"
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
-	log "github.com/sirupsen/logrus"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -53,8 +54,11 @@ const (
 	NFSExportIDParam                     = "NFSExportID"
 )
 
+var log = csmlog.GetLogger()
+
 // CreateFileSystem creates a file system
 func CreateFileSystem(ctx context.Context, reqID string, accessibility *csi.TopologyRequirement, params map[string]string, symID, storagePoolID, serviceLevel, nasServerName, fileSystemIdentifier, allowRoot string, sizeInMiB int64, pmaxClient pmax.Pmax) (*csi.CreateVolumeResponse, error) {
+	log := log.WithContext(ctx)
 	// Get NAS Server ID from NASServer Name
 	nasServerList, err := pmaxClient.GetNASServerList(ctx, symID, types.QueryParams{QueryName: nasServerName})
 	if err != nil {
@@ -156,6 +160,7 @@ func DeleteFileSystem(ctx context.Context, symID, fileSystemID string, pmaxClien
 
 // CreateNFSExport creates a NFS export for the given file system
 func CreateNFSExport(ctx context.Context, reqID, symID, fsID string, am *csi.VolumeCapability_AccessMode, volumeContext map[string]string, pmaxClient pmax.Pmax) (*csi.ControllerPublishVolumeResponse, error) {
+	log := log.WithContext(ctx)
 	nasServerID := volumeContext[NASServerIDParam]
 	nasServerName := volumeContext[NASServerNameParam]
 	allowRoot := volumeContext[AllowRootParam]
@@ -241,6 +246,7 @@ func checkIfNFSExportExist(ctx context.Context, symID, fsID string, nfsName stri
 
 // DeleteNFSExport deletes a NFS Export for the given file system
 func DeleteNFSExport(ctx context.Context, reqID, symID, fsID string, pmaxClient pmax.Pmax) (*csi.ControllerUnpublishVolumeResponse, error) {
+	log := log.WithContext(ctx)
 	// get the fileSystem
 	fs, err := pmaxClient.GetFileSystemByID(ctx, symID, fsID)
 	if err != nil {
@@ -281,6 +287,7 @@ func DeleteNFSExport(ctx context.Context, reqID, symID, fsID string, pmaxClient 
 func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt string, publishContext map[string]string, _ pmax.Pmax) (
 	*csi.NodeStageVolumeResponse, error,
 ) {
+	log := log.WithContext(ctx)
 	nasServerName := publishContext[NASServerNameParam]
 	nasServerID := publishContext[NASServerIDParam]
 	nfsExportPath := publishContext[NFSExportPathParam]
@@ -326,6 +333,7 @@ func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt str
 
 // PublishFileSystem bind the file system mount on the node
 func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, reqID, symID, fsID string, _ pmax.Pmax) (*csi.NodePublishVolumeResponse, error) {
+	log := log.WithContext(ctx)
 	// get params for publish
 	publishContext := req.GetPublishContext()
 	targetPath := req.GetTargetPath()
@@ -382,6 +390,7 @@ func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, r
 
 // ExpandFileSystem expands the given file system on the array
 func ExpandFileSystem(ctx context.Context, reqID, symID, fsID string, requestedSize int64, pmaxClient pmax.Pmax) (*csi.ControllerExpandVolumeResponse, error) {
+	log := log.WithContext(ctx)
 	// log all parameters used in ExpandVolume call
 	fields := map[string]interface{}{
 		"RequestID":     reqID,
@@ -432,7 +441,7 @@ func isReadyToPublishNFS(stagingPath string) (bool, error) {
 		return found, err
 	}
 	if !found {
-		log.Warning("staged device not found")
+		log.Warn("staged device not found")
 		return found, nil
 	}
 	return found, nil

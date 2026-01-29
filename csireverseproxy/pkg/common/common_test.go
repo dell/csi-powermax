@@ -53,10 +53,11 @@ func reportSuccess(proxyHealth ProxyHealth, count int) {
 func TestProxyHealth(t *testing.T) {
 	failureCount := 5
 	successCount := 2
+	consFailureCount := 20
 	maxDuration := time.Second
 
 	proxyHealth := NewProxyHealth()
-	proxyHealth.SetThreshold(failureCount, successCount, maxDuration)
+	proxyHealth.SetThreshold(failureCount, consFailureCount, successCount, maxDuration)
 
 	shouldFailover := reportFailure(proxyHealth, failureCount, maxDuration)
 	if !shouldFailover {
@@ -72,13 +73,62 @@ func TestProxyHealth(t *testing.T) {
 	}
 }
 
+func TestProxyFailoverSlow(t *testing.T) {
+	failureCount := 10
+	failAPIFreq := 1 * time.Second // frequency of failing API calls
+
+	proxyHealth := NewProxyHealth()
+	proxyHealth.SetThreshold(10, 10, 1, 1*time.Minute)
+	// Report failures concurrently with a shorter sleep duration
+	var wg sync.WaitGroup
+	for i := 0; i < failureCount; i++ {
+		time.Sleep(failAPIFreq) // Shorter sleep duration
+		wg.Add(1)
+		go func() {
+			proxyHealth.ReportFailure()
+			fmt.Printf("failure #%d\n", i)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	// Check if failover occurred
+	if !proxyHealth.ReportFailure() {
+		t.Errorf("Health update not working properly")
+	}
+}
+
+func TestProxyNoFailover(t *testing.T) {
+	failureCount := 12             // failover will happen at 10th failure
+	failAPIFreq := 1 * time.Second // frequency of failing API calls
+
+	proxyHealth := NewProxyHealth()
+	proxyHealth.SetThreshold(10, 10, 1, 1*time.Minute)
+	// Report failures concurrently with a shorter sleep duration
+	var wg sync.WaitGroup
+	for i := 0; i < failureCount; i++ {
+		time.Sleep(failAPIFreq) // Shorter sleep duration
+		wg.Add(1)
+		go func() {
+			proxyHealth.ReportFailure()
+			fmt.Printf("failure #%d\n", i)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	// Check if failover occurred
+	if proxyHealth.ReportFailure() {
+		t.Errorf("Health update not working properly")
+	}
+}
+
 func TestHealthReset(t *testing.T) {
 	failureCount := 5
 	successCount := 2
+	consFailureCount := 10
 	maxDuration := time.Second
 
 	proxyHealth := NewProxyHealth()
-	proxyHealth.SetThreshold(failureCount, successCount, maxDuration)
+	proxyHealth.SetThreshold(failureCount, consFailureCount, successCount, maxDuration)
 	shouldFailover := reportFailure(proxyHealth, 3, time.Nanosecond)
 	if shouldFailover {
 		t.Error("Health update not working properly")
@@ -154,4 +204,30 @@ func TestRoundTrip(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestProxyHealthConcurrency verifies that concurrent ReportSuccess and ReportFailure calls
+// do not cause any data races or panics.
+func TestProxyHealthConcurrency(t *testing.T) {
+	h := NewProxyHealth()
+	var wg sync.WaitGroup
+
+	// Run 100 concurrent ReportSuccess and ReportFailure calls
+	for i := 0; i < 100; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			h.ReportSuccess()
+		}()
+		go func() {
+			defer wg.Done()
+			h.ReportFailure()
+		}()
+	}
+
+	wg.Wait()
+	time.Sleep(50 * time.Millisecond) // allow any goroutines to finish
+
+	// Optional: verify HasDeteriorated does not panic
+	_ = h.HasDeteriorated()
 }

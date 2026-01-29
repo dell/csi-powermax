@@ -1,4 +1,4 @@
-# Copyright © 2020-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2020-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 ############################
 ARG GOIMAGE
 ARG BASEIMAGE
-ARG GOPROXY
+ARG VERSION="2.15.0"
 
 FROM $GOIMAGE as builder
 
@@ -42,20 +42,21 @@ RUN mkdir -p /go/src/csireverseproxy
 COPY . /go/src/csireverseproxy
 
 WORKDIR /go/src/csireverseproxy
-RUN CGO_ENABLED=0 go build
+RUN CGO_ENABLED=0 go build -mod=vendor
 
 
 ############################
 # STEP 2 build a small image
 ############################
 FROM $BASEIMAGE as final
+ARG VERSION
 LABEL vendor="Dell Technologies" \
     maintainer="Dell Technologies" \
     name="csipowermax-reverseproxy" \
     summary="CSI PowerMax Reverse Proxy" \
     description="CSI PowerMax Reverse Proxy which helps manage connections with Unisphere for PowerMax" \
-    release="1.13.0" \
-    version="2.12.0" \
+    release="1.16.0" \
+    version=$VERSION \
     license="Apache-2.0"
 COPY licenses /licenses
 # Import from builder.

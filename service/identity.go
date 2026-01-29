@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -20,14 +20,11 @@ import (
 
 	commonext "github.com/dell/dell-csi-extensions/common"
 
-	log "github.com/sirupsen/logrus"
-
 	"golang.org/x/net/context"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
-	"github.com/dell/csi-powermax/v2/core"
 	migrext "github.com/dell/dell-csi-extensions/migration"
 	csiext "github.com/dell/dell-csi-extensions/replication"
 )
@@ -37,9 +34,11 @@ func (s *service) GetPluginInfo(
 	_ *csi.GetPluginInfoRequest) (
 	*csi.GetPluginInfoResponse, error,
 ) {
+	Manifest["semver"] = ManifestSemver
+
 	return &csi.GetPluginInfoResponse{
 		Name:          s.getDriverName(),
-		VendorVersion: core.SemVer,
+		VendorVersion: ManifestSemver,
 		Manifest:      Manifest,
 	}, nil
 }
@@ -83,6 +82,7 @@ func (s *service) Probe(
 	_ *csi.ProbeRequest) (
 	*csi.ProbeResponse, error,
 ) {
+	log := log.WithContext(ctx)
 	log.Debug("Probe called")
 	if !strings.EqualFold(s.mode, "node") {
 		log.Debug("controllerProbe")
@@ -119,6 +119,7 @@ func (s *service) ProbeController(ctx context.Context,
 	_ *commonext.ProbeControllerRequest) (
 	*commonext.ProbeControllerResponse, error,
 ) {
+	log := log.WithContext(ctx)
 	if !strings.EqualFold(s.mode, "node") {
 		log.Debug("controllerProbe")
 		if err := s.controllerProbe(ctx); err != nil {
@@ -132,7 +133,7 @@ func (s *service) ProbeController(ctx context.Context,
 	rep := new(commonext.ProbeControllerResponse)
 	rep.Ready = ready
 	rep.Name = s.getDriverName()
-	rep.VendorVersion = core.SemVer
+	rep.VendorVersion = ManifestSemver
 	rep.Manifest = Manifest
 
 	log.Debug(fmt.Sprintf("ProbeController returning: %v", rep.Ready.GetValue()))

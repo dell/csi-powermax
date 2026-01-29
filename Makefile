@@ -1,4 +1,4 @@
-# Copyright © 2020-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2020-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -10,9 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-include overrides.mk
+include images.mk
 
-all: build unit-test
+all: build
+
+# This will be overridden during image build.
+IMAGE_VERSION ?= 0.0.0
+LDFLAGS = "-X main.ManifestSemver=$(IMAGE_VERSION)"
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -21,38 +25,14 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-format:
-	@gofmt -w -s .
-
 clean:
-	rm -f core/core_generated.go go-code-tester *.log *.out cover* 
+	rm -f core/core_generated.go go-code-tester *.log *.out cover* semver.mk csm-common.mk
+	rm -rf csm-temp-repo vendor
 	go clean
 	make -C csireverseproxy clean
 
-build:
-	go generate
-	CGO_ENABLED=0 go build
-
-# Generates the docker container (but does not push)
-docker:
-	go generate
-	go run core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk docker
-	# build the reverseproxy container as part of this target
-	( cd csireverseproxy; make docker )
-
-
-# Generates the docker container without cache (but does not push)
-docker-no-cache:
-	go generate
-	go run core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk docker-no-cache
-	# build the reverseproxy container as part of this target
-	( cd csireverseproxy; make docker-no-cache )
-
-# Pushes container to the repository
-push:	docker
-	make -f docker.mk push
+build: generate
+	GOOS=linux CGO_ENABLED=0 go build -mod=vendor -ldflags $(LDFLAGS)
 
 # Run unit tests
 unit-test: go-code-tester
@@ -61,16 +41,11 @@ unit-test: go-code-tester
 
 # Run BDD tests. Need to be root to run as tests require some system access, need to fix
 bdd-test:
-	( cd service; go clean -cache; CGO_ENABLED=0 go test -run TestGoDog -v -coverprofile=c.out ./... )
+	(cd service; go clean -cache; CGO_ENABLED=0 go test -run TestGoDog -v -coverprofile=c.out ./...)
 
 # Linux only; populate env.sh with the hardware parameters
 integration-test:
-	( cd test/integration; sh run.sh )
-
-version:
-	go generate
-	go run core/semver/semver.go -f mk >semver.mk
-	make -f docker.mk version
+	(cd test/integration; sh run.sh)
 
 gosec:
 ifeq (, $(shell which gosec))
@@ -81,23 +56,11 @@ else
 endif
 	@echo "Logs are stored at gosec.log, Outputfile at gosecresults.csv"
 
-.PHONY: actions action-help
-actions: ## Run all GitHub Action checks that run on a pull request creation
-	@echo "Running all GitHub Action checks for pull request events..."
-	@act -l | grep -v ^Stage | grep pull_request | grep -v image_security_scan | awk '{print $$2}' | while read WF; do \
-		echo "Running workflow: $${WF}"; \
-		act pull_request --no-cache-server --platform ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --job "$${WF}"; \
-	done
-
 go-code-tester:
-	curl -o go-code-tester -L https://raw.githubusercontent.com/dell/common-github-actions/main/go-code-tester/entrypoint.sh \
-	&& chmod +x go-code-tester
+	git clone --depth 1 git@github.com:CSM/actions.git temp-repo
+	cp temp-repo/go-code-tester/entrypoint.sh ./go-code-tester
+	chmod +x go-code-tester
+	rm -rf temp-repo
 
-action-help: ## Echo instructions to run one specific workflow locally
-	@echo "GitHub Workflows can be run locally with the following command:"
-	@echo "act pull_request --no-cache-server --platform ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-latest --job <jobid>"
-	@echo ""
-	@echo "Where '<jobid>' is a Job ID returned by the command:"
-	@echo "act -l"
-	@echo ""
-	@echo "NOTE: if act is not installed, it can be downloaded from https://github.com/nektos/act"
+mocks:
+	go generate ./...

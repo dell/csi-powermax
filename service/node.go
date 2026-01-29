@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dell/csmlog"
 	"github.com/dell/gonvme"
 
 	"github.com/dell/csi-powermax/v2/pkg/file"
@@ -36,13 +37,12 @@ import (
 
 	pmax "github.com/dell/gopowermax/v2"
 
-	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/coreos/go-systemd/v22/dbus"
 	"github.com/dell/gobrick"
 	csictx "github.com/dell/gocsi/context"
 	gofsutil "github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
-	log "github.com/sirupsen/logrus"
+	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/coreos/go-systemd/v22/dbus"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -118,6 +118,7 @@ func (s *service) NodeStageVolume(
 	req *csi.NodeStageVolumeRequest) (
 	*csi.NodeStageVolumeResponse, error,
 ) {
+	log := log.WithContext(ctx)
 	privTgt := req.GetStagingTargetPath()
 	if privTgt == "" {
 		return nil, status.Error(codes.InvalidArgument, "Target Path is required")
@@ -199,7 +200,7 @@ func (s *service) NodeStageVolume(
 		targetIdentifiers = publishContext[PortIdentifiers]
 	}
 
-	f := log.Fields{
+	f := csmlog.Fields{
 		"CSIRequestID":      reqID,
 		"DeviceID":          devID,
 		"ID":                req.VolumeId,
@@ -245,7 +246,7 @@ func (s *service) NodeStageVolume(
 			log.Error("Remote device WWN required to be in PublishContext")
 			return nil, status.Error(codes.InvalidArgument, "Remote device WWN required to be in PublishContext")
 		}
-		f := log.Fields{
+		f := csmlog.Fields{
 			"CSIRequestID":      reqID,
 			"DeviceID":          remoteVolID,
 			"ID":                req.VolumeId,
@@ -292,7 +293,7 @@ func (s *service) NodeStageVolume(
 		f["RemoteWWN"] = remDeviceWWN
 	}
 
-	log.WithFields(f).WithField("devPath", devicePath).Info("NodeStageVolume completed")
+	log.WithFields(f).Infof("NodeStageVolume completed for devicePath: %s", devicePath)
 	return &csi.NodeStageVolumeResponse{}, nil
 }
 
@@ -322,6 +323,7 @@ type NVMeTCPTargetInfo struct {
 }
 
 func (s *service) connectDevice(ctx context.Context, data publishContextData) (string, error) {
+	log := log.WithContext(ctx)
 	logFields := getLogFields(ctx)
 	var err error
 	// The volumeLUNAddress is hex.
@@ -415,6 +417,7 @@ func (s *service) connectRDMDevice(ctx context.Context,
 
 func (s *service) connectNVMeTCPDevice(ctx context.Context, data publishContextData,
 ) (gobrick.Device, error) {
+	log := log.WithContext(ctx)
 	logFields := getLogFields(ctx)
 	var targets []gobrick.NVMeTargetInfo
 	for _, t := range data.nvmetcpTargets {
@@ -440,6 +443,7 @@ func (s *service) NodeUnstageVolume(
 	req *csi.NodeUnstageVolumeRequest) (
 	*csi.NodeUnstageVolumeResponse, error,
 ) {
+	log := log.WithContext(ctx)
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -603,7 +607,7 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		var err error
 		symlinkPath, _, _ := gofsutil.WWNToDevicePathX(context.Background(), volumeWWN)
 		for i := 1; i <= maxDisconnectRetries; i++ {
-			f := log.Fields{
+			f := csmlog.Fields{
 				"CSIRequestID": reqID,
 				"DeviceID":     devID,
 				"Retry":        i,
@@ -638,7 +642,7 @@ func (s *service) disconnectVolume(reqID, symID, devID, volumeWWN string) error 
 		}
 		devicePathComponents := strings.Split(devicePath, "/")
 		deviceName = devicePathComponents[len(devicePathComponents)-1]
-		f := log.Fields{
+		f := csmlog.Fields{
 			"CSIRequestID": reqID,
 			"DeviceID":     devID,
 			"DeviceName":   deviceName,
@@ -689,6 +693,7 @@ func (s *service) NodePublishVolume(
 	req *csi.NodePublishVolumeRequest) (
 	*csi.NodePublishVolumeResponse, error,
 ) {
+	log := log.WithContext(ctx)
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -756,7 +761,7 @@ func (s *service) NodePublishVolume(
 	} else {
 		targetIdentifiers = publishContext[PortIdentifiers]
 	}
-	log.WithField("CSIRequestID", reqID).Infof("node publishing volume: %s lun: %s", deviceWWN, volumeLUNAddress)
+	log.Infof("node publishing volume: %s lun: %s", deviceWWN, volumeLUNAddress)
 
 	var symlinkPath string
 	var devicePath string
@@ -776,7 +781,7 @@ func (s *service) NodePublishVolume(
 		}
 	}
 
-	f := log.Fields{
+	f := csmlog.Fields{
 		"CSIRequestID":      reqID,
 		"DeviceID":          devID,
 		"DevicePath":        devicePath,
@@ -803,6 +808,7 @@ func (s *service) NodeUnpublishVolume(
 	req *csi.NodeUnpublishVolumeRequest) (
 	*csi.NodeUnpublishVolumeResponse, error,
 ) {
+	log := log.WithContext(ctx)
 	var reqID string
 	var err error
 	headers, ok := metadata.FromIncomingContext(ctx)
@@ -846,7 +852,7 @@ func (s *service) NodeUnpublishVolume(
 	// Get the VolumeID and parse it
 	id := req.GetVolumeId()
 
-	f := log.Fields{
+	f := csmlog.Fields{
 		"CSIRequestID": reqID,
 		"DevicePath":   devicePath,
 		"ID":           id,
@@ -917,6 +923,7 @@ func (s *service) getTargetMount(target string) (gofsutil.Info, error) {
 }
 
 func (s *service) nodeProbe(ctx context.Context) error {
+	log := log.WithContext(ctx)
 	log.Debug("Entering nodeProbe")
 	defer log.Debug("Exiting nodeProbe")
 	if s.opts.NodeName == "" {
@@ -943,6 +950,7 @@ func (s *service) nodeProbe(ctx context.Context) error {
 }
 
 func (s *service) nodeProbeBySymID(ctx context.Context, symID string) error {
+	log := log.WithContext(ctx)
 	log.Debugf("Entering nodeProbeBySymID for array %s", symID)
 	defer log.Debugf("Exiting nodeProbe for array %s", symID)
 
@@ -1154,6 +1162,7 @@ func (s *service) reachableEndPoint(endpoint string) bool {
 }
 
 func (s *service) createTopologyMap(ctx context.Context, nodeName string) map[string]string {
+	log := log.WithContext(ctx)
 	topology := map[string]string{}
 	iscsiArrays := make([]string, 0)
 	nvmeTCPArrays := make([]string, 0)
@@ -1337,6 +1346,7 @@ func (s *service) NodeGetInfo(
 	_ *csi.NodeGetInfoRequest) (
 	*csi.NodeGetInfoResponse, error,
 ) {
+	log := log.WithContext(ctx)
 	// Get the Node ID
 	if s.opts.NodeName == "" {
 		log.Error("Unable to get Node Name from the environment")
@@ -1403,6 +1413,7 @@ func (s *service) NodeGetInfo(
 func (s *service) NodeGetVolumeStats(
 	ctx context.Context, req *csi.NodeGetVolumeStatsRequest,
 ) (*csi.NodeGetVolumeStatsResponse, error) {
+	log := log.WithContext(ctx)
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -1432,7 +1443,7 @@ func (s *service) NodeGetVolumeStats(
 		return nil, err
 	}
 
-	f := log.Fields{
+	f := csmlog.Fields{
 		"CSIRequestID":      reqID,
 		"VolumePath":        volPath,
 		"ID":                id,
@@ -1466,7 +1477,7 @@ func (s *service) NodeGetVolumeStats(
 		// remove the namespace from the volName as the mount paths will not have it
 		volName = strings.Join(strings.Split(volName, "-")[:2], "-")
 		isMounted, err := isVolumeMounted(ctx, volName, volPath)
-		log.Debug("---- isMounted ----", isMounted)
+		log.Debugf("---- isMounted ---- %t", isMounted)
 		if err != nil {
 			abnormal = true
 			msg = fmt.Sprintf("Error getting mount info for volume %s", id)
@@ -1581,6 +1592,7 @@ func isVolumeMounted(ctx context.Context, volName string, target string) (bool, 
 //
 // returns an error if unable to perform node startup tasks without error
 func (s *service) nodeStartup(ctx context.Context) error {
+	log := log.WithContext(ctx)
 	if s.nodeIsInitialized {
 		return nil
 	}
@@ -1689,11 +1701,12 @@ func isValidHostID(hostID string) bool {
 // It returns the number of initiators for the host that were found.
 // Do not mix both FC and iSCSI initiators in a single call.
 func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symID string, nodeInitiators []string, hostID string, pmaxClient pmax.Pmax) ([]string, error) {
+	log := log.WithContext(ctx)
 	validInitiators := make([]string, 0)
 	var errormsg string
 	initList, err := pmaxClient.GetInitiatorList(ctx, symID, "", false, false)
 	if err != nil {
-		log.Warning("Failed to fetch initiator list for the SYM :" + symID)
+		log.Warn("Failed to fetch initiator list for the SYM :" + symID)
 		return validInitiators, err
 	}
 	hostUpdated := false
@@ -1707,7 +1720,7 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 				log.Infof("Checking initiator %s against host %s", initiatorID, hostID)
 				initiator, err := pmaxClient.GetInitiatorByID(ctx, symID, initiatorID)
 				if err != nil {
-					log.Warning("Failed to fetch initiator details for initiator: " + initiatorID)
+					log.Warn("Failed to fetch initiator details for initiator: " + initiatorID)
 					continue
 				}
 				if initiator.Host != "" {
@@ -1719,20 +1732,20 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 								_, err := pmaxClient.UpdateHostName(ctx, symID, initiator.Host, hostID)
 								if err != nil {
 									errormsg = fmt.Sprintf("Failed to change host name from %s to %s: %s", initiator.Host, hostID, err)
-									log.Warning(errormsg)
+									log.Warn(errormsg)
 									continue
 								}
 								hostUpdated = true
 							} else {
 								errormsg = fmt.Sprintf("Skipping Updating Host %s for initiator: %s as updated host already present on: %s", initiator.Host,
 									initiatorID, symID)
-								log.Warning(errormsg)
+								log.Warn(errormsg)
 								continue
 							}
 						} else {
 							errormsg = fmt.Sprintf("initiator: %s is already a part of a different host: %s on: %s",
 								initiatorID, initiator.Host, symID)
-							log.Warning(errormsg)
+							log.Warn(errormsg)
 							continue
 						}
 					}
@@ -1769,6 +1782,7 @@ func (s *service) verifyAndUpdateInitiatorsInADiffHost(ctx context.Context, symI
 func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []string, NQNs []string, symmetrixIDs []string) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+	log := log.WithContext(ctx)
 	log.Info("**************************nodeHostSetup executing...*******************************")
 	defer log.Info("**************************nodeHostSetup completed...*******************************")
 
@@ -1799,7 +1813,7 @@ func (s *service) nodeHostSetup(ctx context.Context, portWWNs []string, IQNs []s
 		if s.opts.IsVsphereEnabled {
 			err := s.getHostForVsphere(ctx, symID, pmaxClient)
 			if err != nil {
-				log.Warningf("Host/HostGroup %s was not initialized on sym %s, err: %s", s.opts.VSphereHostName, symID, err.Error())
+				log.Warnf("Host/HostGroup %s was not initialized on sym %s, err: %s", s.opts.VSphereHostName, symID, err.Error())
 			} else {
 				s.arrayTransportProtocolMap[symID] = Vsphere
 			}
@@ -1913,6 +1927,7 @@ func (s *service) getHostForVsphere(ctx context.Context, array string, pmaxClien
 }
 
 func (s *service) setupArrayForFC(ctx context.Context, array string, portWWNs []string, pmaxClient pmax.Pmax) error {
+	log := log.WithContext(ctx)
 	hostName, _, mvName := s.GetFCHostSGAndMVIDFromNodeID(s.opts.NodeName)
 	log.Infof("setting up array %s for Fibrechannel, host name: %s masking view: %s", array, hostName, mvName)
 	_, err := s.createOrUpdateFCHost(ctx, array, hostName, portWWNs, pmaxClient)
@@ -1921,6 +1936,7 @@ func (s *service) setupArrayForFC(ctx context.Context, array string, portWWNs []
 
 // setupArrayForIscsi is called to set up a node for iscsi operation.
 func (s *service) setupArrayForIscsi(ctx context.Context, array string, IQNs []string, pmaxClient pmax.Pmax) error {
+	log := log.WithContext(ctx)
 	hostName, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
 	log.Infof("setting up array %s for Iscsi, host name: %s masking view ID: %s %v", array, hostName, mvName, IQNs)
 
@@ -1932,15 +1948,16 @@ func (s *service) setupArrayForIscsi(ctx context.Context, array string, IQNs []s
 	}
 	_, err = s.getAndConfigureMaskingViewTargets(ctx, array, mvName, IQNs, pmaxClient)
 	if err != nil && !(strings.Contains(err.Error(), "Masking View") && strings.Contains(err.Error(), "cannot be found")) {
+		log.Error(err.Error())
 		return err
 	}
-	log.Warning(err)
 	return nil
 }
 
 // setupArrayForIscsi is called to set up a node for iscsi operation.
 func (s *service) setupArrayForNVMeTCP(ctx context.Context, array string, NQNs []string, pmaxClient pmax.Pmax) error {
 	hostName, _, mvName := s.GetNVMETCPHostSGAndMVIDFromNodeID(s.opts.NodeName)
+	log := log.WithContext(ctx)
 	log.Infof("setting up array %s for NVMeTCP, host name: %s masking view ID: %s %v", array, hostName, mvName, NQNs)
 
 	// Discover targets on the host
@@ -1964,13 +1981,14 @@ func (s *service) setupArrayForNVMeTCP(ctx context.Context, array string, NQNs [
 	// Create or update the NVMe Host and Initiators
 	_, err = s.getAndConfigureMaskingViewTargetsNVMeTCP(ctx, array, mvName, pmaxClient)
 	if err != nil && !(strings.Contains(err.Error(), "Masking View") && strings.Contains(err.Error(), "cannot be found")) {
+		log.Warn(err.Error())
 		return err
 	}
-	log.Warning(err)
 	return nil
 }
 
 func (s *service) updateNQNWithHostID(ctx context.Context, symID string, NQNs []string, pmaxClient pmax.Pmax) ([]string, error) {
+	log := log.WithContext(ctx)
 	updatesHostNQNs := make([]string, 0)
 	// Process the NQN to append hostId
 	hostInitiators, err := pmaxClient.GetInitiatorList(ctx, symID, "", false, false)
@@ -2004,6 +2022,7 @@ func (s *service) updateNQNWithHostID(ctx context.Context, symID string, NQNs []
 // getAndConfigureMaskingViewTargets - Returns a list of ISCSITargets for a given masking view
 // also update the node database with CHAP authentication (if required) and perform discovery/login
 func (s *service) getAndConfigureMaskingViewTargets(ctx context.Context, array, mvName string, IQNs []string, pmaxClient pmax.Pmax) ([]goiscsi.ISCSITarget, error) {
+	log := log.WithContext(ctx)
 	// Check the masking view
 	goISCSITargets := make([]goiscsi.ISCSITarget, 0)
 	view, err := pmaxClient.GetMaskingViewByID(ctx, array, mvName)
@@ -2040,6 +2059,7 @@ func (s *service) getAndConfigureMaskingViewTargets(ctx context.Context, array, 
 // getAndConfigureMaskingViewTargets - Returns a list of NVMeTargets for a given masking view
 // also update the node database with CHAP authentication (if required) and perform discovery/login
 func (s *service) getAndConfigureMaskingViewTargetsNVMeTCP(ctx context.Context, array, mvName string, pmaxClient pmax.Pmax) ([]gonvme.NVMeTarget, error) {
+	log := log.WithContext(ctx)
 	// Check the masking view
 	goNVMeTargets := make([]gonvme.NVMeTarget, 0)
 	view, err := pmaxClient.GetMaskingViewByID(ctx, array, mvName)
@@ -2069,6 +2089,7 @@ func (s *service) getAndConfigureMaskingViewTargetsNVMeTCP(ctx context.Context, 
 
 // setupNVMeTCPTargetDiscovery is called to discover NVMe targets from the host/node
 func (s *service) setupNVMeTCPTargetDiscovery(ctx context.Context, array string, pmaxClient pmax.Pmax) error {
+	log := log.WithContext(ctx)
 	var combinedErrors []string
 	atLeastOneLoggedIn := false
 	var totalTargetsDiscovered int
@@ -2112,8 +2133,8 @@ func (s *service) loginIntoISCSITargets(array string, targets []maskingViewTarge
 	var combinedErrors []string
 	atLeastOneLoggedIn := false
 	var totalTargetsDiscovered int
-	var err error
 
+	var err error
 	for _, tgt := range targets {
 		if s.opts.EnableCHAP {
 			err = s.iscsiClient.PerformLogin(tgt.target)
@@ -2158,11 +2179,12 @@ func (s *service) GetLoggedInArrays(array string) (isLoggedIn bool, ok bool) {
 	return isLoggedIn, ok
 }
 
-// loginIntoNVMeTargets - for a given array id and list of masking view targets
+// loginIntoNVMeTCPTargets - for a given array id and list of masking view targets
 // also update the logged in arrays cache
 func (s *service) loginIntoNVMeTCPTargets(array string, targets []maskingViewNVMeTargetInfo) error {
-	var err error
-	loggedInAll := true
+	var combinedErrors []string
+	atLeastOneLoggedIn := false
+	var totalTargetsDiscovered int
 	for _, tgt := range targets {
 		// Attempt target discovery from host
 		log.Debugf("Discovering NVMe targets on %s", tgt.target.Portal)
@@ -2170,8 +2192,8 @@ func (s *service) loginIntoNVMeTCPTargets(array string, targets []maskingViewNVM
 		if discoveryError != nil {
 			log.Errorf("Failed to discover the NVMe target: %s. Error: %s",
 				tgt.target.PortID, discoveryError.Error())
-			err = discoveryError
-			loggedInAll = false
+			combinedErrors = append(combinedErrors, fmt.Sprintf("target: %s, Error: %s",
+				tgt.target.Portal, discoveryError.Error()))
 		} else {
 			nvmeTgts, ok := s.nvmeTargets.Load(array)
 			if !ok {
@@ -2180,14 +2202,20 @@ func (s *service) loginIntoNVMeTCPTargets(array string, targets []maskingViewNVM
 			s.nvmeTargets.Store(array, append(nvmeTgts.([]string), tgt.target.TargetNqn))
 			log.Infof("Successfully logged into target: %s on portal :%s",
 				tgt.target.PortID, tgt.target.Portal)
+			atLeastOneLoggedIn = true
+			totalTargetsDiscovered++
 		}
 	}
 
-	// If we successfully logged into all targets, then marked the array as logged in
-	if loggedInAll {
+	// If we successfully logged into at least one target, then mark the array as logged in
+	if atLeastOneLoggedIn {
 		s.UpdateLoggedInNVMeArrays(array, true)
+	} else {
+		return fmt.Errorf("failed to discover NVMe targets on any of the portals. Errors: %s",
+			strings.Join(combinedErrors, "; "))
 	}
-	return err
+	log.Infof("Discovered %d NVMe targets out of %d on array %s", totalTargetsDiscovered, len(targets), array)
+	return nil
 }
 
 func (s *service) UpdateLoggedInNVMeArrays(array string, value bool) {
@@ -2224,7 +2252,7 @@ func (s *service) setCHAPCredentials(array string, targets []maskingViewTargetIn
 				log.Debugf("Setting CHAP credentials for targets: %v", targets)
 				err := s.iscsiClient.SetCHAPCredentials(targets[i].target, chapUserName, s.opts.CHAPPassword)
 				if err != nil {
-					log.Error(err)
+					log.Error(err.Error())
 					// If we were able to set credentials for some targets successfully
 					// even then we won't be updating the cache
 					return err
@@ -2301,6 +2329,7 @@ func (s *service) ensureISCSIDaemonStarted() error {
 }
 
 func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error {
+	log := log.WithContext(ctx)
 	arrays := &types.SymmetrixIDList{}
 
 	// Get the list of arrays
@@ -2356,6 +2385,7 @@ func (s *service) ensureLoggedIntoEveryArray(ctx context.Context, _ bool) error 
 }
 
 func (s *service) performNVMETCPLoginOnSymID(ctx context.Context, array string, mvName string, pmaxClient pmax.Pmax) (err error) {
+	log := log.WithContext(ctx)
 	mvTargets, ok := symToMaskingViewTargets.Load(array)
 	if ok {
 		err = s.loginIntoNVMeTCPTargets(array, mvTargets.([]maskingViewNVMeTargetInfo))
@@ -2382,6 +2412,7 @@ func (s *service) performNVMETCPLoginOnSymID(ctx context.Context, array string, 
 }
 
 func (s *service) performIscsiLoginOnSymID(ctx context.Context, array string, IQNs []string, mvName string, pmaxClient pmax.Pmax) (err error) {
+	log := log.WithContext(ctx)
 	// Try to get the masking view targets from the cache
 	mvTargets, ok := symToMaskingViewTargets.Load(array)
 	if ok {
@@ -2497,6 +2528,7 @@ func (s *service) getNVMeTCPTargetsForMaskingView(ctx context.Context, array str
 }
 
 func (s *service) createOrUpdateFCHost(ctx context.Context, array string, nodeName string, portWWNs []string, pmaxClient pmax.Pmax) (*types.Host, error) {
+	log := log.WithContext(ctx)
 	log.Info(fmt.Sprintf("Processing FC Host array: %s, nodeName: %s, initiators: %v", array, nodeName, portWWNs))
 	if array == "" {
 		return &types.Host{}, fmt.Errorf("createOrUpdateHost: No array specified")
@@ -2551,6 +2583,7 @@ func (s *service) createOrUpdateFCHost(ctx context.Context, array string, nodeNa
 }
 
 func (s *service) createOrUpdateIscsiHost(ctx context.Context, array string, nodeName string, IQNs []string, pmaxClient pmax.Pmax) (*types.Host, error) {
+	log := log.WithContext(ctx)
 	log.Debug(fmt.Sprintf("Processing Iscsi Host array: %s, nodeName: %s, initiators: %v", array, nodeName, IQNs))
 	if array == "" {
 		return &types.Host{}, fmt.Errorf("createOrUpdateHost: No array specified")
@@ -2586,6 +2619,7 @@ func (s *service) createOrUpdateIscsiHost(ctx context.Context, array string, nod
 }
 
 func (s *service) createOrUpdateNVMeTCPHost(ctx context.Context, array string, nodeName string, NQNs []string, pmaxClient pmax.Pmax) (*types.Host, error) {
+	log := log.WithContext(ctx)
 	log.Debug(fmt.Sprintf("Processing NVMeTCP Host array: %s, nodeName: %s, initiators: %v", array, nodeName, NQNs))
 	if array == "" {
 		return &types.Host{}, fmt.Errorf("createOrUpdateHost: No array specified")
@@ -2624,6 +2658,7 @@ func (s *service) createOrUpdateNVMeTCPHost(ctx context.Context, array string, n
 
 // retryableCreateHost
 func (s *service) retryableCreateHost(ctx context.Context, array string, nodeName string, hostInitiators []string, _ *types.HostFlags, pmaxClient pmax.Pmax) (*types.Host, error) {
+	log := log.WithContext(ctx)
 	var err error
 	var host *types.Host
 	deadline := time.Now().Add(time.Duration(s.GetPmaxTimeoutSeconds()) * time.Second)
@@ -2652,6 +2687,7 @@ func (s *service) retryableCreateHost(ctx context.Context, array string, nodeNam
 
 // retryableUpdateHostInitiators wraps UpdateHostInitiators in a retry loop
 func (s *service) retryableUpdateHostInitiators(ctx context.Context, array string, host *types.Host, initiators []string, pmaxClient pmax.Pmax) (*types.Host, error) {
+	log := log.WithContext(ctx)
 	var err error
 	var updatedHost *types.Host
 	deadline := time.Now().Add(time.Duration(s.GetPmaxTimeoutSeconds()) * time.Second)
@@ -2686,6 +2722,7 @@ func (s *service) NodeExpandVolume(
 	req *csi.NodeExpandVolumeRequest) (
 	*csi.NodeExpandVolumeResponse, error,
 ) {
+	log := log.WithContext(ctx)
 	var reqID string
 	var err error
 	headers, ok := metadata.FromIncomingContext(ctx)
@@ -2814,7 +2851,7 @@ func (s *service) NodeExpandVolume(
 
 	size := req.GetCapacityRange().GetRequiredBytes()
 
-	f := log.Fields{
+	f := csmlog.Fields{
 		"CSIRequestID": reqID,
 		"VolumeName":   volName,
 		"VolumePath":   volumePath,
@@ -2873,6 +2910,7 @@ func (s *service) NodeExpandVolume(
 
 // Gets the iscsi target iqn values that can be used for rescanning.
 func (s *service) getISCSITargets(ctx context.Context, symID string, pmaxClient pmax.Pmax) ([]ISCSITargetInfo, error) {
+	log := log.WithContext(ctx)
 	var targets []ISCSITargetInfo
 	var ips interface{}
 	var ok bool
@@ -2904,6 +2942,7 @@ func (s *service) getISCSITargets(ctx context.Context, symID string, pmaxClient 
 
 // Gets the iscsi target iqn values that can be used for rescanning.
 func (s *service) getNVMeTCPTargets(ctx context.Context, symID string, pmaxClient pmax.Pmax) ([]NVMeTCPTargetInfo, error) {
+	log := log.WithContext(ctx)
 	var targets []NVMeTCPTargetInfo
 	var ips interface{}
 	var ok bool
@@ -2938,6 +2977,7 @@ func (s *service) getNVMeTCPTargets(ctx context.Context, symID string, pmaxClien
 // If the target is ISCSI, it also updates ISCSI node database if CHAP
 // authentication was requested
 func (s *service) getArrayTargets(ctx context.Context, targetIdentifiers string, symID string, pmaxClient pmax.Pmax) ([]ISCSITargetInfo, []FCTargetInfo, []NVMeTCPTargetInfo, bool, bool) {
+	log := log.WithContext(ctx)
 	iscsiTargets := make([]ISCSITargetInfo, 0)
 	fcTargets := make([]FCTargetInfo, 0)
 	nvmeTargets := make([]NVMeTCPTargetInfo, 0)
@@ -2975,6 +3015,7 @@ func (s *service) getArrayTargets(ctx context.Context, targetIdentifiers string,
 }
 
 func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayTargets []string, symID string, pmaxClient pmax.Pmax) []NVMeTCPTargetInfo {
+	log := log.WithContext(ctx)
 	log.Debugf("Entering getAndConfigureArrayNVMeTCPTargets for symID: %s, arrayTargets: %+v", symID, arrayTargets)
 
 	nvmetcpTargets := make([]NVMeTCPTargetInfo, 0)
@@ -3048,6 +3089,7 @@ func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayT
 	log.Infof("There is no cached info, build it")
 	// There is no cached information
 	_, _, mvName := s.GetNVMETCPHostSGAndMVIDFromNodeID(s.opts.NodeName)
+
 	log.Debugf("mvName: %s", mvName)
 	// Get the Masking View Targets and configure CHAP if required
 	// This call updates the cache as well
@@ -3078,6 +3120,7 @@ func (s *service) getAndConfigureArrayNVMeTCPTargets(ctx context.Context, arrayT
 }
 
 func (s *service) getAndConfigureArrayISCSITargets(ctx context.Context, arrayTargets []string, symID string, pmaxClient pmax.Pmax) []ISCSITargetInfo {
+	log := log.WithContext(ctx)
 	iscsiTargets := make([]ISCSITargetInfo, 0)
 	allTargets, _ := s.getISCSITargets(ctx, symID, pmaxClient)
 	IQNs, err := s.iscsiClient.GetInitiators("")
@@ -3158,6 +3201,9 @@ func (s *service) getAndConfigureArrayISCSITargets(ctx context.Context, arrayTar
 	}
 	// There is no cached information
 	_, _, mvName := s.GetISCSIHostSGAndMVIDFromNodeID(s.opts.NodeName)
+
+	log.Debugf("mvName: %s", mvName)
+
 	// Get the Masking View Targets and configure CHAP if required
 	// This call updates the cache as well
 	goISCSITargets, err := s.getAndConfigureMaskingViewTargets(ctx, symID, mvName, IQNs, pmaxClient)

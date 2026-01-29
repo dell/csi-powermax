@@ -41,10 +41,10 @@ import (
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/servermock"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
+	"github.com/dell/csmlog"
 
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
 	"github.com/sirupsen/logrus"
-	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 
 	corev1 "k8s.io/api/core/v1"
@@ -152,7 +152,7 @@ func startTestServer(config string) error {
 	}
 	server, err = startServer(k8sUtils, serverOpts)
 	if err == nil {
-		log.Printf("started revproxy server successfully on port %s", serverOpts.Port)
+		log.Infof("started revproxy server successfully on port %s", serverOpts.Port)
 	}
 
 	return err
@@ -456,7 +456,7 @@ func TearDownSetup() {
 	log.Info("Removing the certs, temp files")
 	err := utils.RemoveTempFiles()
 	if err != nil {
-		log.Fatalln(err.Error())
+		log.Fatal(err.Error())
 		os.Exit(1)
 	}
 	log.Info("Proxy and mock servers stopped successfully")
@@ -1278,16 +1278,16 @@ func TestRun(t *testing.T) {
 
 func TestUpdateRevProxyLogParams(t *testing.T) {
 	tests := []struct {
-		name      string
-		format    string
-		logLevel  string
-		expectLog log.Level
+		name        string
+		format      string
+		logLevel    string
+		expectLevel csmlog.Level
 	}{
-		{"Default values", "", "", log.DebugLevel},
-		{"Valid JSON format", "json", "info", log.InfoLevel},
-		{"Valid Text format", "text", "warn", log.WarnLevel},
-		{"Invalid format defaults to text", "xml", "error", log.ErrorLevel},
-		{"Invalid log level defaults to debug", "json", "invalid", log.DebugLevel},
+		{"Default values", "", "", csmlog.DebugLevel},
+		{"Valid JSON format", "json", "info", csmlog.InfoLevel},
+		{"Valid Text format", "text", "warn", csmlog.WarnLevel},
+		{"Invalid format defaults to text", "xml", "error", csmlog.ErrorLevel},
+		{"Invalid log level defaults to debug", "json", "invalid", csmlog.DebugLevel},
 	}
 
 	for _, tt := range tests {
@@ -1299,7 +1299,7 @@ func TestUpdateRevProxyLogParams(t *testing.T) {
 			updateRevProxyLogParams(tt.format, tt.logLevel)
 
 			// Validate log level
-			assert.Equal(t, tt.expectLog, logrus.GetLevel())
+			assert.Equal(t, tt.expectLevel, csmlog.GetLevel())
 		})
 	}
 }

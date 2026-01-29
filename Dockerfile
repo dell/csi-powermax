@@ -1,4 +1,4 @@
-# Copyright © 2020-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright © 2020-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -10,24 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-ARG GOPROXY
 ARG GOIMAGE
 ARG BASEIMAGE
-ARG DIGEST
+ARG VERSION="2.16.0"
 
 # Stage to build the driver
 FROM $GOIMAGE as builder
-ARG GOPROXY
+ARG VERSION
 RUN mkdir -p /go/src
 COPY ./ /go/src/
 WORKDIR /go/src/
 RUN CGO_ENABLED=0 \
-    make build
+    make build IMAGE_VERSION=$VERSION 
 
 # Stage to build the driver image
 FROM $BASEIMAGE AS final
-COPY --from=builder /go/src/csi-powermax .
-COPY "csi-powermax.sh" .
+ARG VERSION
+COPY --from=builder /go/src/csi-powermax /csi-powermax
+COPY csi-powermax.sh /csi-powermax.sh
 ENTRYPOINT ["/csi-powermax.sh"]
 RUN chmod +x /csi-powermax.sh
 LABEL vendor="Dell Technologies" \
@@ -35,7 +35,7 @@ LABEL vendor="Dell Technologies" \
     name="csi-powermax" \
     summary="CSI Driver for Dell EMC PowerMax" \
     description="CSI Driver for provisioning persistent storage from Dell EMC PowerMax" \
-    release="1.15.0" \
-    version="2.15.0" \
+    release="1.16.0" \
+    version=$VERSION \
     license="Apache-2.0"
 COPY ./licenses /licenses

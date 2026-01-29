@@ -26,8 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dell/csmlog"
 	"github.com/gorilla/mux"
-	log "github.com/sirupsen/logrus"
 )
 
 func (s *service) newProbeStatus() {
@@ -38,6 +38,7 @@ func (s *service) newProbeStatus() {
 
 // startAPIService reads nodes to array status periodically
 func (s *service) startAPIService(ctx context.Context) {
+	log := log.WithContext(ctx)
 	if !s.opts.IsPodmonEnabled {
 		log.Info("podmon is not enabled")
 		return
@@ -49,6 +50,7 @@ func (s *service) startAPIService(ctx context.Context) {
 
 // apiRouter serves http requests
 func (s *service) apiRouter(_ context.Context) {
+	log := csmlog.GetLogger()
 	log.Infof("starting http server on port %s", s.opts.PodmonPort)
 	// create a new mux router
 	router := mux.NewRouter()
@@ -151,6 +153,7 @@ func (s *service) getArrayConnectivityStatus(w http.ResponseWriter, r *http.Requ
 
 // startNodeToArrayConnectivityCheck starts connectivityTest as one goroutine for each array
 func (s *service) startNodeToArrayConnectivityCheck(ctx context.Context) {
+	log := log.WithContext(ctx)
 	log.Debug("startNodeToArrayConnectivityCheck called")
 	s.probeStatus = new(sync.Map)
 	pMaxArrays := s.retryableGetSymmetrixIDList()
@@ -164,6 +167,7 @@ func (s *service) startNodeToArrayConnectivityCheck(ctx context.Context) {
 // testConnectivityAndUpdateStatus runs probe to test connectivity from node to array
 // updates probeStatus map[array]ArrayConnectivityStatus
 func (s *service) testConnectivityAndUpdateStatus(ctx context.Context, symID string, timeout time.Duration) {
+	log := log.WithContext(ctx)
 	defer func() {
 		if err := recover(); err != nil {
 			log.Errorf("panic occurred in testConnectivityAndUpdateStatus: %s", err)

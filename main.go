@@ -1,5 +1,5 @@
 /*
- Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -35,10 +35,17 @@ var flags struct {
 	kubeconfig              *string
 }
 
+var ManifestSemver string
+
 // main is ignored when this package is built as a go plug-in
 func main() {
 	setEnvsFunc()
 	initFlagsFunc()
+
+	if ManifestSemver != "" {
+		service.ManifestSemver = ManifestSemver
+		service.Manifest["semver"] = ManifestSemver
+	}
 
 	err := driverRun()
 	if err != nil {

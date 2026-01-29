@@ -9,6 +9,7 @@ csm-common.mk
 csi-powermax
 !csi-powermax/
 semver.mk
+vendor/
 
 # files created by IDEs
 .vscode

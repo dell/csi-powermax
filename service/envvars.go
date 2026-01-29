@@ -174,4 +174,10 @@ const (
 
 	// EnvRevProxySecretPath is an env variable that indicates reverseproxy secret path
 	EnvRevProxySecretPath = "X_CSI_REVPROXY_SECRET_FILEPATH" // #nosec 101
+
+	// EnvDynamicSGEnabled is an env variable which indicates if dynamic SG creation is enabled
+	EnvDynamicSGEnabled = "X_CSI_DYNAMIC_SG_ENABLED"
+
+	// EnvSGVolumeLimit is an env variable which indicates the configured storage group volume limit
+	EnvSGVolumeLimit = "X_CSI_STORAGE_GROUP_VOLUME_LIMIT"
 )

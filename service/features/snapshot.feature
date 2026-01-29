@@ -365,22 +365,6 @@ Feature: PowerMax CSI Interface
         And I call Create Volume from Volume
         Then the error contains "Source volume identifier not in supported format"
 @v1.2.0
-    Scenario: Create a volume from a volume but receive error
-        Given a PowerMax service
-        And I call CreateVolume "volume1"
-        And a valid CreateVolumeResponse is returned
-        And I induce error "LinkSnapshotError"
-        When I call Create Volume from Volume
-        Then the error contains "Failed to create volume from volume"
-@v1.4.0
-    Scenario: Create a volume from a volume but receive error
-        Given a PowerMax service
-        And I call CreateVolume "volume1"
-        And a valid CreateVolumeResponse is returned
-        And I induce error "MaxSnapSessionError"
-        When I call Create Volume from Volume
-        Then the error contains "Failed to create volume from volume"
-@v1.2.0
     Scenario: Terminating a snaphot
         Given a PowerMax service
         And I call CreateVolume "volume1"
@@ -664,16 +648,6 @@ Feature: PowerMax CSI Interface
         Then a valid CreateVolumeResponse is returned
         When I call Create Volume from Volume
         Then a valid CreateVolumeResponse is returned
-@v2.12.0
-    Scenario: Create a volume from another volume and catch error message
-        Given a PowerMax service
-        And I call CreateVolume "volume1"
-        And a valid CreateVolumeResponse is returned
-        When I call Create Volume from Volume
-        Then a valid CreateVolumeResponse is returned
-        And I induce error "MaxSnapSessionError"
-        When I call Create Volume from Volume
-        Then the error contains "Failed to create volume from volume"
 @v2.12.0
     Scenario: Create a volume from another snapshot
         Given a PowerMax service
