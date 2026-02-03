@@ -20,7 +20,7 @@ PROG="${0}"
 NODE_VERIFY=1
 VERIFY=1
 MODE="install"
-DEFAULT_DRIVER_VERSION="v2.15.0"
+DEFAULT_DRIVER_VERSION="v2.16.0"
 WATCHLIST=""
 
 #
@@ -49,7 +49,7 @@ function usage() {
   exit 0
 }
 
-DRIVERVERSION="csi-powermax-2.15.0"
+DRIVERVERSION="csi-powermax-2.16.0"
 
 while getopts ":h-:" optchar; do
   case "${optchar}" in
@@ -140,7 +140,7 @@ if [ ! -d "$DRIVERDIR/helm-charts" ]; then
     git clone --quiet -c advice.detachedHead=false  -b $DRIVERVERSION https://github.com/dell/helm-charts
   fi
   mv helm-charts $DRIVERDIR
-else 
+else
   if [  -d "$SCRIPTDIR/helm-charts" ]; then
     rm -rf $SCRIPTDIR/helm-charts
   fi
