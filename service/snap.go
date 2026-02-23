@@ -477,6 +477,43 @@ func (s *service) LinkVolumeToSnapshot(ctx context.Context, symID, srcDevID, tgt
 	return nil
 }
 
+// LinkVolumeToVolume attaches the newly created volume
+// to a temporary snapshot created from the source volume
+// Used for legacy V3 or below arrays that do not support the CloneVolumeFromVolume API
+func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *types.Volume, tgtDevID, snapID string, reqID string, isCopy bool, pmaxClient pmax.Pmax) error {
+	log := log.WithContext(ctx)
+	// Create a snapshot from the Source
+	// Set max 1 hr lifetime for the temporary snapshot
+	log.Debugf("Creating snapshot %s on %s and linking it to %s", snapID, vol.VolumeID, tgtDevID)
+	var TTL int64 = 1
+	snapInfo, err := s.CreateSnapshotFromVolume(ctx, symID, vol, snapID, TTL, reqID, pmaxClient)
+	if err != nil {
+		if strings.Contains(err.Error(), "The maximum number of sessions has been exceeded for the specified Source device") {
+			return status.Errorf(codes.FailedPrecondition, "Failed to create snapshot: %s", err.Error())
+		}
+		return err
+	}
+	// If Auth is enabled, snap name will come back with a prefix like tn1-snapID
+	snapID = snapInfo.SnapshotName
+	// Link the Target to the created snapshot
+	err = s.LinkVolumeToSnapshot(ctx, symID, vol.VolumeID, tgtDevID, snapID, reqID, isCopy, pmaxClient)
+	if err != nil {
+		if strings.Contains(err.Error(), errDesiredState) {
+			log.Infof("Link of %s on %s is in desired state", vol.VolumeID, tgtDevID)
+		} else {
+			return err
+		}
+	}
+	// Push the temporary snapshot created for cleanup
+	var cleanReq snapCleanupRequest
+	cleanReq.snapshotID = snapInfo.SnapshotName
+	cleanReq.symmetrixID = symID
+	cleanReq.volumeID = vol.VolumeID
+	cleanReq.requestID = reqID
+	s.snapCleaner.requestCleanup(&cleanReq)
+	return nil
+}
+
 // CreateSnapshotFromVolume creates a snapshot on a source volume
 func (s *service) CreateSnapshotFromVolume(ctx context.Context, symID string, vol *types.Volume, snapID string, TTL int64, reqID string, pmaxClient pmax.Pmax) (snapshot *types.VolumeSnapshot, err error) {
 	log := log.WithContext(ctx)

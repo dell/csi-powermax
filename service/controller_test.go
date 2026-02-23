@@ -883,6 +883,208 @@ func Test_service_createMetroVolume(t *testing.T) {
 			wantErr:    true,
 			wantErrMsg: "Error creating storage group",
 		},
+		{
+			name: "idempotent volume clone on V4 array uses LinkSRDFCloneVolume",
+			fields: serviceFields{
+				opts: Opts{
+					EnableBlock:   true,
+					ClusterPrefix: "CSM",
+				},
+			},
+			args: args{
+				ctx: context.Background(),
+				req: &csi.CreateVolumeRequest{
+					AccessibilityRequirements: &csi.TopologyRequirement{},
+					Name:                      "csivol-01234abcde",
+					CapacityRange:             goodCapacityRange,
+					VolumeCapabilities: []*csi.VolumeCapability{
+						{
+							AccessType: &csi.VolumeCapability_Block{
+								Block: &csi.VolumeCapability_BlockVolume{},
+							},
+						},
+					},
+					VolumeContentSource: &csi.VolumeContentSource{
+						Type: &csi.VolumeContentSource_Volume{
+							Volume: &csi.VolumeContentSource_VolumeSource{
+								VolumeId: validLocalVolumeID,
+							},
+						},
+					},
+				},
+				symID:              symIDLocal,
+				remoteSymID:        symIDRemote,
+				storagePoolID:      "POOL_1",
+				remoteSRPID:        "POOL_1",
+				serviceLevel:       "Diamond",
+				remoteServiceLevel: "Diamond",
+				namespace:          "default",
+				localRDFGrpNo:      "10",
+				remoteRDFGrpNo:     "20",
+			},
+			setup: func() {
+				requestLockFunc = func(_, _ string) int { return 0 }
+				releaseLockFunc = func(_, _ string, _ int) {}
+
+				initDefaultClient()
+				// Pool capacity checks
+				pmaxClient.EXPECT().GetStoragePool(gomock.Any(), symIDLocal, "POOL_1").Times(1).Return(&types.StoragePool{SrpCap: goodSrpCapacity}, nil)
+				pmaxClient.EXPECT().GetStoragePool(gomock.Any(), symIDRemote, "POOL_1").Times(1).Return(&types.StoragePool{SrpCap: goodSrpCapacity}, nil)
+				// Snapshot license check
+				pmaxClient.EXPECT().IsAllowedArray(gomock.Any()).Times(1).Return(true, nil)
+				pmaxClient.EXPECT().GetReplicationCapabilities(gomock.Any()).Times(1).Return(&types.SymReplicationCapabilities{
+					SymmetrixCapability: []types.SymmetrixCapability{{SymmetrixID: symIDLocal, SnapVxCapable: true}},
+				}, nil)
+				// Source volume for content source
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), symIDLocal, validLocalDeviceID).Times(1).Return(&types.Volume{
+					VolumeID:    validLocalDeviceID,
+					CapacityCYL: 100,
+				}, nil)
+				// Protected storage group with RDF
+				pmaxClient.EXPECT().GetProtectedStorageGroup(gomock.Any(), symIDLocal, gomock.Any()).Times(1).
+					Return(&types.RDFStorageGroup{Rdf: true}, nil)
+				// RDF info - direction check + suspend/establish checks
+				pmaxClient.EXPECT().GetStorageGroupRDFInfo(gomock.Any(), symIDLocal, gomock.Any(), "10").AnyTimes().
+					Return(&types.StorageGroupRDFG{
+						VolumeRdfTypes: []string{"R1"},
+						States:         []string{"Suspended"},
+					}, nil)
+				// Storage groups exist on R1 and R2
+				pmaxClient.EXPECT().GetStorageGroup(gomock.Any(), symIDLocal, gomock.Any()).Times(1).Return(&types.StorageGroup{}, nil)
+				pmaxClient.EXPECT().GetStorageGroup(gomock.Any(), symIDRemote, gomock.Any()).Times(1).Return(&types.StorageGroup{}, nil)
+				// Idempotency check - return existing volume
+				pmaxClient.EXPECT().GetVolumeIDList(gomock.Any(), symIDLocal, gomock.Any(), false).Times(1).Return([]string{"022CD"}, nil)
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), symIDLocal, "022CD").Times(1).Return(&types.Volume{
+					VolumeID:           "022CD",
+					VolumeIdentifier:   "csi-CSM-csivol-01234abcde-default",
+					CapacityCYL:        547,
+					CapacityGB:         1.0,
+					StorageGroupIDList: []string{"csi-CSM-Diamond-POOL_1-SG"},
+				}, nil)
+				// Remote volume pair
+				pmaxClient.EXPECT().GetRDFDevicePairInfo(gomock.Any(), symIDLocal, "10", "022CD").Times(1).Return(&types.RDFDevicePair{
+					RemoteVolumeName:     "033EF",
+					RemoteRdfGroupNumber: 20,
+				}, nil)
+				// Remote volume with 2+ SGs
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), symIDRemote, "033EF").Times(1).Return(&types.Volume{
+					VolumeID:           "033EF",
+					StorageGroupIDList: []string{"SG1", "SG2"},
+				}, nil)
+				// V4 check - return V4 microcode
+				pmaxClient.EXPECT().GetSymmetrixByID(gomock.Any(), symIDLocal).Times(1).Return(&types.Symmetrix{
+					SymmetrixID: symIDLocal,
+					Microcode:   "6079.325.0",
+				}, nil)
+				// CloneVolumeFromVolume returns error to verify V4 path is taken
+				pmaxClient.EXPECT().CloneVolumeFromVolume(gomock.Any(), symIDLocal, gomock.Any()).Times(1).
+					Return(errors.New("clone error"))
+			},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "Failed to create SRDF volume from volume",
+		},
+		{
+			name: "idempotent volume clone on V3 array uses legacy SnapVx clone",
+			fields: serviceFields{
+				opts: Opts{
+					EnableBlock:   true,
+					ClusterPrefix: "CSM",
+				},
+			},
+			args: args{
+				ctx: context.Background(),
+				req: &csi.CreateVolumeRequest{
+					AccessibilityRequirements: &csi.TopologyRequirement{},
+					Name:                      "csivol-01234abcde",
+					CapacityRange:             goodCapacityRange,
+					VolumeCapabilities: []*csi.VolumeCapability{
+						{
+							AccessType: &csi.VolumeCapability_Block{
+								Block: &csi.VolumeCapability_BlockVolume{},
+							},
+						},
+					},
+					VolumeContentSource: &csi.VolumeContentSource{
+						Type: &csi.VolumeContentSource_Volume{
+							Volume: &csi.VolumeContentSource_VolumeSource{
+								VolumeId: validLocalVolumeID,
+							},
+						},
+					},
+				},
+				symID:              symIDLocal,
+				remoteSymID:        symIDRemote,
+				storagePoolID:      "POOL_1",
+				remoteSRPID:        "POOL_1",
+				serviceLevel:       "Diamond",
+				remoteServiceLevel: "Diamond",
+				namespace:          "default",
+				localRDFGrpNo:      "10",
+				remoteRDFGrpNo:     "20",
+			},
+			setup: func() {
+				requestLockFunc = func(_, _ string) int { return 0 }
+				releaseLockFunc = func(_, _ string, _ int) {}
+
+				initDefaultClient()
+				// Pool capacity checks
+				pmaxClient.EXPECT().GetStoragePool(gomock.Any(), symIDLocal, "POOL_1").Times(1).Return(&types.StoragePool{SrpCap: goodSrpCapacity}, nil)
+				pmaxClient.EXPECT().GetStoragePool(gomock.Any(), symIDRemote, "POOL_1").Times(1).Return(&types.StoragePool{SrpCap: goodSrpCapacity}, nil)
+				// Snapshot license check
+				pmaxClient.EXPECT().IsAllowedArray(gomock.Any()).Times(1).Return(true, nil)
+				pmaxClient.EXPECT().GetReplicationCapabilities(gomock.Any()).Times(1).Return(&types.SymReplicationCapabilities{
+					SymmetrixCapability: []types.SymmetrixCapability{{SymmetrixID: symIDLocal, SnapVxCapable: true}},
+				}, nil)
+				// Source volume for content source
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), symIDLocal, validLocalDeviceID).Times(1).Return(&types.Volume{
+					VolumeID:    validLocalDeviceID,
+					CapacityCYL: 100,
+				}, nil)
+				// Protected storage group with RDF
+				pmaxClient.EXPECT().GetProtectedStorageGroup(gomock.Any(), symIDLocal, gomock.Any()).Times(1).
+					Return(&types.RDFStorageGroup{Rdf: true}, nil)
+				// RDF info - direction check
+				pmaxClient.EXPECT().GetStorageGroupRDFInfo(gomock.Any(), symIDLocal, gomock.Any(), "10").AnyTimes().
+					Return(&types.StorageGroupRDFG{
+						VolumeRdfTypes: []string{"R1"},
+						States:         []string{"Consistent"},
+					}, nil)
+				// Storage groups exist on R1 and R2
+				pmaxClient.EXPECT().GetStorageGroup(gomock.Any(), symIDLocal, gomock.Any()).Times(1).Return(&types.StorageGroup{}, nil)
+				pmaxClient.EXPECT().GetStorageGroup(gomock.Any(), symIDRemote, gomock.Any()).Times(1).Return(&types.StorageGroup{}, nil)
+				// Idempotency check - return existing volume
+				pmaxClient.EXPECT().GetVolumeIDList(gomock.Any(), symIDLocal, gomock.Any(), false).Times(1).Return([]string{"022CD"}, nil)
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), symIDLocal, "022CD").Times(1).Return(&types.Volume{
+					VolumeID:           "022CD",
+					VolumeIdentifier:   "csi-CSM-csivol-01234abcde-default",
+					CapacityCYL:        547,
+					CapacityGB:         1.0,
+					StorageGroupIDList: []string{"csi-CSM-Diamond-POOL_1-SG"},
+				}, nil)
+				// Remote volume pair
+				pmaxClient.EXPECT().GetRDFDevicePairInfo(gomock.Any(), symIDLocal, "10", "022CD").Times(1).Return(&types.RDFDevicePair{
+					RemoteVolumeName:     "033EF",
+					RemoteRdfGroupNumber: 20,
+				}, nil)
+				// Remote volume with 2+ SGs
+				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), symIDRemote, "033EF").Times(1).Return(&types.Volume{
+					VolumeID:           "033EF",
+					StorageGroupIDList: []string{"SG1", "SG2"},
+				}, nil)
+				// V3 check - return V3 microcode
+				pmaxClient.EXPECT().GetSymmetrixByID(gomock.Any(), symIDLocal).Times(1).Return(&types.Symmetrix{
+					SymmetrixID: symIDLocal,
+					Microcode:   "5978.441.0",
+				}, nil)
+				// CreateSnapshot is called in the legacy SnapVx clone path - return error to verify path
+				pmaxClient.EXPECT().CreateSnapshot(gomock.Any(), symIDLocal, gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+					Return(errors.New("snapshot creation error"))
+			},
+			want:       nil,
+			wantErr:    true,
+			wantErrMsg: "CreateSnapshot failed",
+		},
 	}
 
 	// initialize the client used by all these tests
@@ -3328,6 +3530,114 @@ func TestGetDynamicSG(t *testing.T) {
 			if needsCreation != tt.expectedNeedsCreation {
 				t.Errorf("expected needs creation %v, but got %v", tt.expectedNeedsCreation, needsCreation)
 			}
+		})
+	}
+}
+
+func Test_service_isV4OrAbove(t *testing.T) {
+	tests := []struct {
+		name   string
+		symID  string
+		setup  func(client *mocks.MockPmaxClient)
+		wantV4 bool
+	}{
+		{
+			name:  "V4 array with microcode 6079",
+			symID: "000197900046",
+			setup: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000197900046").Times(1).Return(&types.Symmetrix{
+					SymmetrixID: "000197900046",
+					Microcode:   "6079.325.0",
+				}, nil)
+			},
+			wantV4: true,
+		},
+		{
+			name:  "V3 array with microcode 5978",
+			symID: "000197900047",
+			setup: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000197900047").Times(1).Return(&types.Symmetrix{
+					SymmetrixID: "000197900047",
+					Microcode:   "5978.441.0",
+				}, nil)
+			},
+			wantV4: false,
+		},
+		{
+			name:  "V4 array with microcode 6100",
+			symID: "000197900050",
+			setup: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000197900050").Times(1).Return(&types.Symmetrix{
+					SymmetrixID: "000197900050",
+					Microcode:   "6100.100.0",
+				}, nil)
+			},
+			wantV4: true,
+		},
+		{
+			name:  "boundary value microcode 59xx should be V3",
+			symID: "000197900051",
+			setup: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000197900051").Times(1).Return(&types.Symmetrix{
+					SymmetrixID: "000197900051",
+					Microcode:   "5999.100.0",
+				}, nil)
+			},
+			wantV4: false,
+		},
+		{
+			name:  "empty microcode defaults to legacy",
+			symID: "000197900052",
+			setup: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000197900052").Times(1).Return(&types.Symmetrix{
+					SymmetrixID: "000197900052",
+					Microcode:   "",
+				}, nil)
+			},
+			wantV4: false,
+		},
+		{
+			name:  "short microcode defaults to legacy",
+			symID: "000197900053",
+			setup: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000197900053").Times(1).Return(&types.Symmetrix{
+					SymmetrixID: "000197900053",
+					Microcode:   "6",
+				}, nil)
+			},
+			wantV4: false,
+		},
+		{
+			name:  "non-numeric microcode prefix defaults to legacy",
+			symID: "000197900054",
+			setup: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000197900054").Times(1).Return(&types.Symmetrix{
+					SymmetrixID: "000197900054",
+					Microcode:   "AB79.325.0",
+				}, nil)
+			},
+			wantV4: false,
+		},
+		{
+			name:  "GetSymmetrixByID returns error defaults to legacy",
+			symID: "000197900055",
+			setup: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000197900055").Times(1).Return(nil, errors.New("connection error"))
+			},
+			wantV4: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			client := mocks.NewMockPmaxClient(ctrl)
+			tt.setup(client)
+
+			svc := &service{}
+			got := svc.isV4OrAbove(context.Background(), tt.symID, client)
+			assert.Equal(t, tt.wantV4, got)
 		})
 	}
 }

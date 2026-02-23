@@ -12,7 +12,7 @@
 #
 ARG GOIMAGE
 ARG BASEIMAGE
-ARG VERSION="2.16.0"
+ARG VERSION="2.16.1"
 
 # Stage to build the driver
 FROM $GOIMAGE as builder

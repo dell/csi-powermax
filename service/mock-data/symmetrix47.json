@@ -7,5 +7,9 @@
   "all_flash": true,
   "disk_count": 8,
   "cache_size_mb": 203776,
-  "data_encryption": "Disabled"
+  "data_encryption": "Disabled",
+  "microcode": "5978.441.0",
+  "microcode_date": "06-15-2022",
+  "microcode_registered_build": 100,
+  "microcode_package_version": "9.2.1.0 (HotFix 10055, Build 5978_441/0100, 2022-06-15 10:00:00)"
 }

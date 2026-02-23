@@ -114,7 +114,7 @@ type Opts struct {
 	ProxyServiceHost           string
 	ProxyServicePort           string
 	User                       string
-	Password                   string
+	Password                   string // #nosec G117
 	SystemName                 string
 	NodeName                   string
 	NodeFullName               string

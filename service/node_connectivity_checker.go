@@ -95,7 +95,7 @@ func (s *service) connectivityStatus(w http.ResponseWriter, _ *http.Request) {
 	}
 	log.Info("sending connectivityStatus for all arrays ")
 	w.Header().Set("Content-Type", "application/json")
-	_, err = w.Write(jsonResponse)
+	_, err = w.Write(jsonResponse) // #nosec G705
 	if err != nil {
 		log.Errorf("unable to write response %s", err)
 	}
@@ -132,7 +132,7 @@ func (s *service) getArrayConnectivityStatus(w http.ResponseWriter, r *http.Requ
 		w.WriteHeader(http.StatusNotFound)
 		w.Header().Set("Content-Type", "application/json")
 		// update response writer
-		fmt.Fprintf(w, "array %s not found \n", symID)
+		fmt.Fprintf(w, "array %s not found \n", symID) // #nosec G705
 		return
 	}
 	// convert status struct to JSON
@@ -145,7 +145,7 @@ func (s *service) getArrayConnectivityStatus(w http.ResponseWriter, r *http.Requ
 	}
 	log.Infof("sending response %+v for array %s \n", status, symID)
 	// update response
-	_, err = w.Write(jsonResponse)
+	_, err = w.Write(jsonResponse) // #nosec G705
 	if err != nil {
 		log.Errorf("unable to write response %s", err)
 	}

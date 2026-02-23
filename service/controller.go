@@ -117,6 +117,7 @@ const (
 	NASServerName                   = "nasServer"
 	fileSystemID                    = "file_system_id"
 	FcIscsiID                       = "SCSI_FC"
+	v4ModelThreshold                = 59
 )
 
 // Keys for parameters to CreateVolume
@@ -859,9 +860,21 @@ func (s *service) CreateVolume(
 								return nil, err
 							}
 						} else if srcVolID != "" {
-							err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
-							if err != nil {
-								return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+							// Check if the array is V4 or above
+							isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
+							if isV4 {
+								// V4 and above, use clone with "establish_terminate" option
+								err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
+								if err != nil {
+									return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+								}
+							} else {
+								// V3 or below, use legacy SnapVx clone
+								tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
+								err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, tmpSnapID, localProtectionGroupID, localRDFGrpNo, "false", false, pmaxClient)
+								if err != nil {
+									return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+								}
 							}
 						}
 					} else { // replication is not enabled
@@ -875,19 +888,31 @@ func (s *service) CreateVolume(
 								return nil, status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
 							}
 						} else if srcVolID != "" && eachVol.ID != "" {
-							replicaRequest := types.ReplicationRequest{
-								ReplicationPair: []types.ReplicationPair{
-									{
-										SourceVolumeName: srcVol.VolumeID,
-										TargetVolumeName: eachVol.ID,
+							// Check if the array is V4 or above
+							isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
+							if isV4 {
+								// V4 and above, use clone with "establish_terminate" option
+								replicaRequest := types.ReplicationRequest{
+									ReplicationPair: []types.ReplicationPair{
+										{
+											SourceVolumeName: srcVol.VolumeID,
+											TargetVolumeName: eachVol.ID,
+										},
 									},
-								},
-								Establish:          true,
-								EstablishTerminate: true,
-							}
-							err = pmaxClient.CloneVolumeFromVolume(ctx, symID, replicaRequest)
-							if err != nil {
-								return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
+									Establish:          true,
+									EstablishTerminate: true,
+								}
+								err = pmaxClient.CloneVolumeFromVolume(ctx, symID, replicaRequest)
+								if err != nil {
+									return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
+								}
+							} else {
+								// V3 or below, use legacy SnapVx clone
+								tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
+								err = s.LinkVolumeToVolume(ctx, symID, srcVol, eachVol.ID, tmpSnapID, reqID, false, pmaxClient)
+								if err != nil {
+									return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
+								}
 							}
 						}
 					}
@@ -991,9 +1016,21 @@ func (s *service) CreateVolume(
 								return nil, err
 							}
 						} else if srcVolID != "" {
-							err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
-							if err != nil {
-								return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+							// Check if the array is V4 or above
+							isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
+							if isV4 {
+								// V4 and above, use clone with "establish_terminate" option
+								err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
+								if err != nil {
+									return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+								}
+							} else {
+								// V3 or below, use legacy SnapVx clone
+								tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
+								err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, tmpSnapID, localProtectionGroupID, localRDFGrpNo, "false", false, pmaxClient)
+								if err != nil {
+									return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+								}
 							}
 						}
 					} else { // replication is not enabled
@@ -1007,20 +1044,31 @@ func (s *service) CreateVolume(
 								return nil, status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
 							}
 						} else if srcVolID != "" {
-							replicaRequest := types.ReplicationRequest{
-								ReplicationPair: []types.ReplicationPair{
-									{
-										SourceVolumeName: srcVol.VolumeID,
-										TargetVolumeName: vol.VolumeID,
+							// Check if the array is V4 or above
+							isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
+							if isV4 {
+								// V4 and above, use clone with "establish_terminate" option
+								replicaRequest := types.ReplicationRequest{
+									ReplicationPair: []types.ReplicationPair{
+										{
+											SourceVolumeName: srcVol.VolumeID,
+											TargetVolumeName: vol.VolumeID,
+										},
 									},
-								},
-								Establish:          true,
-								EstablishTerminate: true,
-							}
-
-							err = pmaxClient.CloneVolumeFromVolume(ctx, symID, replicaRequest)
-							if err != nil {
-								return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
+									Establish:          true,
+									EstablishTerminate: true,
+								}
+								err = pmaxClient.CloneVolumeFromVolume(ctx, symID, replicaRequest)
+								if err != nil {
+									return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
+								}
+							} else {
+								// V3 or below, use legacy SnapVx clone
+								tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
+								err = s.LinkVolumeToVolume(ctx, symID, srcVol, vol.VolumeID, tmpSnapID, reqID, false, pmaxClient)
+								if err != nil {
+									return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
+								}
 							}
 						}
 					}
@@ -1110,25 +1158,47 @@ func (s *service) CreateVolume(
 	// If volume content source is specified, initiate no_copy to newly created volume
 	if contentSource != nil {
 		if srcVolID != "" {
+			// Check if the array is V4 or above
+			isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
 			if replicationEnabled == "true" {
-				err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
-				if err != nil {
-					return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+				if isV4 {
+					// V4 and above, use clone with "establish_terminate" option
+					err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
+					if err != nil {
+						return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+					}
+				} else {
+					// V3 or below, use legacy SnapVx clone
+					tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
+					err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, tmpSnapID, localProtectionGroupID, localRDFGrpNo, "false", false, pmaxClient)
+					if err != nil {
+						return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+					}
 				}
 			} else {
-				replicaRequest := types.ReplicationRequest{
-					ReplicationPair: []types.ReplicationPair{
-						{
-							SourceVolumeName: srcVol.VolumeID,
-							TargetVolumeName: vol.VolumeID,
+				if isV4 {
+					// V4 and above, use clone with "establish_terminate" option
+					replicaRequest := types.ReplicationRequest{
+						ReplicationPair: []types.ReplicationPair{
+							{
+								SourceVolumeName: srcVol.VolumeID,
+								TargetVolumeName: vol.VolumeID,
+							},
 						},
-					},
-					Establish:          true,
-					EstablishTerminate: true,
-				}
-				err = pmaxClient.CloneVolumeFromVolume(ctx, symID, replicaRequest)
-				if err != nil {
-					return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
+						Establish:          true,
+						EstablishTerminate: true,
+					}
+					err = pmaxClient.CloneVolumeFromVolume(ctx, symID, replicaRequest)
+					if err != nil {
+						return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
+					}
+				} else {
+					// V3 or below, use legacy SnapVx clone
+					tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
+					err = s.LinkVolumeToVolume(ctx, symID, srcVol, vol.VolumeID, tmpSnapID, reqID, false, pmaxClient)
+					if err != nil {
+						return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
+					}
 				}
 			}
 		} else if srcSnapID != "" {
@@ -1487,9 +1557,21 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 						return nil, err
 					}
 				} else if srcVolID != "" {
-					err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
-					if err != nil {
-						return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+					// Check if the array is V4 or above
+					isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
+					if isV4 {
+						// V4 and above, use clone with "establish_terminate" option
+						err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
+						if err != nil {
+							return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+						}
+					} else {
+						// V3 or below, use legacy SnapVx clone
+						tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
+						err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, tmpSnapID, localProtectionGroupID, localRDFGrpNo, "false", false, pmaxClient)
+						if err != nil {
+							return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+						}
 					}
 				}
 			}
@@ -1606,9 +1688,21 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 				return nil, err
 			}
 		} else if srcVolID != "" {
-			err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
-			if err != nil {
-				return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+			// Check if the array is V4 or above
+			isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
+			if isV4 {
+				// V4 and above, use clone with "establish_terminate" option
+				err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
+				if err != nil {
+					return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+				}
+			} else {
+				// V3 or below, use legacy SnapVx clone
+				tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
+				err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, tmpSnapID, localProtectionGroupID, localRDFGrpNo, "false", false, pmaxClient)
+				if err != nil {
+					return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
+				}
 			}
 		}
 	}
@@ -1675,8 +1769,8 @@ func (s *service) LinkSRDFVolToSnapshot(ctx context.Context, reqID, symID, srcVo
 	// Take lock on SG
 	var lockHandle string
 	lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
-	lockNum := RequestLock(lockHandle, reqID)
-	defer ReleaseLock(lockHandle, reqID, lockNum)
+	lockNum := requestLockFunc(lockHandle, reqID)
+	defer releaseLockFunc(lockHandle, reqID, lockNum)
 	bbias, _ := strconv.ParseBool(bias)
 	if !tgtVol.SnapTarget {
 		// Unlink all previous targets from this snapshot if the link is in defined state
@@ -4881,6 +4975,40 @@ func (s *service) resolveParameter(params map[string]string, arrayID, param, def
 	return defaultValue
 }
 
+// isV4OrAbove checks if the PowerMax array is V4 or above by examining the microcode version.
+// Take the first 2 digits of the microcode and convert to a number.
+// If the number is greater than 59, the array is V4 or above.
+func (s *service) isV4OrAbove(ctx context.Context, symID string, pmaxClient pmax.Pmax) bool {
+	log := log.WithContext(ctx)
+	symmetrix, err := pmaxClient.GetSymmetrixByID(ctx, symID)
+	if err != nil {
+		log.Warnf("Failed to get symmetrix info for %s: %s, defaulting to legacy clone", symID, err.Error())
+		return false
+	}
+	microcode := symmetrix.Microcode
+	if microcode == "" {
+		log.Warnf("Microcode version is empty for array %s, defaulting to legacy clone", symID)
+		return false
+	}
+	// Take the first 2 digits of the microcode and convert to number
+	if len(microcode) < 2 {
+		log.Warnf("Microcode version too short for array %s: %s, defaulting to legacy clone", symID, microcode)
+		return false
+	}
+	modelNumberStr := microcode[:2]
+	symmModelNumber, err := strconv.Atoi(modelNumberStr)
+	if err != nil {
+		log.Warnf("Failed to parse microcode version for array %s: %s, defaulting to legacy clone", symID, microcode)
+		return false
+	}
+	log.Debugf("Array %s microcode: %s, model number prefix: %d", symID, microcode, symmModelNumber)
+
+	if symmModelNumber > v4ModelThreshold {
+		return true
+	}
+	return false
+}
+
 func (s *service) addZoneLabelsToVolumeAttributes(attributes map[string]string, arrayID string) {
 	if array, ok := s.opts.StorageArrays[arrayID]; ok {
 		for k, v := range array.Labels {
@@ -4894,8 +5022,8 @@ func (s *service) LinkSRDFCloneVolume(ctx context.Context, reqID string, symID s
 	// Take lock on SG
 	var lockHandle string
 	lockHandle = fmt.Sprintf("%s%s", localProtectionGroupID, symID)
-	lockNum := RequestLock(lockHandle, reqID)
-	defer ReleaseLock(lockHandle, reqID, lockNum)
+	lockNum := requestLockFunc(lockHandle, reqID)
+	defer releaseLockFunc(lockHandle, reqID, lockNum)
 	bbias, _ := strconv.ParseBool(bias)
 
 	replicaRequest := types.ReplicationRequest{
