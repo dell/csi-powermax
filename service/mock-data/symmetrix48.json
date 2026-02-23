@@ -7,5 +7,9 @@
   "all_flash": true,
   "disk_count": 8,
   "cache_size_mb": 203776,
-  "data_encryption": "Disabled"
+  "data_encryption": "Disabled",
+  "microcode": "6079.325.0",
+  "microcode_date": "09-30-2025",
+  "microcode_registered_build": 84,
+  "microcode_package_version": "10.3.0.0 (Release 01, Build 6079_325/0084, 2025-09-30 14:44:22)"
 }

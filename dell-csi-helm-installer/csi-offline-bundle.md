@@ -79,9 +79,9 @@ For example, here is the output of a request to build an offline bundle for the 
 * Pulling and saving container images
 
    quay.io/dell/container-storage-modules/csi-isilon:v2.16.0
-   quay.io/dell/container-storage-modules/csi-metadata-retriever:v1.11.0
-   quay.io/dell/container-storage-modules/csipowermax-reverseproxy:v2.14.0
-   quay.io/dell/container-storage-modules/csi-powermax:v2.16.0
+   quay.io/dell/container-storage-modules/csi-metadata-retriever:v1.13.0
+   quay.io/dell/container-storage-modules/csipowermax-reverseproxy:v2.15.1
+   quay.io/dell/container-storage-modules/csi-powermax:v2.16.1
    quay.io/dell/container-storage-modules/csi-powerstore:v2.16.0
    quay.io/dell/container-storage-modules/csi-unity:v2.16.0
    quay.io/dell/container-storage-modules/csi-vxflexos:v2.16.0
@@ -187,7 +187,7 @@ Loaded image: registry.k8s.io/sig-storage/csi-snapshotter:v8.4.0
 * Tagging and pushing images
 
    quay.io/dell/container-storage-modules/csi-isilon:v2.16.0 -> localregistry:5000/dell-csm-operator/csi-isilon:v2.16.0
-   quay.io/dell/container-storage-modules/csi-metadata-retriever:v1.11.0 -> localregistry:5000/dell-csm-operator/csi-metadata-retriever:v1.11.0
+   quay.io/dell/container-storage-modules/csi-metadata-retriever:v1.13.0 -> localregistry:5000/dell-csm-operator/csi-metadata-retriever:v1.13.0
    ...
    ...
    registry.k8s.io/sig-storage/csi-resizer:v2.0.0 -> localregistry:5000/dell-csm-operator/csi-resizer:v2.0.0
@@ -197,7 +197,7 @@ Loaded image: registry.k8s.io/sig-storage/csi-snapshotter:v8.4.0
 * Preparing files within /root/dell-csm-operator-bundle
 
    changing: quay.io/dell/container-storage-modules/csi-isilon:v2.16.0 -> localregistry:5000/dell-csm-operator/csi-isilon:v2.16.0
-   changing: quay.io/dell/container-storage-modules/csi-metadata-retriever:v1.6.0 -> localregistry:5000/dell-csm-operator/csi-metadata-retriever:v1.6.0
+   changing: quay.io/dell/container-storage-modules/csi-metadata-retriever:v1.13.0 -> localregistry:5000/dell-csm-operator/csi-metadata-retriever:v1.13.0
    ...
    ...
    changing: registry.k8s.io/sig-storage/csi-resizer:v2.0.0 -> localregistry:5000/dell-csm-operator/csi-resizer:v2.0.0

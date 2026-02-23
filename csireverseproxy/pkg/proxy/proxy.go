@@ -286,7 +286,7 @@ func (revProxy *Proxy) getResponseIfAuthorised(res http.ResponseWriter, req *htt
 	}
 
 	requestID := req.Header.Get("RequestID")
-	req, err = http.NewRequest(req.Method, path, req.Body)
+	req, err = http.NewRequest(req.Method, path, req.Body) // #nosec G704 - Not an user input
 	if err != nil {
 		http.Error(res, err.Error(), 500)
 		return nil, err
@@ -312,7 +312,7 @@ func (revProxy *Proxy) getResponseIfAuthorised(res http.ResponseWriter, req *htt
 		return nil, err
 	}
 	defer lock.Release()
-	return client.Do(req)
+	return client.Do(req) // #nosec G704 - Not an user input
 }
 
 func (revProxy *Proxy) modifyHTTPRequest(res http.ResponseWriter, req *http.Request, targetURL url.URL) {
@@ -571,7 +571,7 @@ func (revProxy *Proxy) ServeReverseProxy(res http.ResponseWriter, req *http.Requ
 		}
 		defer utils.Elapsed(requestID, "Unisphere RESTAPI response")()
 		defer lock.Release()
-		proxy.ReverseProxy.ServeHTTP(res, req)
+		proxy.ReverseProxy.ServeHTTP(res, req) // #nosec G704 - Suppress error handling check as ReverseProxy.ServeHTTP handles errors internally
 	}
 }
 
@@ -703,7 +703,7 @@ func (revProxy *Proxy) ServeIterator(res http.ResponseWriter, req *http.Request)
 		utils.WriteHTTPError(res, "failed to obtain lock", utils.StatusInternalError)
 	}
 	defer lock.Release()
-	proxy.ReverseProxy.ServeHTTP(res, req)
+	proxy.ReverseProxy.ServeHTTP(res, req) // #nosec G704 - Suppress error handling check as ReverseProxy.ServeHTTP handles errors internally
 }
 
 // ServeSymmetrix - handler function for symmetrix list endpoint
