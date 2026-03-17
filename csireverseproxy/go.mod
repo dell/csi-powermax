@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/dell/csmlog v1.0.0
-	github.com/dell/gopowermax/v2 v2.12.1
+	github.com/dell/gopowermax/v2 v2.12.2
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gorilla/mux v1.8.1
 	github.com/kubernetes-csi/csi-lib-utils v0.23.0

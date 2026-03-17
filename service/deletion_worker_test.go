@@ -597,6 +597,15 @@ func TestDeleteVolumes(t *testing.T) {
 			},
 			pmaxClient: func() pmax.Pmax {
 				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetVersionDetails(gomock.Any()).AnyTimes().Return(&types.VersionDetails{APIVersion: "103"}, nil)
+				pmaxClient.EXPECT().GetVolumesByIdentifierMatch(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volumev1{
+					Volumes: []types.VolumeEnhanced{
+						{
+							ID:         "vol-123",
+							Identifier: "vol-123",
+						},
+					},
+				}, nil)
 				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volume{
 					VolumeID: "vol-123",
 				}, nil)
@@ -629,6 +638,7 @@ func TestDeleteVolumes(t *testing.T) {
 			},
 			pmaxClient: func() pmax.Pmax {
 				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetVersionDetails(gomock.Any()).AnyTimes().Return(&types.VersionDetails{APIVersion: "100"}, nil)
 				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("error"))
 				return pmaxClient
 			}(),
@@ -658,6 +668,16 @@ func TestDeleteVolumes(t *testing.T) {
 			},
 			pmaxClient: func() pmax.Pmax {
 				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetVersionDetails(gomock.Any()).AnyTimes().Return(&types.VersionDetails{APIVersion: "103"}, nil)
+				pmaxClient.EXPECT().GetVolumesByIdentifierMatch(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volumev1{
+					Volumes: []types.VolumeEnhanced{
+						{
+							ID:            "vol-123",
+							Identifier:    "vol-123",
+							StorageGroups: []types.StorageGroupID{{StorageGroupID: "sg-1"}},
+						},
+					},
+				}, nil)
 				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volume{
 					VolumeID:           "vol-123",
 					StorageGroupIDList: []string{"sg-1"},
@@ -667,7 +687,7 @@ func TestDeleteVolumes(t *testing.T) {
 			expectedResult: false,
 		},
 		{
-			name: "Volume being deleted not the same as originally requested",
+			name: "Volume identifier not the same as originally requested",
 			deletionQueue: &deletionQueue{
 				DeviceList: []*csiDevice{
 					{
@@ -691,6 +711,15 @@ func TestDeleteVolumes(t *testing.T) {
 			},
 			pmaxClient: func() pmax.Pmax {
 				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetVersionDetails(gomock.Any()).AnyTimes().Return(&types.VersionDetails{APIVersion: "103"}, nil)
+				pmaxClient.EXPECT().GetVolumesByIdentifierMatch(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volumev1{
+					Volumes: []types.VolumeEnhanced{
+						{
+							ID:         "vol-123",
+							Identifier: "vol-identifier-2",
+						},
+					},
+				}, nil)
 				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volume{
 					VolumeID:           "vol-123",
 					StorageGroupIDList: []string{},
@@ -699,7 +728,7 @@ func TestDeleteVolumes(t *testing.T) {
 				pmaxClient.EXPECT().DeleteVolume(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 				return pmaxClient
 			}(),
-			expectedResult: true,
+			expectedResult: false,
 		},
 	}
 

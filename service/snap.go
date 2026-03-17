@@ -666,6 +666,18 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 
 	}
 	for {
+		select {
+		case <-ctx.Done():
+			log.Infof("snap cleanup worker context canceled, exiting")
+			return
+		default:
+		}
+		select {
+		case <-ctx.Done():
+			log.Infof("snap cleanup worker context canceled, exiting")
+			return
+		default:
+		}
 		req := scw.removeItem()
 		if req != nil {
 			var reqID string

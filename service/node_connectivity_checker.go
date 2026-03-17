@@ -177,6 +177,12 @@ func (s *service) testConnectivityAndUpdateStatus(ctx context.Context, symID str
 	}()
 	var status ArrayConnectivityStatus
 	for {
+		select {
+		case <-ctx.Done():
+			log.Infof("connectivity monitor for %s canceled", symID)
+			return
+		default:
+		}
 		// add timeout to context
 		timeOutCtx, cancel := context.WithTimeout(ctx, timeout)
 		log.Debugf("Running probe for array %s at time %v \n", symID, time.Now())
@@ -201,7 +207,12 @@ func (s *service) testConnectivityAndUpdateStatus(ctx context.Context, symID str
 		log.Debugf("array %s , storing status %+v", symID, status)
 		s.probeStatus.Store(symID, status)
 		cancel()
-		// sleep for half the pollingFrequency and run check again
-		time.Sleep(time.Second * time.Duration(s.GetPollingFrequency()/2))
+		select {
+		case <-ctx.Done():
+			log.Infof("connectivity monitor for %s canceled during sleep", symID)
+			cancel()
+			return
+		case <-time.After(time.Second * time.Duration(s.GetPollingFrequency()/2)):
+		}
 	}
 }

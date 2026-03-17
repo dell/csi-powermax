@@ -46,6 +46,7 @@ const (
 	deletionStateDeleteVol      = "deleteVolume"
 	deleted                     = "deleted"
 	maxedOutState               = "maxedOut"
+	skipDeleteState             = "skipDelete"
 	FinalError                  = "Final error: Max error count reached, device will be removed from Deletion Queue"
 )
 
@@ -91,10 +92,11 @@ type symVolumeCache struct {
 
 // deletionQueue - queue holding the devices being deleted
 type deletionQueue struct {
-	DeviceList   []*csiDevice
-	SymID        string
-	DeleteTracks bool
-	lock         sync.Mutex
+	DeviceList    []*csiDevice
+	SymID         string
+	DeleteTracks  bool
+	ClusterPrefix string
+	lock          sync.Mutex
 }
 
 // deletionWorker - represents the deletion worker
@@ -342,6 +344,14 @@ func (queue *deletionQueue) cleanupSnapshots(pmaxClient pmax.Pmax) bool {
 				device.updateStatus(device.Status.State, err.Error())
 				return false
 			}
+			// Check if the device being processed is the same one as the one originally requested
+			if symVol.VolumeIdentifier != device.VolumeIdentifier {
+				errorMsg := fmt.Sprintf("%s: volume identifiers don't match(Orig: %s, Current: %s) - skipping cleanupSnapshots\n",
+					device.print(), device.VolumeIdentifier, symVol.VolumeIdentifier)
+				log.Error(errorMsg)
+				device.updateStatus(skipDeleteState, errorMsg)
+				continue
+			}
 			if symVol.SnapTarget {
 				if count == 5 {
 					continue
@@ -397,6 +407,14 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 		symVol, err := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, device.SymDeviceID.DeviceID, pmaxClient, false)
 		if err != nil {
 			device.updateStatus(device.Status.State, err.Error())
+			continue
+		}
+		// Check if the device being processed is the same one as the one originally requested
+		if symVol.VolumeIdentifier != device.VolumeIdentifier {
+			errorMsg := fmt.Sprintf("%s: volume identifiers don't match(Orig: %s, Current: %s) - skipping disAssociateSG\n",
+				device.print(), device.VolumeIdentifier, symVol.VolumeIdentifier)
+			log.Error(errorMsg)
+			device.updateStatus(skipDeleteState, errorMsg)
 			continue
 		}
 		if len(symVol.StorageGroupIDList) > 0 {
@@ -541,30 +559,75 @@ func (queue *deletionQueue) deleteVolumes(pmaxClient pmax.Pmax) bool {
 	// Go through all the volumes in the queue which are in deletevol state and then form device ranges and delete them
 	queue.lock.Lock()
 	defer queue.lock.Unlock()
+	var version int
+	volumeMap := make(map[string]types.VolumeEnhanced)
+	ctx := context.Background()
+
 	deviceIDs := make([]symDeviceID, 0)
 	if len(queue.DeviceList) == 0 {
 		return false
 	}
+
+	versionDetails, err := pmaxClient.GetVersionDetails(ctx)
+	if err != nil {
+		log.Errorf("error getting api version of array %s, Error: %s", queue.SymID, err.Error())
+	} else if versionDetails.APIVersion != "" {
+		version, err = strconv.Atoi(versionDetails.APIVersion)
+		if err != nil {
+			log.Errorf("error in parsing Version: %s", err.Error())
+		}
+	}
+
+	// Usebulk Volume get if api is greater than or 101
+	if version >= 101 {
+		volDeletePrefix := DeletionPrefix + CSIPrefix + "-" + queue.ClusterPrefix
+		log.Infof("Deletion Prefix: %s", volDeletePrefix)
+		volumev1, err := pmaxClient.GetVolumesByIdentifierMatch(ctx, queue.SymID, volDeletePrefix)
+		if err != nil {
+			log.Errorf("error getting volumes by identifier prefix: %s", err.Error())
+			log.Infof("Continuing with individual volume validation")
+		} else {
+			for _, volume := range volumev1.Volumes {
+				volumeMap[volume.ID] = volume
+			}
+		}
+	}
+
 	for _, device := range queue.DeviceList {
 		if device.Status.State == deletionStateDeleteVol {
+			var sgCount int
+			var volumeIdentifier string
+
 			// Check once more if volume is part of any storage groups
-			vol, err := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, device.SymDeviceID.DeviceID, pmaxClient, false)
-			if err != nil {
-				device.updateStatus(device.Status.State, err.Error())
-				continue
+			if enhancedVolume, ok := volumeMap[device.SymDeviceID.DeviceID]; ok && version >= 101 {
+				sgCount = len(enhancedVolume.StorageGroups)
+				volumeIdentifier = enhancedVolume.Identifier
+				log.Debugf("Enhanced volumeIdentifier: %s and SG Count: %d", volumeIdentifier, sgCount)
+			} else {
+				vol, err := device.SymVolumeCache.getOrUpdateVolume(queue.SymID, device.SymDeviceID.DeviceID, pmaxClient, true)
+				if err != nil {
+					device.updateStatus(device.Status.State, err.Error())
+					continue
+				}
+				sgCount = len(vol.StorageGroupIDList)
+				volumeIdentifier = vol.VolumeIdentifier
+				log.Debugf("VolumeIdentifier: %s and SG Count: %d", volumeIdentifier, sgCount)
 			}
-			if len(vol.StorageGroupIDList) != 0 {
+
+			if sgCount != 0 {
 				log.Errorf("%s: is part of some storage groups", device.print())
 				device.updateStatus(deletionStateDisAssociateSG, "")
 				continue
 			}
 			// Check one final time if the device being deleted is the same one as the one originally requested
 			// This would automatically check if _DEL identifier has been set
-			if vol.VolumeIdentifier != device.VolumeIdentifier {
+			if volumeIdentifier != device.VolumeIdentifier {
 				errorMsg := fmt.Sprintf("%s: volume identifiers don't match(Orig: %s, Req: %s)\n",
-					device.print(), device.VolumeIdentifier, vol.VolumeIdentifier)
+					device.print(), device.VolumeIdentifier, volumeIdentifier)
 				log.Error(errorMsg)
-				device.updateStatus(deletionStateDeleteVol, errorMsg)
+				// Assigning skipDelete state to remove the device from deletion queue and skip volume deletion
+				device.updateStatus(skipDeleteState, errorMsg)
+				continue
 			}
 			deviceIDs = append(deviceIDs, device.SymDeviceID)
 		}
@@ -631,13 +694,13 @@ func (worker *deletionWorker) pruneDeletionQueues() {
 		queue.lock.Lock()
 		i := 0 // output index
 		for _, dev := range queue.DeviceList {
-			if dev.Status.State != deleted && dev.Status.State != maxedOutState {
+			if dev.Status.State != deleted && dev.Status.State != maxedOutState && dev.Status.State != skipDeleteState {
 				// copy and increment index
 				queue.DeviceList[i] = dev
 				i++
 			} else {
-				log.Infof("%s: removed from deletion queue. Total time spent: %v",
-					dev.print(), time.Since(dev.Status.AdditionTime))
+				log.Infof("%s: removed from deletion queue. Total time spent: %v, Current state: %s",
+					dev.print(), time.Since(dev.Status.AdditionTime), dev.Status.State)
 			}
 		}
 		for j := i; j < len(queue.DeviceList); j++ {
@@ -807,7 +870,10 @@ func (worker *deletionWorker) deletionWorker() {
 }
 
 func (worker *deletionWorker) populateDeletionQueue() {
+	ctx := context.Background()
 	for _, symID := range worker.SymmetrixIDs {
+		version := 0
+		checkVolByVol := true
 		log.Infof("Processing symmetrix %s for volumes to be deleted with cluster prefix: %s", symID, worker.ClusterPrefix)
 		volDeletePrefix := DeletionPrefix + CSIPrefix + "-" + worker.ClusterPrefix
 		log.Infof("Deletion Prefix: %s", volDeletePrefix)
@@ -816,32 +882,73 @@ func (worker *deletionWorker) populateDeletionQueue() {
 			log.Error(err.Error())
 			continue
 		}
-		volList, err := pmaxClient.GetVolumeIDList(context.Background(), symID, volDeletePrefix, true)
+
+		versionDetails, err := pmaxClient.GetVersionDetails(ctx)
 		if err != nil {
-			log.Errorf("Could not retrieve volume IDs to be deleted. Error: %s", err.Error())
-			continue
+			log.Errorf("error getting api version of array %s, Error: %s", symID, err.Error())
 		}
-		log.Infof("Total number of volumes found which have been tagged for deletion: %d", len(volList))
-		if len(volList) > 0 {
-			log.Infof("Volumes with the prefix: %s - %v", volDeletePrefix, volList)
-		}
-		for _, id := range volList {
-			volume, err := pmaxClient.GetVolumeByID(context.Background(), symID, id)
+
+		if versionDetails.APIVersion != "" {
+			version, err = strconv.Atoi(versionDetails.APIVersion)
 			if err != nil {
-				log.Warnf("Could not retrieve details for volume: %s. Ignoring it", id)
+				log.Errorf("error in parsing Version: %s", err.Error())
+			}
+		}
+
+		log.Infof("Deletion Prefix: %s", volDeletePrefix)
+
+		// Usebulk Volume get if api is greater than or 101
+		if version >= 101 {
+			volDeletePrefix := DeletionPrefix + CSIPrefix + "-" + worker.ClusterPrefix
+			volumev1, err := pmaxClient.GetVolumesByIdentifierMatch(ctx, symID, volDeletePrefix)
+			if err != nil {
+				log.Errorf("error getting volumes by identifier prefix: %s", err.Error())
+				log.Infof("Continuing with individual volume validation")
+			} else {
+				log.Infof("Total number of volumes found in bulk which have been tagged for deletion: %d", len(volumev1.Volumes))
+				for _, volume := range volumev1.Volumes {
+					// Put volume on the queue if appropriate
+					go func() {
+						err := worker.QueueDeviceForDeletion(volume.ID, volume.Identifier, symID)
+						if err != nil {
+							log.Errorf("Error in queuing device for deletion. Error: %s", err.Error())
+						}
+					}()
+				}
+				// Volume retreival in bulk is successful
+				checkVolByVol = false
+				log.Debugf("Bulk volume retrieval and processing for delete is succesful")
+			}
+		}
+
+		if checkVolByVol {
+			volList, err := pmaxClient.GetVolumeIDList(context.Background(), symID, volDeletePrefix, true)
+			if err != nil {
+				log.Errorf("Could not retrieve volume IDs to be deleted. Error: %s", err.Error())
 				continue
 			}
-			// Put volume on the queue if appropriate
-			if strings.HasPrefix(volume.VolumeIdentifier, volDeletePrefix) {
-				go func() {
-					err := worker.QueueDeviceForDeletion(id, volume.VolumeIdentifier, symID)
-					if err != nil {
-						log.Errorf("Error in queuing device for deletion. Error: %s", err.Error())
-					}
-				}()
-			} else {
-				log.Warnf("(Device ID: %s, SymID: %s): skipping as it is not tagged for deletion",
-					volume.VolumeID, symID)
+			log.Infof("Total number of volumes found which have been tagged for deletion: %d", len(volList))
+			if len(volList) > 0 {
+				log.Infof("Volumes with the prefix: %s - %v", volDeletePrefix, volList)
+			}
+			for _, id := range volList {
+				volume, err := pmaxClient.GetVolumeByID(context.Background(), symID, id)
+				if err != nil {
+					log.Warnf("Could not retrieve details for volume: %s. Ignoring it", id)
+					continue
+				}
+				// Put volume on the queue if appropriate
+				if strings.HasPrefix(volume.VolumeIdentifier, volDeletePrefix) {
+					go func() {
+						err := worker.QueueDeviceForDeletion(id, volume.VolumeIdentifier, symID)
+						if err != nil {
+							log.Errorf("Error in queuing device for deletion. Error: %s", err.Error())
+						}
+					}()
+				} else {
+					log.Warnf("(Device ID: %s, SymID: %s): skipping as it is not tagged for deletion",
+						volume.VolumeID, symID)
+				}
 			}
 		}
 	}
@@ -860,8 +967,9 @@ func (s *service) NewDeletionWorker(clusterPrefix string, symIDs []string) {
 		delWorker.DeletionQueues = make(map[string]*deletionQueue, 0)
 		for _, symID := range symIDs {
 			delWorker.DeletionQueues[symID] = &deletionQueue{
-				DeviceList: make([]*csiDevice, 0),
-				SymID:      symID,
+				DeviceList:    make([]*csiDevice, 0),
+				SymID:         symID,
+				ClusterPrefix: clusterPrefix,
 			}
 		}
 		log.Infof("Configuring deletion worker with Cluster Prefix: %s, Sym IDs: %v",
