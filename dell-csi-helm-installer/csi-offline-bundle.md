@@ -80,11 +80,11 @@ For example, here is the output of a request to build an offline bundle for the 
 
    quay.io/dell/container-storage-modules/csi-isilon:v2.16.0
    quay.io/dell/container-storage-modules/csi-metadata-retriever:v1.13.0
-   quay.io/dell/container-storage-modules/csipowermax-reverseproxy:v2.15.1
-   quay.io/dell/container-storage-modules/csi-powermax:v2.16.1
+   quay.io/dell/container-storage-modules/csipowermax-reverseproxy:v2.15.2
+   quay.io/dell/container-storage-modules/csi-powermax:v2.16.2
    quay.io/dell/container-storage-modules/csi-powerstore:v2.16.0
    quay.io/dell/container-storage-modules/csi-unity:v2.16.0
-   quay.io/dell/container-storage-modules/csi-vxflexos:v2.16.0
+   quay.io/dell/container-storage-modules/csi-vxflexos:v2.16.1
    quay.io/dell/container-storage-modules/csm-authorization-sidecar:v2.4.0
    quay.io/dell/container-storage-modules/csm-metrics-powerflex:v1.14.0
    quay.io/dell/container-storage-modules/csm-metrics-powerscale:v1.11.0
@@ -92,7 +92,7 @@ For example, here is the output of a request to build an offline bundle for the 
    quay.io/dell/container-storage-modules/dell-csi-replicator:v1.14.0
    quay.io/dell/container-storage-modules/dell-replication-controller:v1.14.0
    quay.io/dell/container-storage-modules/sdc:4.5.2.1
-   quay.io/dell/container-storage-modules/dell-csm-operator:v1.11.0
+   quay.io/dell/container-storage-modules/dell-csm-operator:v1.11.3
    registry.redhat.io/openshift4/ose-kube-rbac-proxy-rhel9:v4.16.0-202409051837.p0.g8ea2c99.assembly.stream.el9
    nginxinc/nginx-unprivileged:1.29
    otel/opentelemetry-collector:0.142.0

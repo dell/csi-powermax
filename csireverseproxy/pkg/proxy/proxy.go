@@ -424,6 +424,7 @@ func (revProxy *Proxy) updateConfig(proxyConfig config.ProxyConfig) {
 func (revProxy *Proxy) GetRouter() http.Handler {
 	router := mux.NewRouter()
 	router.Use(revProxy.symIDMiddleware)
+	router.Path(utils.PrefixV1+"/systems/{symid}/volumes").Queries("limit", "{limit}").HandlerFunc(revProxy.ServeReverseProxy)
 	router.Path(utils.PrefixV1 + "/systems/{symid}/volumes").HandlerFunc(revProxy.GetVolumes)
 	router.Path(utils.PrefixV1 + "/systems/{symid}/port-groups").HandlerFunc(revProxy.GetPortGroups)
 	router.Path(utils.PrefixV1 + "/systems/{symid}/storage-groups").HandlerFunc(revProxy.ServeReverseProxy)

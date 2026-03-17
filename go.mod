@@ -13,7 +13,7 @@ require (
 	github.com/dell/gofsutil v1.21.0
 	github.com/dell/goiscsi v1.14.0
 	github.com/dell/gonvme v1.13.0
-	github.com/dell/gopowermax/v2 v2.12.1
+	github.com/dell/gopowermax/v2 v2.12.2
 	github.com/akutz/goof v0.1.2
 	github.com/container-storage-interface/spec v1.6.0
 	github.com/coreos/go-systemd/v22 v22.6.0

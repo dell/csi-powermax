@@ -3594,7 +3594,8 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 		}
 	}
 
-	if version >= 103 {
+	isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
+	if version >= 103 && isV4 {
 		log.Debug("API version is greater than or equal to 103. Using enhanced API")
 		portGroupList, err := pmaxClient.GetPortGroupListByType(ctx, symID, "fibre")
 		if err != nil {

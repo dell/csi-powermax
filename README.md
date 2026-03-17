@@ -44,4 +44,3 @@ For a complete list of dependencies, please visit [Prerequisites](https://dell.g
 
 ## Documentation
 For more detailed information on the driver, please refer to [Container Storage Modules documentation](https://dell.github.io/csm-docs/).
-

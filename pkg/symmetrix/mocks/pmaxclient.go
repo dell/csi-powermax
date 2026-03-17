@@ -1840,10 +1840,25 @@ func (m *MockPmaxClient) GetVolumesByIdentifier(arg0 context.Context, arg1, arg2
 	return ret0, ret1
 }
 
+// GetVolumesByIdentifier mocks base method.
+func (m *MockPmaxClient) GetVolumesByIdentifierMatch(arg0 context.Context, arg1, arg2 string) (*v100.Volumev1, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVolumesByIdentifierMatch", arg0, arg1, arg2)
+	ret0, _ := ret[0].(*v100.Volumev1)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
 // GetVolumesByIdentifier indicates an expected call of GetVolumesByIdentifier.
 func (mr *MockPmaxClientMockRecorder) GetVolumesByIdentifier(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumesByIdentifier", reflect.TypeOf((*MockPmaxClient)(nil).GetVolumesByIdentifier), arg0, arg1, arg2)
+}
+
+// GetVolumesByIdentifierMatch indicates an expected call of GetVolumesByIdentifierMatch.
+func (mr *MockPmaxClientMockRecorder) GetVolumesByIdentifierMatch(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumesByIdentifierMatch", reflect.TypeOf((*MockPmaxClient)(nil).GetVolumesByIdentifierMatch), arg0, arg1, arg2)
 }
 
 // GetVolumesInStorageGroupIterator mocks base method.
