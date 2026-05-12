@@ -661,7 +661,9 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 			return err
 		}
 		var certFile string
-		if managementServer.CertSecret != "" {
+		// user may have certSecret set and SkipCertificationValidation set to true
+		// so if SkipCertificationValidation is true, ignore certSecret
+		if managementServer.CertSecret != "" && !managementServer.SkipCertificateValidation {
 			certFile, err = k8sUtils.GetCertFileFromSecretName(managementServer.CertSecret)
 			if err != nil {
 				return err
@@ -751,7 +753,9 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 			return err
 		}
 		var certFile string
-		if managementServer.CertSecret != "" {
+		// user may have certSecret set and SkipCertificationValidation set to true
+		// so if SkipCertificationValidation is true, ignore certSecret
+		if managementServer.CertSecret != "" && !managementServer.SkipCertificateValidation {
 			certFile, err = k8sUtils.GetCertFileFromSecretName(managementServer.CertSecret)
 			if err != nil {
 				return err

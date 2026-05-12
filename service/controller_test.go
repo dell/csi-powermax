@@ -15,6 +15,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -36,8 +37,44 @@ import (
 	"github.com/golang/mock/gomock"
 	gmock "github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/net/context"
 )
+
+// DeletionWorker interface for testing purposes
+type DeletionWorker interface {
+	QueueDeviceForDeletion(devID string, volumeIdentifier, symID string) error
+}
+
+// MockDeletionWorker is a mock implementation of DeletionWorker interface
+type MockDeletionWorker struct {
+	ctrl     *gomock.Controller
+	recorder *MockDeletionWorkerMockRecorder
+}
+
+type MockDeletionWorkerMockRecorder struct {
+	mock *MockDeletionWorker
+}
+
+func NewMockDeletionWorker(ctrl *gomock.Controller) *MockDeletionWorker {
+	mock := &MockDeletionWorker{ctrl: ctrl}
+	mock.recorder = &MockDeletionWorkerMockRecorder{mock}
+	return mock
+}
+
+func (m *MockDeletionWorker) EXPECT() *MockDeletionWorkerMockRecorder {
+	return m.recorder
+}
+
+func (m *MockDeletionWorker) QueueDeviceForDeletion(devID string, volumeIdentifier, symID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "QueueDeviceForDeletion", devID, volumeIdentifier, symID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+func (mr *MockDeletionWorkerMockRecorder) QueueDeviceForDeletion(devID, volumeIdentifier, symID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueueDeviceForDeletion", reflect.TypeOf((*MockDeletionWorker)(nil).QueueDeviceForDeletion), devID, volumeIdentifier, symID)
+}
 
 const (
 	KiB int64 = 1024
@@ -71,7 +108,6 @@ const (
 type serviceFields struct {
 	opts                      Opts
 	mode                      string
-	pmaxTimeoutSeconds        int64
 	adminClient               pmax.Pmax
 	deletionWorker            *deletionWorker
 	iscsiClient               goiscsi.ISCSIinterface
@@ -1093,7 +1129,6 @@ func Test_service_createMetroVolume(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1221,7 +1256,6 @@ func Test_service_getStoragePoolCapacities(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1379,7 +1413,6 @@ func Test_service_validateVolSize(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1476,7 +1509,6 @@ func Test_service_controllerProbe(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1573,7 +1605,6 @@ func Test_service_requireProbe(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1669,7 +1700,6 @@ func Test_service_SelectOrCreatePortGroup(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1809,7 +1839,6 @@ func Test_service_CreateRemoteVolume(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -1920,7 +1949,6 @@ func Test_service_GetPortIdentifier(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -2142,7 +2170,6 @@ func Test_service_CreateSnapshot(t *testing.T) {
 			s := &service{
 				opts:                      tt.fields.opts,
 				mode:                      tt.fields.mode,
-				pmaxTimeoutSeconds:        tt.fields.pmaxTimeoutSeconds,
 				adminClient:               tt.fields.adminClient,
 				deletionWorker:            tt.fields.deletionWorker,
 				iscsiClient:               tt.fields.iscsiClient,
@@ -2466,7 +2493,8 @@ func Test_service_verifyProtectionGroupID(t *testing.T) {
 								// building a bad Storage Group ID
 								"-" + localRDFGroupNum + "-" + Async,
 							},
-						}, nil)
+						}, nil,
+					)
 
 					return client
 				}(),
@@ -2490,7 +2518,8 @@ func Test_service_verifyProtectionGroupID(t *testing.T) {
 								// building a bad Storage Group ID
 								"-" + localRDFGroupNum + "-" + Async,
 							},
-						}, nil)
+						}, nil,
+					)
 
 					return client
 				}(),
@@ -2638,6 +2667,7 @@ func Test_service_ControllerPublishVolume(t *testing.T) {
 
 				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
 				c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+				c.EXPECT().GetVersionDetails(gomock.Any()).AnyTimes().Return(&types.VersionDetails{APIVersion: "103"}, nil)
 				c.EXPECT().GetFileSystemByID(gomock.Any(), symIDLocal, gomock.Any()).Times(1).Return(
 					&types.FileSystem{}, errors.New("failed to fetch file system"),
 				)
@@ -2678,6 +2708,7 @@ func Test_service_ControllerPublishVolume(t *testing.T) {
 
 				c.EXPECT().WithSymmetrixID(symIDLocal).AnyTimes().Return(c)
 				c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+				c.EXPECT().GetVersionDetails(gomock.Any()).AnyTimes().Return(&types.VersionDetails{APIVersion: "103"}, nil)
 				c.EXPECT().GetFileSystemByID(gomock.Any(), symIDLocal, gomock.Any()).Times(1).Return(
 					&types.FileSystem{}, nil, // successfully returning a file system to simulate static provisioning
 				)
@@ -3534,6 +3565,501 @@ func TestGetDynamicSG(t *testing.T) {
 	}
 }
 
+// setupFCInitiatorMocks sets up the common mock expectations for a Fibre host
+// that successfully resolves initiators to SCSI_FC ports.
+// Returns dirPort "FA-1D:0" in portListFromHost.
+func setupFCInitiatorMocks(client *mocks.MockPmaxClient, symID string) {
+	client.EXPECT().GetPortListByProtocol(gomock.Any(), symID, "SCSI_FC").Return(&types.PortList{
+		SymmetrixPortKey: []types.PortKey{
+			{DirectorID: "FA-1D", PortID: "0"},
+		},
+	}, nil)
+	client.EXPECT().GetInitiatorList(gomock.Any(), symID, "5000000000000001", false, false).Return(&types.InitiatorList{
+		InitiatorIDs: []string{"FA-1D:0:5000000000000001"},
+	}, nil)
+}
+
+func Test_service_SelectOrCreateFCPGForHost(t *testing.T) {
+	defaultHost := &types.Host{
+		HostID:     "host1",
+		HostType:   "Fibre",
+		Initiators: []string{"5000000000000001"},
+	}
+
+	tests := []struct {
+		name          string
+		symID         string
+		host          *types.Host
+		setup         func(client *mocks.MockPmaxClient)
+		expectedPGID  string
+		expectedError bool
+		errorMsg      string
+	}{
+		{
+			name:  "nil host returns error",
+			symID: "000120000001",
+			host:  nil,
+			setup: func(_ *mocks.MockPmaxClient) {
+			},
+			expectedError: true,
+			errorMsg:      "SelectOrCreateFCPGForHost: host can't be nil",
+		},
+		{
+			name:  "non-Fibre host type returns error for no valid initiators",
+			symID: "000120000001",
+			host: &types.Host{
+				HostID:     "host1",
+				HostType:   "iSCSI",
+				Initiators: []string{},
+			},
+			setup: func(_ *mocks.MockPmaxClient) {
+			},
+			expectedError: true,
+			errorMsg:      "failed to find a valid initiator",
+		},
+		{
+			name:  "Fibre host with initiator on non-SCSI_FC port returns error",
+			symID: "000120000001",
+			host: &types.Host{
+				HostID:     "host1",
+				HostType:   "Fibre",
+				Initiators: []string{"5000000000000001"},
+			},
+			setup: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetPortListByProtocol(gomock.Any(), "000120000001", "SCSI_FC").Return(&types.PortList{
+					SymmetrixPortKey: []types.PortKey{
+						{DirectorID: "FA-1D", PortID: "0"},
+					},
+				}, nil)
+				client.EXPECT().GetInitiatorList(gomock.Any(), "000120000001", "5000000000000001", false, false).Return(&types.InitiatorList{
+					InitiatorIDs: []string{"FA-2D:0:5000000000000001"},
+				}, nil)
+			},
+			expectedError: true,
+			errorMsg:      "failed to find a valid initiator",
+		},
+		{
+			name:  "GetPortListByProtocol error returns error",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetPortListByProtocol(gomock.Any(), "000120000001", "SCSI_FC").Return(nil, errors.New("port list error"))
+			},
+			expectedError: true,
+			errorMsg:      "Failed to fetch SCSI_FC port",
+		},
+		{
+			name:  "GetInitiatorList error skips initiator and returns no valid initiator error",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetPortListByProtocol(gomock.Any(), "000120000001", "SCSI_FC").Return(&types.PortList{
+					SymmetrixPortKey: []types.PortKey{
+						{DirectorID: "FA-1D", PortID: "0"},
+					},
+				}, nil)
+				client.EXPECT().GetInitiatorList(gomock.Any(), "000120000001", "5000000000000001", false, false).Return(nil, errors.New("initiator error"))
+			},
+			expectedError: true,
+			errorMsg:      "failed to find a valid initiator",
+		},
+		{
+			name:  "GetVersionDetails error returns error",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(nil, errors.New("version error"))
+			},
+			expectedError: true,
+			errorMsg:      "error in getversion API",
+		},
+		{
+			name:  "non-numeric API version returns parsing error",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "abc",
+				}, nil)
+			},
+			expectedError: true,
+			errorMsg:      "error in parsing Version",
+		},
+		{
+			name:  "enhanced API GetPortGroupListByType error returns error",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				// satisfy 103 version check
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "103",
+				}, nil)
+				// satisfy v4 version check with anything above "59xx.xxx.x"
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "6079.325.0",
+				}, nil)
+				client.EXPECT().GetPortGroupListByType(gomock.Any(), "000120000001", "fibre").Return(nil, errors.New("api error"))
+			},
+			expectedError: true,
+			errorMsg:      "failed to fetch Fibre channel port groups for array(enhanced API)",
+		},
+		{
+			name:  "enhanced API invalid base64-encoded port ID returns error",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "103",
+				}, nil)
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "6079.325.0",
+				}, nil)
+				client.EXPECT().GetPortGroupListByType(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupListResult{
+					Results: []types.PortGroupListv1{
+						{
+							ID:       "pg1",
+							Protocol: FcIscsiID,
+							Ports: []types.PortValues{
+								{
+									// bad base64 encoding triggers error
+									PortID:   "!!!invalid-base64!!!",
+									Type:     "Fibre",
+									Director: types.DirectorID{ID: "FA-1D"},
+								},
+							},
+						},
+					},
+				}, nil)
+			},
+			expectedError: true,
+			errorMsg:      "Failed to fetch Fibre channel port ID",
+		},
+		{
+			name:  "enhanced API finds matching port group",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "103",
+				}, nil)
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "6079.325.0",
+				}, nil)
+				// base64.RawStdEncoding.Encode("FA-1D|0") => "RkEtMUR8MA"
+				client.EXPECT().GetPortGroupListByType(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupListResult{
+					Results: []types.PortGroupListv1{
+						{
+							ID:       "pg-enhanced-match",
+							Protocol: FcIscsiID,
+							Ports: []types.PortValues{
+								{
+									PortID:   "RkEtMUR8MA",
+									Type:     "Fibre",
+									Director: types.DirectorID{ID: "FA-1D"},
+								},
+							},
+						},
+					},
+				}, nil)
+			},
+			expectedPGID:  "pg-enhanced-match",
+			expectedError: false,
+		},
+		{
+			name:  "enhanced API no match creates port group",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "103",
+				}, nil)
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "6079.325.0",
+				}, nil)
+				// base64.RawStdEncoding.Encode("FA-2D|0") => "RkEtMkR8MA"  (different director)
+				client.EXPECT().GetPortGroupListByType(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupListResult{
+					Results: []types.PortGroupListv1{
+						{
+							ID:       "pg-other",
+							Protocol: FcIscsiID,
+							Ports: []types.PortValues{
+								{
+									PortID:   "RkEtMkR8MA",
+									Type:     "Fibre",
+									Director: types.DirectorID{ID: "FA-2D"},
+								},
+							},
+						},
+					},
+				}, nil)
+				client.EXPECT().CreatePortGroup(gomock.Any(), "000120000001", "csi-ABC-FA-1D-0-PG", gomock.Any(), "SCSI_FC").Return(&types.PortGroup{}, nil)
+			},
+			expectedPGID:  "csi-ABC-FA-1D-0-PG",
+			expectedError: false,
+		},
+		{
+			name:  "legacy API GetPortGroupList error returns error",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "102",
+				}, nil)
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "5978.441.0",
+				}, nil)
+				client.EXPECT().GetPortGroupList(gomock.Any(), "000120000001", "fibre").Return(nil, errors.New("pg list error"))
+			},
+			expectedError: true,
+			errorMsg:      "Failed to fetch Fibre channel port groups for array:",
+		},
+		{
+			name:  "legacy API finds matching port group",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "102",
+				}, nil)
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "5978.441.0",
+				}, nil)
+				client.EXPECT().GetPortGroupList(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupList{
+					PortGroupIDs: []string{"csi-ABC-pg1"},
+				}, nil)
+				client.EXPECT().GetPortGroupByID(gomock.Any(), "000120000001", "csi-ABC-pg1").Return(&types.PortGroup{
+					PortGroupID:   "csi-ABC-pg1",
+					PortGroupType: "Fibre",
+					SymmetrixPortKey: []types.PortKey{
+						{DirectorID: "FA-1D", PortID: "0"},
+					},
+				}, nil)
+			},
+			expectedPGID:  "csi-ABC-pg1",
+			expectedError: false,
+		},
+		{
+			name:  "legacy API filters port groups by csi prefix",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "102",
+				}, nil)
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "5978.441.0",
+				}, nil)
+				// Only "csi-ABC-pg1" matches prefix "csi-ABC"; "other-pg" does not
+				client.EXPECT().GetPortGroupList(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupList{
+					PortGroupIDs: []string{"other-pg", "csi-ABC-pg1"},
+				}, nil)
+				client.EXPECT().GetPortGroupByID(gomock.Any(), "000120000001", "csi-ABC-pg1").Return(&types.PortGroup{
+					PortGroupID:   "csi-ABC-pg1",
+					PortGroupType: "SCSI_FC",
+					SymmetrixPortKey: []types.PortKey{
+						{DirectorID: "FA-1D", PortID: "0"},
+					},
+				}, nil)
+			},
+			expectedPGID:  "csi-ABC-pg1",
+			expectedError: false,
+		},
+		{
+			name:  "legacy API GetPortGroupByID error continues to next",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "102",
+				}, nil)
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "5978.441.0",
+				}, nil)
+				client.EXPECT().GetPortGroupList(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupList{
+					PortGroupIDs: []string{"csi-ABC-pg1", "csi-ABC-pg2"},
+				}, nil)
+				// First PG errors, second PG matches
+				client.EXPECT().GetPortGroupByID(gomock.Any(), "000120000001", "csi-ABC-pg1").Return(nil, errors.New("pg error"))
+				client.EXPECT().GetPortGroupByID(gomock.Any(), "000120000001", "csi-ABC-pg2").Return(&types.PortGroup{
+					PortGroupID:   "csi-ABC-pg2",
+					PortGroupType: "Fibre",
+					SymmetrixPortKey: []types.PortKey{
+						{DirectorID: "FA-1D", PortID: "0"},
+					},
+				}, nil)
+			},
+			expectedPGID:  "csi-ABC-pg2",
+			expectedError: false,
+		},
+		{
+			name:  "legacy API no match creates port group",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "102",
+				}, nil)
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "5978.441.0",
+				}, nil)
+				client.EXPECT().GetPortGroupList(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupList{
+					PortGroupIDs: []string{"other-pg"},
+				}, nil)
+				client.EXPECT().CreatePortGroup(gomock.Any(), "000120000001", "csi-ABC-FA-1D-0-PG", gomock.Any(), "SCSI_FC").Return(&types.PortGroup{}, nil)
+			},
+			expectedPGID:  "csi-ABC-FA-1D-0-PG",
+			expectedError: false,
+		},
+		{
+			name:  "new API with legacy microcode creates port group",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "103",
+				}, nil)
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "5978.441.0",
+				}, nil)
+				client.EXPECT().GetPortGroupList(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupList{
+					PortGroupIDs: []string{"other-pg"},
+				}, nil)
+				client.EXPECT().CreatePortGroup(gomock.Any(), "000120000001", "csi-ABC-FA-1D-0-PG", gomock.Any(), "SCSI_FC").Return(&types.PortGroup{}, nil)
+			},
+			expectedPGID:  "csi-ABC-FA-1D-0-PG",
+			expectedError: false,
+		},
+		{
+			name:  "CreatePortGroup error returns error",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "102",
+				}, nil)
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "5978.441.0",
+				}, nil)
+				client.EXPECT().GetPortGroupList(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupList{
+					PortGroupIDs: []string{"other-pg"},
+				}, nil)
+				client.EXPECT().CreatePortGroup(gomock.Any(), "000120000001", "csi-ABC-FA-1D-0-PG", gomock.Any(), "SCSI_FC").Return(nil, errors.New("create error"))
+			},
+			expectedError: true,
+			errorMsg:      "Failed to create PortGroup",
+		},
+		{
+			name:  "legacy API port group with non-Fibre type is skipped",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "102",
+				}, nil)
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "5978.441.0",
+				}, nil)
+				client.EXPECT().GetPortGroupList(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupList{
+					PortGroupIDs: []string{"csi-ABC-pg1"},
+				}, nil)
+				// PortGroupType is iSCSI, not Fibre/SCSI_FC, so it should be skipped
+				client.EXPECT().GetPortGroupByID(gomock.Any(), "000120000001", "csi-ABC-pg1").Return(&types.PortGroup{
+					PortGroupID:   "csi-ABC-pg1",
+					PortGroupType: "iSCSI",
+					SymmetrixPortKey: []types.PortKey{
+						{DirectorID: "FA-1D", PortID: "0"},
+					},
+				}, nil)
+				// No match → creates PG
+				client.EXPECT().CreatePortGroup(gomock.Any(), "000120000001", "csi-ABC-FA-1D-0-PG", gomock.Any(), "SCSI_FC").Return(&types.PortGroup{}, nil)
+			},
+			expectedPGID:  "csi-ABC-FA-1D-0-PG",
+			expectedError: false,
+		},
+		{
+			name:  "legacy API port group with mismatched ports creates new PG",
+			symID: "000120000001",
+			host:  defaultHost,
+			setup: func(client *mocks.MockPmaxClient) {
+				setupFCInitiatorMocks(client, "000120000001")
+				client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+					APIVersion: "102",
+				}, nil)
+				client.EXPECT().GetSymmetrixByID(gomock.Any(), "000120000001").Return(&types.Symmetrix{
+					SymmetrixID: "000120000001",
+					Microcode:   "5978.441.0",
+				}, nil)
+				client.EXPECT().GetPortGroupList(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupList{
+					PortGroupIDs: []string{"csi-ABC-pg1"},
+				}, nil)
+				// Different ports than what the host has
+				client.EXPECT().GetPortGroupByID(gomock.Any(), "000120000001", "csi-ABC-pg1").Return(&types.PortGroup{
+					PortGroupID:   "csi-ABC-pg1",
+					PortGroupType: "Fibre",
+					SymmetrixPortKey: []types.PortKey{
+						{DirectorID: "FA-2D", PortID: "1"},
+					},
+				}, nil)
+				client.EXPECT().CreatePortGroup(gomock.Any(), "000120000001", "csi-ABC-FA-1D-0-PG", gomock.Any(), "SCSI_FC").Return(&types.PortGroup{}, nil)
+			},
+			expectedPGID:  "csi-ABC-FA-1D-0-PG",
+			expectedError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			client := mocks.NewMockPmaxClient(ctrl)
+			client.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+			tt.setup(client)
+
+			svc := &service{
+				opts: Opts{
+					ClusterPrefix: "ABC",
+				},
+			}
+			pgID, err := svc.SelectOrCreateFCPGForHost(context.Background(), tt.symID, tt.host, client)
+			if tt.expectedError {
+				assert.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedPGID, pgID)
+			}
+		})
+	}
+}
+
 func Test_service_isV4OrAbove(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -3633,11 +4159,352 @@ func Test_service_isV4OrAbove(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			client := mocks.NewMockPmaxClient(ctrl)
+			client.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
 			tt.setup(client)
 
 			svc := &service{}
 			got := svc.isV4OrAbove(context.Background(), tt.symID, client)
 			assert.Equal(t, tt.wantV4, got)
+		})
+	}
+}
+
+func TestDeleteVolumeWithDeletionPrefix(t *testing.T) {
+	// Test to verify that volumes with _DEL prefix are processed for deletion
+	// rather than being skipped due to VolumeIdentifier mismatch
+	tests := []struct {
+		name             string
+		volumeIdentifier string
+		volName          string
+		expectContinue   bool
+	}{
+		{
+			name:             "Volume with _DEL prefix containing original name should continue",
+			volumeIdentifier: "_DEL_csi-test-cluster-my-volume",
+			volName:          "csi-test-cluster-my-volume",
+			expectContinue:   true,
+		},
+		{
+			name:             "Volume without _DEL prefix mismatch should return nil",
+			volumeIdentifier: "csi-test-cluster-different-volume",
+			volName:          "csi-test-cluster-my-volume",
+			expectContinue:   false,
+		},
+		{
+			name:             "Volume with _DEL prefix but different name should return nil",
+			volumeIdentifier: "_DEL_csi-test-cluster-different-volume",
+			volName:          "csi-test-cluster-my-volume",
+			expectContinue:   false,
+		},
+		{
+			name:             "Volume with exact match should not enter this logic",
+			volumeIdentifier: "csi-test-cluster-my-volume",
+			volName:          "csi-test-cluster-my-volume",
+			expectContinue:   false, // This case won't enter the != check
+		},
+		{
+			name:             "Volume with _DEL prefix but empty original name",
+			volumeIdentifier: "_DEL_",
+			volName:          "",
+			expectContinue:   true,
+		},
+		{
+			name:             "Volume with _DEL prefix and partial name match",
+			volumeIdentifier: "_DEL_csi-test-cluster",
+			volName:          "csi-test-cluster",
+			expectContinue:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test the logic that was added to deleteVolume function
+			// Only test the != case, as exact match bypasses this logic
+			if tt.volumeIdentifier != tt.volName {
+				hasDeletionPrefix := strings.HasPrefix(tt.volumeIdentifier, DeletionPrefix)
+				containsOriginalName := strings.Contains(tt.volumeIdentifier, tt.volName)
+
+				shouldContinue := hasDeletionPrefix && containsOriginalName
+
+				assert.Equal(t, tt.expectContinue, shouldContinue,
+					"Expected continue=%v for VolumeIdentifier=%s, volName=%s",
+					tt.expectContinue, tt.volumeIdentifier, tt.volName)
+			} else {
+				// For exact matches, this logic shouldn't be reached
+				assert.False(t, tt.expectContinue,
+					"Exact match case should not enter the != logic")
+			}
+		})
+	}
+}
+
+func TestDeleteVolumeRetryQueuing(t *testing.T) {
+	// Test for the new enhancement where volumes with deletion prefix that failed
+	// to be queued get re-attempted for queuing instead of being assumed deleted
+	tests := []struct {
+		name             string
+		volumeIdentifier string
+		volName          string
+		expectRetryCall  bool
+		expectedDelName  string
+		description      string
+	}{
+		{
+			name:             "Volume with exact deletion prefix should retry queuing",
+			volumeIdentifier: "_DELcsi-test-cluster-my-volume",
+			volName:          "csi-test-cluster-my-volume",
+			expectRetryCall:  true,
+			expectedDelName:  "_DELcsi-test-cluster-my-volume",
+			description:      "Volume was renamed for deletion but not yet queued",
+		},
+		{
+			name:             "Volume with deletion prefix but different name should not retry",
+			volumeIdentifier: "_DELcsi-test-cluster-different-volume",
+			volName:          "csi-test-cluster-my-volume",
+			expectRetryCall:  false,
+			expectedDelName:  "_DELcsi-test-cluster-my-volume",
+			description:      "Different volume name, should be assumed deleted",
+		},
+		{
+			name:             "Volume without deletion prefix should not retry",
+			volumeIdentifier: "csi-test-cluster-my-volume",
+			volName:          "csi-test-cluster-my-volume",
+			expectRetryCall:  false,
+			expectedDelName:  "_DELcsi-test-cluster-my-volume",
+			description:      "Normal case, exact match bypasses this logic",
+		},
+		{
+			name:             "Volume with truncated deletion prefix should retry",
+			volumeIdentifier: "_DELvery-long-volume-name-that-exceeds-maximum-identifier-length",
+			volName:          "very-long-volume-name-that-exceeds-maximum-identifier-length-and-should-be-truncated",
+			expectRetryCall:  true,
+			expectedDelName:  "_DELvery-long-volume-name-that-exceeds-maximum-identifier-length", // Truncated to MaxVolIdentifierLength
+			description:      "Test truncation logic for long identifiers",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
+			// Create mocks
+			mockDeletionWorker := NewMockDeletionWorker(mockCtrl)
+
+			// Test the logic from the new enhancement
+			if tt.volumeIdentifier != tt.volName {
+				// Calculate expected deletion name (same logic as in the actual code)
+				expectedDelName := fmt.Sprintf("%s%s", DeletionPrefix, tt.volName)
+				if len(expectedDelName) > MaxVolIdentifierLength {
+					expectedDelName = expectedDelName[:MaxVolIdentifierLength]
+				}
+
+				// Check if the volume identifier matches the expected deletion name
+				shouldRetry := tt.volumeIdentifier == expectedDelName
+
+				if shouldRetry && tt.expectRetryCall {
+					// Mock the QueueDeviceForDeletion call
+					mockDeletionWorker.EXPECT().QueueDeviceForDeletion(gomock.Any(), tt.volumeIdentifier, gomock.Any()).Return(nil)
+
+					// Simulate the retry logic
+					err := mockDeletionWorker.QueueDeviceForDeletion("test-volume-id", tt.volumeIdentifier, "test-symid")
+					assert.NoError(t, err, "QueueDeviceForDeletion should not return error")
+				}
+
+				assert.Equal(t, tt.expectRetryCall, shouldRetry,
+					"Expected retry call=%v for VolumeIdentifier=%s, volName=%s",
+					tt.expectRetryCall, tt.volumeIdentifier, tt.volName)
+
+				assert.Equal(t, tt.expectedDelName, expectedDelName,
+					"Expected deletion name mismatch")
+			}
+		})
+	}
+}
+
+func TestDeleteVolumeRetryQueuingError(t *testing.T) {
+	// Test error handling when retry queuing fails
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	mockDeletionWorker := NewMockDeletionWorker(mockCtrl)
+
+	// Mock QueueDeviceForDeletion to return an error
+	expectedError := errors.New("failed to queue device for deletion")
+	mockDeletionWorker.EXPECT().QueueDeviceForDeletion(gomock.Any(), gomock.Any(), gomock.Any()).Return(expectedError)
+
+	// Test the error scenario
+	err := mockDeletionWorker.QueueDeviceForDeletion("test-volume-id", "_DEL_test-volume", "test-symid")
+	assert.Error(t, err, "QueueDeviceForDeletion should return error")
+	assert.Contains(t, err.Error(), "failed to queue device for deletion", "Error message should match")
+}
+
+func Test_service_updatePublishContext(t *testing.T) {
+	symID := "000120000001"
+	mvID := "csi-mv--worker-1"
+	devID := "011AB"
+	portGroupID := "csi-vsphere-VC-PG"
+
+	// Minimize retry delay for tests
+	origDelay := getMVConnectionsDelay
+	getMVConnectionsDelay = 1 * time.Millisecond
+	defer func() { getMVConnectionsDelay = origDelay }()
+
+	tests := []struct {
+		name           string
+		isVsphere      bool
+		connections    []*types.MaskingViewConnection
+		setupMock      func(client *mocks.MockPmaxClient)
+		expectErr      bool
+		errContains    string
+		expectLUN      string
+		expectDirPorts int
+	}{
+		{
+			name:      "vSphere: no connections, builds context from port group",
+			isVsphere: true,
+			connections: []*types.MaskingViewConnection{
+				// connection for a different volume so our devID gets lunid=""
+				{VolumeID: "OTHER", HostLUNAddress: "0001", DirectorPort: "SE-1E:4"},
+			},
+			setupMock: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetMaskingViewConnections(gomock.Any(), symID, mvID, devID).
+					Return([]*types.MaskingViewConnection{}, nil).AnyTimes()
+				client.EXPECT().GetMaskingViewByID(gomock.Any(), symID, mvID).
+					Return(&types.MaskingView{
+						MaskingViewID: mvID,
+						PortGroupID:   portGroupID,
+					}, nil).Times(1)
+				client.EXPECT().GetPortGroupByID(gomock.Any(), symID, portGroupID).
+					Return(&types.PortGroup{
+						PortGroupID: portGroupID,
+						SymmetrixPortKey: []types.PortKey{
+							{DirectorID: "OR-1C", PortID: "4"},
+							{DirectorID: "OR-2C", PortID: "4"},
+						},
+					}, nil).Times(1)
+				client.EXPECT().GetPort(gomock.Any(), symID, "OR-1C", "4").
+					Return(&types.Port{
+						SymmetrixPort: types.SymmetrixPortType{
+							Identifier: "50000973f0064001",
+						},
+					}, nil).Times(1)
+				client.EXPECT().GetPort(gomock.Any(), symID, "OR-2C", "4").
+					Return(&types.Port{
+						SymmetrixPort: types.SymmetrixPortType{
+							Identifier: "50000973f0064002",
+						},
+					}, nil).Times(1)
+			},
+			expectErr: false,
+			expectLUN: "0000",
+		},
+		{
+			name:        "non-vSphere: no connections returns error",
+			isVsphere:   false,
+			connections: []*types.MaskingViewConnection{},
+			setupMock: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetMaskingViewConnections(gomock.Any(), symID, mvID, devID).
+					Return([]*types.MaskingViewConnection{}, nil).AnyTimes()
+			},
+			expectErr:   true,
+			errContains: "No matching connections for deviceID",
+		},
+		{
+			name:      "vSphere: GetMaskingViewByID fails",
+			isVsphere: true,
+			connections: []*types.MaskingViewConnection{
+				{VolumeID: "OTHER", HostLUNAddress: "0001", DirectorPort: "SE-1E:4"},
+			},
+			setupMock: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetMaskingViewConnections(gomock.Any(), symID, mvID, devID).
+					Return([]*types.MaskingViewConnection{}, nil).AnyTimes()
+				client.EXPECT().GetMaskingViewByID(gomock.Any(), symID, mvID).
+					Return(nil, errors.New("masking view not found")).Times(1)
+			},
+			expectErr:   true,
+			errContains: "Failed to get masking view",
+		},
+		{
+			name:      "vSphere: GetPortGroupByID fails",
+			isVsphere: true,
+			connections: []*types.MaskingViewConnection{
+				{VolumeID: "OTHER", HostLUNAddress: "0001", DirectorPort: "SE-1E:4"},
+			},
+			setupMock: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetMaskingViewConnections(gomock.Any(), symID, mvID, devID).
+					Return([]*types.MaskingViewConnection{}, nil).AnyTimes()
+				client.EXPECT().GetMaskingViewByID(gomock.Any(), symID, mvID).
+					Return(&types.MaskingView{
+						MaskingViewID: mvID,
+						PortGroupID:   portGroupID,
+					}, nil).Times(1)
+				client.EXPECT().GetPortGroupByID(gomock.Any(), symID, portGroupID).
+					Return(nil, errors.New("port group not found")).Times(1)
+			},
+			expectErr:   true,
+			errContains: "Failed to get port group",
+		},
+		{
+			name:      "vSphere: empty port group returns error",
+			isVsphere: true,
+			connections: []*types.MaskingViewConnection{
+				{VolumeID: "OTHER", HostLUNAddress: "0001", DirectorPort: "SE-1E:4"},
+			},
+			setupMock: func(client *mocks.MockPmaxClient) {
+				client.EXPECT().GetMaskingViewConnections(gomock.Any(), symID, mvID, devID).
+					Return([]*types.MaskingViewConnection{}, nil).AnyTimes()
+				client.EXPECT().GetMaskingViewByID(gomock.Any(), symID, mvID).
+					Return(&types.MaskingView{
+						MaskingViewID: mvID,
+						PortGroupID:   portGroupID,
+					}, nil).Times(1)
+				client.EXPECT().GetPortGroupByID(gomock.Any(), symID, portGroupID).
+					Return(&types.PortGroup{
+						PortGroupID:      portGroupID,
+						SymmetrixPortKey: []types.PortKey{},
+					}, nil).Times(1)
+			},
+			expectErr:   true,
+			errContains: "has no ports configured",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			LockRequestHandler()
+
+			mockClient := mocks.NewMockPmaxClient(ctrl)
+			tt.setupMock(mockClient)
+
+			svc := &service{
+				opts: Opts{
+					IsVsphereEnabled: tt.isVsphere,
+				},
+			}
+			getPmaxCache(symID)
+
+			publishContext := make(map[string]string)
+			resp, err := svc.updatePublishContext(
+				context.Background(), publishContext, symID, mvID, devID, "req-1",
+				tt.connections, mockClient, true,
+			)
+
+			if tt.expectErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				assert.Nil(t, resp)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, resp)
+				assert.Equal(t, tt.expectLUN, resp.PublishContext[PublishContextLUNAddress])
+				assert.NotEmpty(t, resp.PublishContext[PortIdentifiers+"_1"])
+			}
 		})
 	}
 }

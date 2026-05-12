@@ -88,6 +88,7 @@ func GetDevice(path string) (*Device, error) {
 func publishVolume(
 	req *csi.NodePublishVolumeRequest,
 	privDir, device string, reqID string,
+	fsCfg *fsCheckConfig,
 ) error {
 	id := req.GetVolumeId()
 
@@ -203,9 +204,24 @@ func publishVolume(
 					log.Debug(fmt.Sprintf("MOUNT: %#v", m))
 					resolvedMountDevice := evalSymlinks(m.Device)
 					if resolvedMountDevice != sysDevice.RealDev {
-						return status.Errorf(codes.FailedPrecondition, "Private mount point: %s mounted by different device: %s", privTgt, resolvedMountDevice)
+						// Check if the old device still exists before hard-failing
+						// This handles stale mounts from disconnected devices
+						_, statErr := os.Stat(resolvedMountDevice)
+						if statErr != nil && os.IsNotExist(statErr) {
+							// Device doesn't exist (ENOENT) - it's a stale mount
+							// Clean it up and proceed
+							log.Infof("Detected stale mount from disconnected device %s, cleaning up", resolvedMountDevice)
+							if err := gofsutil.Unmount(ctx, privTgt); err != nil {
+								log.Warnf("Unmount of stale mount %s failed: %s", privTgt, err.Error())
+							}
+							// After cleanup, don't set alreadyMounted - let the normal mount flow proceed
+						} else {
+							// Device exists or other stat error - this is a real conflict
+							return status.Errorf(codes.FailedPrecondition, "Private mount point: %s mounted by different device: %s", privTgt, resolvedMountDevice)
+						}
+					} else {
+						alreadyMounted = true
 					}
-					alreadyMounted = true
 				}
 			}
 		}
@@ -215,6 +231,11 @@ func publishVolume(
 			mntFlags := mntVol.GetMountFlags()
 			if fs == "xfs" {
 				mntFlags = append(mntFlags, "nouuid")
+			}
+			// Perform FS check on the unmounted device before mounting
+			if err := performFSCheck(ctx, sysDevice, fsCfg, accMode, id, target); err != nil {
+				cleanupPrivateTarget(reqID, privTgt)
+				return err
 			}
 			if err := handlePrivFSMount(
 				ctx, accMode, sysDevice, mntFlags, fs, privTgt); err != nil {
@@ -395,6 +416,56 @@ func getPrivateMountPoint(privDir string, name string) string {
 	return fmt.Sprintf("%s/%s", privDir, name)
 }
 
+func podMountPathSuffix(path string) string {
+	cleanPath := filepath.Clean(filepath.ToSlash(path))
+	if idx := strings.Index(cleanPath, "/pods/"); idx >= 0 {
+		return cleanPath[idx:]
+	}
+	return ""
+}
+
+func privateMountPathSuffix(path string) string {
+	cleanPath := filepath.Clean(filepath.ToSlash(path))
+	if idx := strings.Index(cleanPath, "/plugins/"); idx >= 0 {
+		return cleanPath[idx:]
+	}
+	return ""
+}
+
+func isPrivateMountVariant(path, privTgt string) bool {
+	cleanPath := filepath.Clean(filepath.ToSlash(path))
+	cleanPrivTgt := filepath.Clean(filepath.ToSlash(privTgt))
+
+	if cleanPath == cleanPrivTgt || cleanPath == filepath.Clean("/noderoot"+cleanPrivTgt) {
+		return true
+	}
+
+	privSuffix := privateMountPathSuffix(cleanPrivTgt)
+	if privSuffix == "" {
+		return false
+	}
+
+	pathSuffix := privateMountPathSuffix(cleanPath)
+	return pathSuffix != "" && pathSuffix == privSuffix
+}
+
+func isRequestedTargetMountVariant(path, target string) bool {
+	cleanPath := filepath.Clean(filepath.ToSlash(path))
+	cleanTarget := filepath.Clean(filepath.ToSlash(target))
+
+	if cleanPath == cleanTarget || cleanPath == filepath.Clean("/noderoot"+cleanTarget) {
+		return true
+	}
+
+	targetSuffix := podMountPathSuffix(cleanTarget)
+	if targetSuffix == "" {
+		return false
+	}
+
+	pathSuffix := podMountPathSuffix(cleanPath)
+	return pathSuffix != "" && pathSuffix == targetSuffix
+}
+
 func contains(list []string, item string) bool {
 	for _, x := range list {
 		if x == item {
@@ -472,7 +543,6 @@ func unpublishVolume(
 		return lastUnmounted, status.Error(codes.InvalidArgument,
 			"target path required")
 	}
-	dupTarget := filepath.Join("/noderoot", target)
 
 	// make sure device is valid
 	sysDevice, err := GetDevice(device)
@@ -503,9 +573,9 @@ func unpublishVolume(
 	for _, m := range mnts {
 		// Added check for sysDevice.FullPath as that is used by multipath mapper
 		if m.Source == sysDevice.RealDev || m.Device == sysDevice.RealDev || m.Device == sysDevice.FullPath {
-			if m.Path == privTgt {
+			if isPrivateMountVariant(m.Path, privTgt) {
 				privMnt = true
-			} else if m.Path == target || m.Path == dupTarget {
+			} else if isRequestedTargetMountVariant(m.Path, target) {
 				tgtMnt = append(tgtMnt, m.Path)
 			}
 		}
@@ -560,14 +630,77 @@ func unmountPrivMount(
 
 	privTgtDup := filepath.Join("/noderoot", target)
 
-	// remove private mount if we can (if there are no other mounts
-	if len(mnts) == 1 || len(mnts) == 2 {
-		for i, m := range mnts {
-			if m.Path == target || m.Path == privTgtDup {
-				if err := gofsutil.Unmount(ctx, m.Path); err != nil {
-					return false, err
+	// In bind mount environments the same private mount appears under multiple
+	// kubelet root paths (e.g., /var/lib/kubelet, /data/kubelet). Identify all
+	// private mount variants vs real consumer mounts from other pods.
+	hasOtherMounts := false
+	for _, m := range mnts {
+		if m.Path != "" && !isPrivateMountVariant(m.Path, target) {
+			hasOtherMounts = true
+			break
+		}
+	}
+
+	if !hasOtherMounts {
+		// In bind mount environments, kernel mount propagation is asynchronous.
+		// Use exponential backoff to wait for propagation to complete before giving up.
+		maxRetries := 10
+		backoff := 50 * time.Millisecond
+
+		for retry := 0; retry < maxRetries; retry++ {
+			hasOtherMounts = false
+			for _, m := range mnts {
+				if m.Path != "" && !isPrivateMountVariant(m.Path, target) {
+					hasOtherMounts = true
+					break
 				}
-				mnts[i].Path = ""
+			}
+			if hasOtherMounts {
+				log.Debugf("Detected non-private mounts while unmounting %s; skipping private mount cleanup", target)
+				break
+			}
+
+			allUnmounted := true
+
+			for i, m := range mnts {
+				if m.Path != "" && isPrivateMountVariant(m.Path, target) {
+					if err := gofsutil.Unmount(ctx, m.Path); err != nil {
+						if m.Path == target || m.Path == privTgtDup {
+							// Critical path unmount failed - mark for retry
+							allUnmounted = false
+							if retry == maxRetries-1 {
+								// Last retry - return error
+								return false, err
+							}
+							log.Infof("Unmount of %s failed (retry %d/%d): %s", m.Path, retry+1, maxRetries, err.Error())
+						} else {
+							// Non-critical path unmount failed - log but continue
+							log.Infof("Unmount of %s: %s", m.Path, err.Error())
+						}
+					} else {
+						mnts[i].Path = ""
+					}
+				}
+			}
+
+			// If all unmounted successfully, break out of retry loop
+			if allUnmounted {
+				log.Debugf("All mounts unmounted successfully after %d retries", retry+1)
+				break
+			}
+
+			// Wait for kernel mount propagation with exponential backoff
+			if retry < maxRetries-1 {
+				time.Sleep(backoff)
+				// Refresh mount table to get current state
+				mnts, err = getDevMounts(dev)
+				if err != nil {
+					log.Warnf("Failed to refresh mount table during retry: %s", err.Error())
+				}
+				// Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms (max)
+				if backoff < 800*time.Millisecond {
+					backoff *= 2
+				}
 			}
 		}
 

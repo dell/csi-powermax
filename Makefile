@@ -14,6 +14,8 @@ include images.mk
 
 all: build
 
+.PHONY: all build clean unit-test bdd-test integration-test gosec go-code-tester mocks dev-images help
+
 # This will be overridden during image build.
 IMAGE_VERSION ?= 0.0.0
 LDFLAGS = "-X main.ManifestSemver=$(IMAGE_VERSION)"
@@ -64,3 +66,28 @@ go-code-tester:
 
 mocks:
 	go generate ./...
+
+# Build images for development with dev tag and outside container build
+dev-images: build
+	@echo "Building development images with dev tag..."
+	$(eval include csm-common.mk)
+	@echo "Building: $(IMAGE_REGISTRY)/$(IMAGE_NAME):dev"
+	$(BUILDER) build --pull -f Dockerfile.dev -t "$(IMAGE_REGISTRY)/$(IMAGE_NAME):dev" \
+		--build-arg BASEIMAGE=$(CSM_BASEIMAGE) \
+		--build-arg VERSION="dev" .
+
+# Show help for available targets
+help:
+	@echo "Available targets:"
+	@echo "  build          - Build the Go binary"
+	@echo "  images         - Build container images with timestamp tag"
+	@echo "  dev-images     - Build container images with 'dev' tag for development (builds binary first, then copies to image)"
+	@echo "  images-no-cache- Build container images with --no-cache"
+	@echo "  push           - Push container images to registry"
+	@echo "  unit-test      - Run unit tests"
+	@echo "  bdd-test       - Run BDD tests"
+	@echo "  integration-test - Run integration tests"
+	@echo "  gosec          - Run security scan"
+	@echo "  clean          - Clean build artifacts"
+	@echo "  mocks          - Generate mocks"
+	@echo "  help           - Show this help message"

@@ -23,9 +23,9 @@ Feature: PowerMax CSI interface
  @v1.0.0
      Scenario Outline: Publish volume with single writer, enhanced API
       Given a PowerMax service
-      And I call CreateVolumeEnhanced "volume1"
+      And I call CreateVolume "volume1"
       When I request a PortGroup
-      And a valid CreateVolumeEnhancedResponse is returned
+      And a valid CreateVolumeResponse is returned
       And I have a Node "node1" with MaskingView
       And I call PublishVolume with <access> to "node1"
       Then a valid PublishVolumeResponse is returned
@@ -65,9 +65,10 @@ Feature: PowerMax CSI interface
       And I call PublishVolume with <access> to "node1"
       And the error contains <errormsg>
       Examples:
-       | "single-writer"             | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
-       | "single-node-single-writer" | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
-       | "single-node-multi-writer"  | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
+       | access                      | induced        | errormsg                                |
+       | "single-writer"             | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
+       | "single-node-single-writer" | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
+       | "single-node-multi-writer"  | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
 
 @controllerPublish
 @v1.1.0
@@ -97,9 +98,10 @@ Feature: PowerMax CSI interface
       And I call PublishVolume with <access> to "node1"
       Then the error contains <errormsg>
       Examples:
-       | "single-writer"             | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
-       | "single-node-single-writer" | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
-       | "single-node-multi-writer"  | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
+       | access                      | induced        | errormsg                                |
+       | "single-writer"             | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
+       | "single-node-single-writer" | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
+       | "single-node-multi-writer"  | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
 
 @controllerPublish
 @v1.1.0
@@ -129,9 +131,10 @@ Feature: PowerMax CSI interface
       And I call PublishVolume with <access> to "node1"
       Then the error contains <errormsg>
       Examples:
-       | "single-writer"             | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
-       | "single-node-single-writer" | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
-       | "single-node-multi-writer"  | "GetPortError" | "Failed to fetch SCSI_FC port for array"           |
+       | access                      | induced        | errormsg                                |
+       | "single-writer"             | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
+       | "single-node-single-writer" | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
+       | "single-node-multi-writer"  | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
 
 @controllerPublish
 @v1.0.0
@@ -577,7 +580,7 @@ Feature: PowerMax CSI interface
 @v1.0.0
      Scenario: Unpublish volume with invalid volume id
       Given a PowerMax service
-      And an invalid volume
+      And I induce error "InvalidVolumeID"
       And I call UnpublishVolume from "node1"
       Then the error contains "Invalid volume id"
 

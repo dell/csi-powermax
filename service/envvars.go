@@ -180,4 +180,21 @@ const (
 
 	// EnvSGVolumeLimit is an env variable which indicates the configured storage group volume limit
 	EnvSGVolumeLimit = "X_CSI_STORAGE_GROUP_VOLUME_LIMIT"
+
+	// EnvFsCheckEnabled enables file system check before mount
+	EnvFsCheckEnabled = "X_CSI_FS_CHECK_ENABLED"
+
+	// EnvFsCheckMode controls the file system check operation mode
+	EnvFsCheckMode = "X_CSI_FS_CHECK_MODE"
+	// EnvSpaceReclamationEnabled enables/disables space reclamation
+	EnvSpaceReclamationEnabled = "X_CSI_SPACE_RECLAMATION_ENABLED"
+
+	// EnvSpaceReclamationSchedule is the cron schedule for space reclamation
+	EnvSpaceReclamationSchedule = "X_CSI_SPACE_RECLAMATION_SCHEDULE"
+
+	// EnvSpaceReclamationMaxConcurrent is the max concurrent reclamation operations
+	EnvSpaceReclamationMaxConcurrent = "X_CSI_SPACE_RECLAMATION_MAX_CONCURRENT"
+
+	// EnvSpaceReclamationTimeout is the timeout for each reclamation operation
+	EnvSpaceReclamationTimeout = "X_CSI_SPACE_RECLAMATION_TIMEOUT"
 )

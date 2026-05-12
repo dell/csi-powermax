@@ -19,3 +19,9 @@ images-no-cache:
 push:
 	@echo "Pushing: $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)"
 	$(BUILDER) push "$(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)"
+
+# Build images for development with dev tag
+dev-images: download-csm-common build
+	$(eval include csm-common.mk)
+	@echo "Building: $(IMAGE_REGISTRY)/$(IMAGE_NAME):dev"
+	$(BUILDER) build --pull -f Dockerfile.dev -t "$(IMAGE_REGISTRY)/$(IMAGE_NAME):dev" --build-arg BASEIMAGE=$(CSM_BASEIMAGE) --build-arg GOIMAGE=$(DEFAULT_GOIMAGE)  .

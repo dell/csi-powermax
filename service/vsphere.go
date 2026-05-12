@@ -18,6 +18,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -33,7 +34,6 @@ import (
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/vim25/types"
-	"golang.org/x/net/context"
 )
 
 // useHTTP - This variable should remain false by default. It was added specifically for unit testing purposes, as unit tests require HTTP instead of HTTPS.
@@ -50,7 +50,7 @@ type VMHost struct {
 // NewVMHost connects to a ESXi or vCenter instance and returns a *VMHost
 // This method is referenced from https://github.com/codedellemc/govmax/blob/master/api/v1/vmomi.go
 func NewVMHost(insecure bool, hostURLparam, user, pass string) (*VMHost, error) {
-	ctx, _ := context.WithCancel(context.Background())
+	ctx := context.Background()
 	protocol := "https://"
 	if useHTTP {
 		protocol = "http://"

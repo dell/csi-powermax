@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -47,6 +47,7 @@ func New() gocsi.StoragePluginProvider {
 	svc := service.New()
 	return &gocsi.StoragePlugin{
 		Controller:                svc,
+		GroupController:           svc,
 		Identity:                  svc,
 		Node:                      svc,
 		BeforeServe:               svc.BeforeServe,

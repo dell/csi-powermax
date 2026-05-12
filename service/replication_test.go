@@ -15,6 +15,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -27,7 +28,6 @@ import (
 	types "github.com/dell/gopowermax/v2/types/v100"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -463,7 +463,8 @@ func TestService_GetOrCreateRDFGroup(t *testing.T) {
 								SymmID: "remote-sym-id",
 							},
 						},
-					}, nil)
+					}, nil,
+				)
 
 				mockPmaxClient.EXPECT().GetLocalRDFPortDetails(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(&types.RDFPortDetails{}, nil)
 				mockPmaxClient.EXPECT().ExecuteCreateRDFGroup(gomock.Any(), "local-sym-id", gomock.Any()).Return(nil)

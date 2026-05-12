@@ -41,6 +41,7 @@ const (
 	Prefix              = "/univmax/restapi"
 	PrefixV1            = "/univmax/rest/v1"
 	PrivatePrefix       = "/univmax/restapi/private"
+	PrivateV1Prefix     = "/univmax/rest/private/v1"
 	InternalPrefix      = Prefix + "/internal"
 )
 

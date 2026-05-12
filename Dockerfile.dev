@@ -10,32 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-ARG GOIMAGE
 ARG BASEIMAGE
-ARG VERSION="2.17.0"
 
-# Stage to build the driver
-FROM $GOIMAGE as builder
-ARG VERSION
-RUN mkdir -p /go/src
-COPY ./ /go/src/
-WORKDIR /go/src/
-RUN CGO_ENABLED=0 \
-    make build IMAGE_VERSION=$VERSION 
-
-# Stage to build the driver image
+# Development image - copy pre-built binary
 FROM $BASEIMAGE AS final
-ARG VERSION
-COPY --from=builder /go/src/csi-powermax /csi-powermax
+ARG VERSION="dev"
+
+# Copy the pre-built binary from local build
+COPY csi-powermax /csi-powermax
 COPY csi-powermax.sh /csi-powermax.sh
+
 ENTRYPOINT ["/csi-powermax.sh"]
 RUN chmod +x /csi-powermax.sh
+
 LABEL vendor="Dell Technologies" \
     maintainer="Dell Technologies" \
     name="csi-powermax" \
     summary="CSI Driver for Dell EMC PowerMax" \
     description="CSI Driver for provisioning persistent storage from Dell EMC PowerMax" \
-    release="1.17.0" \
+    release="dev" \
     version=$VERSION \
     license="Apache-2.0"
+
 COPY ./licenses /licenses

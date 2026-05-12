@@ -280,14 +280,13 @@ Feature: PowerMax CSI Interface
     Then the error contains <errormsg>
     
     Examples:
-      | induced                | errorMsg                          |
-      | none                   |                                   |
-      | noVolumeSource         | missing source volume ID         |
-      | nonExistentVolume      | source volume does not exist     |
-      | invalidVolumeID        | invalid volume ID provided       |
-      | wrongCapacity          | capacity mismatch error          |
-      | wrongStoragePool       | invalid storage pool specified   |
-
+      | induced                  | errormsg                                      |
+      | "none"                   | "none"                                        |
+      | "NoVolumeSource"         | "missing volume and snapshot source"          |
+      | "InvalidVolumeID"        | "volume identifier not in supported format"   |
+      | "NonExistentVolume"      | "content source volume couldn't be found"     |
+      | "WrongCapacity"          | "capacity is smaller than the source"         |
+      | "WrongStoragePool"       | "bad storage pool not found"                  |
 
   @srdf
   @v2.9.0
@@ -348,13 +347,13 @@ Feature: PowerMax CSI Interface
     When I call RDF enabled CreateVolume "volume2" in namespace "test", mode "METRO" and RDFGNo 14 from volume
     Then the error contains <errormsg>
     Examples:
-      | induced                | errorMsg                          |
-      | none                   |                                   |
-      | noVolumeSource         | missing source volume ID         |
-      | nonExistentVolume      | source volume does not exist     |
-      | invalidVolumeID        | invalid volume ID provided       |
-      | wrongCapacity          | capacity mismatch error          |
-      | wrongStoragePool       | invalid storage pool specified   |
+      | induced                  | errormsg                                      |
+      | "none"                   | "none"                                        |
+      | "NoVolumeSource"         | "missing volume and snapshot source"          |
+      | "InvalidVolumeID"        | "volume identifier not in supported format"   |
+      | "NonExistentVolume"      | "content source volume couldn't be found"     |
+      | "WrongCapacity"          | "capacity is smaller than the source"         |
+      | "WrongStoragePool"       | "bad storage pool not found"                  |
 
   @srdf
   @v2.9.0

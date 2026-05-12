@@ -419,10 +419,10 @@ Feature: PowerMax CSI interface
       | "testhost"         |"NoArray"             | "none"                | "No array specified"             | 0     |
       | "testhost"         |"NoNodeName"          | "none"                | "No nodeName specified"          | 0     |
       | "testhost"         |"NoIQNs"              | "none"                | "No port WWNs specified"         | 0     |
-      | "testhost"         |"GetHostError"        | "CreateHostError"     | "Unable to create Host"          | 0     |
+      | "testhost"         |"GetHostError"        | "CreateHostError"     | "failed to create host"          | 0     |
       | "testhost"         |"none"                | "none"                | "none"                           | 1     |
       | "CSI-Test-Node-2"  |"GetInitiatorError"   | "none"                | "Error retrieving Initiator(s)"  | 0     |
-      | "CSI-Test-Node-2"  |"UpdateHostError"     | "CreateHostError"     | "Unable to"                      | 0     |
+      | "CSI-Test-Node-2"  |"UpdateHostError"     | "CreateHostError"     | "failed to create host"           | 0     |
       | "CSI-Test-Node-2"  |"UpdateHostError"     | "ResetAfterFirstError"| "none"                           | 1     |
       | "CSI-Test-Node-2"  |"GetHostError"        | "none"                | "none"                           | 1     |
 
@@ -584,6 +584,29 @@ Feature: PowerMax CSI interface
       And block volumes are not enabled
       And I call CreateVolume "volume1"
       Then the error contains "Block Volume Capability is not supported"
+
+@v2.17.0
+    Scenario: 10.4 Create a basic volume
+      Given a PowerMax service
+      And a 104 array
+      And I call CreateVolume "volume1"
+      Then a valid CreateVolumeResponse is returned
+
+@v2.17.0
+    Scenario: 10.4 Create a block volume and block not enabled
+      Given a PowerMax service
+      And a 104 array
+      And block volumes are not enabled
+      And I call CreateVolume "volume1"
+      Then the error contains "Block Volume Capability is not supported"
+
+@v2.17.0
+    Scenario: 10.4 Create a volume with invalid SLO
+      Given a PowerMax service
+      And a 104 array
+      And I induce error "InvalidServiceLevel"
+      And I call CreateVolume "volume1"
+      Then the error contains "An invalid Service Level parameter was specified"
 
 @v1.1.0
     Scenario Outline: Test GetPortIdentifier function

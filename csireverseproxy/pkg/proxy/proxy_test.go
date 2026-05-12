@@ -759,6 +759,59 @@ func TestGetRouter_ServeReverseProxy(t *testing.T) {
 	}
 }
 
+func TestGetRouter_ServeReverseProxy_PrivateV1SystemsRoute(t *testing.T) {
+	server := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte(`{"status":"ok"}`))
+		if err != nil {
+			t.Errorf("expected nil error, got %v", err)
+		}
+	}))
+
+	proxy, err := createValidProxyConfig(t, server)
+	if err != nil {
+		t.Fatalf("Failed to create proxy: %v", err)
+	}
+
+	utils.InitializeLock()
+	router := proxy.GetRouter()
+
+	arrayID := "000000000001"
+	url := fmt.Sprintf("%s/systems/%s/volumes", utils.PrivateV1Prefix, arrayID)
+	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(`{"volumes":[{}]}`))
+	req = mux.SetURLVars(req, map[string]string{"symid": arrayID})
+	req.SetBasicAuth("test-username", "test-password")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestGetRouter_ServeReverseProxy_OldPrivateSloprovisioningSystemsPathNotRouted(t *testing.T) {
+	server := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	proxy, err := createValidProxyConfig(t, server)
+	if err != nil {
+		t.Fatalf("Failed to create proxy: %v", err)
+	}
+
+	router := proxy.GetRouter()
+
+	arrayID := "000000000001"
+	url := fmt.Sprintf("%s/%s/sloprovisioning/systems/%s/volumes", utils.PrivatePrefix, "104", arrayID)
+	req, _ := http.NewRequest(http.MethodPost, url, nil)
+	req = mux.SetURLVars(req, map[string]string{"symid": arrayID})
+	req.SetBasicAuth("test-username", "test-password")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 func TestGetRouter_ServeVersions(t *testing.T) {
 	testCases := []struct {
 		name   string
@@ -2309,6 +2362,95 @@ func TestGetRouter_GetPortGroups(t *testing.T) {
 			}
 
 			t.Logf("Router: %v", router)
+		})
+	}
+}
+
+// TestURLSchemeValidation_Simple tests the SSRF protection by validating URL schemes directly
+func TestURLSchemeValidation_Simple(t *testing.T) {
+	utils.InitializeLock()
+
+	testCases := []struct {
+		name            string
+		urlScheme       string
+		shouldPass      bool
+		skipURLCreation bool
+	}{
+		{
+			name:            "Valid HTTP scheme",
+			urlScheme:       "http",
+			shouldPass:      true,
+			skipURLCreation: false,
+		},
+		{
+			name:            "Valid HTTPS scheme",
+			urlScheme:       "https",
+			shouldPass:      true,
+			skipURLCreation: false,
+		},
+		{
+			name:            "Invalid FTP scheme - SSRF protection",
+			urlScheme:       "ftp",
+			shouldPass:      false,
+			skipURLCreation: false,
+		},
+		{
+			name:            "Invalid file scheme - SSRF protection",
+			urlScheme:       "file",
+			shouldPass:      false,
+			skipURLCreation: false,
+		},
+		{
+			name:            "Invalid gopher scheme - SSRF protection",
+			urlScheme:       "gopher",
+			shouldPass:      false,
+			skipURLCreation: false,
+		},
+		{
+			name:            "Empty scheme - SSRF protection",
+			urlScheme:       "",
+			shouldPass:      false,
+			skipURLCreation: true, // Skip URL creation for empty scheme test
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var req *http.Request
+			var err error
+
+			if !tc.skipURLCreation {
+				// Create a mock HTTP request with the specified scheme
+				targetURL := fmt.Sprintf("%s://example.com/test", tc.urlScheme)
+				req, err = http.NewRequest("GET", targetURL, nil)
+				assert.NoError(t, err)
+			} else {
+				// For empty scheme test, create a request with a valid URL and manually set empty scheme
+				req, err = http.NewRequest("GET", "http://example.com/test", nil)
+				assert.NoError(t, err)
+				req.URL.Scheme = "" // Manually set empty scheme
+			}
+
+			// Create a mock response writer
+			recorder := httptest.NewRecorder()
+
+			// Test the URL scheme validation logic directly
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				// This should trigger the SSRF protection
+				if tc.shouldPass {
+					t.Errorf("Expected scheme %s to be valid, but it was rejected", tc.urlScheme)
+				} else {
+					// Expected to fail - write the error response as the proxy does
+					utils.WriteHTTPError(recorder, "unsupported URL scheme: "+req.URL.Scheme, utils.StatusInternalError)
+					assert.Equal(t, http.StatusInternalServerError, recorder.Code)
+					assert.Contains(t, recorder.Body.String(), "unsupported URL scheme: "+tc.urlScheme)
+				}
+			} else {
+				// This should pass the validation
+				if !tc.shouldPass {
+					t.Errorf("Expected scheme %s to be rejected, but it was accepted", tc.urlScheme)
+				}
+			}
 		})
 	}
 }

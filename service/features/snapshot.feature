@@ -66,7 +66,7 @@ Feature: PowerMax CSI Interface
 
     Scenario: Create snapshot with no probe
         Given a PowerMax service
-        And an invalid volume
+        And I induce error "InvalidVolumeID"
         When I invalidate the Probe cache
         And I call CreateSnapshot With "snap1"
         Then the error contains "Controller Service has not been probed"
@@ -79,13 +79,13 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Create snapshot with an invalid volume
         Given a PowerMax service
-        And an invalid volume
+        And I induce error "InvalidVolumeID"
         And I call CreateSnapshot With "snapshot1"
         Then the error contains "Could not parse CSI VolumeId"
 @v1.2.0
     Scenario: Create snapshot on a non-existent volume
         Given a PowerMax service
-        And a non-existent volume
+        And I induce error "NonExistentVolume"
         And I call CreateSnapshot With "snapshot1"
         Then the error contains "Could not find source volume on the array"
 @v1.4.0
@@ -135,7 +135,7 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Existence of a snapshot on a non-existent volume
         Given a PowerMax service
-        And a non-existent volume
+        And I induce error "NonExistentVolume"
         When I call IsVolumeInSnapSession on ""
         Then the error contains "Could not find volume"
 @v1.2.0
@@ -349,19 +349,19 @@ Feature: PowerMax CSI Interface
 @v1.2.0
     Scenario: Create a volume without specifying a source
         Given a PowerMax service
-        And no volume source
+        And I induce error "NoVolumeSource"
         And I call Create Volume from Volume
         Then the error contains "VolumeContentSource is missing volume and snapshot source"
 @v1.2.0
     Scenario: Create a volume with non-existent volume as a source
         Given a PowerMax service
-        And a non-existent volume
+        And I induce error "NonExistentVolume"
         And I call Create Volume from Volume
         Then the error contains "Volume content source volume couldn't be found"
 @v1.2.0
     Scenario: Create a volume from invalid volume
         Given a PowerMax service
-        And an invalid volume
+        And I induce error "InvalidVolumeID"
         And I call Create Volume from Volume
         Then the error contains "Source volume identifier not in supported format"
 @v1.2.0
@@ -683,4 +683,76 @@ Feature: PowerMax CSI Interface
         And I induce error "MaxSnapSessionError"
         When I call Create Volume from Snapshot
         Then the error contains "Failed to create volume from snapshot"
-        
+@v2.17.0
+    Scenario: 10.4 Create a volume from a snapshot (success)
+        Given a PowerMax service
+        And a 104 array
+        And I call CreateVolume "volume1"
+        And a valid CreateVolumeResponse is returned
+        And I call CreateSnapshot "snapshot1" on "volume1"
+        And a valid CreateSnapshotResponse is returned
+        When I call Create Volume from Snapshot
+        Then a valid CreateVolumeResponse is returned
+@v2.17.0
+    Scenario: 10.4 Create a volume from a snapshot is idempotent
+        Given a PowerMax service
+        And a 104 array
+        And I call CreateVolume "volume1"
+        And a valid CreateVolumeResponse is returned
+        And I call CreateSnapshot "snapshot1" on "volume1"
+        And a valid CreateSnapshotResponse is returned
+        When I call Create Volume from Snapshot
+        Then a valid CreateVolumeResponse is returned
+        When I call Create Volume from Snapshot
+        Then a valid CreateVolumeResponse is returned
+@v2.17.0
+    Scenario: 10.4 Create a volume from an invalid snapshot ID
+        Given a PowerMax service
+        And a 104 array
+        And an invalid snapshot
+        When I call Create Volume from Snapshot
+        Then the error contains "Snapshot identifier not in supported format"
+@v2.17.0
+    Scenario: 10.4 Create a volume from a snapshot but receive create error
+        Given a PowerMax service
+        And a 104 array
+        And I call CreateVolume "volume1"
+        And a valid CreateVolumeResponse is returned
+        And I call CreateSnapshot "snapshot1" on "volume1"
+        And a valid CreateSnapshotResponse is returned
+        And I induce error "CreateVolumeError"
+        When I call Create Volume from Snapshot
+        Then the error contains "induced error"
+@v2.17.0
+    Scenario: 10.4 Create a volume from a snapshot with unlicensed array
+        Given a PowerMax service
+        And a 104 array
+        And I call CreateVolume "volume1"
+        And a valid CreateVolumeResponse is returned
+        And I call CreateSnapshot "snapshot1" on "volume1"
+        And a valid CreateSnapshotResponse is returned
+        And I induce error "SnapshotNotLicensed"
+        When I call Create Volume from Snapshot
+        Then the error contains "doesn't have Snapshot license"
+@v2.17.0
+    Scenario: 10.4 Create a volume from a snapshot with larger capacity succeeds
+        Given a PowerMax service
+        And a 104 array
+        And I call CreateVolume "volume1"
+        And a valid CreateVolumeResponse is returned
+        And I call CreateSnapshot "snapshot1" on "volume1"
+        And a valid CreateSnapshotResponse is returned
+        And a larger capacity than the source
+        When I call Create Volume from Snapshot
+        Then a valid CreateVolumeResponse is returned
+@v2.17.0
+    Scenario: 10.4 Create a volume from a snapshot with smaller capacity returns error
+        Given a PowerMax service
+        And a 104 array
+        And I call CreateVolume "volume1"
+        And a valid CreateVolumeResponse is returned
+        And I call CreateSnapshot "snapshot1" on "volume1"
+        And a valid CreateSnapshotResponse is returned
+        And I induce error "WrongCapacity"
+        When I call Create Volume from Snapshot
+        Then the error contains "smaller than the source"

@@ -16,7 +16,7 @@ clean:
 	go clean
 
 build: vendor
-	CGO_ENABLED=0 go build -mod=vendor
+	GOOS=linux CGO_ENABLED=0 go build -mod=vendor
 
 unit-test:
 	go test -v -coverprofile c1.out ./...

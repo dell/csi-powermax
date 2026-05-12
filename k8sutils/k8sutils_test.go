@@ -18,6 +18,7 @@ package k8sutils
 
 import (
 	"context"
+	"errors"
 	"os"
 	"reflect"
 	"testing"
@@ -28,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
 )
 
 const kubeconfigFilepath = "./fake-kubeconfig"
@@ -305,6 +307,10 @@ func Test_Init(t *testing.T) {
 		want    *K8sUtils
 		wantErr bool
 	}
+
+	// store the original value for InClusterConfigFunc, so that we can restore it later
+	originalInClusterConfigFunc := getInClusterConfigFunc
+
 	tests := []test{
 		{
 			name: "successfully initializes the kube client",
@@ -319,11 +325,15 @@ func Test_Init(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "fails when given an empty kubeconfig file path",
-			args:    args{kubeConfig: ""},
-			before:  func(_ test) error { return nil },
-			after:   func() {},
-			wantErr: false,
+			name: "fails when given an empty kubeconfig file path",
+			args: args{kubeConfig: ""},
+			// we want to TEMPORARILY make rest.InClusterConfig() return an error, to test that path
+			before: func(_ test) error {
+				getInClusterConfigFunc = func() (*rest.Config, error) { return nil, errors.New("error") }
+				return nil
+			},
+			after:   func() { getInClusterConfigFunc = originalInClusterConfigFunc },
+			wantErr: true,
 		},
 		{
 			name: "returns existing k8s clientset",
@@ -458,4 +468,117 @@ users:
 
 	err := os.WriteFile(filepath, []byte(kubeconfig), 0o600)
 	return err
+}
+
+// Test ID: U-028
+func TestGetPVCForVolume(t *testing.T) {
+	// Create fake PV and PVC
+	pv := &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pv"},
+		Spec: corev1.PersistentVolumeSpec{
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				CSI: &corev1.CSIPersistentVolumeSource{
+					VolumeHandle: "vol-123",
+					Driver:       "csi-powermax.dellemc.com",
+				},
+			},
+			ClaimRef: &corev1.ObjectReference{
+				Name:      "test-pvc",
+				Namespace: "default",
+			},
+		},
+	}
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pvc",
+			Namespace: "default",
+			Labels: map[string]string{
+				"csi.dell.com/fs_check_enabled": "true",
+				"csi.dell.com/fs_check_mode":    "checkAndRepair",
+			},
+		},
+	}
+
+	fakeClient := fake.NewSimpleClientset(pv, pvc)
+	utils := &K8sUtils{
+		KubernetesClient: &KubernetesClient{
+			ClientSet: fakeClient,
+		},
+	}
+
+	result, err := utils.GetPVCForVolume(context.Background(), "test-pv", "vol-123")
+	assert.NoError(t, err, "GetPVCForVolume should succeed")
+	if assert.NotNil(t, result, "PVC should not be nil") {
+		assert.Equal(t, "test-pvc", result.Name)
+		assert.Equal(t, "default", result.Namespace)
+		assert.Equal(t, "true", result.Labels["csi.dell.com/fs_check_enabled"])
+		assert.Equal(t, "checkAndRepair", result.Labels["csi.dell.com/fs_check_mode"])
+	}
+}
+
+// Test ID: U-029
+func TestGetPVCForVolumePVNotFound(t *testing.T) {
+	fakeClient := fake.NewSimpleClientset() // empty - no PV or PVC
+	utils := &K8sUtils{
+		KubernetesClient: &KubernetesClient{
+			ClientSet: fakeClient,
+		},
+	}
+
+	result, err := utils.GetPVCForVolume(context.Background(), "nonexistent-pv", "vol-999")
+	assert.Error(t, err, "GetPVCForVolume should fail when PV not found")
+	assert.Nil(t, result, "PVC should be nil when PV not found")
+}
+
+// Test ID: U-030
+func TestGetPVCForVolumeIDMismatch(t *testing.T) {
+	pv := &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pv"},
+		Spec: corev1.PersistentVolumeSpec{
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				CSI: &corev1.CSIPersistentVolumeSource{
+					VolumeHandle: "vol-123",
+					Driver:       "csi-powermax.dellemc.com",
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewSimpleClientset(pv)
+	utils := &K8sUtils{
+		KubernetesClient: &KubernetesClient{
+			ClientSet: fakeClient,
+		},
+	}
+
+	result, err := utils.GetPVCForVolume(context.Background(), "test-pv", "wrong-vol-id")
+	assert.Error(t, err, "GetPVCForVolume should fail when volume ID doesn't match")
+	assert.Nil(t, result, "PVC should be nil on volume ID mismatch")
+}
+
+// Test ID: U-031
+func TestGetPVCForVolumeNoClaimRef(t *testing.T) {
+	pv := &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pv"},
+		Spec: corev1.PersistentVolumeSpec{
+			PersistentVolumeSource: corev1.PersistentVolumeSource{
+				CSI: &corev1.CSIPersistentVolumeSource{
+					VolumeHandle: "vol-123",
+					Driver:       "csi-powermax.dellemc.com",
+				},
+			},
+			// No ClaimRef
+		},
+	}
+
+	fakeClient := fake.NewSimpleClientset(pv)
+	utils := &K8sUtils{
+		KubernetesClient: &KubernetesClient{
+			ClientSet: fakeClient,
+		},
+	}
+
+	result, err := utils.GetPVCForVolume(context.Background(), "test-pv", "vol-123")
+	assert.Error(t, err, "GetPVCForVolume should fail when PV has no ClaimRef")
+	assert.Nil(t, result, "PVC should be nil when no ClaimRef")
 }

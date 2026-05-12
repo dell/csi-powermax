@@ -1,5 +1,5 @@
 /*
- Copyright © 2021-2024 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -627,6 +627,12 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 	}*/
 
 	for _, symID := range s.opts.ManagedArrays {
+		select {
+		case <-ctx.Done():
+			log.Infof("snap cleanup worker context canceled before processing %s", symID)
+			return
+		default:
+		}
 		pmaxClient, err := s.GetPowerMaxClient(symID)
 		if err != nil {
 			log.Error(err.Error())
@@ -711,7 +717,12 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 			}
 			ReleaseLock(lockHandle, reqID, lockNum)
 		}
-		time.Sleep(scw.PollingInterval)
+		select {
+		case <-ctx.Done():
+			log.Infof("snap cleanup worker context canceled while sleeping, exiting")
+			return
+		case <-time.After(scw.PollingInterval):
+		}
 	}
 }
 

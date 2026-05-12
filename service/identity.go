@@ -15,12 +15,11 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	commonext "github.com/dell/dell-csi-extensions/common"
-
-	"golang.org/x/net/context"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -72,6 +71,13 @@ func (s *service) GetPluginCapabilities(
 					},
 				},
 			},
+			{
+				Type: &csi.PluginCapability_Service_{
+					Service: &csi.PluginCapability_Service{
+						Type: csi.PluginCapability_Service_GROUP_CONTROLLER_SERVICE,
+					},
+				},
+			},
 		}
 	}
 	return &rep, nil
@@ -103,7 +109,10 @@ func (s *service) Probe(
 				maximumStartupDelay = 1
 			}
 			// Initialize the node
-			_ = s.nodeStartup(ctx)
+			err := s.nodeStartup(ctx)
+			if err != nil {
+				log.Errorf("Failed to initialize node service: %v", err)
+			}
 		}
 	}
 	ready := new(wrapperspb.BoolValue)
