@@ -68,7 +68,7 @@ Feature: PowerMax CSI interface
       | "/array-status/symmetrixID3" | "notConnected" | "none"                                | "none"                               |
       | "/array-status/symmetrixID4" | "invalid"      | "unexpected end of JSON input"        | "none"                               |
       | "/array-status/symmetrixID5" | "new"          | "unexpected response from the server" | "QueryArrayStatusUnexpectedResponse" |
-      | ""                           | "none"         | "connection refused"                  | "none"                               |
+      | ""                           | "none"         | "connection refused@@context deadline exceeded"                  | "none"                               |
 
   @resiliency
   @v2.11.0

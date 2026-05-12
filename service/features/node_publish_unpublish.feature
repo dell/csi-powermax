@@ -567,14 +567,14 @@ Feature: PowerMax CSI interface
      And lastUnmounted should be <lastUnmounted>
 
      Examples:
-     | mnta                   | mntb                    | induced                           | lastUnmounted | errormsg                             |
-     | "none"                 | "none"                  | "none"                            | "true"        | "none"                               |
-     | "test/mnt1"            | "none"                  | "none"                            | "true"        | "none"                               |
-     | "test/mnt1"            | "none"                  | "GOFSMockGetMountsError"          | "false"       | "getMounts induced error"            |
-     | "test/mnt1"            | "none"                  | "GOFSMockUnmountError"            | "false"       | "unmount induced error"              |
-     | "test/mnt1"            | "test/mnt2"             | "GOFSMockGetMountsError"          | "false"       | "getMounts induced error"            |
-     | "test/mnt1"            | "test/mnt2"             | "none"                            | "false"       | "none"                               |
-
+    | mnta                   | mntb                    | induced                           | lastUnmounted | errormsg                             |
+    | "none"                 | "none"                  | "none"                            | "true"        | "none"                               |
+    | "test/mnt1"            | "none"                  | "none"                            | "true"        | "none"                               |
+    | "test/mnt1"            | "test/pod/mount"        | "none"                            | "false"       | "none"                               |
+    | "test/mnt1"            | "none"                  | "GOFSMockGetMountsError"          | "false"       | "getMounts induced error"            |
+    | "test/mnt1"            | "none"                  | "GOFSMockUnmountError"            | "false"       | "unmount induced error"              |
+    | "test/mnt1"            | "test/mnt2"             | "GOFSMockGetMountsError"          | "false"       | "getMounts induced error"            |
+    | "test/mnt1"            | "test/mnt2"             | "none"                            | "false"       | "none"                               |
 
 @v1.1.0
   Scenario Outline: Call verifyAndUpdateInitiatorsInADiffHost in various scenarios without modifying host name

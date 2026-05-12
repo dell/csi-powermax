@@ -50,7 +50,10 @@ const (
 	FinalError                  = "Final error: Max error count reached, device will be removed from Deletion Queue"
 )
 
-var waitTillSyncInProgTime = 20 * time.Second
+var (
+	waitTillSyncInProgTime = 20 * time.Second
+	APIPropagationDelay    = 2 * time.Second
+)
 
 // symDeviceID - holds a hexadecimal device id in string as well as the corresponding integer value
 type symDeviceID struct {
@@ -97,6 +100,7 @@ type deletionQueue struct {
 	DeleteTracks  bool
 	ClusterPrefix string
 	lock          sync.Mutex
+	versionCache  *versionCache
 }
 
 // deletionWorker - represents the deletion worker
@@ -108,6 +112,15 @@ type deletionWorker struct {
 	DeletionRequestChan chan deletionRequest
 	DeletionQueueChan   chan csiDevice
 	State               string
+	stopChan            chan struct{}
+	versionCache        *versionCache
+}
+
+// Stop signals the deletion worker goroutines to exit
+func (worker *deletionWorker) Stop() {
+	if worker.stopChan != nil {
+		close(worker.stopChan)
+	}
 }
 
 func (req *deletionRequest) isValid(clusterPrefix string) error {
@@ -480,12 +493,26 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 			log.Debugf("GetRDFInfoFromSGID failed for (%s) on symID (%s). Proceeding for RemoveVolumesFromStorageGroup", sgID, queue.SymID)
 			// This is the default SG in which all the volumes are replicated
 			_, err = pmaxClient.RemoveVolumesFromStorageGroup(context.Background(), queue.SymID, sgID, true, volumeIDs...)
+			// If batch removal failed because a volume is no longer in the SG,
+			// exclude the stale volume(s) and retry the batch (ECS01A-920).
+			if err != nil && strings.Contains(err.Error(), "does not contain") {
+				retryIDs := make([]string, 0, len(volumeIDs))
+				for _, vid := range volumeIDs {
+					if !strings.Contains(err.Error(), vid) {
+						retryIDs = append(retryIDs, vid)
+					}
+				}
+				if len(retryIDs) > 0 && len(retryIDs) < len(volumeIDs) {
+					log.Warnf("SG %s does not contain some volume(s). Retrying batch removal with %d remaining volumes.", sgID, len(retryIDs))
+					_, err = pmaxClient.RemoveVolumesFromStorageGroup(context.Background(), queue.SymID, sgID, true, retryIDs...)
+				}
+			}
 		} else {
 			// replicated volumes
 			// RemoveVolumesFromProtectedStorageGroup should be done only from r1 type
-			psg, err := pmaxClient.GetStorageGroupRDFInfo(context.Background(), queue.SymID, sgID, rdfNo)
-			if err != nil {
-				if strings.Contains(err.Error(), "No SRDF records found") {
+			psg, sgRDFErr := pmaxClient.GetStorageGroupRDFInfo(context.Background(), queue.SymID, sgID, rdfNo)
+			if sgRDFErr != nil {
+				if strings.Contains(sgRDFErr.Error(), "No SRDF records found") {
 					// it is empty protected storage group
 					return true
 				}
@@ -497,8 +524,8 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 				return true
 			}
 			log.Debugf("LocalSG: (%s), Mode: (%s), RDF No: (%s), Namespace: (%s)", sgID, mode, rdfNo, ns)
-			rdfInfo, err := pmaxClient.GetRDFGroupByID(context.Background(), queue.SymID, rdfNo)
-			if err != nil {
+			rdfInfo, rdfErr := pmaxClient.GetRDFGroupByID(context.Background(), queue.SymID, rdfNo)
+			if rdfErr != nil {
 				log.Errorf("GetRDFGroup failed for (%s) on symID (%s)", sgID, queue.SymID)
 				return false
 			}
@@ -519,6 +546,14 @@ func (queue *deletionQueue) removeVolumesFromStorageGroup(pmaxClient pmax.Pmax) 
 			// build remoteSGID
 			remoteSGID := buildProtectionGroupID(ns, strconv.Itoa(rdfInfo.RemoteRdfgNumber), mode)
 			_, err = pmaxClient.RemoveVolumesFromProtectedStorageGroup(context.Background(), queue.SymID, sgID, rdfInfo.RemoteSymmetrix, remoteSGID, true, volumeIDs...)
+		}
+
+		// Allow Unisphere API to propagate SG membership changes before
+		// refreshing volume caches. Without this delay, cache refresh may
+		// return stale data causing devices to remain stuck in disAssociateSG
+		// state and poison subsequent batches (ECS01A-920).
+		if err == nil {
+			time.Sleep(APIPropagationDelay)
 		}
 
 		for _, volumeID := range volumeIDs {
@@ -568,7 +603,11 @@ func (queue *deletionQueue) deleteVolumes(pmaxClient pmax.Pmax) bool {
 		return false
 	}
 
-	versionDetails, err := pmaxClient.GetVersionDetails(ctx)
+	vc := queue.versionCache
+	if vc == nil {
+		vc = newVersionCache()
+	}
+	versionDetails, err := vc.getOrFetchVersionDetails(ctx, queue.SymID, pmaxClient)
 	if err != nil {
 		log.Errorf("error getting api version of array %s, Error: %s", queue.SymID, err.Error())
 	} else if versionDetails.APIVersion != "" {
@@ -579,7 +618,7 @@ func (queue *deletionQueue) deleteVolumes(pmaxClient pmax.Pmax) bool {
 	}
 
 	// Usebulk Volume get if api is greater than or 101
-	if version >= 101 {
+	if version >= APIVersion101 {
 		volDeletePrefix := DeletionPrefix + CSIPrefix + "-" + queue.ClusterPrefix
 		log.Infof("Deletion Prefix: %s", volDeletePrefix)
 		volumev1, err := pmaxClient.GetVolumesByIdentifierMatch(ctx, queue.SymID, volDeletePrefix)
@@ -599,7 +638,7 @@ func (queue *deletionQueue) deleteVolumes(pmaxClient pmax.Pmax) bool {
 			var volumeIdentifier string
 
 			// Check once more if volume is part of any storage groups
-			if enhancedVolume, ok := volumeMap[device.SymDeviceID.DeviceID]; ok && version >= 101 {
+			if enhancedVolume, ok := volumeMap[device.SymDeviceID.DeviceID]; ok && version >= APIVersion101 {
 				sgCount = len(enhancedVolume.StorageGroups)
 				volumeIdentifier = enhancedVolume.Identifier
 				log.Debugf("Enhanced volumeIdentifier: %s and SG Count: %d", volumeIdentifier, sgCount)
@@ -714,6 +753,8 @@ func (worker *deletionWorker) pruneDeletionQueues() {
 func (worker *deletionWorker) updateDeletionQueues(duration time.Duration) {
 	for afterCh := time.After(duration); ; {
 		select {
+		case <-worker.stopChan:
+			return
 		case device := <-worker.DeletionQueueChan:
 			queue, ok := worker.DeletionQueues[device.SymID]
 			if ok {
@@ -755,60 +796,68 @@ func (worker *deletionWorker) QueueDeviceForDeletion(devID string, volumeIdentif
 
 func (worker *deletionWorker) deletionRequestHandler() {
 	log.Info("Starting deletion request handler goroutine")
-	for req := range worker.DeletionRequestChan {
-		log.Infof("Received deletion request for Device ID: %s, Sym ID: %s", req.DeviceID, req.SymID)
-		if !isStringInSlice(req.SymID, worker.SymmetrixIDs) {
-			req.errChan <- fmt.Errorf("unable to process device deletion request as sym id is not managed by deletion worker")
-			continue
-		}
-		pmaxClient, err := symmetrix.GetPowerMaxClient(req.SymID)
-		if err != nil {
-			log.Error(err.Error())
-			req.errChan <- fmt.Errorf("unable to process device deletion request as sym id is not managed by deletion worker")
-			continue
-		}
-		vol, err := pmaxClient.GetVolumeByID(context.Background(), req.SymID, req.DeviceID)
-		if err != nil {
-			req.errChan <- err
-			continue
-		}
-		err = req.isValid(worker.ClusterPrefix)
-		if err != nil {
-			req.errChan <- err
-			continue
-		}
-		deviceID, err := getDeviceID(req.DeviceID)
-		if err != nil {
-			req.errChan <- err
-			continue
-		}
-		currentTime := time.Now()
-		symVolume := symVolumeCache{
-			volume:     vol,
-			lastUpdate: currentTime,
-		}
-
-		initialState := deletionStateDisAssociateSG
-		if len(vol.StorageGroupIDList) == 0 {
-			if vol.SnapSource || vol.SnapTarget {
-				initialState = deletionStateCleanupSnaps
-			} else {
-				initialState = deletionStateDeleteVol
+	for {
+		select {
+		case <-worker.stopChan:
+			return
+		case req, ok := <-worker.DeletionRequestChan:
+			if !ok {
+				return
 			}
+			log.Infof("Received deletion request for Device ID: %s, Sym ID: %s", req.DeviceID, req.SymID)
+			if !isStringInSlice(req.SymID, worker.SymmetrixIDs) {
+				req.errChan <- fmt.Errorf("unable to process device deletion request as sym id is not managed by deletion worker")
+				continue
+			}
+			pmaxClient, err := symmetrix.GetPowerMaxClient(req.SymID)
+			if err != nil {
+				log.Error(err.Error())
+				req.errChan <- fmt.Errorf("unable to process device deletion request as sym id is not managed by deletion worker")
+				continue
+			}
+			vol, err := pmaxClient.GetVolumeByID(context.Background(), req.SymID, req.DeviceID)
+			if err != nil {
+				req.errChan <- err
+				continue
+			}
+			err = req.isValid(worker.ClusterPrefix)
+			if err != nil {
+				req.errChan <- err
+				continue
+			}
+			deviceID, err := getDeviceID(req.DeviceID)
+			if err != nil {
+				req.errChan <- err
+				continue
+			}
+			currentTime := time.Now()
+			symVolume := symVolumeCache{
+				volume:     vol,
+				lastUpdate: currentTime,
+			}
+
+			initialState := deletionStateDisAssociateSG
+			if len(vol.StorageGroupIDList) == 0 {
+				if vol.SnapSource || vol.SnapTarget {
+					initialState = deletionStateCleanupSnaps
+				} else {
+					initialState = deletionStateDeleteVol
+				}
+			}
+			device := csiDevice{
+				SymDeviceID:      deviceID,
+				SymID:            req.SymID,
+				SymVolumeCache:   symVolume,
+				VolumeIdentifier: req.VolumeHandle,
+				Status: deletionRequestStatus{
+					AdditionTime: currentTime,
+					LastUpdate:   currentTime,
+					State:        initialState,
+				},
+			}
+			worker.DeletionQueueChan <- device
+			req.errChan <- err
 		}
-		device := csiDevice{
-			SymDeviceID:      deviceID,
-			SymID:            req.SymID,
-			SymVolumeCache:   symVolume,
-			VolumeIdentifier: req.VolumeHandle,
-			Status: deletionRequestStatus{
-				AdditionTime: currentTime,
-				LastUpdate:   currentTime,
-				State:        initialState,
-			},
-		}
-		worker.DeletionQueueChan <- device
-		req.errChan <- err
 	}
 }
 
@@ -818,6 +867,11 @@ func (worker *deletionWorker) deletionWorker() {
 	symIndex := 0
 	updated := false
 	for {
+		select {
+		case <-worker.stopChan:
+			return
+		default:
+		}
 		worker.nextStep()
 		switch worker.State {
 		case cleanupSnapshotStep:
@@ -883,12 +937,14 @@ func (worker *deletionWorker) populateDeletionQueue() {
 			continue
 		}
 
-		versionDetails, err := pmaxClient.GetVersionDetails(ctx)
+		vc := worker.versionCache
+		if vc == nil {
+			vc = newVersionCache()
+		}
+		versionDetails, err := vc.getOrFetchVersionDetails(ctx, symID, pmaxClient)
 		if err != nil {
 			log.Errorf("error getting api version of array %s, Error: %s", symID, err.Error())
-		}
-
-		if versionDetails.APIVersion != "" {
+		} else if versionDetails.APIVersion != "" {
 			version, err = strconv.Atoi(versionDetails.APIVersion)
 			if err != nil {
 				log.Errorf("error in parsing Version: %s", err.Error())
@@ -898,7 +954,7 @@ func (worker *deletionWorker) populateDeletionQueue() {
 		log.Infof("Deletion Prefix: %s", volDeletePrefix)
 
 		// Usebulk Volume get if api is greater than or 101
-		if version >= 101 {
+		if version >= APIVersion101 {
 			volDeletePrefix := DeletionPrefix + CSIPrefix + "-" + worker.ClusterPrefix
 			volumev1, err := pmaxClient.GetVolumesByIdentifierMatch(ctx, symID, volDeletePrefix)
 			if err != nil {
@@ -965,11 +1021,14 @@ func (s *service) NewDeletionWorker(clusterPrefix string, symIDs []string) {
 		delWorker.SymmetrixIDs = symIDs
 		delWorker.DeletionRequestChan = make(chan deletionRequest, DeletionQueueLength)
 		delWorker.DeletionQueues = make(map[string]*deletionQueue, 0)
+		delWorker.stopChan = make(chan struct{})
+		delWorker.versionCache = s.getVersionCache()
 		for _, symID := range symIDs {
 			delWorker.DeletionQueues[symID] = &deletionQueue{
 				DeviceList:    make([]*csiDevice, 0),
 				SymID:         symID,
 				ClusterPrefix: clusterPrefix,
+				versionCache:  s.getVersionCache(),
 			}
 		}
 		log.Infof("Configuring deletion worker with Cluster Prefix: %s, Sym IDs: %v",

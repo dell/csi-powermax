@@ -15,6 +15,7 @@
 package service
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -35,7 +36,6 @@ import (
 
 	csiext "github.com/dell/dell-csi-extensions/replication"
 
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -174,14 +174,12 @@ type pmaxCachedInformation struct {
 	// Pair of a map containing dirPortKey to portIdentifier mapping
 	// and a timestamp indicating when this map was created
 	portIdentifiers *Pair
-	uCodeVersion    *Pair
 }
 
 // Initializes a pmaxCachedInformation type
 func (p *pmaxCachedInformation) initialize() {
 	p.knownStoragePools = make(map[string]time.Time)
 	p.portIdentifiers = nil
-	p.uCodeVersion = nil
 }
 
 func getPmaxCache(symID string) *pmaxCachedInformation {
@@ -214,6 +212,16 @@ var (
 	// Retry delay for retrying GetMaskingViewConnections
 	getMVConnectionsDelay = 30 * time.Second
 )
+
+// isValidSLO checks whether the given service level is one of the known-valid values.
+func isValidSLO(slo string) bool {
+	for _, val := range validSLO {
+		if slo == val {
+			return true
+		}
+	}
+	return false
+}
 
 func (s *service) GetPortIdentifier(ctx context.Context, symID string, dirPortKey string, pmaxClient pmax.Pmax) (string, error) {
 	s.cacheMutex.Lock()
@@ -437,824 +445,32 @@ func (s *service) CreateVolume(
 		return nil, err
 	}
 
-	thick := params[ThickVolumesParam]
-	applicationPrefix := s.resolveParameter(params, symmetrixID, ApplicationPrefixParam, "")
-
-	// Storage (resource) Pool. Validate it against exist Pools
-	storagePoolID := s.resolveParameter(params, symmetrixID, StoragePoolParam, "")
-	err = s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
-	if err != nil {
-		log.Error(err.Error())
-		return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
-	}
-
-	// SLO is optional
-	serviceLevel := s.resolveParameter(params, symmetrixID, ServiceLevelParam, "Optimized")
-	found := false
-	for _, val := range validSLO {
-		if serviceLevel == val {
-			found = true
-			break
-		}
-	}
-	if !found {
-		log.Error("An invalid Service Level parameter was specified")
-		return nil, status.Errorf(codes.InvalidArgument, "An invalid Service Level parameter was specified")
-	}
-
-	storageGroupName := s.resolveParameter(params, symmetrixID, StorageGroupParam, "")
-	hostLimitName := s.resolveParameter(params, symmetrixID, HostLimitNameParam, "")
-	hostMBsec := s.resolveParameter(params, symmetrixID, HostIOLimitMBSecParam, "")
-	hostIOsec := s.resolveParameter(params, symmetrixID, HostIOLimitIOSecParam, "")
-	hostDynDistribution := s.resolveParameter(params, symmetrixID, DynamicDistributionParam, "")
-	namespace := s.resolveParameter(params, "", CSIPVCNamespace, "")
-
-	versionDetails, err := pmaxClient.GetVersionDetails(ctx)
+	versionDetails, err := s.getVersionCache().getOrFetchVersionDetails(ctx, symmetrixID, pmaxClient)
 	if err != nil {
 		log.Error("Error in getversion API " + err.Error())
 		return nil, status.Errorf(codes.Internal, "Error in getVersion API: %s", err.Error())
 	}
-	var version int
+	version := versionDetails.Version
+	var apiVersion int
 	if versionDetails.APIVersion != "" {
-		version, err = strconv.Atoi(versionDetails.APIVersion)
+		apiVersion, err = strconv.Atoi(versionDetails.APIVersion)
 		if err != nil {
 			log.Error("Error parsing getVersion" + err.Error())
 			return nil, status.Errorf(codes.Internal, "Error in parsing getVersion: %s", err.Error())
 		}
 	}
 
-	// Dynamic SG check is available only from 10.1
-	if s.opts.dynamicSGEnabled && version < 101 {
-		log.Errorf("Dynamic SG is enabled, but not supported for array %s with version %d. Minimum expected array version is 10.1", symmetrixID, version)
-		return nil, status.Errorf(codes.Internal, "Dynamic SG is enabled, but not supported for array %s with version %d. Minimum expected array version is 10.1", symmetrixID, version)
-	}
-
-	// File related params
-	useNFS := false
-	nasServer := ""
-	allowRoot := ""
-	if params[NASServerName] != "" {
-		nasServer = params[NASServerName]
-	}
-	if params[AllowRootParam] != "" {
-		allowRoot = params[AllowRootParam]
-	}
-
-	// Validate volume capabilities
-	vcs := req.GetVolumeCapabilities()
-	if vcs != nil {
-		isBlock := accTypeIsBlock(vcs)
-		if isBlock && !s.opts.EnableBlock {
-			return nil, status.Error(codes.InvalidArgument, "Block Volume Capability is not supported")
-		}
-		useNFS = accTypeIsNFS(vcs)
-		if isBlock && useNFS {
-			return nil, status.Errorf(codes.InvalidArgument, "NFS with Block is not supported")
-		}
-	}
-
-	// Remote Replication based paramsMes
-	var replicationEnabled string
-	var remoteSymID string
-	var localRDFGrpNo string
-	var remoteRDFGrpNo string
-	var remoteServiceLevel string
-	var remoteSRPID string
-	var repMode string
-	var bias string
-
-	if params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)] == "true" {
-		if s.opts.IsVsphereEnabled {
-			return nil, status.Errorf(codes.Unavailable, "Replication on a vSphere volume is not supported")
-		}
-		if useNFS {
-			return nil, status.Errorf(codes.Unavailable, "Replication on a NFS volume is not supported")
-		}
-		replicationEnabled = params[path.Join(s.opts.ReplicationPrefix, RepEnabledParam)]
-		// remote symmetrix ID and rdf group name are mandatory params when replication is enabled
-		remoteSymID = params[path.Join(s.opts.ReplicationPrefix, RemoteSymIDParam)]
-		// check if storage class contains SRDG details
-		if params[path.Join(s.opts.ReplicationPrefix, LocalRDFGroupParam)] != "" {
-			localRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, LocalRDFGroupParam)]
-		}
-		if params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)] != "" {
-			remoteRDFGrpNo = params[path.Join(s.opts.ReplicationPrefix, RemoteRDFGroupParam)]
-		}
-		repMode = params[path.Join(s.opts.ReplicationPrefix, ReplicationModeParam)]
-
-		if symmIDFoundInAZ && repMode == Metro {
-			return nil, status.Errorf(codes.InvalidArgument, "The use of Availability Zones with Metro volumes is not supported")
-		}
-
-		remoteServiceLevel = params[path.Join(s.opts.ReplicationPrefix, RemoteServiceLevelParam)]
-		remoteSRPID = params[path.Join(s.opts.ReplicationPrefix, RemoteSRPParam)]
-		bias = params[path.Join(s.opts.ReplicationPrefix, BiasParam)]
-
-		// Get Local and remote RDFg Numbers from a rest call
-		// Create RDFg for a namespace if it doens't exist?
-		// Create RDFg when the volume gets added first time for a replication sssn
-		if localRDFGrpNo == "" && remoteRDFGrpNo == "" {
-			localRDFGrpNo, remoteRDFGrpNo, err = s.GetOrCreateRDFGroup(ctx, symmetrixID, remoteSymID, repMode, namespace, pmaxClient)
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "Received error get/create RDFG, err: %s", err.Error())
-			}
-			if localRDFGrpNo == "" || remoteRDFGrpNo == "" {
-				return nil, status.Errorf(codes.Unavailable, "Can not fetch RDF Group for volume creation get/create RDFG")
-			}
-			log.Debugf("RDF group for given array pair and RDF mode: local(%s), remote(%s)", localRDFGrpNo, remoteRDFGrpNo)
-		}
-		if repMode == Metro {
-			return s.createMetroVolume(ctx, req, reqID, storagePoolID, symmetrixID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias, hostLimitName, hostMBsec, hostIOsec, hostDynDistribution)
-		}
-		if repMode != Async && repMode != Sync {
-			log.Errorf("Unsupported Replication Mode: (%s)", repMode)
-			return nil, status.Errorf(codes.InvalidArgument, "Unsupported Replication Mode: (%s)", repMode)
-		}
-	}
-
-	// Get the required capacity
-	cr := req.GetCapacityRange()
-	requiredCylinders, err := s.validateVolSize(ctx, cr, symmetrixID, storagePoolID, pmaxClient)
-	if err != nil {
-		return nil, err
-	}
-
-	var srcVolID, srcSnapID string
-	var symID, SrcDevID, snapID string
-	var srcVol *types.Volume
-	var volContent string
-	// When content source is specified, the size of the new volume
-	// is determined based on the size of the source volume in the
-	// snapshot. The size of the new volume to be created should be
-	// greater than or equal to the size of snapshot source
-	contentSource := req.GetVolumeContentSource()
-	if contentSource != nil {
-		if useNFS {
-			return nil, status.Errorf(codes.Unavailable, "Cloning on a NFS volume is not supported")
-		}
-		switch req.GetVolumeContentSource().GetType().(type) {
-		case *csi.VolumeContentSource_Volume:
-			srcVolID = req.GetVolumeContentSource().GetVolume().GetVolumeId()
-			if srcVolID != "" {
-				_, symID, SrcDevID, _, _, err = s.parseCsiID(srcVolID)
-				if err != nil {
-					// We couldn't comprehend the identifier.
-					log.Error("Could not parse CSI VolumeId: " + srcVolID)
-					return nil, status.Error(codes.InvalidArgument, "Source volume identifier not in supported format")
-				}
-				volContent = srcVolID
-			}
-			break
-		case *csi.VolumeContentSource_Snapshot:
-			srcSnapID = req.GetVolumeContentSource().GetSnapshot().GetSnapshotId()
-			if srcSnapID != "" {
-				snapID, symID, SrcDevID, _, _, err = s.parseCsiID(srcSnapID)
-				if err != nil {
-					// We couldn't comprehend the identifier.
-					log.Error("Snapshot identifier not in supported format: " + srcSnapID)
-					return nil, status.Error(codes.InvalidArgument, "Snapshot identifier not in supported format")
-				}
-				volContent = snapID
-			}
-			break
-		default:
-			return nil, status.Error(codes.InvalidArgument, "VolumeContentSource is missing volume and snapshot source")
-		}
-		// check snapshot is licensed
-		if err := s.IsSnapshotLicensed(ctx, symID, pmaxClient); err != nil {
-			log.Error("Error - " + err.Error())
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-	}
-
-	if SrcDevID != "" && symID != "" {
-		if symID != symmetrixID {
-			log.Error("The volume content source is in different PowerMax array")
-			return nil, status.Errorf(codes.InvalidArgument, "The volume content source is in different PowerMax array")
-		}
-		srcVol, err = pmaxClient.GetVolumeByID(ctx, symmetrixID, SrcDevID)
+	selectedPath, creator := creatorFor(s, pmaxClient, s.adminClient104, symmetrixID, reqID, params, symmIDFoundInAZ, version, apiVersion, req.GetVolumeCapabilities(), req.GetVolumeContentSource())
+	if selectedPath == backendU4P104 {
+		log.Infof("Attempting 10.4 CreateVolume path for array %s", symmetrixID)
+		resp, err := creator.Create(ctx, req)
 		if err != nil {
-			log.Error("Volume content source volume couldn't be found in the array: " + err.Error())
-			return nil, status.Errorf(codes.InvalidArgument, "Volume content source volume couldn't be found in the array: %s", err.Error())
+			log.Errorf("10.4 CreateVolume failed for array %s: %v", symmetrixID, err)
+			return nil, err
 		}
-		// reset the volume size to match with source
-		if requiredCylinders < srcVol.CapacityCYL {
-			log.Error("Capacity specified is smaller than the source")
-			return nil, status.Error(codes.InvalidArgument, "Requested capacity is smaller than the source")
-		}
+		return resp, nil
 	}
-
-	// Get the volume name
-	volumeName := req.GetName()
-	if volumeName == "" {
-		log.Error("Name cannot be empty")
-		return nil, status.Error(codes.InvalidArgument,
-			"Name cannot be empty")
-	}
-
-	// Get the Volume prefix from environment
-	volumePrefix := s.getClusterPrefix()
-	maxLength := MaxVolIdentifierLength - len(volumePrefix) - len(s.getClusterPrefix()) - len(CsiVolumePrefix) - 1
-	// First get the short volume name
-	shortVolumeName := truncateString(volumeName, maxLength)
-	// Form the volume identifier using short volume name and namespace
-	var namespaceSuffix string
-	if namespace != "" {
-		namespaceSuffix = "-" + namespace
-	}
-	volumeIdentifier := fmt.Sprintf("%s%s-%s%s", CsiVolumePrefix, s.getClusterPrefix(), shortVolumeName, namespaceSuffix)
-
-	if useNFS {
-		// calculate size in MiB
-		reqSizeInMiB := (cr.GetRequiredBytes() + MiBSizeInBytes - 1) / MiBSizeInBytes
-		return file.CreateFileSystem(ctx, reqID, accessibility, params, symmetrixID, storagePoolID, serviceLevel, nasServer, volumeIdentifier, allowRoot, reqSizeInMiB, pmaxClient)
-	}
-	// Storage Group is required to be derived from the parameters (such as service level and storage resource pool which are supplied in parameters)
-	// Storage Group Name can optionally be supplied in the parameters (for testing) to over-ride the default.
-	if storageGroupName == "" {
-		if applicationPrefix == "" {
-			storageGroupName = fmt.Sprintf("%s-%s-%s-%s-SG", CSIPrefix, s.getClusterPrefix(),
-				serviceLevel, storagePoolID)
-		} else {
-			storageGroupName = fmt.Sprintf("%s-%s-%s-%s-%s-SG", CSIPrefix, s.getClusterPrefix(),
-				applicationPrefix, serviceLevel, storagePoolID)
-		}
-		if hostLimitName != "" {
-			storageGroupName = fmt.Sprintf("%s-%s", storageGroupName, hostLimitName)
-		}
-	}
-
-	var dynamicSGName string
-	var needCreation bool
-	if s.opts.dynamicSGEnabled {
-		if dynamicSGName, needCreation, err = getDynamicSG(ctx, symmetrixID, storageGroupName, s); err != nil {
-			log.Error("failed to get dynamic SG: " + err.Error())
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-		log.Infof("####### dynamic storage group name: %s, base SG name: %s, needCreation: %v", dynamicSGName, storageGroupName, needCreation)
-		storageGroupName = dynamicSGName
-	}
-
-	// localProtectionGroupID refers to name of Storage Group which has protected local volumes
-	// remoteProtectionGroupID refers to name of Storage Group which has protected remote volumes
-	var localProtectionGroupID string
-	var remoteProtectionGroupID string
-	if replicationEnabled == "true" {
-		localProtectionGroupID = buildProtectionGroupID(namespace, localRDFGrpNo, repMode)
-		remoteProtectionGroupID = buildProtectionGroupID(namespace, remoteRDFGrpNo, repMode)
-	}
-
-	// log all parameters used in CreateVolume call
-	fields := map[string]interface{}{
-		"SymmetrixID":                        symmetrixID,
-		"SRP":                                storagePoolID,
-		"Accessibility":                      accessibility,
-		"ApplicationPrefix":                  applicationPrefix,
-		"volumeIdentifier":                   volumeIdentifier,
-		"requiredCylinders":                  requiredCylinders,
-		"storageGroupName":                   storageGroupName,
-		"CSIRequestID":                       reqID,
-		"SourceVolume":                       srcVolID,
-		"SourceSnapshot":                     srcSnapID,
-		"ReplicationEnabled":                 replicationEnabled,
-		"RemoteSymID":                        remoteSymID,
-		"LocalRDFGroup":                      localRDFGrpNo,
-		"RemoteRDFGroup":                     remoteRDFGrpNo,
-		"SRDFMode":                           repMode,
-		"PVCNamespace":                       namespace,
-		"LocalProtectionGroupID":             localProtectionGroupID,
-		"RemoteProtectionGroupID":            remoteProtectionGroupID,
-		HeaderPersistentVolumeName:           params[CSIPersistentVolumeName],
-		HeaderPersistentVolumeClaimName:      params[CSIPersistentVolumeClaimName],
-		HeaderPersistentVolumeClaimNamespace: params[CSIPVCNamespace],
-		HostIOLimitMBSec:                     hostMBsec,
-		HostIOLimitIOSec:                     hostIOsec,
-		DynamicDistribution:                  hostDynDistribution,
-	}
-	log.WithFields(fields).Info("Executing CreateVolume with following fields")
-
-	// isSGUnprotected is set to true only if SG has a replica, eg if the SG is new
-	isSGUnprotected := false
-	if replicationEnabled == "true" {
-		sg, err := s.getOrCreateProtectedStorageGroup(ctx, symmetrixID, localProtectionGroupID, namespace, localRDFGrpNo, repMode, reqID, pmaxClient)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "Error in getOrCreateProtectedStorageGroup: (%s)", err.Error())
-		}
-		if sg != nil && sg.Rdf == true {
-			// Check the direction of SG
-			// Creation of replicated volume is allowed in an SG of type R1
-			err := s.VerifyProtectedGroupDirection(ctx, symmetrixID, localProtectionGroupID, localRDFGrpNo, pmaxClient)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			isSGUnprotected = true
-		}
-	}
-
-	// Check existence of the Storage Group and create if necessary.
-	if !s.opts.dynamicSGEnabled {
-		sg, err := pmaxClient.GetStorageGroup(ctx, symmetrixID, storageGroupName)
-		if err != nil || sg == nil {
-			log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
-			needCreation = true
-		}
-	}
-
-	if needCreation {
-		hostLimitsParam := &types.SetHostIOLimitsParam{
-			HostIOLimitMBSec:    hostMBsec,
-			HostIOLimitIOSec:    hostIOsec,
-			DynamicDistribution: hostDynDistribution,
-		}
-		optionalPayload := make(map[string]interface{})
-		optionalPayload[HostLimits] = hostLimitsParam
-		if *hostLimitsParam == (types.SetHostIOLimitsParam{}) {
-			optionalPayload = nil
-		}
-		_, err := pmaxClient.CreateStorageGroup(ctx, symmetrixID, storageGroupName, storagePoolID,
-			serviceLevel, thick == "true", optionalPayload)
-		if err != nil {
-			log.Error("Error creating storage group: " + err.Error())
-			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
-		}
-	}
-	alreadyExists := false
-	isLocalVolumePresent := false
-
-	var vol *types.Volume
-	var volumeList *types.Volumev1
-
-	if version >= 103 {
-		log.Debug("API version is greater than or equal to 103. Using enhanced API")
-		// Idempotency test. We will read the volume and check for:
-		// 1. Existence of a volume with matching volume name
-		// 2. Matching cylinderSize
-		// 3. Is a member of the storage group
-		// 4. Check if snapshot/volume target
-		log.Debug("Calling GetVolumeIDList for idempotency test")
-		volumeList, err = pmaxClient.GetVolumesByIdentifier(ctx, symmetrixID, volumeIdentifier)
-		if err != nil {
-			log.Error("Error getting the volumes for idempotence check: " + err.Error())
-			return nil, status.Errorf(codes.Internal, "Error  getting the volumes for idempotence check: %s", err.Error())
-		}
-
-		// isLocalVolumePresent restrict CreateVolumeInProtectedSG call if the volume is present in local SG but not in remote SG
-		// isLocalVolumePresent := false
-		// Look up the volume(s), if any, returned for the idempotency check to see if there are any matches
-		// We ignore any volume not in the desired storage group (even though they have the same name).
-		for _, eachVol := range volumeList.Volumes {
-			if len(eachVol.StorageGroups) < 1 {
-				log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + eachVol.ID)
-				return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s)", eachVol.ID)
-			}
-			matchesStorageGroup := false
-			for _, sgid := range eachVol.StorageGroups {
-				if strings.Contains(sgid.StorageGroupID, storageGroupName) {
-					matchesStorageGroup = true
-					storageGroupName = sgid.StorageGroupID
-				}
-			}
-
-			// with Authorization, a tenant prefix is applied to the volume identifier on the array
-			// csi-CSM-pmax-69298b3d3d-namespace -> tn1-csi-CSM-pmax-69298b3d3d-namespace
-			// since we don't know the tenant prefix, the volume identifier on the array is checked to contain the standard volume identifier
-			if matchesStorageGroup && (eachVol.Identifier == volumeIdentifier || strings.Contains(eachVol.Identifier, volumeIdentifier)) {
-				// A volume with the same name exists and has the same size
-				if eachVol.CapCyl != float64(requiredCylinders) {
-					log.Error("A volume with the same name exists but has a different size than required.")
-					alreadyExists = true
-					continue
-				}
-				var remoteVolumeID string
-				if replicationEnabled == "true" {
-					remoteVolumeID, _, err = s.GetRemoteVolumeID(ctx, symmetrixID, localRDFGrpNo, eachVol.ID, pmaxClient)
-					if err != nil && !strings.Contains(err.Error(), "The device must be an RDF device") {
-						return nil, status.Errorf(codes.Internal, "Failed to fetch rdf pair information for (%s) - Error (%s)", eachVol.ID, err.Error())
-					}
-					if remoteVolumeID == "" {
-						// Missing corresponding Remote Volume Name for existing local volume
-						// The SG is unprotected as Local volume and Local SG exists but missing corresponding SRDF info
-						// If the SG was protected, there must exist a corresponding remote replica volume
-						log.Debugf("Local Volume already exist, skipping creation (%s)", eachVol.ID)
-						isLocalVolumePresent = true
-						vol = &types.Volume{}
-						vol.VolumeID = eachVol.ID
-						vol.CapacityGB = eachVol.CapCyl
-						vol.VolumeIdentifier = eachVol.Identifier
-						var sgIDs []string
-						for _, sg := range eachVol.StorageGroups {
-							if sg.StorageGroupID != "" {
-								sgIDs = append(sgIDs, sg.StorageGroupID)
-							}
-						}
-						vol.StorageGroupIDList = sgIDs
-						continue
-					}
-				}
-				if volContent != "" {
-					if replicationEnabled == "true" {
-						if srcSnapID != "" {
-							err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, false, pmaxClient)
-							if err != nil {
-								return nil, err
-							}
-						} else if srcVolID != "" {
-							// Check if the array is V4 or above
-							isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
-							if isV4 {
-								// V4 and above, use clone with "establish_terminate" option
-								err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
-								if err != nil {
-									return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
-								}
-							} else {
-								// V3 or below, use legacy SnapVx clone
-								tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
-								err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, tmpSnapID, localProtectionGroupID, localRDFGrpNo, "false", false, pmaxClient)
-								if err != nil {
-									return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
-								}
-							}
-						}
-					} else { // replication is not enabled
-						if srcSnapID != "" {
-							err = s.UnlinkTargets(ctx, symID, SrcDevID, pmaxClient)
-							if err != nil {
-								return nil, status.Errorf(codes.Internal, "Failed unlink existing target from snapshot (%s)", err.Error())
-							}
-							err = s.LinkVolumeToSnapshot(ctx, symID, srcVol.VolumeID, eachVol.ID, snapID, reqID, false, pmaxClient)
-							if err != nil {
-								return nil, status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
-							}
-						} else if srcVolID != "" && eachVol.ID != "" {
-							// Check if the array is V4 or above
-							isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
-							if isV4 {
-								// V4 and above, use clone with "establish_terminate" option
-								replicaRequest := types.ReplicationRequest{
-									ReplicationPair: []types.ReplicationPair{
-										{
-											SourceVolumeName: srcVol.VolumeID,
-											TargetVolumeName: eachVol.ID,
-										},
-									},
-									Establish:          true,
-									EstablishTerminate: true,
-								}
-								err = pmaxClient.CloneVolumeFromVolume(ctx, symID, replicaRequest)
-								if err != nil {
-									return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
-								}
-							} else {
-								// V3 or below, use legacy SnapVx clone
-								tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
-								err = s.LinkVolumeToVolume(ctx, symID, srcVol, eachVol.ID, tmpSnapID, reqID, false, pmaxClient)
-								if err != nil {
-									return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
-								}
-							}
-						}
-					}
-				}
-
-				log.WithFields(fields).Info("Idempotent volume detected, returning success")
-				eachVol.ID = fmt.Sprintf("%s-%s-%s", eachVol.Identifier, symmetrixID, eachVol.ID)
-				volResp := s.buildCSIVolume(&eachVol)
-				// Set the volume context
-				attributes := map[string]string{
-					ServiceLevelParam: serviceLevel,
-					StoragePoolParam:  storagePoolID,
-					path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam): symmetrixID,
-					CapacityGB:    fmt.Sprintf("%.2f", eachVol.CapCyl),
-					ContentSource: volContent,
-					StorageGroup:  storageGroupName,
-					// Format the time output
-					"CreationTime": time.Now().Format("20060102150405"),
-				}
-				if replicationEnabled == "true" {
-					addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID, localRDFGrpNo, remoteRDFGrpNo)
-				}
-				volResp.VolumeContext = attributes
-				csiResp := &csi.CreateVolumeResponse{
-					Volume: volResp,
-				}
-				volResp.ContentSource = contentSource
-				if accessibility != nil {
-					volResp.AccessibleTopology = accessibility.Preferred
-				}
-				return csiResp, nil
-			}
-		}
-	} else {
-		// Idempotency test. We will read the volume and check for:
-		// 1. Existence of a volume with matching volume name
-		// 2. Matching cylinderSize
-		// 3. Is a member of the storage group
-		// 4. Check if snapshot/volume target
-		log.Debug("Calling GetVolumeIDList for idempotency test")
-		// For now an exact match
-		volumeIDList, err := pmaxClient.GetVolumeIDList(ctx, symmetrixID, volumeIdentifier, false)
-		if err != nil {
-			log.Error("Error looking up volume for idempotence check: " + err.Error())
-			return nil, status.Errorf(codes.Internal, "Error looking up volume for idempotence check: %s", err.Error())
-		}
-		// isLocalVolumePresent restrict CreateVolumeInProtectedSG call if the volume is present in local SG but not in remote SG
-		// isLocalVolumePresent := false
-		// Look up the volume(s), if any, returned for the idempotency check to see if there are any matches
-		// We ignore any volume not in the desired storage group (even though they have the same name).
-		for _, volumeID := range volumeIDList {
-			// Fetch the volume
-			log.WithFields(fields).Info("Calling GetVolumeByID for idempotence check")
-			vol, err = pmaxClient.GetVolumeByID(ctx, symmetrixID, volumeID)
-			if err != nil {
-				log.Error("Error fetching volume for idempotence check: " + err.Error())
-				return nil, status.Errorf(codes.Internal, "Error fetching volume for idempotence check: %s", err.Error())
-			}
-			if len(vol.StorageGroupIDList) < 1 {
-				log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
-				return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s)", volumeID)
-			}
-			matchesStorageGroup := false
-			for _, sgid := range vol.StorageGroupIDList {
-				if strings.Contains(sgid, storageGroupName) {
-					matchesStorageGroup = true
-					storageGroupName = sgid
-				}
-			}
-
-			// with Authorization, a tenant prefix is applied to the volume identifier on the array
-			// csi-CSM-pmax-69298b3d3d-namespace -> tn1-csi-CSM-pmax-69298b3d3d-namespace
-			// since we don't know the tenant prefix, the volume identifier on the array is checked to contain the standard volume identifier
-			if matchesStorageGroup && (vol.VolumeIdentifier == volumeIdentifier || strings.Contains(vol.VolumeIdentifier, volumeIdentifier)) {
-				// A volume with the same name exists and has the same size
-				if vol.CapacityCYL != requiredCylinders {
-					log.Error("A volume with the same name exists but has a different size than required.")
-					alreadyExists = true
-					continue
-				}
-				var remoteVolumeID string
-				if replicationEnabled == "true" {
-					remoteVolumeID, _, err = s.GetRemoteVolumeID(ctx, symmetrixID, localRDFGrpNo, vol.VolumeID, pmaxClient)
-					if err != nil && !strings.Contains(err.Error(), "The device must be an RDF device") {
-						return nil, status.Errorf(codes.Internal, "Failed to fetch rdf pair information for (%s) - Error (%s)", vol.VolumeID, err.Error())
-					}
-					if remoteVolumeID == "" {
-						// Missing corresponding Remote Volume Name for existing local volume
-						// The SG is unprotected as Local volume and Local SG exists but missing corresponding SRDF info
-						// If the SG was protected, there must exist a corresponding remote replica volume
-						log.Debugf("Local Volume already exist, skipping creation (%s)", vol.VolumeID)
-						isLocalVolumePresent = true
-						continue
-					}
-				}
-				if volContent != "" {
-					if replicationEnabled == "true" {
-						if srcSnapID != "" {
-							err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, false, pmaxClient)
-							if err != nil {
-								return nil, err
-							}
-						} else if srcVolID != "" {
-							// Check if the array is V4 or above
-							isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
-							if isV4 {
-								// V4 and above, use clone with "establish_terminate" option
-								err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
-								if err != nil {
-									return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
-								}
-							} else {
-								// V3 or below, use legacy SnapVx clone
-								tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
-								err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, tmpSnapID, localProtectionGroupID, localRDFGrpNo, "false", false, pmaxClient)
-								if err != nil {
-									return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
-								}
-							}
-						}
-					} else { // replication is not enabled
-						if srcSnapID != "" {
-							err = s.UnlinkTargets(ctx, symID, SrcDevID, pmaxClient)
-							if err != nil {
-								return nil, status.Errorf(codes.Internal, "Failed unlink existing target from snapshot (%s)", err.Error())
-							}
-							err = s.LinkVolumeToSnapshot(ctx, symID, srcVol.VolumeID, vol.VolumeID, snapID, reqID, false, pmaxClient)
-							if err != nil {
-								return nil, status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
-							}
-						} else if srcVolID != "" {
-							// Check if the array is V4 or above
-							isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
-							if isV4 {
-								// V4 and above, use clone with "establish_terminate" option
-								replicaRequest := types.ReplicationRequest{
-									ReplicationPair: []types.ReplicationPair{
-										{
-											SourceVolumeName: srcVol.VolumeID,
-											TargetVolumeName: vol.VolumeID,
-										},
-									},
-									Establish:          true,
-									EstablishTerminate: true,
-								}
-								err = pmaxClient.CloneVolumeFromVolume(ctx, symID, replicaRequest)
-								if err != nil {
-									return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
-								}
-							} else {
-								// V3 or below, use legacy SnapVx clone
-								tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
-								err = s.LinkVolumeToVolume(ctx, symID, srcVol, vol.VolumeID, tmpSnapID, reqID, false, pmaxClient)
-								if err != nil {
-									return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
-								}
-							}
-						}
-					}
-				}
-
-				log.WithFields(fields).Info("Idempotent volume detected, returning success")
-				vol.VolumeID = fmt.Sprintf("%s-%s-%s", vol.VolumeIdentifier, symmetrixID, vol.VolumeID)
-				volResp := s.getCSIVolume(vol)
-				// Set the volume context
-				attributes := map[string]string{
-					ServiceLevelParam: serviceLevel,
-					StoragePoolParam:  storagePoolID,
-					path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam): symmetrixID,
-					CapacityGB:    fmt.Sprintf("%.2f", vol.CapacityGB),
-					ContentSource: volContent,
-					StorageGroup:  storageGroupName,
-					// Format the time output
-					"CreationTime": time.Now().Format("20060102150405"),
-				}
-
-				if symmIDFoundInAZ {
-					s.addZoneLabelsToVolumeAttributes(attributes, symmetrixID)
-				}
-
-				if replicationEnabled == "true" {
-					addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID, localRDFGrpNo, remoteRDFGrpNo)
-				}
-				volResp.VolumeContext = attributes
-				csiResp := &csi.CreateVolumeResponse{
-					Volume: volResp,
-				}
-				volResp.ContentSource = contentSource
-				if accessibility != nil {
-					volResp.AccessibleTopology = accessibility.Preferred
-				}
-				return csiResp, nil
-			}
-		}
-	}
-	if alreadyExists {
-		log.Error("A volume with the same name " + volumeName + "exists but has a different size than requested. Use a different name.")
-		return nil, status.Errorf(codes.AlreadyExists, "A volume with the same name %s exists but has a different size than requested. Use a different name.", volumeName)
-	}
-
-	// CSI specific metada for authorization
-	headerMetadata := addMetaData(params)
-
-	// Let's create the volume
-	if !isLocalVolumePresent {
-		vol, err = pmaxClient.CreateVolumeInStorageGroupS(ctx, symmetrixID, storageGroupName, volumeIdentifier, requiredCylinders, nil, headerMetadata)
-		if err != nil {
-			log.Error(fmt.Sprintf("Could not create volume: %s: %s", volumeName, err.Error()))
-			return nil, status.Errorf(codes.Internal, "Could not create volume: %s: %s", volumeName, err.Error())
-		}
-	}
-
-	if replicationEnabled == "true" {
-		log.Debugf("RDF: Found Rdf enabled")
-		// remote storage group name is kept same as local storage group name
-		// Check if volume is already added in SG, else add it
-		protectedSGID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
-		if protectedSGID == "" {
-			// Volume is not present in Protected Storage Group, Add
-			err = s.addVolumesToProtectedStorageGroup(ctx, reqID, symmetrixID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, false, vol.VolumeID, pmaxClient)
-			if err != nil {
-				return nil, err
-			}
-		}
-		if isSGUnprotected {
-			// If the required SG is still unprotected, protect the local SG with RDF info
-			// If valid RDF group is supplied this will create a remote SG, a RDF pair and add the vol in respective SG created
-			// Remote storage group name is kept same as local storage group name
-			err := s.ProtectStorageGroup(ctx, symmetrixID, remoteSymID, localProtectionGroupID, remoteProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID, false, pmaxClient)
-			if err != nil {
-				log.Errorf("Proceeding to remove volume from protected storage group as rollback")
-				// Remove volume from protected storage group as a rollback
-				// The device could be just a TDEV and can make RDF unmanageable due to slow u4p response
-				_, er := pmaxClient.RemoveVolumesFromStorageGroup(ctx, symmetrixID, localProtectionGroupID, true, vol.VolumeID)
-				if er != nil {
-					log.Errorf("Error removing volume %s from protected SG %s with error: %s", vol.VolumeID, localProtectionGroupID, er.Error())
-				}
-				return nil, err
-			}
-		}
-	}
-
-	// If volume content source is specified, initiate no_copy to newly created volume
-	if contentSource != nil {
-		if srcVolID != "" {
-			// Check if the array is V4 or above
-			isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
-			if replicationEnabled == "true" {
-				if isV4 {
-					// V4 and above, use clone with "establish_terminate" option
-					err = s.LinkSRDFCloneVolume(ctx, reqID, symID, srcVol, vol, localProtectionGroupID, localRDFGrpNo, "false", pmaxClient)
-					if err != nil {
-						return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
-					}
-				} else {
-					// V3 or below, use legacy SnapVx clone
-					tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
-					err = s.LinkSRDFVolToVolume(ctx, reqID, symID, srcVol, vol, tmpSnapID, localProtectionGroupID, localRDFGrpNo, "false", false, pmaxClient)
-					if err != nil {
-						return nil, status.Errorf(codes.Internal, "Failed to create SRDF volume from volume (%s)", err.Error())
-					}
-				}
-			} else {
-				if isV4 {
-					// V4 and above, use clone with "establish_terminate" option
-					replicaRequest := types.ReplicationRequest{
-						ReplicationPair: []types.ReplicationPair{
-							{
-								SourceVolumeName: srcVol.VolumeID,
-								TargetVolumeName: vol.VolumeID,
-							},
-						},
-						Establish:          true,
-						EstablishTerminate: true,
-					}
-					err = pmaxClient.CloneVolumeFromVolume(ctx, symID, replicaRequest)
-					if err != nil {
-						return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
-					}
-				} else {
-					// V3 or below, use legacy SnapVx clone
-					tmpSnapID := fmt.Sprintf("%s%s-%d", TempSnap, s.getClusterPrefix(), time.Now().Nanosecond())
-					err = s.LinkVolumeToVolume(ctx, symID, srcVol, vol.VolumeID, tmpSnapID, reqID, false, pmaxClient)
-					if err != nil {
-						return nil, status.Errorf(codes.Internal, "Failed to create volume from volume (%s)", err.Error())
-					}
-				}
-			}
-		} else if srcSnapID != "" {
-			if replicationEnabled == "true" {
-				err = s.LinkSRDFVolToSnapshot(ctx, reqID, symID, srcVol.VolumeID, snapID, localProtectionGroupID, localRDFGrpNo, vol, bias, false, pmaxClient)
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				// Unlink all previous targets from this snapshot if the link is in defined state
-				err = s.UnlinkTargets(ctx, symID, SrcDevID, pmaxClient)
-				if err != nil {
-					return nil, status.Errorf(codes.Internal, "Failed unlink existing target from snapshot (%s)", err.Error())
-				}
-				err = s.LinkVolumeToSnapshot(ctx, symID, srcVol.VolumeID, vol.VolumeID, snapID, reqID, false, pmaxClient)
-				if err != nil {
-					return nil, status.Errorf(codes.Internal, "Failed to create volume from snapshot (%s)", err.Error())
-				}
-			}
-		}
-	}
-
-	// Formulate the return response
-	volID := vol.VolumeID
-	vol.VolumeID = fmt.Sprintf("%s-%s-%s", vol.VolumeIdentifier, symmetrixID, vol.VolumeID)
-	volResp := s.getCSIVolume(vol)
-	volResp.ContentSource = contentSource
-	// Set the volume context
-	attributes := map[string]string{
-		ServiceLevelParam: serviceLevel,
-		StoragePoolParam:  storagePoolID,
-		path.Join(s.opts.ReplicationContextPrefix, SymmetrixIDParam): symmetrixID,
-		CapacityGB:    fmt.Sprintf("%.2f", vol.CapacityGB),
-		ContentSource: volContent,
-		StorageGroup:  storageGroupName,
-		// Format the time output
-		"CreationTime": time.Now().Format("20060102150405"),
-	}
-	if replicationEnabled == "true" {
-		remoteVolumeID, _, err := s.GetRemoteVolumeID(ctx, symmetrixID, localRDFGrpNo, volID, pmaxClient)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "Failed to fetch rdf pair information for (%s) - Error (%s)", vol.VolumeID, err.Error())
-		}
-		addReplicationParamsToVolumeAttributes(attributes, s.opts.ReplicationContextPrefix, remoteSymID, repMode, remoteVolumeID, localRDFGrpNo, remoteRDFGrpNo)
-	}
-
-	volResp.VolumeContext = attributes
-	if accessibility != nil {
-		volResp.AccessibleTopology = accessibility.Preferred
-	}
-	csiResp := &csi.CreateVolumeResponse{
-		Volume: volResp,
-	}
-	fields[storageGroupName] = storageGroupName
-	log.WithFields(fields).Infof("Created volume with ID: %s", volResp.VolumeId)
-	return csiResp, nil
+	return creator.Create(ctx, req)
 }
 
 func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRequest, reqID, storagePoolID, symID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias, hostLimitName, hostMBsec, hostIOsec, hostDynDist string) (*csi.CreateVolumeResponse, error) {
@@ -1889,7 +1105,8 @@ func (s *service) validateVolSize(ctx context.Context, cr *csi.CapacityRange, sy
 	if minSizeBytes < 0 || maxSizeBytes < 0 {
 		return 0, status.Errorf(
 			codes.OutOfRange,
-			"bad capacity: requested volume size bytes %d and limit size bytes: %d must not be negative", minSizeBytes, maxSizeBytes)
+			"bad capacity: requested volume size %d bytes and limit size %d bytes must not be negative", minSizeBytes, maxSizeBytes,
+		)
 	}
 
 	if minSizeBytes == 0 {
@@ -1941,22 +1158,25 @@ func (s *service) validateVolSize(ctx context.Context, cr *csi.CapacityRange, sy
 	if maxSizeBytes > maxAvailBytes {
 		return 0, status.Errorf(
 			codes.OutOfRange,
-			"bad capacity: requested maximum size (%d bytes) is greater than the maximum available capacity (%d bytes)", maxSizeBytes, maxAvailBytes)
+			"bad capacity: requested maximum size %d bytes is greater than the maximum available capacity %d bytes", maxSizeBytes, maxAvailBytes,
+		)
 	}
 	if minSizeBytes > maxAvailBytes {
 		return 0, status.Errorf(
 			codes.OutOfRange,
-			"bad capacity: requested minimum size (%d bytes) is greater than the maximum available capacity (%d bytes)", minSizeBytes, maxAvailBytes)
+			"bad capacity: requested minimum size %d bytes is greater than the maximum available capacity %d bytes", minSizeBytes, maxAvailBytes,
+		)
 	}
 	if minSizeBytes < MinVolumeSizeBytes {
-		log.Warnf("bad capacity: requested size (%d bytes) is less than the minimum volume size (%d bytes) supported by PowerMax..", minSizeBytes, MinVolumeSizeBytes)
+		log.Warnf("bad capacity: requested size %d bytes is less than the minimum volume size %d bytes supported by PowerMax..", minSizeBytes, MinVolumeSizeBytes)
 		log.Warnf("Proceeding with minimum volume size supported by PowerMax Array ......")
 		minSizeBytes = MinVolumeSizeBytes
 	}
 	if maxSizeBytes < minSizeBytes {
 		return 0, status.Errorf(
 			codes.OutOfRange,
-			"bad capacity: requested maximum size (%d bytes) is less than the requested minimum size (%d bytes)", maxSizeBytes, minSizeBytes)
+			"bad capacity: requested maximum size %d bytes is less than the requested minimum size %d bytes", maxSizeBytes, minSizeBytes,
+		)
 	}
 	minNumberOfCylinders := int(minSizeBytes / cylinderSizeInBytes)
 	var numOfCylinders int
@@ -1969,7 +1189,8 @@ func (s *service) validateVolSize(ctx context.Context, cr *csi.CapacityRange, sy
 	if sizeInBytes > maxSizeBytes {
 		return 0, status.Errorf(
 			codes.OutOfRange,
-			"bad capacity: size in bytes %d exceeds limit size bytes %d", sizeInBytes, maxSizeBytes)
+			"bad capacity: size %d bytes exceeds limit size %d bytes", sizeInBytes, maxSizeBytes,
+		)
 	}
 	return numOfCylinders, nil
 }
@@ -2202,6 +1423,23 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 	}
 
 	if vol.VolumeIdentifier != volName {
+		// Check if the volume was previously renamed with the deletion prefix
+		// but failed to be queued for actual deletion (e.g., due to a transient error).
+		// In that case, re-attempt queuing instead of assuming it's already deleted.
+		expectedDelName := fmt.Sprintf("%s%s", DeletionPrefix, volName)
+		if len(expectedDelName) > MaxVolIdentifierLength {
+			expectedDelName = expectedDelName[:MaxVolIdentifierLength]
+		}
+		if vol.VolumeIdentifier == expectedDelName {
+			log.Info(fmt.Sprintf("DeleteVolume: VolumeIdentifier %s indicates volume %s was renamed for deletion but not yet queued. Re-attempting deletion.",
+				vol.VolumeIdentifier, volName))
+			err = s.deletionWorker.QueueDeviceForDeletion(vol.VolumeID, vol.VolumeIdentifier, symID)
+			if err != nil {
+				log.Errorf("RequestSoftVolDelete (retry) failed with error - %s", err.Error())
+				return status.Errorf(codes.Internal, "Failed marking volume for deletion with error (%s)", err.Error())
+			}
+			return nil
+		}
 		// This volume is already deleted or marked for deletion,
 		// or volume id is an old stale identifier not matching a volume.
 		// Either way idempotence calls for doing nothing and returning ok.
@@ -2267,7 +1505,7 @@ func (s *service) deleteFileSystem(ctx context.Context, reqID, symID, fsName, fs
 	log.WithFields(fields).Info("Executing Delete File System with following fields")
 
 	fileSystem, err := pmaxClient.GetFileSystemByID(ctx, symID, fsID)
-	log.Debugf("fileSysetm: %#v, error: %#v", fileSystem, err)
+	log.Debugf("fileSystem: %#v, error: %#v", fileSystem, err)
 
 	if err != nil {
 		if strings.Contains(err.Error(), cannotBeFound) {
@@ -2318,13 +1556,6 @@ func (s *service) ControllerPublishVolume(
 			reqID = req[0]
 		}
 	}
-	volumeContext := req.GetVolumeContext()
-	if volumeContext != nil {
-		log.Infof("VolumeContext:")
-		for key, value := range volumeContext {
-			log.Infof("    [%s]=%s", key, value)
-		}
-	}
 
 	volID := req.GetVolumeId()
 	if volID == "" {
@@ -2341,7 +1572,6 @@ func (s *service) ControllerPublishVolume(
 	pmaxClient, err := s.GetPowerMaxClient(symID, remoteSymID)
 	if err != nil {
 		log.Error(err.Error())
-
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -2356,151 +1586,15 @@ func (s *service) ControllerPublishVolume(
 		return nil, err
 	}
 
-	nodeID := req.GetNodeId()
-	if nodeID == "" {
-		log.Error("node ID is required")
-		return nil, status.Error(codes.InvalidArgument,
-			"node ID is required")
-	}
-
-	vc := req.GetVolumeCapability()
-	if vc == nil {
-		log.Error("volume capability is required")
-		return nil, status.Error(codes.InvalidArgument,
-			"volume capability is required")
-	}
-	am := vc.GetAccessMode()
-	if am == nil {
-		log.Error("access mode is required")
-		return nil, status.Error(codes.InvalidArgument,
-			"access mode is required")
-	}
-
-	if am.Mode == csi.VolumeCapability_AccessMode_UNKNOWN {
-		log.Error(errUnknownAccessMode)
-		return nil, status.Error(codes.InvalidArgument, errUnknownAccessMode)
-	}
-	isNFS := accTypeIsNFS([]*csi.VolumeCapability{vc})
-	if isNFS {
-		// incoming request for file system volume
-		return file.CreateNFSExport(ctx, reqID, symID, devID, am, volumeContext, pmaxClient)
-	}
-
-	if vc.GetMount().GetFsType() == "" {
-		// can happen when doing static provisioning, check for filesystem existence
-		log.Debug("fsType empty...checking for file system existence")
-		_, err := pmaxClient.GetFileSystemByID(ctx, symID, devID)
-		if err == nil {
-			// we found fs, proceed to CreateNFSExport
-			return nil, status.Errorf(codes.Unavailable, "static provisioning on a file system is not supported.")
-		}
-	}
-
-	// Fetch the volume details from array
-	symID, devID, vol, err := s.GetVolumeByID(ctx, volID, pmaxClient)
+	versionDetails, err := s.getVersionCache().getOrFetchVersionDetails(ctx, symID, pmaxClient)
 	if err != nil {
-		log.Error("GetVolumeByID Error: " + err.Error())
-		return nil, err
+		log.Error("Error in getversion API " + err.Error())
+		return nil, status.Errorf(codes.Internal, "Error in getVersion API: %s", err.Error())
 	}
+	unisphereVersion := versionDetails.Version
 
-	// log all parameters used in ControllerPublishVolume call
-	fields := map[string]interface{}{
-		"SymmetrixID":     symID,
-		"VolumeId":        volID,
-		"NodeId":          nodeID,
-		"AccessMode":      am.Mode,
-		"CSIRequestID":    reqID,
-		"IsVsphereVolume": s.opts.IsVsphereEnabled,
-	}
-	log.WithFields(fields).Info("Executing ControllerPublishVolume with following fields")
-	// flag createNFSExport()
-	isNVMETCP := false
-	isISCSI := false
-	// Check if node ID is present in cache
-	nodeInCache := false
-	cacheID := symID + ":" + nodeID
-	tempHostID, ok := nodeCache.Load(cacheID)
-	if ok {
-		log.Debugf("REQ ID: %s Loaded nodeID: %s, hostID: %s from node cache",
-			reqID, nodeID, tempHostID.(string))
-		nodeInCache = true
-		if !strings.Contains(tempHostID.(string), "-FC") {
-			isISCSI = true
-		}
-		if strings.Contains(tempHostID.(string), "-NVMETCP") {
-			isISCSI = false
-			isNVMETCP = true
-		}
-	} else {
-		log.Debugf("REQ ID: %s nodeID: %s not present in node cache", reqID, nodeID)
-		isNVMETCP, err = s.IsNodeNVMe(ctx, symID, nodeID, pmaxClient)
-		if err != nil {
-			return nil, status.Error(codes.NotFound, err.Error())
-		}
-		if !isNVMETCP {
-			isISCSI, err = s.IsNodeISCSI(ctx, symID, nodeID, pmaxClient)
-			if err != nil {
-				return nil, status.Error(codes.NotFound, err.Error())
-			}
-		}
-	}
-
-	hostID, tgtStorageGroupID, tgtMaskingViewID := s.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
-
-	if !isNVMETCP {
-		// Update the values, if NVME is false
-		hostID, tgtStorageGroupID, tgtMaskingViewID = s.GetHostSGAndMVIDFromNodeID(nodeID, isISCSI)
-	}
-
-	if !nodeInCache {
-		// Update the map
-		val, ok := nodeCache.LoadOrStore(cacheID, hostID)
-		if !ok {
-			log.Debugf("REQ ID: %s Added nodeID: %s, hostID: %s to node cache", reqID, nodeID, hostID)
-		} else {
-			log.Debugf("REQ ID: %s Some other goroutine added hostID: %s for node: %s to node cache",
-				reqID, val.(string), nodeID)
-			if hostID != val.(string) {
-				log.Warnf("REQ ID: %s Mismatch between calculated value: %s and latest value: %s from node cache",
-					reqID, val.(string), hostID)
-			}
-		}
-	}
-
-	publishContext := make(map[string]string)
-	if len(vol.EffectiveWWN) > 0 {
-		publishContext[PublishContextDeviceWWN] = vol.EffectiveWWN
-	} else {
-		return nil, status.Errorf(codes.Internal, "PublishVolume: Volume %s has no effective WWN, Unisphere may not be synchronized with array or synchronization may be in progress", volID)
-	}
-
-	ctrlPubRes, ctrlPubErr := s.publishVolume(ctx, publishContext, tgtStorageGroupID, hostID, symID, symID, tgtMaskingViewID, devID, reqID, volumeName, am, pmaxClient, true)
-	if ctrlPubErr != nil {
-		return nil, ctrlPubErr
-	}
-
-	if remoteSymID != "" && remoteVolumeID != "" {
-		remoteVol, err := pmaxClient.GetVolumeByID(ctx, remoteSymID, remoteVolumeID)
-		if strings.Compare(remoteVol.EffectiveWWN, vol.EffectiveWWN) != 0 {
-			// Refresh the symmetrix
-			err := pmaxClient.RefreshSymmetrix(ctx, symID)
-			if err != nil {
-				if !strings.Contains(err.Error(), "Too Many Requests") {
-					return nil, status.Errorf(codes.Internal, "PublishVolume: Could not refresh symmetrix: (%s)", err.Error())
-				}
-				return nil, status.Errorf(codes.Internal, "symmetrix sync in progress, waiting for cache to update")
-			}
-			// wait till the remote volume has an effective wwn
-			return nil, status.Errorf(codes.Internal, "PublishVolume: Could not publish remote volume: (%s)", "remote volume does not have effective wwn, waiting for it to SYNC")
-		}
-		log.Debugf("remote-vol: %#v, error: %#v", remoteVol, err)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "PublishVolume: Could not retrieve remote volume: (%s)", err.Error())
-		}
-		publishContext[RemotePublishContextDeviceWWN] = remoteVol.EffectiveWWN
-		return s.publishVolume(ctx, publishContext, tgtStorageGroupID, hostID, symID, remoteSymID, tgtMaskingViewID, remoteVolumeID, reqID, volumeName, am, pmaxClient, false)
-	}
-	return ctrlPubRes, ctrlPubErr
+	publisher := publisherFor(ctx, s, pmaxClient, s.adminClient104, symID, devID, volID, volumeName, remoteSymID, remoteVolumeID, reqID, unisphereVersion, req.GetVolumeCapability())
+	return publisher.Publish(ctx, req)
 }
 
 func (s *service) publishVolume(ctx context.Context, publishContext map[string]string, tgtStorageGroupID, hostID, clientSymID, symID, tgtMaskingViewID, deviceID, reqID, volumeName string, accessMode *csi.VolumeCapability_AccessMode, pmaxClient pmax.Pmax, isLocal bool) (*csi.ControllerPublishVolumeResponse, error) {
@@ -2601,7 +1695,31 @@ func (s *service) updatePublishContext(ctx context.Context, publishContext map[s
 		}
 	}
 	if lunid == "" {
-		return nil, status.Error(codes.Internal, "PublishContext: No matching connections for deviceID")
+		// For vSphere RDM, connections will not exist at publish time because
+		// the ESXi host has not yet discovered the LUN. The node plugin's
+		// RescanAllHba() in NodeStageVolume will trigger LUN discovery and
+		// AttachRDM() will map it into the VM. Build publish context from the
+		// masking view's port group instead of from connections.
+		if s.opts.IsVsphereEnabled {
+			log.Infof("PublishContext: No connections for vSphere volume %s, building context from masking view port group", deviceID)
+			mv, mvErr := pmaxClient.GetMaskingViewByID(ctx, symID, tgtMaskingViewID)
+			if mvErr != nil {
+				return nil, status.Errorf(codes.Internal, "PublishContext: Failed to get masking view %s: %s", tgtMaskingViewID, mvErr.Error())
+			}
+			pg, pgErr := pmaxClient.GetPortGroupByID(ctx, symID, mv.PortGroupID)
+			if pgErr != nil {
+				return nil, status.Errorf(codes.Internal, "PublishContext: Failed to get port group %s: %s", mv.PortGroupID, pgErr.Error())
+			}
+			for _, portKey := range pg.SymmetrixPortKey {
+				dirPorts = appendIfMissing(dirPorts, fmt.Sprintf("%s:%s", portKey.DirectorID, portKey.PortID))
+			}
+			if len(dirPorts) == 0 {
+				return nil, status.Errorf(codes.Internal, "PublishContext: Port group %s has no ports configured", mv.PortGroupID)
+			}
+			lunid = "0000"
+		} else {
+			return nil, status.Error(codes.Internal, "PublishContext: No matching connections for deviceID")
+		}
 	}
 
 	portIdentifiers := ""
@@ -3580,7 +2698,7 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 		return "", fmt.Errorf("failed to find a valid initiator for hostID %s from %s", hostID, symID)
 	}
 
-	versionDetails, err := pmaxClient.GetVersionDetails(ctx)
+	versionDetails, err := s.getVersionCache().getOrFetchVersionDetails(ctx, symID, pmaxClient)
 	if err != nil {
 		return "", fmt.Errorf("error in getversion API: %s", symID)
 	}
@@ -3595,7 +2713,7 @@ func (s *service) SelectOrCreateFCPGForHost(ctx context.Context, symID string, h
 	}
 
 	isV4 := s.isV4OrAbove(ctx, symID, pmaxClient)
-	if version >= 103 && isV4 {
+	if version >= APIVersion103 && isV4 {
 		log.Debug("API version is greater than or equal to 103. Using enhanced API")
 		portGroupList, err := pmaxClient.GetPortGroupListByType(ctx, symID, "fibre")
 		if err != nil {
@@ -3984,7 +3102,7 @@ func (s *service) ControllerExpandVolume(
 	}
 
 	if accTypeIsNFS([]*csi.VolumeCapability{req.VolumeCapability}) {
-		newSizeInMib := (req.CapacityRange.GetRequiredBytes()) / MiBSizeInBytes
+		newSizeInMib := req.CapacityRange.GetRequiredBytes() / MiBSizeInBytes
 		return file.ExpandFileSystem(ctx, reqID, symID, devID, newSizeInMib, pmaxClient)
 	}
 
@@ -4976,12 +4094,23 @@ func (s *service) resolveParameter(params map[string]string, arrayID, param, def
 	return defaultValue
 }
 
+// getVersionCache returns the service's version cache, initializing it lazily if needed.
+// Callers should not cache the returned pointer across calls.
+func (s *service) getVersionCache() *versionCache {
+	s.versionCacheOnce.Do(func() {
+		if s.versionCache == nil {
+			s.versionCache = newVersionCache()
+		}
+	})
+	return s.versionCache
+}
+
 // isV4OrAbove checks if the PowerMax array is V4 or above by examining the microcode version.
 // Take the first 2 digits of the microcode and convert to a number.
 // If the number is greater than 59, the array is V4 or above.
 func (s *service) isV4OrAbove(ctx context.Context, symID string, pmaxClient pmax.Pmax) bool {
 	log := log.WithContext(ctx)
-	symmetrix, err := pmaxClient.GetSymmetrixByID(ctx, symID)
+	symmetrix, err := s.getVersionCache().getOrFetchSymmetrix(ctx, symID, pmaxClient)
 	if err != nil {
 		log.Warnf("Failed to get symmetrix info for %s: %s, defaulting to legacy clone", symID, err.Error())
 		return false

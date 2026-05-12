@@ -15,7 +15,7 @@
 ############################
 ARG GOIMAGE
 ARG BASEIMAGE
-ARG VERSION="2.16.0"
+ARG GOPROXY
 
 FROM $GOIMAGE as builder
 
@@ -38,27 +38,20 @@ RUN adduser \
     --uid "${UID}" \
     "${USER}"
 
-RUN mkdir -p /go/src/csireverseproxy
-COPY . /go/src/csireverseproxy
-
-WORKDIR /go/src/csireverseproxy
-RUN CGO_ENABLED=0 go build -mod=vendor
-
-
 ############################
 # STEP 2 build a small image
 ############################
 FROM $BASEIMAGE as final
-ARG VERSION
 LABEL vendor="Dell Technologies" \
     maintainer="Dell Technologies" \
     name="csipowermax-reverseproxy" \
     summary="CSI PowerMax Reverse Proxy" \
     description="CSI PowerMax Reverse Proxy which helps manage connections with Unisphere for PowerMax" \
-    release="1.17.0" \
-    version=$VERSION \
+    release="1.13.0" \
+    version="2.12.0" \
     license="Apache-2.0"
 COPY licenses /licenses
+COPY csireverseproxy /app/revproxy
 # Import from builder.
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /etc/passwd /etc/passwd
@@ -66,8 +59,6 @@ COPY --from=builder /etc/group /etc/group
 
 # Use an unprivileged user.
 USER revproxy:revproxy
-
-COPY --from=builder /go/src/csireverseproxy/csireverseproxy /app/revproxy
 
 WORKDIR /app
 CMD ["/app/revproxy"]

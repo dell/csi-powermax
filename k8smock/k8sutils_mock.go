@@ -15,18 +15,21 @@
 package k8smock
 
 import (
+	"context"
 	"reflect"
 	"strings"
 
 	"github.com/golang/mock/gomock"
-	kubernetes "k8s.io/client-go/kubernetes/fake"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
+	kubernetesFake "k8s.io/client-go/kubernetes/fake"
 )
 
 var mockUtils *MockUtils
 
 // MockUtils - mock kubernetes utils
 type MockUtils struct {
-	KubernetesClient *kubernetes.Clientset
+	KubernetesClient *kubernetesFake.Clientset
 }
 
 // Init - initializes the mock k8s utils
@@ -34,7 +37,7 @@ func Init() *MockUtils {
 	if mockUtils != nil {
 		return mockUtils
 	}
-	kubernetesClient := kubernetes.NewSimpleClientset()
+	kubernetesClient := kubernetesFake.NewSimpleClientset()
 	mockUtils = &MockUtils{
 		KubernetesClient: kubernetesClient,
 	}
@@ -54,6 +57,16 @@ func (m *MockUtils) GetNodeIPs(nodeID string) string {
 		return ""
 	}
 	return nodeElem[1]
+}
+
+// GetPVCForVolume is mock implementation for GetPVCForVolume
+func (m *MockUtils) GetPVCForVolume(_ context.Context, _ string, _ string) (*corev1.PersistentVolumeClaim, error) {
+	return nil, nil
+}
+
+// GetClient is mock implementation for GetClient
+func (m *MockUtils) GetClient() kubernetes.Interface {
+	return m.KubernetesClient
 }
 
 // Added a new mocking capability to help enable mocking this dynamically
@@ -108,4 +121,33 @@ func (m *MockUtilsInterface) GetNodeIPs(arg0 string) string {
 func (mr *MockUtilsInterfaceMockRecorder) GetNodeIPs(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeIPs", reflect.TypeOf((*MockUtilsInterface)(nil).GetNodeIPs), arg0)
+}
+
+// GetPVCForVolume mocks base method
+func (m *MockUtilsInterface) GetPVCForVolume(ctx context.Context, pvName string, volumeID string) (*corev1.PersistentVolumeClaim, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPVCForVolume", ctx, pvName, volumeID)
+	ret0, _ := ret[0].(*corev1.PersistentVolumeClaim)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPVCForVolume indicates an expected call of GetPVCForVolume
+func (mr *MockUtilsInterfaceMockRecorder) GetPVCForVolume(ctx, pvName, volumeID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPVCForVolume", reflect.TypeOf((*MockUtilsInterface)(nil).GetPVCForVolume), ctx, pvName, volumeID)
+}
+
+// GetClient mocks base method
+func (m *MockUtilsInterface) GetClient() kubernetes.Interface {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetClient")
+	ret0, _ := ret[0].(kubernetes.Interface)
+	return ret0
+}
+
+// GetClient indicates an expected call of GetClient
+func (mr *MockUtilsInterfaceMockRecorder) GetClient() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClient", reflect.TypeOf((*MockUtilsInterface)(nil).GetClient))
 }

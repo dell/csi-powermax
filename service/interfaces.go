@@ -1,5 +1,5 @@
 /*
- Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -110,7 +110,7 @@ func (s *service) createDbusConnection() error {
 	return nil
 }
 
-var dbusNewConnectionFunc = func() (*dbus.Conn, error) {
+var dbusNewConnectionFunc = func() (dBusConn, error) {
 	return dbus.New()
 }
 

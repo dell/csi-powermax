@@ -19,6 +19,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -28,8 +29,6 @@ import (
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/types"
-
-	"golang.org/x/net/context"
 )
 
 func TestNewVMHost(t *testing.T) {

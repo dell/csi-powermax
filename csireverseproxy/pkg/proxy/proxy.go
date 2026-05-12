@@ -286,7 +286,15 @@ func (revProxy *Proxy) getResponseIfAuthorised(res http.ResponseWriter, req *htt
 	}
 
 	requestID := req.Header.Get("RequestID")
-	req, err = http.NewRequest(req.Method, path, req.Body) // #nosec G704 - Not an user input
+
+	// Validate backend URL scheme before making request to prevent SSRF
+	// Wrong: req.URL.Scheme (incoming request URL - always empty for relative paths)
+	// Correct: proxy.URL.Scheme (backend URL that actually needs validation)
+	if proxy.URL.Scheme != "http" && proxy.URL.Scheme != "https" {
+		utils.WriteHTTPError(res, "unsupported URL scheme: "+proxy.URL.Scheme, utils.StatusInternalError)
+		return nil, fmt.Errorf("unsupported URL scheme: %s", proxy.URL.Scheme)
+	}
+	req, err = http.NewRequest(req.Method, path, req.Body) // #nosec G704 - URL scheme validation implemented above
 	if err != nil {
 		http.Error(res, err.Error(), 500)
 		return nil, err
@@ -312,7 +320,13 @@ func (revProxy *Proxy) getResponseIfAuthorised(res http.ResponseWriter, req *htt
 		return nil, err
 	}
 	defer lock.Release()
-	return client.Do(req) // #nosec G704 - Not an user input
+
+	// Validate URL scheme before making request to prevent SSRF
+	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+		utils.WriteHTTPError(res, "unsupported URL scheme: "+req.URL.Scheme, utils.StatusInternalError)
+		return nil, fmt.Errorf("unsupported URL scheme: %s", req.URL.Scheme)
+	}
+	return client.Do(req) // #nosec G704 - URL scheme validation implemented above
 }
 
 func (revProxy *Proxy) modifyHTTPRequest(res http.ResponseWriter, req *http.Request, targetURL url.URL) {
@@ -434,6 +448,7 @@ func (revProxy *Proxy) GetRouter() http.Handler {
 	router.PathPrefix(utils.Prefix + "/{version}/sloprovisioning/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 	router.PathPrefix(utils.PrivatePrefix + "/{version}/replication/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 	router.PathPrefix(utils.PrivatePrefix + "/{version}/sloprovisioning/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
+	router.PathPrefix(utils.PrivateV1Prefix + "/systems/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 	router.PathPrefix(utils.Prefix + "/{version}/replication/symmetrix/{symid}").HandlerFunc(revProxy.ServeReverseProxy)
 
 	// endpoints without symmetrix id
@@ -572,7 +587,12 @@ func (revProxy *Proxy) ServeReverseProxy(res http.ResponseWriter, req *http.Requ
 		}
 		defer utils.Elapsed(requestID, "Unisphere RESTAPI response")()
 		defer lock.Release()
-		proxy.ReverseProxy.ServeHTTP(res, req) // #nosec G704 - Suppress error handling check as ReverseProxy.ServeHTTP handles errors internally
+		// Validate URL scheme before making request to prevent SSRF
+		if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+			utils.WriteHTTPError(res, "unsupported URL scheme: "+req.URL.Scheme, utils.StatusInternalError)
+			return
+		}
+		proxy.ReverseProxy.ServeHTTP(res, req) // #nosec G704 - URL scheme validation implemented above
 	}
 }
 
@@ -583,9 +603,27 @@ func (revProxy *Proxy) ServeVersions(res http.ResponseWriter, req *http.Request)
 		return
 	}
 	for _, symID := range symIDs {
-		_, err := revProxy.getResponseIfAuthorised(res, req, symID)
+		resp, err := revProxy.getResponseIfAuthorised(res, req, symID)
 		if err != nil {
 			log.Errorf("Authorisation step fails for: (%s) symID with error (%s)", symID, err.Error())
+			continue
+		}
+		if resp != nil {
+			defer resp.Body.Close()
+			err = utils.IsValidResponse(resp)
+			if err != nil {
+				log.Errorf("Get version step fails for: (%s) symID with error (%s)", symID, err.Error())
+				utils.WriteHTTPError(res, err.Error(), resp.StatusCode)
+			} else {
+				versionDetails := new(types.VersionDetails)
+				if err := json.NewDecoder(resp.Body).Decode(versionDetails); err != nil {
+					utils.WriteHTTPError(res, "decoding error: "+err.Error(), 400)
+					log.Errorf("decoding error: %s", err.Error())
+				} else {
+					utils.WriteHTTPResponse(res, versionDetails)
+				}
+			}
+			return
 		}
 	}
 }
@@ -704,7 +742,12 @@ func (revProxy *Proxy) ServeIterator(res http.ResponseWriter, req *http.Request)
 		utils.WriteHTTPError(res, "failed to obtain lock", utils.StatusInternalError)
 	}
 	defer lock.Release()
-	proxy.ReverseProxy.ServeHTTP(res, req) // #nosec G704 - Suppress error handling check as ReverseProxy.ServeHTTP handles errors internally
+	// Validate URL scheme before making request to prevent SSRF
+	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+		utils.WriteHTTPError(res, "unsupported URL scheme: "+req.URL.Scheme, utils.StatusInternalError)
+		return
+	}
+	proxy.ReverseProxy.ServeHTTP(res, req) // #nosec G704 - URL scheme validation implemented above
 }
 
 // ServeSymmetrix - handler function for symmetrix list endpoint

@@ -215,6 +215,96 @@ func TestParseConfig(t *testing.T) {
 	}
 }
 
+func TestProxyConfig_ParseConfig_SkipCertificateValidation(t *testing.T) {
+	k8sUtils := k8smock.Init()
+	testCases := []struct {
+		name                 string
+		proxyConfigMap       ProxyConfigMap
+		expectedErrorMessage string
+	}{
+		{
+			name: "Valid config with one array and one management server",
+			proxyConfigMap: ProxyConfigMap{
+				Config: &Config{
+					StorageArrayConfig: []StorageArrayConfig{
+						{
+							StorageArrayID:  "test-symm-id",
+							PrimaryEndpoint: "https://management.example.com",
+						},
+					},
+					ManagementServerConfig: []ManagementServerConfig{
+						{
+							Endpoint:                  "https://management.example.com",
+							Username:                  "test-username",
+							Password:                  "password",
+							SkipCertificateValidation: true,
+						},
+					},
+				},
+			},
+			expectedErrorMessage: "",
+		},
+		{
+			name: "Valid config with one array where SkipCertificateValidation is true and CertSecret is provided",
+			proxyConfigMap: ProxyConfigMap{
+				Config: &Config{
+					StorageArrayConfig: []StorageArrayConfig{
+						{
+							StorageArrayID:  "test-symm-id",
+							PrimaryEndpoint: "https://management.example.com",
+						},
+					},
+					ManagementServerConfig: []ManagementServerConfig{
+						{
+							Endpoint:                  "https://management.example.com",
+							Username:                  "test-username",
+							Password:                  "password",
+							SkipCertificateValidation: true,
+							// even though resource isn't mocked, test should not fail since SkipCertificateValidation is true
+							CertSecret: "not-mocked",
+						},
+					},
+				},
+			},
+			expectedErrorMessage: "",
+		},
+		{
+			name: "Valid config with one array where SkipCertificateValidation is false but CertSecret cannot be found",
+			proxyConfigMap: ProxyConfigMap{
+				Config: &Config{
+					StorageArrayConfig: []StorageArrayConfig{
+						{
+							StorageArrayID:  "test-symm-id",
+							PrimaryEndpoint: "https://management.example.com",
+						},
+					},
+					ManagementServerConfig: []ManagementServerConfig{
+						{
+							Endpoint:                  "https://management.example.com",
+							Username:                  "test-username",
+							Password:                  "password",
+							SkipCertificateValidation: false,
+							// this should return error since this secret will not be found and SkipCertificateValidation is false
+							CertSecret: "not-mocked",
+						},
+					},
+				},
+			},
+			expectedErrorMessage: "secrets \"not-mocked\" not found",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var config ProxyConfig
+			err := config.ParseConfig(tc.proxyConfigMap, k8sUtils)
+			if err != nil {
+				assert.Contains(t, err.Error(), tc.expectedErrorMessage)
+				return
+			}
+		})
+	}
+}
+
 func TestProxyConfig_UpdateCerts(t *testing.T) {
 	config, err := getProxyConfig(t)
 	if err != nil {
@@ -609,11 +699,11 @@ func getProxyConfigFromSecret(t *testing.T) (*ProxyConfig, error) {
 }
 
 func TestProxyConfig_ParseConfigFromSecret(t *testing.T) {
+	k8sUtils := k8smock.Init()
 	testCases := []struct {
-		name           string
-		proxySecret    ProxySecret
-		expectedConfig *ProxyConfig
-		expectedError  error
+		name                 string
+		proxySecret          ProxySecret
+		expectedErrorMessage string
 	}{
 		{
 			name: "Valid config with one array and one management server",
@@ -633,7 +723,29 @@ func TestProxyConfig_ParseConfigFromSecret(t *testing.T) {
 					},
 				},
 			},
-			expectedError: nil,
+			expectedErrorMessage: "",
+		},
+		{
+			name: "Valid config with one array where SkipCertificateValidation is true and CertSecret is provided",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID:  "test-symm-id",
+						PrimaryEndpoint: "https://management.example.com",
+					},
+				},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: true,
+						// even though resource isn't mocked, test should not fail since SkipCertificateValidation is true
+						CertSecret: "not-mocked",
+					},
+				},
+			},
+			expectedErrorMessage: "",
 		},
 		{
 			name: "Invalid config with no arrays",
@@ -648,7 +760,7 @@ func TestProxyConfig_ParseConfigFromSecret(t *testing.T) {
 					},
 				},
 			},
-			expectedError: fmt.Errorf("no storage arrays configured"),
+			expectedErrorMessage: "no storage arrays configured",
 		},
 		{
 			name: "Invalid config with no endpoints configured for a storage array",
@@ -667,7 +779,7 @@ func TestProxyConfig_ParseConfigFromSecret(t *testing.T) {
 					},
 				},
 			},
-			expectedError: fmt.Errorf("primary endpoint not configured for array: test-symm-id"),
+			expectedErrorMessage: "primary endpoint not configured for array: test-symm-id",
 		},
 		{
 			name: "Invalid config with primary endpoint not among management servers",
@@ -687,7 +799,7 @@ func TestProxyConfig_ParseConfigFromSecret(t *testing.T) {
 					},
 				},
 			},
-			expectedError: fmt.Errorf("primary endpoint: %s for array: %s not present among management endpoint addresses", "https://example.com", "test-symm-id"),
+			expectedErrorMessage: fmt.Sprintf("primary endpoint: %s for array: %s not present among management endpoint addresses", "https://example.com", "test-symm-id"),
 		},
 		{
 			name: "Valid config with multiple arrays and multiple management servers",
@@ -719,18 +831,39 @@ func TestProxyConfig_ParseConfigFromSecret(t *testing.T) {
 					},
 				},
 			},
-			expectedError: nil,
+			expectedErrorMessage: "",
+		},
+		{
+			name: "Valid config with one array where SkipCertificateValidation is false but CertSecret cannot be found",
+			proxySecret: ProxySecret{
+				StorageArrayConfig: []StorageArrayConfig{
+					{
+						StorageArrayID:  "test-symm-id",
+						PrimaryEndpoint: "https://management.example.com",
+					},
+				},
+				ManagementServerConfig: []ManagementServerConfig{
+					{
+						Endpoint:                  "https://management.example.com",
+						Username:                  "test-username",
+						Password:                  "password",
+						SkipCertificateValidation: false,
+						// this should return error since this secret will not be found and SkipCertificateValidation is false
+						CertSecret: "not-mocked",
+					},
+				},
+			},
+			expectedErrorMessage: "secrets \"not-mocked\" not found",
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var config ProxyConfig
-			err := config.ParseConfigFromSecret(tc.proxySecret, nil)
+			err := config.ParseConfigFromSecret(tc.proxySecret, k8sUtils)
 			if err != nil {
-				assert.Equal(t, tc.expectedError, err)
+				assert.Contains(t, err.Error(), tc.expectedErrorMessage)
 				return
 			}
-			// assert.Equal(t, tc.expectedConfig, &config)
 		})
 	}
 }

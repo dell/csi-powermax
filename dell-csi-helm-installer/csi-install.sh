@@ -20,7 +20,7 @@ PROG="${0}"
 NODE_VERIFY=1
 VERIFY=1
 MODE="install"
-DEFAULT_DRIVER_VERSION="v2.16.2"
+DEFAULT_VERSION="v2.17.0"
 WATCHLIST=""
 
 #
@@ -48,8 +48,6 @@ function usage() {
 
   exit 0
 }
-
-DRIVERVERSION="csi-powermax-2.16.2"
 
 while getopts ":h-:" optchar; do
   case "${optchar}" in
@@ -130,10 +128,6 @@ while getopts ":h-:" optchar; do
   esac
 done
 
-if [ -n "$HELMCHARTVERSION" ]; then
-  DRIVERVERSION=$HELMCHARTVERSION
-fi
-
 if [ ! -d "$DRIVERDIR/helm-charts" ]; then
 
   if  [ ! -d "$SCRIPTDIR/helm-charts" ]; then
@@ -148,6 +142,14 @@ fi
 DRIVERDIR="${SCRIPTDIR}/../helm-charts/charts"
 DRIVER="csi-powermax"
 VERIFYSCRIPT="${SCRIPTDIR}/verify.sh"
+
+# Derive helm chart version from DEFAULT_VERSION (single source of truth)
+DRIVERVERSION="${DRIVER}-${DEFAULT_VERSION#v}"
+
+# Allow override via --helm-charts-version
+if [ -n "$HELMCHARTVERSION" ]; then
+  DRIVERVERSION=$HELMCHARTVERSION
+fi
 
 # export the name of the debug log, so child processes will see it
 export DEBUGLOG="${SCRIPTDIR}/install-debug.log"
@@ -407,7 +409,7 @@ RELEASE=$(get_release_name "${DRIVER}")
 # by default, NODEUSER is root
 NODEUSER="${NODEUSER:-root}"
 if [[ -z ${DRIVER_VERSION} ]]; then
-   DRIVER_VERSION=${DEFAULT_DRIVER_VERSION}
+   DRIVER_VERSION=${DEFAULT_VERSION}
 fi
 
 

@@ -59,7 +59,6 @@ const (
 	Name                       = "csi-powermax.dellemc.com"         // Name is the name of the CSI plug-in.
 	ApplicationName            = "CSI Driver for Dell EMC PowerMax" // ApplicationName is the name used to register with Powermax REST APIs
 	defaultPrivDir             = "/dev/disk/csi-powermax"
-	defaultPmaxTimeout         = 120
 	defaultLockCleanupDuration = 4
 	csiPrefix                  = "csi-"
 	logFields                  = "logFields"
@@ -99,6 +98,7 @@ var (
 // Service is the CSI Mock service provider.
 type Service interface {
 	csi.ControllerServer
+	csi.GroupControllerServer
 	csi.IdentityServer
 	csi.NodeServer
 	csiext.ReplicationServer
@@ -114,7 +114,7 @@ type Opts struct {
 	ProxyServiceHost           string
 	ProxyServicePort           string
 	User                       string
-	Password                   string // #nosec G117
+	Password                   string `json:"-"`
 	SystemName                 string
 	NodeName                   string
 	NodeFullName               string
@@ -157,6 +157,10 @@ type Opts struct {
 	StorageArrays              map[string]StorageArrayConfig
 	dynamicSGEnabled           bool
 	sgVolumeLimit              int
+	// FsCheckEnabled enables file system check before mount
+	FsCheckEnabled bool
+	// FsCheckMode is the FS check operation mode: "checkOnly" or "checkAndRepair"
+	FsCheckMode string
 }
 
 // StorageArrayConfig represents the configuration of a storage array in the config file
@@ -178,12 +182,17 @@ type TopologyConfig struct {
 }
 
 type service struct {
+	// satisfies the Service interface and provides unimplemented defaults to functions not implemented
+	csi.UnimplementedControllerServer
+	csi.UnimplementedGroupControllerServer
+	csi.UnimplementedIdentityServer
+	csi.UnimplementedNodeServer
+
 	opts Opts
 	mode string
-	// amount of time to retry unisphere calls
-	pmaxTimeoutSeconds int64
 	// replace this with Unisphere client
 	adminClient    pmax.Pmax
+	adminClient104 pmax.Pmax
 	deletionWorker *deletionWorker
 	iscsiClient    goiscsi.ISCSIinterface
 	nvmetcpClient  gonvme.NVMEinterface
@@ -225,8 +234,11 @@ type service struct {
 	allowedTopologyKeys       map[string][]string // map of nodes to allowed topology keys
 	deniedTopologyKeys        map[string][]string // map of nodes to denied topology keys
 
-	k8sUtils    k8sutils.UtilsInterface
-	snapCleaner *snapCleanupWorker
+	k8sUtils         k8sutils.UtilsInterface
+	snapCleaner      *snapCleanupWorker
+	spaceReclaimMgr  *SpaceReclamationManager
+	versionCache     *versionCache
+	versionCacheOnce sync.Once
 }
 
 // New returns a new Service.
@@ -236,9 +248,9 @@ func New() Service {
 		iscsiTargets:       map[string][]string{},
 		loggedInNVMeArrays: map[string]bool{},
 		nvmeTargets:        new(sync.Map),
+		versionCache:       newVersionCache(),
 	}
 	svc.sgSvc = newStorageGroupService(svc)
-	svc.pmaxTimeoutSeconds = defaultPmaxTimeout
 	svc.probeStatus = new(sync.Map)
 	return svc
 }
@@ -730,6 +742,35 @@ func (s *service) BeforeServe(
 		}
 		log.Infof("%s set to %v", EnvSGVolumeLimit, sgVolumeLimit)
 	}
+
+	// File system check configuration
+	if fsCheckEnabled, ok := csictx.LookupEnv(ctx, EnvFsCheckEnabled); ok {
+		b, err := strconv.ParseBool(fsCheckEnabled)
+		if err != nil {
+			log.Warnf("Invalid value %q for %s, defaulting to false", fsCheckEnabled, EnvFsCheckEnabled)
+			s.opts.FsCheckEnabled = false
+		} else {
+			s.opts.FsCheckEnabled = b
+		}
+	}
+	log.Infof("FS check enabled: %v", s.opts.FsCheckEnabled)
+
+	s.opts.FsCheckMode = "checkOnly" // default
+	if fsCheckMode, ok := csictx.LookupEnv(ctx, EnvFsCheckMode); ok {
+		switch fsCheckMode {
+		case "checkOnly", "checkAndRepair":
+			s.opts.FsCheckMode = fsCheckMode
+		default:
+			log.Warnf("Invalid value %q for %s, defaulting to %q", fsCheckMode, EnvFsCheckMode, "checkOnly")
+		}
+	}
+	log.Infof("FS check mode: %s", s.opts.FsCheckMode)
+	// Initialize space reclamation for node mode
+	if s.isNode() && s.k8sUtils != nil {
+		initSpaceReclamation(ctx, s, s.k8sUtils.GetClient())
+		log.Infof("Space reclamation initialized")
+	}
+
 	return nil
 }
 
@@ -855,16 +896,6 @@ func (s *service) getTransportProtocolFromEnv() string {
 	}
 }
 
-// get the amount of time to retry pmax calls
-func (s *service) GetPmaxTimeoutSeconds() int64 {
-	return s.pmaxTimeoutSeconds
-}
-
-// SetPmaxTimeoutSeconds sets the maximum amount of time to retry pmax calls
-func (s *service) SetPmaxTimeoutSeconds(seconds int64) {
-	s.pmaxTimeoutSeconds = seconds
-}
-
 // parseCommaSeperatedList validates and splits a comma seperated list
 func (s *service) parseCommaSeperatedList(values string) ([]string, error) {
 	results := make([]string, 0)
@@ -917,6 +948,34 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 			s.adminClient = nil
 			return status.Errorf(codes.FailedPrecondition,
 				"unable to login to Unisphere: %s", err.Error())
+		}
+
+		// Create a separate 10.4-specific client for CreateVolume/PublishVolume operations
+		c104, err := pmax.NewClientWithArgs(endPoint, applicationName, s.opts.Insecure, !s.opts.DisableCerts, tlsCertFile)
+		if err != nil {
+			log.Warnf("unable to create 10.4 PowerMax client: %s, will use main client", err.Error())
+			s.adminClient104 = s.adminClient
+		} else {
+			for i := 0; i < maxAuthenticateRetryCount; i++ {
+				err = c104.Authenticate(ctx, &pmax.ConfigConnect{
+					Endpoint: endPoint,
+					Username: s.opts.User,
+					Password: s.opts.Password,
+					Version:  "104",
+				})
+				if err == nil {
+					break
+				}
+				log.Infof("Error authenticating 10.4 client: %s", err)
+				time.Sleep(10 * time.Second)
+			}
+			if err != nil {
+				log.Warnf("unable to authenticate 10.4 client: %s, will use main client", err.Error())
+				s.adminClient104 = s.adminClient
+			} else {
+				s.adminClient104 = c104
+				log.Infof("10.4 client created and authenticated successfully")
+			}
 		}
 
 		// Filter out a list of locally connected list of arrays, and
@@ -973,6 +1032,41 @@ func (s *service) getDriverName() string {
 		return Name
 	}
 	return s.opts.DriverName
+}
+
+func (s *service) isDynamicSGEnabled() bool {
+	return s.opts.dynamicSGEnabled
+}
+
+func (s *service) getReplicationPrefix() string {
+	return s.opts.ReplicationPrefix
+}
+
+func (s *service) getReplicationContextPrefix() string {
+	return s.opts.ReplicationContextPrefix
+}
+
+func (s *service) isSnapshotLicensed(ctx context.Context, symID string, pmaxClient pmax.Pmax) error {
+	return s.IsSnapshotLicensed(ctx, symID, pmaxClient)
+}
+
+func (s *service) getDynamicSG(ctx context.Context, arrayID, baseSGName string) (string, bool, error) {
+	return getDynamicSG(ctx, arrayID, baseSGName, s)
+}
+
+func (s *service) getStorageArrayLabels(arrayID string) map[string]string {
+	if array, ok := s.opts.StorageArrays[arrayID]; ok {
+		labels := make(map[string]string)
+		for k, v := range array.Labels {
+			labels[k] = v.(string)
+		}
+		return labels
+	}
+	return nil
+}
+
+func (s *service) isBlockEnabled() bool {
+	return s.opts.EnableBlock
 }
 
 func setLogFields(ctx context.Context, fields csmlog.Fields) context.Context {

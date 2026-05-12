@@ -33,7 +33,7 @@ Feature: PowerMax CSI interface
  
     Scenario: Call snapshot create with invalid volume	
        Given a PowerMax service	
-       And an invalid volume	
+       And I induce error "InvalidVolumeID"	
        When I call Probe	
        And I call CreateSnapshot With "snap1"	
        Then the error contains "volume not found"	
@@ -47,7 +47,7 @@ Feature: PowerMax CSI interface
  
     Scenario: Call snapshot with no probe	
        Given a PowerMax service	
-       And an invalid volume	
+       And I induce error "InvalidVolumeID"	
        When I invalidate the Probe cache	
        And I call CreateSnapshot With "snap1"	
        Then the error contains "Controller Service has not been probed"	
@@ -89,7 +89,7 @@ Feature: PowerMax CSI interface
  
     Scenario: Delete a snapshot with invalid volume	
        Given a PowerMax service	
-       And an invalid volume	
+       And I induce error "InvalidVolumeID"	
        When I call Probe	
        And I call DeleteSnapshot	
        Then the error contains "volume not found"	
@@ -154,7 +154,7 @@ Feature: PowerMax CSI interface
     Scenario: Create a volume from a snapshot with wrong capacity	
        Given a PowerMax service	
        And a valid snapshot	
-       And the wrong capacity	
+       And I induce error "WrongCapacity"	
        When I call Probe	
        And I call Create Volume from Snapshot	
        Then the error contains "incompatible size"	
@@ -162,7 +162,7 @@ Feature: PowerMax CSI interface
     Scenario: Create a volume from a snapshot with wrong storage pool	
        Given a PowerMax service	
        And a valid snapshot	
-       And the wrong storage pool	
+       And I induce error "WrongStoragePool"
        When I call Probe	
        And I call Create Volume from Snapshot	
        Then the error contains "different than the requested storage pool"	

@@ -16,6 +16,7 @@ limitations under the License.
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,6 +41,7 @@ import (
 
 	"github.com/dell/csi-powermax/v2/k8smock"
 	"github.com/dell/csi-powermax/v2/pkg/migration"
+	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 
 	"github.com/dell/dell-csi-extensions/common"
 
@@ -57,7 +59,6 @@ import (
 	types "github.com/dell/gopowermax/v2/types/v100"
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cucumber/godog"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/metadata"
 
 	csimgr "github.com/dell/dell-csi-extensions/migration"
@@ -175,6 +176,7 @@ type feature struct {
 	noNodeID                             bool
 	omitAccessMode, omitVolumeCapability bool
 	wrongCapacity, wrongStoragePool      bool
+	largerCapacity                       bool
 	useAccessTypeMount                   bool
 	capability                           *csi.VolumeCapability
 	capabilities                         []*csi.VolumeCapability
@@ -213,6 +215,8 @@ type feature struct {
 	setIOLimits                          bool
 	validateVHCResp                      *podmon.ValidateVolumeHostConnectivityResponse
 	arrayMigrateResponse                 *csimgr.ArrayMigrateResponse
+	podmonServer                         *httptest.Server
+	dbusNewOriginal                      func() (dBusConn, error) // systemd mocking
 }
 
 var inducedErrors struct {
@@ -276,6 +280,10 @@ func (f *feature) aPowerMaxService() error {
 	maxRemoveGroupSize = 10
 	f.maxRetryCount = MaxRetries
 	enableBatchGetMaskingViewConnections = true
+	// Stop the previous scenario's deletion worker to prevent goroutine accumulation
+	if lastDeletionWorker != nil {
+		lastDeletionWorker.Stop()
+	}
 	f.checkGoRoutines("start aPowerMaxService")
 	// Save off the admin client and the system
 	if f.service != nil && f.service.adminClient != nil {
@@ -285,6 +293,11 @@ func (f *feature) aPowerMaxService() error {
 	// Let the real code initialize it the first time, we reset the cache each test
 	if pmaxCache != nil {
 		pmaxCache = make(map[string]*pmaxCachedInformation)
+	}
+
+	// Clear snapshot license cache to ensure test isolation
+	for k := range symmRepCapabilities {
+		delete(symmRepCapabilities, k)
 	}
 
 	nodeCache = sync.Map{}
@@ -311,6 +324,7 @@ func (f *feature) aPowerMaxService() error {
 	f.omitVolumeCapability = false
 	f.useAccessTypeMount = false
 	f.wrongCapacity = false
+	f.largerCapacity = false
 	f.wrongStoragePool = false
 	f.deleteVolumeRequest = nil
 	f.deleteLocalVolumeRequest = nil
@@ -351,6 +365,9 @@ func (f *feature) aPowerMaxService() error {
 	f.nodeGetVolumeStatsResponse = nil
 	f.setIOLimits = false
 	f.validateVHCResp = nil
+	for k := range symmRepCapabilities {
+		delete(symmRepCapabilities, k)
+	}
 	inducedErrors.invalidSymID = false
 	inducedErrors.invalidStoragePool = false
 	inducedErrors.invalidServiceLevel = false
@@ -401,7 +418,7 @@ func (f *feature) aPowerMaxService() error {
 	// get or reuse the cached service
 	f.getService()
 	f.service.storagePoolCacheDuration = 4 * time.Hour
-	f.service.SetPmaxTimeoutSeconds(3)
+	pmaxQueryAttempts = 1
 
 	// create the mock iscsi client
 	f.service.iscsiClient = goiscsi.NewMockISCSI(map[string]string{})
@@ -477,6 +494,7 @@ func (f *feature) aPowerMaxService() error {
 	f.checkGoRoutines("end aPowerMaxService")
 	symIDs := f.service.retryableGetSymmetrixIDList()
 	f.service.NewDeletionWorker(f.service.opts.ClusterPrefix, symIDs.SymmetrixIDs)
+	lastDeletionWorker = f.service.deletionWorker
 	f.errType = ""
 
 	// Configure ManifestSemver
@@ -501,6 +519,7 @@ func (f *feature) getService() *service {
 	svc.iscsiTargets = map[string][]string{}
 	svc.nvmeTargets = new(sync.Map)
 	svc.loggedInNVMeArrays = map[string]bool{}
+	svc.versionCache = newVersionCache()
 	var opts Opts
 	opts.User = "username"
 	opts.Password = "password"
@@ -540,17 +559,52 @@ ip6t_rpfilter          12595  1
 	svc.iscsiConnector = &mockISCSIGobrick{}
 	svc.nvmetcpClient = &gonvme.MockNVMe{}
 	svc.nvmeTCPConnector = &mockNVMeTCPConnector{}
-	svc.dBusConn = &mockDbusConnection{}
+
 	svc.k8sUtils = k8smock.Init()
 	mockGobrickReset()
 	mockgosystemdReset()
 	disconnectVolumeRetryTime = 10 * time.Millisecond
+
+	// Mock iscsid.service status
+	// dbusNewConnectionFunc is reset to its original value in the post-test hook
+	f.dbusNewOriginal = dbusNewConnectionFunc
+	dbusNewConnectionFunc = func() (dBusConn, error) {
+		return &mockDbusConnection{}, nil
+	}
+
 	f.service = svc
 	return svc
 }
 
 func (f *feature) aPostELMSRArray() error {
 	f.symmetrixID = mock.PostELMSRSymmetrixID
+	return nil
+}
+
+func (f *feature) aU4P104Array() error {
+	f.symmetrixID = mock.DefaultEnhancedSymmetrixID104
+	// Dynamically add the 10.4 array to the symmetrix package if not already present.
+	// This avoids adding it to the default ManagedArrays which would spawn extra
+	// background goroutines (deletion workers, etc.) for every test scenario.
+	err := symmetrix.Initialize([]string{mock.DefaultEnhancedSymmetrixID104}, f.service.adminClient)
+	if err != nil && !strings.Contains(err.Error(), "already added") {
+		return err
+	}
+	// Seed the version cache with 10.4 details for both:
+	// 1) admin client key and
+	// 2) resolved per-array client key returned by symmetrix.GetPowerMaxClient.
+	// This avoids dependence on HTTP /version interception timing and ensures
+	// deterministic 10.4 path selection for this scenario.
+	if f.service != nil && f.service.versionCache != nil {
+		versionDetails := &types.VersionDetails{Version: "10.4.0.4", APIVersion: "104"}
+		if f.service.adminClient != nil {
+			f.service.versionCache.versionEntries.Store(symmetrixKey(f.service.adminClient, mock.DefaultEnhancedSymmetrixID104), versionDetails)
+		}
+		pmaxClient, clientErr := symmetrix.GetPowerMaxClient(mock.DefaultEnhancedSymmetrixID104)
+		if clientErr == nil {
+			f.service.versionCache.versionEntries.Store(symmetrixKey(pmaxClient, mock.DefaultEnhancedSymmetrixID104), versionDetails)
+		}
+	}
 	return nil
 }
 
@@ -698,6 +752,7 @@ func (f *feature) aValidProbeResponseIsReturned() error {
 }
 
 func (f *feature) theErrorContains(arg1 string) error {
+	arg1 = strings.Trim(arg1, `"`)
 	f.checkGoRoutines("theErrorContains")
 	// If arg1 is none, we expect no error, any error received is unexpected
 	if arg1 == "none" {
@@ -715,7 +770,7 @@ func (f *feature) theErrorContains(arg1 string) error {
 				return nil
 			}
 		}
-		return fmt.Errorf("Expected error to contain %s but no error", arg1)
+		return fmt.Errorf("Expected error to contain \"%s\" but got none", arg1)
 	}
 	// Allow for multiple possible matches, separated by @@. This was necessary
 	// because Windows and Linux sometimes return different error strings for
@@ -728,10 +783,11 @@ func (f *feature) theErrorContains(arg1 string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("Expected error to contain %s but it was %s", arg1, f.err.Error())
+	return fmt.Errorf("Expected error to contain \"%s\" but it was \"%s\"", arg1, f.err.Error())
 }
 
 func (f *feature) thePossibleErrorContains(arg1 string) error {
+	arg1 = strings.Trim(arg1, `"`)
 	if f.err == nil {
 		return nil
 	}
@@ -1179,6 +1235,14 @@ func (f *feature) iInduceError(errtype string) error {
 		inducedErrors.noDeviceWWNError = true
 	case "PortGroupError":
 		inducedErrors.portGroupError = true
+	case "NoVolumeSource":
+		inducedErrors.noVolumeSource = true
+	case "NonExistentVolume":
+		inducedErrors.nonExistentVolume = true
+	case "WrongCapacity":
+		f.wrongCapacity = true
+	case "WrongStoragePool":
+		f.wrongStoragePool = true
 	case "GetVolumeIteratorError":
 		mock.SafeSetInducedError(mock.InducedErrors, "GetVolumeIteratorError", true)
 	case "GetVolumeError":
@@ -1233,6 +1297,10 @@ func (f *feature) iInduceError(errtype string) error {
 		mock.SafeSetInducedError(mock.InducedErrors, "GetInitiatorError", true)
 	case "GetInitiatorByIDError":
 		mock.SafeSetInducedError(mock.InducedErrors, "GetInitiatorByIDError", true)
+	case "CreateVolumeError":
+		mock.SafeSetInducedError(mock.InducedErrors, "CreateVolumeError", true)
+	case "PublishMaskingViewsError":
+		mock.SafeSetInducedError(mock.InducedErrors, "PublishMaskingViewsError", true)
 	case "CreateSnapshotError":
 		mock.SafeSetInducedError(mock.InducedErrors, "CreateSnapshotError", true)
 	case "DeleteSnapshotError":
@@ -1241,6 +1309,9 @@ func (f *feature) iInduceError(errtype string) error {
 		mock.SafeSetInducedError(mock.InducedErrors, "LinkSnapshotError", true)
 	case "SnapshotNotLicensed":
 		mock.SafeSetInducedError(mock.InducedErrors, "SnapshotNotLicensed", true)
+		for k := range symmRepCapabilities {
+			delete(symmRepCapabilities, k)
+		}
 	case "InvalidResponse":
 		mock.SafeSetInducedError(mock.InducedErrors, "InvalidResponse", true)
 	case "UnisphereMismatchError":
@@ -1528,6 +1599,16 @@ func (f *feature) iInduceError(errtype string) error {
 		migration.AddVolumesToRemoteSG = func(_ context.Context, _ string, _ pmax.Pmax) (bool, error) {
 			return true, nil
 		}
+	case "nonExistentVolume":
+		inducedErrors.nonExistentVolume = true
+	case "invalidVolumeID":
+		inducedErrors.invalidVolumeID = true
+	case "wrongCapacity":
+		f.wrongCapacity = true
+	case "wrongStoragePool":
+		f.wrongStoragePool = true
+	case "noVolumeSource":
+		inducedErrors.noVolumeSource = true
 	case "none":
 		return nil
 	default:
@@ -1843,6 +1924,7 @@ func (f *feature) iAddTheVolumeTo(_ string) error {
 }
 
 func (f *feature) iCallPublishVolumeWithTo(accessMode, nodeID string) error {
+	accessMode = strings.Trim(accessMode, `"`)
 	header := metadata.New(map[string]string{"csi.requestid": "1"})
 	ctx := metadata.NewIncomingContext(context.Background(), header)
 	req := f.publishVolumeRequest
@@ -1891,11 +1973,6 @@ func (f *feature) aValidVolumeWithSizeOfCYL(nCYL int) error {
 	mock.AddStorageGroup(defaultStorageGroup, "SRP_1", "Optimized")
 	mock.AddOneVolumeToStorageGroup(devID, volumeIdentifier, defaultStorageGroup, nCYL)
 	f.volumeID = f.service.createCSIVolumeID(f.service.getClusterPrefix(), goodVolumeName, f.symmetrixID, goodVolumeID)
-	return nil
-}
-
-func (f *feature) anInvalidVolume() error {
-	inducedErrors.invalidVolumeID = true
 	return nil
 }
 
@@ -3213,8 +3290,11 @@ func (f *feature) iCallCreateVolumeFromSnapshot() error {
 	if f.wrongCapacity {
 		req.CapacityRange.RequiredBytes = 64 * 1024 * 1024 * 1024
 	}
+	if f.largerCapacity {
+		req.CapacityRange.RequiredBytes = 200 * 1024 * 1024 * 1024
+	}
 	if f.wrongStoragePool {
-		req.Parameters["storagepool"] = "bad storage pool"
+		req.Parameters[StoragePoolParam] = "bad storage pool"
 	}
 	var snapshotID string
 	if inducedErrors.invalidSnapID {
@@ -3240,8 +3320,11 @@ func (f *feature) iCallCreateVolumeFromVolume() error {
 	if f.wrongCapacity {
 		req.CapacityRange.RequiredBytes = 64 * 1024 * 1024 * 1024
 	}
+	if f.largerCapacity {
+		req.CapacityRange.RequiredBytes = 200 * 1024 * 1024 * 1024
+	}
 	if f.wrongStoragePool {
-		req.Parameters["storagepool"] = "bad storage pool"
+		req.Parameters[StoragePoolParam] = "bad storage pool"
 	}
 	var volumeID string
 	if inducedErrors.noVolumeSource {
@@ -3265,13 +3348,8 @@ func (f *feature) iCallCreateVolumeFromVolume() error {
 	return nil
 }
 
-func (f *feature) theWrongCapacity() error {
-	f.wrongCapacity = true
-	return nil
-}
-
-func (f *feature) theWrongStoragePool() error {
-	f.wrongStoragePool = true
+func (f *feature) aLargerCapacityThanTheSource() error {
+	f.largerCapacity = true
 	return nil
 }
 
@@ -3395,10 +3473,10 @@ func (f *feature) deletionWorkerProcessesWhichResultsIn(volumeName, errormsg str
 				}
 				// We expected an error
 				if vol.Status.ErrorMsgs == nil {
-					return fmt.Errorf("Expected error %s but got none", errormsg)
+					return fmt.Errorf("Expected error \"%s\" but got none", errormsg)
 				}
 				if !hasError(vol.Status.ErrorMsgs, errormsg) {
-					return fmt.Errorf("Expected error to contain %s: but got: %s", errormsg, vol.Status.ErrorMsgs)
+					return fmt.Errorf("Expected error to contain \"%s\" but got \"%s\"", errormsg, vol.Status.ErrorMsgs)
 				}
 				return nil
 			}
@@ -3445,25 +3523,30 @@ func (f *feature) volumesAreBeingProcessedForDeletion(nVols int) error {
 	if f.err != nil {
 		return nil
 	}
-	retry := 5
-	// Count the number of volumes in the delWorker queue
-	cnt := 0
-	for retryno := 0; retryno < retry; retryno++ {
+	minExpected := nVols - 2
+	maxExpected := nVols
+	if minExpected < 0 {
+		minExpected = 0
+	}
+	deadline := time.Now().Add(30 * time.Second)
+
+	// Count the number of volumes in the delWorker queue, allowing time for async processing.
+	for {
+		cnt := 0
 		for _, dQ := range f.service.deletionWorker.DeletionQueues {
 			dQ.Print()
-			cnt = cnt + len(dQ.GetDeviceList())
+			cnt += len(dQ.GetDeviceList())
 			break
 		}
-		if cnt > 0 {
-			break
+		if cnt >= minExpected && cnt <= maxExpected {
+			fmt.Println("Expected count reached")
+			return nil
 		}
-		time.Sleep(time.Second * 1)
+		if time.Now().After(deadline) {
+			return fmt.Errorf("Expected at least %d volumes and not more than %d volumes in deletion queue but got %d", minExpected, maxExpected, cnt)
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
-	if cnt < (nVols-2) || cnt > nVols {
-		return fmt.Errorf("Expected at least %d volumes and not more than %d volumes in deletion queue but got %d", nVols-2, nVols, cnt)
-	}
-	fmt.Println("Expected count reached")
-	return nil
 }
 
 func (f *feature) iRequestAPortGroup() error {
@@ -3485,7 +3568,6 @@ func (f *feature) aValidPortGroupIsReturned() error {
 }
 
 func (f *feature) iInvokeCreateOrUpdateIscsiHost(hostName string) error {
-	f.service.SetPmaxTimeoutSeconds(3)
 	symID := f.symmetrixID
 	if inducedErrors.noSymID {
 		symID = ""
@@ -3508,12 +3590,15 @@ func (f *feature) iInvokeCreateOrUpdateIscsiHost(hostName string) error {
 		initiators = initiators[:0]
 	}
 	f.host, f.err = f.service.createOrUpdateIscsiHost(context.Background(), symID, hostID, initiators, f.service.adminClient)
-	f.initiators = f.host.Initiators
+	if f.err != nil || f.host == nil {
+		f.initiators = []string{}
+	} else {
+		f.initiators = f.host.Initiators
+	}
 	return nil
 }
 
 func (f *feature) iInvokeCreateOrUpdateFCHost(hostName string) error {
-	f.service.SetPmaxTimeoutSeconds(3)
 	symID := f.symmetrixID
 	if inducedErrors.noSymID {
 		symID = ""
@@ -3561,7 +3646,6 @@ func (f *feature) iInvokeNodeHostSetupWithAService(mode string) error {
 	f.service.useIscsi = false
 	f.service.useFC = false
 	f.service.useNVMeTCP = false
-	f.service.SetPmaxTimeoutSeconds(10)
 	f.err = f.service.nodeHostSetup(context.Background(), fcInitiators, iscsiInitiators, nvmetcpinitiators, symmetrixIDs)
 	return nil
 }
@@ -3743,7 +3827,6 @@ func (f *feature) thereAreNoArraysLoggedIn() error {
 }
 
 func (f *feature) arraysAreLoggedInWithProtocol(protocol string) error {
-	f.service.SetPmaxTimeoutSeconds(3)
 	s.cacheMutex.Lock()
 	defer s.cacheMutex.Unlock()
 	if protocol == "FC" {
@@ -3759,7 +3842,6 @@ func (f *feature) arraysAreLoggedInWithProtocol(protocol string) error {
 }
 
 func (f *feature) iInvokeEnsureLoggedIntoEveryArray() error {
-	f.service.SetPmaxTimeoutSeconds(3)
 	isSymConnFC.Clear()
 	// Ensure none of the other test marked the array as FC
 	f.err = f.service.ensureLoggedIntoEveryArray(context.Background(), false)
@@ -4183,16 +4265,6 @@ func (f *feature) aValidDeleteSnapshotResponseIsReturned() error {
 	return nil
 }
 
-func (f *feature) aNonexistentVolume() error {
-	inducedErrors.nonExistentVolume = true
-	return nil
-}
-
-func (f *feature) noVolumeSource() error {
-	inducedErrors.noVolumeSource = true
-	return nil
-}
-
 func (f *feature) validateSnapshotLicenseCache(count int) error {
 	if len(symmRepCapabilities) != count {
 		return fmt.Errorf("Expected %d array(s) in the license cache but got %d", count, len(symmRepCapabilities))
@@ -4316,10 +4388,12 @@ func (f *feature) iCallRequestAddVolumeToSGMVMv(nodeID, maskingViewName string) 
 	fmt.Printf("deviceID %s\n", deviceID)
 	if maskingViewName != "" && maskingViewName != "default" {
 		f.addVolumeToSGMVResponse2, f.lockChan, f.err = f.service.sgSvc.requestAddVolumeToSGMV(
-			context.Background(), f.sgID, maskingViewName, f.hostID, "0001", mock.DefaultSymmetrixID, mock.DefaultSymmetrixID, deviceID, "fake", accessMode)
+			context.Background(), f.sgID, maskingViewName, f.hostID, "0001", mock.DefaultSymmetrixID, mock.DefaultSymmetrixID, deviceID, "fake", accessMode,
+		)
 	} else {
 		f.addVolumeToSGMVResponse1, f.lockChan, f.err = f.service.sgSvc.requestAddVolumeToSGMV(
-			context.Background(), f.sgID, f.mvID, f.hostID, "0001", mock.DefaultSymmetrixID, mock.DefaultSymmetrixID, deviceID, "fake", accessMode)
+			context.Background(), f.sgID, f.mvID, f.hostID, "0001", mock.DefaultSymmetrixID, mock.DefaultSymmetrixID, deviceID, "fake", accessMode,
+		)
 	}
 	return nil
 }
@@ -4869,7 +4943,7 @@ func (f *feature) iCallRDFEnabledCreateVolumeFromSnapshot(volName, namespace, mo
 		req.CapacityRange.RequiredBytes = 64 * 1024 * 1024 * 1024
 	}
 	if f.wrongStoragePool {
-		req.Parameters["storagepool"] = "bad storage pool"
+		req.Parameters[StoragePoolParam] = "bad storage pool"
 	}
 	var snapshotID string
 	if inducedErrors.invalidSnapID {
@@ -4905,7 +4979,7 @@ func (f *feature) iCallRDFEnabledCreateVolumeFromVolume(volName, namespace, mode
 		req.CapacityRange.RequiredBytes = 64 * 1024 * 1024 * 1024
 	}
 	if f.wrongStoragePool {
-		req.Parameters["storagepool"] = "bad storage pool"
+		req.Parameters[StoragePoolParam] = "bad storage pool"
 	}
 	var volumeID string
 	if inducedErrors.noVolumeSource {
@@ -5172,26 +5246,42 @@ func (f *feature) iCallValidateVolumeHostConnectivityWithAndSymID(nodeID, symID 
 	return nil
 }
 
+func (f *feature) startPodmonServer(url string, handler func(http.ResponseWriter, *http.Request)) {
+	mux := http.NewServeMux()
+	// responding with some dummy response that is for the case when array is connected and LastSuccess check was just finished
+	mux.HandleFunc(url, handler)
+	// Start test server synchronously
+	f.podmonServer = httptest.NewServer(mux)
+	// Get the allocated port number
+	addr := f.podmonServer.Listener.Addr().String()
+	f.service.opts.PodmonPort = ":" + strings.Split(addr, ":")[1]
+
+	fmt.Printf("Started fake podmon server at port %s\n", f.service.opts.PodmonPort)
+}
+
 func (f *feature) iStartNodeAPIServer() {
 	var status ArrayConnectivityStatus
 	status.LastAttempt = time.Now().Unix()
 	status.LastSuccess = time.Now().Unix()
 	input, _ := json.Marshal(status)
 
-	// responding with some dummy response that is for the case when array is connected and LastSuccess check was just finished
-	http.HandleFunc(ArrayStatus+"/"+f.symmetrixID, func(w http.ResponseWriter, _ *http.Request) {
-		w.Write(input)
+	f.startPodmonServer(ArrayStatus+"/"+f.symmetrixID, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(input)
 	})
-
-	f.service.opts.PodmonPort = ":9028"
-	fmt.Printf("Starting server at port %s\n", f.service.opts.PodmonPort)
-	// http.ListenAndServe(f.service.opts.PodmonPort, nil) // #nosec G114
-	go listenAndServe(f.service.opts.PodmonPort)
 }
 
-func listenAndServe(port string) {
-	err := http.ListenAndServe(port, nil) // #nosec G114
-	fmt.Println("Error with listen and serve: ", err)
+func findAvailablePort() string {
+	// Create a temporary listener with dynamic port allocation
+	// to see what port is not currently in use on this machine
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		fmt.Println("Failed to get a dynamic port, fallback to port 9999")
+		return ":9999"
+	}
+	// Get the dynamically allocated port and close the listener immediately
+	addr := listener.Addr().String()
+	listener.Close()
+	return ":" + strings.Split(addr, ":")[1]
 }
 
 func (f *feature) iCallQueryArrayStatus(url string, statusType string) {
@@ -5212,17 +5302,15 @@ func (f *feature) iCallQueryArrayStatus(url string, statusType string) {
 			input = nil
 		}
 
-		// responding with some dummy response that is for the case when array is connected and LastSuccess check was just finished
-		http.HandleFunc(url, func(w http.ResponseWriter, _ *http.Request) {
+		f.startPodmonServer(url, func(w http.ResponseWriter, _ *http.Request) {
 			if inducedErrors.unexpectedResponse {
 				w.WriteHeader(http.StatusBadRequest)
 			}
-			w.Write(input)
+			_, _ = w.Write(input)
 		})
-
-		f.service.opts.PodmonPort = ":9028"
-		fmt.Printf("Starting server at port %s\n", f.service.opts.PodmonPort)
-		go http.ListenAndServe(f.service.opts.PodmonPort, nil) // #nosec G114
+	} else {
+		// Assign a port on which no one is listening
+		f.service.opts.PodmonPort = findAvailablePort()
 	}
 
 	_, f.err = f.service.QueryArrayStatus(context.TODO(), "http://localhost"+f.service.opts.PodmonPort+url)
@@ -5240,7 +5328,7 @@ func (f *feature) iCallIsIOInProgress() error {
 
 func (f *feature) theValidateVolumeHostMessageContains(msg string) error {
 	if !strings.Contains(f.validateVHCResp.Messages[0], msg) {
-		errMsg := fmt.Sprintf("validateVolumeHostConnectivity response is incorrect, expected: %s actual %s", msg, f.validateVHCResp.Messages[0])
+		errMsg := fmt.Sprintf("validateVolumeHostConnectivity response is incorrect, expected: \"%s\" actual \"%s\"", msg, f.validateVHCResp.Messages[0])
 		return errors.New(errMsg)
 	}
 	return nil
@@ -5342,16 +5430,31 @@ func (f *feature) restartDriver() error {
 
 func FeatureContext(s *godog.ScenarioContext) {
 	f := &feature{}
+
+	// Post-scenario tear-down/cleanup
+	s.After(func(ctx context.Context, _ *godog.Scenario, _ error) (context.Context, error) {
+		if f != nil && f.podmonServer != nil {
+			fmt.Println("Stopping fake podmon server")
+			f.podmonServer.Close()
+			f.podmonServer = nil
+		}
+		dbusNewConnectionFunc = f.dbusNewOriginal
+		return ctx, nil
+	})
+
 	s.Step(`^a PowerMax service$`, f.aPowerMaxService)
 	s.Step(`^a PostELMSR Array$`, f.aPostELMSRArray)
+	s.Step(`^a 104 array$`, f.aU4P104Array)
 	s.Step(`^I call GetPluginInfo$`, f.iCallGetPluginInfo)
 	s.Step(`^a valid GetPluginInfoResponse is returned$`, f.aValidGetPluginInfoResponseIsReturned)
 	s.Step(`^I call GetPluginCapabilities$`, f.iCallGetPluginCapabilities)
 	s.Step(`^a valid GetPluginCapabilitiesResponse is returned$`, f.aValidGetPluginCapabilitiesResponseIsReturned)
 	s.Step(`^I call Probe$`, f.iCallProbe)
 	s.Step(`^a valid ProbeResponse is returned$`, f.aValidProbeResponseIsReturned)
-	s.Step(`^the error contains "([^"]*)"$`, f.theErrorContains)
-	s.Step(`^the possible error contains "([^"]*)"$`, f.thePossibleErrorContains)
+	s.Step(`^the error contains "?([^"]*)"?$`, f.theErrorContains)
+	s.Step(`^the error contains (.+)$`, f.theErrorContains)
+	s.Step(`^the possible error contains "?([^"]*)"?$`, f.thePossibleErrorContains)
+	s.Step(`^the possible error contains (.+)$`, f.thePossibleErrorContains)
 	s.Step(`^the Controller has no connection$`, f.theControllerHasNoConnection)
 	s.Step(`^there is a Node Probe Lsmod error$`, f.thereIsANodeProbeLsmodError)
 	s.Step(`^I call CreateVolume "([^"]*)"$`, f.iCallCreateVolume)
@@ -5366,14 +5469,14 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I specify NoStoragePool$`, f.iSpecifyNoStoragePool)
 	s.Step(`^I call CreateVolumeSize "([^"]*)" "(\d+)"$`, f.iCallCreateVolumeSize)
 	s.Step(`^I change the StoragePool "([^"]*)"$`, f.iChangeTheStoragePool)
-	s.Step(`^I induce error "([^"]*)"$`, f.iInduceError)
+	s.Step(`^I induce error "?([^"]*)"?$`, f.iInduceError)
 	s.Step(`^I specify VolumeContentSource$`, f.iSpecifyVolumeContentSource)
 	s.Step(`^I specify CreateVolumeMountRequest "([^"]*)"$`, f.iSpecifyCreateVolumeMountRequest)
 	s.Step(`^I call PublishVolume with "([^"]*)" to "([^"]*)"$`, f.iCallPublishVolumeWithTo)
+	s.Step(`^I call PublishVolume with (.+) to "([^"]*)"$`, f.iCallPublishVolumeWithTo)
 	s.Step(`^a valid PublishVolumeResponse is returned$`, f.aValidPublishVolumeResponseIsReturned)
 	s.Step(`^a valid volume$`, f.aValidVolume)
 	s.Step(`^a valid volume with size of (\d+) CYL$`, f.aValidVolumeWithSizeOfCYL)
-	s.Step(`^an invalid volume$`, f.anInvalidVolume)
 	s.Step(`^an invalid snapshot$`, f.anInvalidSnapshot)
 	s.Step(`^no volume$`, f.noVolume)
 	s.Step(`^no node$`, f.noNode)
@@ -5436,8 +5539,7 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call RemoveSnapshot "([^"]*)"$`, f.iCallRemoveSnapshot)
 	s.Step(`^a valid snapshot consistency group$`, f.aValidSnapshotConsistencyGroup)
 	s.Step(`^I call Create Volume from Snapshot$`, f.iCallCreateVolumeFromSnapshot)
-	s.Step(`^the wrong capacity$`, f.theWrongCapacity)
-	s.Step(`^the wrong storage pool$`, f.theWrongStoragePool)
+	s.Step(`^a larger capacity than the source$`, f.aLargerCapacityThanTheSource)
 	s.Step(`^there are (\d+) valid snapshots of "([^"]*)" volume$`, f.thereAreValidSnapshotsOfVolume)
 	s.Step(`^I call ListSnapshots$`, f.iCallListSnapshots)
 	s.Step(`^I call ListSnapshots with max_entries "([^"]*)" and starting_token "([^"]*)"$`, f.iCallListSnapshotsWithMaxEntriesAndStartingToken)
@@ -5517,8 +5619,6 @@ func FeatureContext(s *godog.ScenarioContext) {
 	s.Step(`^I call TerminateSnapshot$`, f.iCallTerminateSnapshot)
 	s.Step(`^I call UnlinkAndTerminate snapshot$`, f.iCallUnlinkAndTerminateSnapshot)
 	s.Step(`^a valid DeleteSnapshotResponse is returned$`, f.aValidDeleteSnapshotResponseIsReturned)
-	s.Step(`^a non-existent volume$`, f.aNonexistentVolume)
-	s.Step(`^no volume source$`, f.noVolumeSource)
 	s.Step(`^the snapshot license cache has "(\d+)" array$`, f.validateSnapshotLicenseCache)
 	s.Step(`^I reset the license cache$`, f.iResetTheLicenseCache)
 	s.Step(`^I call IsSnapshotSource$`, f.iCallIsSnapshotSource)

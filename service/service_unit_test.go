@@ -1,5 +1,5 @@
 /*
-Copyright © 2021-2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+Copyright © 2021-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -774,14 +774,14 @@ func TestCreateDbusConnection(t *testing.T) {
 	tests := []struct {
 		name                       string
 		dBusConn                   *mockDbusConnection
-		mockdbusNewWithContextFunc func() (*dbus.Conn, error)
+		mockdbusNewWithContextFunc func() (dBusConn, error)
 		expectedErr                error
 	}{
 		{
 			name:        "Successful connection",
 			dBusConn:    nil,
 			expectedErr: nil,
-			mockdbusNewWithContextFunc: func() (*dbus.Conn, error) {
+			mockdbusNewWithContextFunc: func() (dBusConn, error) {
 				return &dbus.Conn{}, nil
 			},
 		},
@@ -789,7 +789,7 @@ func TestCreateDbusConnection(t *testing.T) {
 			name:        "Error connection",
 			dBusConn:    nil,
 			expectedErr: errMockErr,
-			mockdbusNewWithContextFunc: func() (*dbus.Conn, error) {
+			mockdbusNewWithContextFunc: func() (dBusConn, error) {
 				return nil, errMockErr
 			},
 		},

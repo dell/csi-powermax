@@ -17,6 +17,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -597,6 +598,7 @@ func TestDeleteVolumes(t *testing.T) {
 			},
 			pmaxClient: func() pmax.Pmax {
 				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
 				pmaxClient.EXPECT().GetVersionDetails(gomock.Any()).AnyTimes().Return(&types.VersionDetails{APIVersion: "103"}, nil)
 				pmaxClient.EXPECT().GetVolumesByIdentifierMatch(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volumev1{
 					Volumes: []types.VolumeEnhanced{
@@ -638,6 +640,7 @@ func TestDeleteVolumes(t *testing.T) {
 			},
 			pmaxClient: func() pmax.Pmax {
 				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
 				pmaxClient.EXPECT().GetVersionDetails(gomock.Any()).AnyTimes().Return(&types.VersionDetails{APIVersion: "100"}, nil)
 				pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("error"))
 				return pmaxClient
@@ -668,6 +671,7 @@ func TestDeleteVolumes(t *testing.T) {
 			},
 			pmaxClient: func() pmax.Pmax {
 				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
 				pmaxClient.EXPECT().GetVersionDetails(gomock.Any()).AnyTimes().Return(&types.VersionDetails{APIVersion: "103"}, nil)
 				pmaxClient.EXPECT().GetVolumesByIdentifierMatch(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volumev1{
 					Volumes: []types.VolumeEnhanced{
@@ -711,6 +715,7 @@ func TestDeleteVolumes(t *testing.T) {
 			},
 			pmaxClient: func() pmax.Pmax {
 				pmaxClient := mocks.NewMockPmaxClient(gomock.NewController(t))
+				pmaxClient.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
 				pmaxClient.EXPECT().GetVersionDetails(gomock.Any()).AnyTimes().Return(&types.VersionDetails{APIVersion: "103"}, nil)
 				pmaxClient.EXPECT().GetVolumesByIdentifierMatch(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Volumev1{
 					Volumes: []types.VolumeEnhanced{
@@ -1122,6 +1127,96 @@ func TestRemoveVolumesFromStorageGroup(t *testing.T) {
 			assert.Equal(t, tc.expectedResult, result)
 		})
 	}
+}
+
+// TestRemoveVolumesFromSG_CascadePrevention regression test for ECS01A-920:
+// verifies that when batch removal fails with "does not contain", the code
+// excludes the stale volume and retries the batch so healthy volumes still advance.
+func TestRemoveVolumesFromSG_CascadePrevention(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	pmaxClient := mocks.NewMockPmaxClient(ctrl)
+
+	// Setup: two devices in disAssociateSG state, both in SG "sg-opt"
+	queue := &deletionQueue{
+		SymID: "sym1",
+		DeviceList: []*csiDevice{
+			{
+				SymID:            "sym1",
+				SymDeviceID:      symDeviceID{DeviceID: "0012C", IntVal: 0x12C},
+				VolumeIdentifier: "_DEL_csi-vol-0012C",
+				SymVolumeCache:   symVolumeCache{},
+				Status:           deletionRequestStatus{State: deletionStateDisAssociateSG},
+			},
+			{
+				SymID:            "sym1",
+				SymDeviceID:      symDeviceID{DeviceID: "0012B", IntVal: 0x12B},
+				VolumeIdentifier: "_DEL_csi-vol-0012B",
+				SymVolumeCache:   symVolumeCache{},
+				Status:           deletionRequestStatus{State: deletionStateDisAssociateSG},
+			},
+		},
+	}
+
+	// Both devices initially in sg-opt
+	pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), "sym1", "0012C").
+		Return(&types.Volume{
+			VolumeID:           "0012C",
+			VolumeIdentifier:   "_DEL_csi-vol-0012C",
+			StorageGroupIDList: []string{"sg-opt"},
+		}, nil).Times(1)
+	pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), "sym1", "0012B").
+		Return(&types.Volume{
+			VolumeID:           "0012B",
+			VolumeIdentifier:   "_DEL_csi-vol-0012B",
+			StorageGroupIDList: []string{"sg-opt"},
+		}, nil).Times(1)
+
+	// SG has no masking views
+	pmaxClient.EXPECT().GetStorageGroup(gomock.Any(), "sym1", "sg-opt").
+		AnyTimes().Return(&types.StorageGroup{NumOfMaskingViews: 0}, nil)
+
+	// Batch removal fails with "does not contain" (simulating the cascade bug)
+	pmaxClient.EXPECT().RemoveVolumesFromStorageGroup(
+		gomock.Any(), "sym1", "sg-opt", true, "0012C", "0012B").
+		Return(nil, errors.New("The Storage Group sg-opt does not contain volume 0012C"))
+
+	// Retry: batch with stale volume 0012C excluded, only 0012B remains
+	pmaxClient.EXPECT().RemoveVolumesFromStorageGroup(
+		gomock.Any(), "sym1", "sg-opt", true, "0012B").
+		Return(&types.StorageGroup{}, nil)
+
+	// Post-removal cache refresh: both now show empty SG list
+	pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), "sym1", "0012C").
+		Return(&types.Volume{
+			VolumeID:           "0012C",
+			VolumeIdentifier:   "_DEL_csi-vol-0012C",
+			StorageGroupIDList: []string{},
+		}, nil).Times(1)
+	pmaxClient.EXPECT().GetVolumeByID(gomock.Any(), "sym1", "0012B").
+		Return(&types.Volume{
+			VolumeID:           "0012B",
+			VolumeIdentifier:   "_DEL_csi-vol-0012B",
+			StorageGroupIDList: []string{},
+		}, nil).Times(1)
+
+	// Override delays for test speed
+	oldDelay := APIPropagationDelay
+	oldSyncTime := waitTillSyncInProgTime
+	APIPropagationDelay = 1 * time.Millisecond
+	waitTillSyncInProgTime = 1 * time.Millisecond
+	defer func() {
+		APIPropagationDelay = oldDelay
+		waitTillSyncInProgTime = oldSyncTime
+	}()
+
+	result := queue.removeVolumesFromStorageGroup(pmaxClient)
+	assert.True(t, result)
+
+	// Both devices should have advanced past disAssociateSG
+	assert.Equal(t, deletionStateDeleteVol, queue.DeviceList[0].Status.State,
+		"Device 0012C should advance to deleteVolume (already removed from SG)")
+	assert.Equal(t, deletionStateDeleteVol, queue.DeviceList[1].Status.State,
+		"Device 0012B should advance to deleteVolume after retry")
 }
 
 func TestDeletionRequestHandler(t *testing.T) {

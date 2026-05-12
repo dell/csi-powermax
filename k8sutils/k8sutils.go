@@ -18,6 +18,7 @@ package k8sutils
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +38,8 @@ var log = csmlog.GetLogger()
 type UtilsInterface interface {
 	GetNodeLabels(string) (map[string]string, error)
 	GetNodeIPs(string) string
+	GetPVCForVolume(ctx context.Context, pvName string, volumeID string) (*corev1.PersistentVolumeClaim, error)
+	GetClient() kubernetes.Interface
 }
 
 // K8sUtils stores the configuration of the k8s client, k8s client and the informer
@@ -69,6 +72,9 @@ func Init(kubeConfig string) (*K8sUtils, error) {
 	return k8sUtils, nil
 }
 
+// set this function as a var so that it can be mocked
+var getInClusterConfigFunc = rest.InClusterConfig
+
 // CreateKubeClientSet - Returns kubeClient set
 func CreateKubeClientSet(kubeConfig string) (*kubernetes.Clientset, error) {
 	var clientSet *kubernetes.Clientset
@@ -81,7 +87,7 @@ func CreateKubeClientSet(kubeConfig string) (*kubernetes.Clientset, error) {
 			return nil, err
 		}
 	} else {
-		config, err = rest.InClusterConfig()
+		config, err = getInClusterConfigFunc()
 		if err != nil {
 			return nil, err
 		}
@@ -114,6 +120,14 @@ func (c *K8sUtils) GetNodeLabels(nodeFullName string) (map[string]string, error)
 	return node.Labels, nil
 }
 
+// GetClient returns the underlying kubernetes.Interface client.
+func (c *K8sUtils) GetClient() kubernetes.Interface {
+	if c.KubernetesClient != nil {
+		return c.KubernetesClient.ClientSet
+	}
+	return nil
+}
+
 // GetNodeIPs returns cluster IP of the node object
 func (c *K8sUtils) GetNodeIPs(nodeID string) string {
 	// access the API to fetch node object
@@ -131,4 +145,31 @@ func (c *K8sUtils) GetNodeIPs(nodeID string) string {
 		}
 	}
 	return ""
+}
+
+// GetPVCForVolume retrieves the PVC bound to the given PV.
+// It validates that the PV's CSI volume handle matches the provided volumeID.
+func (c *K8sUtils) GetPVCForVolume(ctx context.Context, pvName string, volumeID string) (*corev1.PersistentVolumeClaim, error) {
+	// Get PV
+	pv, err := c.KubernetesClient.ClientSet.CoreV1().PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get PV %s: %w", pvName, err)
+	}
+
+	// Validate CSI volume handle
+	if pv.Spec.CSI == nil || pv.Spec.CSI.VolumeHandle != volumeID {
+		return nil, fmt.Errorf("PV %s CSI volume handle does not match volume ID %s", pvName, volumeID)
+	}
+
+	// Get PVC via ClaimRef
+	if pv.Spec.ClaimRef == nil {
+		return nil, fmt.Errorf("PV %s has no ClaimRef", pvName)
+	}
+
+	pvc, err := c.KubernetesClient.ClientSet.CoreV1().PersistentVolumeClaims(pv.Spec.ClaimRef.Namespace).Get(ctx, pv.Spec.ClaimRef.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get PVC %s/%s: %w", pv.Spec.ClaimRef.Namespace, pv.Spec.ClaimRef.Name, err)
+	}
+
+	return pvc, nil
 }

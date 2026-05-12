@@ -32,13 +32,14 @@ import (
 	"github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	gonvme "github.com/dell/gonvme"
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
 	"github.com/golang/mock/gomock"
 	gmock "github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGetNVMeTCPTargets(t *testing.T) {
@@ -863,6 +864,64 @@ func TestConnectRDMDevice(t *testing.T) {
 	}
 }
 
+// TestConnectDevice_Vsphere verifies connectDevice routing when vSphere is
+// enabled. With useFC=true (set by nodeStartup) the call must reach
+// connectRDMDevice; without it the call falls through to iSCSI and fails.
+func TestConnectDevice_Vsphere(t *testing.T) {
+	tests := []struct {
+		name      string
+		useFC     bool
+		wantErr   bool
+		wantInDev bool // expect devicePath to contain "/dev/"
+	}{
+		{
+			name:      "useFC routes to RDM",
+			useFC:     true,
+			wantErr:   false,
+			wantInDev: true,
+		},
+		{
+			name:    "without useFC falls through to iSCSI and fails",
+			useFC:   false,
+			wantErr: true,
+		},
+	}
+
+	data := publishContextData{
+		deviceWWN:        "mockWWN",
+		volumeLUNAddress: "10",
+		fcTargets: []FCTargetInfo{
+			{WWPN: "mockWWPN"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				opts: Opts{
+					IsVsphereEnabled: true,
+				},
+				useFC: tt.useFC,
+			}
+			if tt.useFC {
+				s.fcConnector = &mockFCGobrick{}
+			} else {
+				s.iscsiConnector = &mockISCSIGobrick{}
+			}
+
+			devicePath, err := s.connectDevice(context.Background(), data)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			if tt.wantInDev {
+				require.Contains(t, devicePath, "/dev/")
+			}
+		})
+	}
+}
+
 func TestGetHostForVsphere(t *testing.T) {
 	ctx := context.Background()
 	vsphereHostName := "vsphere-host"
@@ -1023,14 +1082,10 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
 				c.EXPECT().GetHostByID(gmock.All(), "array1", "host1").AnyTimes().Return(nil, errors.New("host not found"))
 				c.EXPECT().CreateHost(gmock.All(), "array1", "host1", gmock.Any(), gmock.Any()).AnyTimes().Return(nil, errors.New("create host failed"))
-				c.EXPECT().GetInitiatorList(gmock.All(), "array1", "", false, false).AnyTimes().Return(&types.InitiatorList{}, nil)
-				c.EXPECT().GetInitiatorByID(gmock.All(), "array1", "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001").AnyTimes().Return(
-					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil)
-				c.EXPECT().UpdateHostInitiators(gmock.All(), "array1", "host1", gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				return c
 			},
-			wantErr: false,
-			want:    &types.Host{},
+			wantErr: true,
+			want:    nil,
 		},
 		{
 			// This is really bizarre condition in the code to test, but it is what it is.
@@ -1053,7 +1108,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				c.EXPECT().UpdateHostInitiators(gmock.All(), "array1", "host1", gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				return c
 			},
-			wantErr: false,
+			wantErr: true,
 			want:    nil,
 		},
 		{
@@ -1066,7 +1121,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				return c
 			},
 			wantErr: true,
-			want:    &types.Host{},
+			want:    nil,
 		},
 		{
 			name:     "nodename empty case",
@@ -1078,7 +1133,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				return c
 			},
 			wantErr: true,
-			want:    &types.Host{},
+			want:    nil,
 		},
 		{
 			name:     "len NQNs zero case",
@@ -1090,7 +1145,7 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				return c
 			},
 			wantErr: true,
-			want:    &types.Host{},
+			want:    nil,
 		},
 		{
 			name:     "Host exists, add new initiators",
@@ -1125,6 +1180,9 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 	for _, tc := range testCases {
 		tc.pmaxClient = tc.getClient()
 		t.Run(tc.name, func(t *testing.T) {
+			// Disable re-tries for tests
+			pmaxQueryAttempts = 1
+			defer func() { pmaxQueryAttempts = 30 }()
 			s := &service{
 				opts: Opts{
 					UseProxy: true,
@@ -1132,11 +1190,13 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				nvmetcpClient:      gonvme.NewMockNVMe(map[string]string{}),
 				nvmeTargets:        &sync.Map{},
 				loggedInNVMeArrays: map[string]bool{},
-				pmaxTimeoutSeconds: 1,
 			}
 			got, err := s.createOrUpdateNVMeTCPHost(context.Background(), tc.array, tc.nodeName, tc.NQNs, tc.pmaxClient)
-			if err == nil && tc.wantErr {
-				t.Errorf("Expected: %v, but got no error", tc.wantErr)
+			if tc.wantErr && err == nil {
+				t.Errorf("Expected error, but got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("Expected no error, but got: %v", err)
 			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("Expected: %v, but got: %v", tc.want, got)
@@ -1328,6 +1388,207 @@ func TestPerformNVMETCPLoginOnSymID(t *testing.T) {
 			} else if !tc.wantErr && err != nil {
 				t.Errorf("Expected no error but got %v", err)
 			}
+		})
+	}
+}
+
+func TestSetupArrayForNVMeTCP(t *testing.T) {
+	testCases := []struct {
+		name         string
+		NQNs         []string
+		initFunc     func()
+		setupClient  func(c *mocks.MockPmaxClient)
+		wantErr      bool
+		wantContains string
+	}{
+		{
+			name: "GetHostID fails",
+			NQNs: []string{"nqn.test:001"},
+			initFunc: func() {
+				gonvme.GONVMEMock.InduceInitiatorError = true
+			},
+			setupClient:  func(_ *mocks.MockPmaxClient) {},
+			wantErr:      true,
+			wantContains: "failed to get local NVMe host ID",
+		},
+		{
+			name: "setupNVMeTCPTargetDiscovery fails",
+			NQNs: []string{"nqn.test:001"},
+			initFunc: func() {
+				gonvme.GONVMEMock.InduceInitiatorError = false
+				getIPInterfaces = func(_ context.Context, _ string, _ []string, _ pmax.Pmax) (map[string]int32, error) {
+					return nil, fmt.Errorf("IP interface fetch error")
+				}
+			},
+			setupClient: func(c *mocks.MockPmaxClient) {
+				c.EXPECT().GetHostByID(gomock.Any(), "array1", gomock.Any()).Return(nil, errors.New("host not found"))
+				c.EXPECT().CreateHost(gomock.Any(), "array1", gomock.Any(), gomock.Any(), gomock.Any()).Return(&types.Host{HostID: "testhost"}, nil)
+			},
+			wantErr: true,
+		},
+		{
+			name: "validateNVMeInitiators succeeds on first attempt",
+			NQNs: []string{"nqn.test:001"},
+			initFunc: func() {
+				gonvme.GONVMEMock.InduceInitiatorError = false
+				gonvme.GONVMEMock.InduceDiscoveryError = false
+				getIPInterfaces = func(_ context.Context, _ string, _ []string, _ pmax.Pmax) (map[string]int32, error) {
+					return map[string]int32{"1.2.3.4": 4420}, nil
+				}
+			},
+			setupClient: func(c *mocks.MockPmaxClient) {
+				c.EXPECT().GetHostByID(gomock.Any(), "array1", gomock.Any()).Return(nil, errors.New("host not found"))
+				c.EXPECT().CreateHost(gomock.Any(), "array1", gomock.Any(), gomock.Any(), gomock.Any()).Return(&types.Host{HostID: "testhost"}, nil)
+				c.EXPECT().GetInitiatorList(gomock.Any(), "array1", "", false, false).Return(&types.InitiatorList{
+					InitiatorIDs: []string{"nqn.test:001:A2D57D74A1984E6BAA7897AF9CD00F31"},
+				}, nil)
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			origIPInterfaces := getIPInterfaces
+			origQueryAttempts := pmaxQueryAttempts
+			pmaxQueryAttempts = 1
+			defer func() {
+				gonvme.GONVMEMock.InduceInitiatorError = false
+				gonvme.GONVMEMock.InduceDiscoveryError = false
+				getIPInterfaces = origIPInterfaces
+				pmaxQueryAttempts = origQueryAttempts
+			}()
+
+			tc.initFunc()
+
+			ctrl := gomock.NewController(t)
+			c := mocks.NewMockPmaxClient(ctrl)
+			tc.setupClient(c)
+
+			svc := &service{
+				opts: Opts{
+					NodeName: "node1",
+				},
+				nvmetcpClient: gonvme.NewMockNVMe(map[string]string{}),
+			}
+
+			err := svc.setupArrayForNVMeTCP(context.Background(), "array1", tc.NQNs, c)
+			if tc.wantErr {
+				assert.Error(t, err)
+				if tc.wantContains != "" {
+					assert.Contains(t, err.Error(), tc.wantContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSetupNVMeTCPTargetDiscovery_EmptyIPInterfaces(t *testing.T) {
+	orig := getIPInterfaces
+	getIPInterfaces = func(_ context.Context, _ string, _ []string, _ pmax.Pmax) (map[string]int32, error) {
+		return map[string]int32{}, nil
+	}
+	defer func() { getIPInterfaces = orig }()
+
+	svc := &service{
+		opts:          Opts{PortGroups: []string{"pg1"}},
+		nvmetcpClient: gonvme.NewMockNVMe(map[string]string{}),
+	}
+	ctrl := gomock.NewController(t)
+	c := mocks.NewMockPmaxClient(ctrl)
+
+	err := svc.setupNVMeTCPTargetDiscovery(context.Background(), "array1", c)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "couldn't find any IP interfaces")
+}
+
+func TestRetryableUpdateHostInitiators(t *testing.T) {
+	testCases := []struct {
+		name         string
+		attempts     int
+		ctxFunc      func() context.Context
+		wantContains string
+	}{
+		{
+			name:         "all attempts fail",
+			attempts:     1,
+			ctxFunc:      func() context.Context { return context.Background() },
+			wantContains: "failed to update host initiators on array after",
+		},
+		{
+			name:     "context cancelled on second attempt",
+			attempts: 2,
+			ctxFunc: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			wantContains: "context timeout",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			orig := pmaxQueryAttempts
+			pmaxQueryAttempts = tc.attempts
+			defer func() { pmaxQueryAttempts = orig }()
+
+			ctrl := gomock.NewController(t)
+			c := mocks.NewMockPmaxClient(ctrl)
+			host := &types.Host{HostID: "host1"}
+			c.EXPECT().UpdateHostInitiators(gomock.Any(), "array1", host, gomock.Any()).Return(nil, errors.New("update failed"))
+
+			svc := &service{}
+			result, err := svc.retryableUpdateHostInitiators(tc.ctxFunc(), "array1", host, []string{"nqn.test:001"}, c)
+			assert.Nil(t, result)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantContains)
+		})
+	}
+}
+
+func TestRetryableCreateHost(t *testing.T) {
+	testCases := []struct {
+		name         string
+		attempts     int
+		ctxFunc      func() context.Context
+		wantContains string
+	}{
+		{
+			name:         "all attempts fail",
+			attempts:     1,
+			ctxFunc:      func() context.Context { return context.Background() },
+			wantContains: "failed to create host on array after",
+		},
+		{
+			name:     "context cancelled on second attempt",
+			attempts: 2,
+			ctxFunc: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			wantContains: "context timeout",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			orig := pmaxQueryAttempts
+			pmaxQueryAttempts = tc.attempts
+			defer func() { pmaxQueryAttempts = orig }()
+
+			ctrl := gomock.NewController(t)
+			c := mocks.NewMockPmaxClient(ctrl)
+			c.EXPECT().CreateHost(gomock.Any(), "array1", "node1", gomock.Any(), gomock.Any()).Return(nil, errors.New("create failed"))
+
+			svc := &service{}
+			result, err := svc.retryableCreateHost(tc.ctxFunc(), "array1", "node1", []string{"nqn.test:001"}, nil, c)
+			assert.Nil(t, result)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantContains)
 		})
 	}
 }
@@ -2744,4 +3005,177 @@ func (c *iscsiClientMock) DiscoverTargets(portal string, _ bool) ([]goiscsi.ISCS
 		return nil, err
 	}
 	return []goiscsi.ISCSITarget{}, nil
+}
+
+func TestValidateNVMeInitiators(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	tests := []struct {
+		name          string
+		initiatorIDs  []string
+		arrayList     []string
+		listError     bool
+		expectedError bool
+		errContains   string
+		description   string
+	}{
+		{
+			name:          "All initiators found on array",
+			initiatorIDs:  []string{"nqn.2014-08.org.nvmexpress:uuid:test:ABCD1234"},
+			arrayList:     []string{"FA-1E:1:nqn.2014-08.org.nvmexpress:uuid:test:ABCD1234"},
+			expectedError: false,
+			description:   "Single initiator found on array",
+		},
+		{
+			name: "Multiple initiators all found",
+			initiatorIDs: []string{
+				"nqn.2014-08.org.nvmexpress:uuid:test1:ABCD1234",
+				"nqn.2014-08.org.nvmexpress:uuid:test2:ABCD1234",
+			},
+			arrayList: []string{
+				"FA-1E:1:nqn.2014-08.org.nvmexpress:uuid:test1:ABCD1234",
+				"FA-1E:2:nqn.2014-08.org.nvmexpress:uuid:test2:ABCD1234",
+			},
+			expectedError: false,
+			description:   "Multiple initiators all found on array",
+		},
+		{
+			name:          "Initiator not found on array",
+			initiatorIDs:  []string{"nqn.2014-08.org.nvmexpress:uuid:test:ABCD1234"},
+			arrayList:     []string{"FA-1E:1:nqn.2014-08.org.nvmexpress:uuid:other:FFFF0000"},
+			expectedError: true,
+			errContains:   "not found",
+			description:   "Initiator not present in array list",
+		},
+		{
+			name:          "Empty array initiator list",
+			initiatorIDs:  []string{"nqn.2014-08.org.nvmexpress:uuid:test:ABCD1234"},
+			arrayList:     []string{},
+			expectedError: true,
+			errContains:   "not found",
+			description:   "No initiators on array yet",
+		},
+		{
+			name:          "GetInitiatorList error",
+			initiatorIDs:  []string{"nqn.2014-08.org.nvmexpress:uuid:test:ABCD1234"},
+			listError:     true,
+			expectedError: true,
+			errContains:   "failed to get all initiators",
+			description:   "Error getting initiator list from array",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mockClient := mocks.NewMockPmaxClient(ctrl)
+			svc := &service{
+				cacheMutex:         sync.Mutex{},
+				loggedInNVMeArrays: make(map[string]bool),
+			}
+
+			if tc.listError {
+				mockClient.EXPECT().GetInitiatorList(gomock.Any(), "000197900046", "", false, false).
+					Return(nil, errors.New("simulated error")).Times(1)
+			} else {
+				mockClient.EXPECT().GetInitiatorList(gomock.Any(), "000197900046", "", false, false).
+					Return(&types.InitiatorList{InitiatorIDs: tc.arrayList}, nil).Times(1)
+			}
+
+			err := svc.validateNVMeInitiators(context.Background(), "000197900046", tc.initiatorIDs, mockClient)
+
+			if tc.expectedError {
+				assert.Error(t, err, tc.description)
+				assert.Contains(t, err.Error(), tc.errContains, tc.description)
+			} else {
+				assert.NoError(t, err, tc.description)
+			}
+		})
+	}
+}
+
+func TestMakeNVMeInitiatorIDs(t *testing.T) {
+	tests := []struct {
+		name       string
+		nqns       []string
+		hostID     string
+		expected   []string
+		shouldFail bool
+	}{
+		{
+			name:     "Single NQN with UUID host ID",
+			nqns:     []string{"nqn.2014-08.org.nvmexpress:uuid:27212f42-27d7-3250-5c80-b02adbbb66b5"},
+			hostID:   "c32abcdf-35f9-4800-88ad-396225c90b70",
+			expected: []string{"nqn.2014-08.org.nvmexpress:uuid:27212f42-27d7-3250-5c80-b02adbbb66b5:C32ABCDF35F9480088AD396225C90B70"},
+		},
+		{
+			name: "Multiple NQNs",
+			nqns: []string{
+				"nqn.2014-08.org.nvmexpress:uuid:aaa",
+				"nqn.2014-08.org.nvmexpress:uuid:bbb",
+			},
+			hostID: "c32abcdf-35f9-4800-88ad-396225c90b70",
+			expected: []string{
+				"nqn.2014-08.org.nvmexpress:uuid:aaa:C32ABCDF35F9480088AD396225C90B70",
+				"nqn.2014-08.org.nvmexpress:uuid:bbb:C32ABCDF35F9480088AD396225C90B70",
+			},
+		},
+		{
+			name:     "NQN already has host ID appended",
+			nqns:     []string{"nqn.2014-08.org.nvmexpress:uuid:test:C32ABCDF35F9480088AD396225C90B70"},
+			hostID:   "c32abcdf-35f9-4800-88ad-396225c90b70",
+			expected: []string{"nqn.2014-08.org.nvmexpress:uuid:test:C32ABCDF35F9480088AD396225C90B70"},
+		},
+		{
+			name:     "Empty NQN list",
+			nqns:     []string{},
+			hostID:   "c32abcdf-35f9-4800-88ad-396225c90b70",
+			expected: []string{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := makeNVMeInitiatorIDs(tc.nqns, tc.hostID)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestNVMeInitiatorRetryLogic(t *testing.T) {
+	// This test validates the retry logic behavior described in the refactored code.
+	// validateNVMeInitiators is called in a retry loop by setupArrayForNVMeTCP.
+
+	t.Run("Array propagation delay scenario", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockClient := mocks.NewMockPmaxClient(ctrl)
+		svc := &service{
+			cacheMutex:         sync.Mutex{},
+			loggedInNVMeArrays: make(map[string]bool),
+		}
+
+		initiatorIDs := []string{"nqn.2014-08.org.nvmexpress:uuid:test:ABCD1234"}
+
+		// Scenario 1: Empty list (simulating propagation delay — initiator not yet visible)
+		mockClient.EXPECT().GetInitiatorList(gomock.Any(), "000197900046", "", false, false).
+			Return(&types.InitiatorList{InitiatorIDs: []string{}}, nil).Times(1)
+
+		err := svc.validateNVMeInitiators(context.Background(), "000197900046", initiatorIDs, mockClient)
+
+		// Should fail because the initiator is not found
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+
+		// Scenario 2: Initiator appears (simulating successful propagation)
+		mockClient.EXPECT().GetInitiatorList(gomock.Any(), "000197900046", "", false, false).
+			Return(&types.InitiatorList{InitiatorIDs: []string{"FA-1E:1:nqn.2014-08.org.nvmexpress:uuid:test:ABCD1234"}}, nil).Times(1)
+
+		err = svc.validateNVMeInitiators(context.Background(), "000197900046", initiatorIDs, mockClient)
+
+		// Should succeed now
+		assert.NoError(t, err)
+	})
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package service
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"strconv"
@@ -28,7 +29,6 @@ import (
 	csimgr "github.com/dell/dell-csi-extensions/migration"
 	types "github.com/dell/gopowermax/v2/types/v100"
 
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
