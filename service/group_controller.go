@@ -157,8 +157,10 @@ func (s *service) DeleteVolumeGroupSnapshot(
 
 	symID, sgName, snapName, err := parseGroupSnapshotID(groupSnapshotID)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"invalid group snapshot ID format: %s", err.Error())
+		// CSI spec v1.12: DeleteVolumeGroupSnapshot MUST be idempotent
+		// Invalid or non-existent ID MUST return OK
+		log.Infof("DeleteVolumeGroupSnapshot: invalid ID format %s, returning OK for idempotency", groupSnapshotID)
+		return &csi.DeleteVolumeGroupSnapshotResponse{}, nil
 	}
 
 	pmaxClient, err := s.GetPowerMaxClient(symID)
@@ -274,8 +276,9 @@ func (s *service) GetVolumeGroupSnapshot(
 
 	symID, sgName, snapName, err := parseGroupSnapshotID(groupSnapshotID)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"invalid group snapshot ID format: %s", err.Error())
+		// CSI spec v1.12: GetVolumeGroupSnapshot with non-existent ID MUST return NotFound
+		return nil, status.Errorf(codes.NotFound,
+			"group snapshot %s not found: %s", groupSnapshotID, err.Error())
 	}
 
 	pmaxClient, err := s.GetPowerMaxClient(symID)

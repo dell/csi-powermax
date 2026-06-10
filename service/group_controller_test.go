@@ -610,13 +610,12 @@ func Test_service_DeleteVolumeGroupSnapshot(t *testing.T) {
 			wantErrMsg: "required: GroupSnapshotId",
 		},
 		{
-			name: "invalid group snapshot ID format",
+			name: "invalid group snapshot ID format - returns OK for idempotency",
 			req: &csi.DeleteVolumeGroupSnapshotRequest{
 				GroupSnapshotId: "bad-format",
 			},
-			before:     func(_ *mocks.MockPmaxClient) {},
-			wantErr:    true,
-			wantErrMsg: "invalid group snapshot ID format",
+			before:  func(_ *mocks.MockPmaxClient) {},
+			wantErr: false,
 		},
 		{
 			name: "happy path - delete succeeds",
@@ -823,13 +822,13 @@ func Test_service_GetVolumeGroupSnapshot(t *testing.T) {
 			wantErrMsg: "required: GroupSnapshotId",
 		},
 		{
-			name: "invalid format",
+			name: "invalid format - returns NotFound",
 			req: &csi.GetVolumeGroupSnapshotRequest{
 				GroupSnapshotId: "invalid",
 			},
 			before:     func(_ *mocks.MockPmaxClient) {},
 			wantErr:    true,
-			wantErrMsg: "invalid group snapshot ID format",
+			wantErrMsg: "group snapshot invalid not found",
 		},
 		{
 			name: "snapshot not found",

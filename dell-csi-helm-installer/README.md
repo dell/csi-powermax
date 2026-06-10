@@ -19,7 +19,7 @@ Installing any of the Dell CSI Drivers requires a few utilities to be installed 
 | Dependency    | Usage  |
 | ------------- | ----- |
 | `kubectl`     | Kubectl is used to validate that the Kubernetes system meets the requirements of the driver. |
-| `helm`        | Helm v3 is used as the deployment tool for Charts. See, [Install Helm 3](https://helm.sh/docs/intro/install/) for instructions to install Helm 3. |
+| `helm`        | Helm v3 or v4 is used as the deployment tool for Charts. See, [Install Helm](https://helm.sh/docs/intro/install/) for instructions to install Helm. |
 | `sshpass`     | sshpass is used to check certain pre-requisities in worker nodes (in chosen drivers). |
 
 
@@ -61,6 +61,32 @@ Installing a driver is performed via the `csi-install.sh` script. This script re
 ./csi-install.sh --namespace powermax --values ./my-powermax-settings.yaml
 ```
 
+#### Installing from OCI Registry
+
+The driver can be installed from an OCI-compliant registry instead of using local Helm charts. This requires:
+
+1. A Kubernetes secret containing registry credentials (if authentication is required)
+2. The OCI registry URI for the Helm chart
+
+**Create a registry credentials secret:**
+```bash
+kubectl create secret generic registry-creds \
+  --from-literal=username=<your-username> \
+  --from-literal=password=<your-password> \
+  --namespace powermax
+```
+
+**Install from OCI registry:**
+```bash
+./csi-install.sh \
+  --namespace powermax \
+  --values ./my-powermax-settings.yaml \
+  --oci-chart oci://registry.example.com/charts/csi-powermax \
+  --registry-auth-secret registry-creds
+```
+
+**Note:** If the OCI registry does not require authentication, you can omit the `--registry-auth-secret` parameter.
+
 For usage information:
 ```
 [dell-csi-helm-installer]# ./csi-install.sh -h
@@ -77,6 +103,8 @@ Options:
   --node-verify-user[=]<username>          Username to SSH to worker nodes as, used to validate node requirements. Default is root
   --skip-verify                            Skip the kubernetes configuration verification to use the CSI driver, default will run verification
   --skip-verify-node                       Skip worker node verification checks
+  --oci-chart[=]<oci-uri>                  OCI registry URI for Helm chart (e.g., oci://registry.example.com/charts/csi-powermax)
+  --registry-auth-secret[=]<secret-name>   Kubernetes secret containing registry credentials (username/password keys)
   -h                                       Help
 ```
 
@@ -88,6 +116,18 @@ Upgrading a driver is very similar to installation. The `csi-install.sh` script 
 ./csi-install.sh --namespace powermax --values ./my-powermax-settings.yaml --upgrade
 ```
 
+#### Upgrading from OCI Registry
+
+To upgrade from an OCI registry:
+```bash
+./csi-install.sh \
+  --namespace powermax \
+  --values ./my-powermax-settings.yaml \
+  --upgrade \
+  --oci-chart oci://registry.example.com/charts/csi-powermax \
+  --registry-auth-secret registry-creds
+```
+
 For usage information:
 ```
 [dell-csi-helm-installer]# ./csi-install.sh -h
@@ -104,6 +144,8 @@ Options:
   --node-verify-user[=]<username>          Username to SSH to worker nodes as, used to validate node requirements. Default is root
   --skip-verify                            Skip the kubernetes configuration verification to use the CSI driver, default will run verification
   --skip-verify-node                       Skip worker node verification checks
+  --oci-chart[=]<oci-uri>                  OCI registry URI for Helm chart (e.g., oci://registry.example.com/charts/csi-powermax)
+  --registry-auth-secret[=]<secret-name>   Kubernetes secret containing registry credentials (username/password keys)
   -h                                       Help
 ```
 
