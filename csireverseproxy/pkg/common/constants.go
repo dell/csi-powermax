@@ -46,4 +46,10 @@ const (
 	// EnvSidecarProxyPort is the port on which the reverse proxy
 	// server run, if run as a sidecar container
 	EnvSidecarProxyPort = "X_CSI_POWERMAX_SIDECAR_PROXY_PORT"
+	// EnvProxyAuthTokenFile is the path to a file containing a shared auth token
+	// used for authenticating requests between the CSI driver and the reverse proxy.
+	// Both driver and proxy must mount the same K8s Secret.
+	EnvProxyAuthTokenFile = "X_CSI_REVPROXY_AUTH_TOKEN_FILE" // #nosec G101
+	// ProxyAuthTokenHeader is the HTTP header name used to carry the shared auth token
+	ProxyAuthTokenHeader = "X-Proxy-Auth-Token" // #nosec G101
 )
