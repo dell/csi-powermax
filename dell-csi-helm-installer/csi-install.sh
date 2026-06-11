@@ -149,16 +149,7 @@ else
   fi
 fi
 DRIVERDIR="${SCRIPTDIR}/../helm-charts/charts"
-DRIVER="csi-powermax"
 VERIFYSCRIPT="${SCRIPTDIR}/verify.sh"
-
-# Derive helm chart version from DEFAULT_VERSION (single source of truth)
-DRIVERVERSION="${DRIVER}-${DEFAULT_VERSION#v}"
-
-# Allow override via --helm-charts-version
-if [ -n "$HELMCHARTVERSION" ]; then
-  DRIVERVERSION=$HELMCHARTVERSION
-fi
 
 # export the name of the debug log, so child processes will see it
 export DEBUGLOG="${SCRIPTDIR}/install-debug.log"
