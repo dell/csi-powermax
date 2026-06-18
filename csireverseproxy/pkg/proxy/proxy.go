@@ -51,6 +51,7 @@ type Proxy struct {
 	envoyMap      map[string]common.Envoy
 	iteratorCache cache.Cache
 	mutex         sync.Mutex
+	authToken     string
 }
 
 // NewProxy - Given a proxy config, returns a proxy
@@ -256,6 +257,34 @@ func (revProxy *Proxy) setPortGroups(resp *http.Response, URL url.URL, symID str
 	}
 	log.Debugf("Successfully decoded port groups: %s", symID)
 	return portGroups, nil
+}
+
+// SetAuthToken sets the shared authentication token used to validate inbound requests.
+// When set, every request must include the matching token in the X-Proxy-Auth-Token header.
+func (revProxy *Proxy) SetAuthToken(token string) {
+	revProxy.mutex.Lock()
+	defer revProxy.mutex.Unlock()
+	revProxy.authToken = token
+}
+
+func (revProxy *Proxy) tokenAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		revProxy.mutex.Lock()
+		token := revProxy.authToken
+		revProxy.mutex.Unlock()
+		if token != "" {
+			provided := r.Header.Get(common.ProxyAuthTokenHeader)
+			if provided == "" {
+				utils.WriteHTTPError(w, "missing proxy auth token", utils.StatusUnAuthorized)
+				return
+			}
+			if provided != token {
+				utils.WriteHTTPError(w, "invalid proxy auth token", utils.StatusUnAuthorized)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (revProxy *Proxy) loggingMiddleware(next http.Handler) http.Handler {
@@ -492,7 +521,7 @@ func (revProxy *Proxy) GetRouter() http.Handler {
 		log.Errorf("Error walking routes: %v", err)
 	}
 
-	return revProxy.loggingMiddleware(router)
+	return revProxy.tokenAuthMiddleware(revProxy.loggingMiddleware(router))
 }
 
 func (revProxy *Proxy) ifNoSymIDInvoke(customHandler http.HandlerFunc) http.HandlerFunc {
@@ -651,6 +680,9 @@ func (revProxy *Proxy) ServeVolumePerformance(res http.ResponseWriter, req *http
 		utils.WriteHTTPError(res, "failed to decode request", http.StatusInternalServerError)
 		return
 	}
+	if err := revProxy.isAuthorized(res, req, reqParam.SystemID); err != nil {
+		return
+	}
 
 	resp, err := revProxy.getResponseIfAuthorised(res, req, reqParam.SystemID)
 	if err != nil {
@@ -681,6 +713,9 @@ func (revProxy *Proxy) ServeFSPerformance(res http.ResponseWriter, req *http.Req
 	if err := decoder.Decode(reqParam); err != nil {
 		log.Errorf("Decoding fails for metrics req for volume: %s", err.Error())
 		utils.WriteHTTPError(res, "failed to decode request", http.StatusInternalServerError)
+		return
+	}
+	if err := revProxy.isAuthorized(res, req, reqParam.SystemID); err != nil {
 		return
 	}
 

@@ -20,9 +20,8 @@ PROG="${0}"
 NODE_VERIFY=1
 VERIFY=1
 MODE="install"
-DEFAULT_VERSION="v2.17.0"
+DEFAULT_VERSION="v2.17.1"
 WATCHLIST=""
-DRIVER="csi-powermax"
 
 #
 # usage will print command execution help and then exit
@@ -129,14 +128,6 @@ while getopts ":h-:" optchar; do
   esac
 done
 
-# Derive helm chart version from DEFAULT_VERSION (single source of truth)
-DRIVERVERSION="${DRIVER}-${DEFAULT_VERSION#v}"
-
-# Allow override via --helm-charts-version
-if [ -n "$HELMCHARTVERSION" ]; then
-  DRIVERVERSION=$HELMCHARTVERSION
-fi
-
 if [ ! -d "$DRIVERDIR/helm-charts" ]; then
 
   if  [ ! -d "$SCRIPTDIR/helm-charts" ]; then
@@ -149,7 +140,16 @@ else
   fi
 fi
 DRIVERDIR="${SCRIPTDIR}/../helm-charts/charts"
+DRIVER="csi-powermax"
 VERIFYSCRIPT="${SCRIPTDIR}/verify.sh"
+
+# Derive helm chart version from DEFAULT_VERSION (single source of truth)
+DRIVERVERSION="${DRIVER}-${DEFAULT_VERSION#v}"
+
+# Allow override via --helm-charts-version
+if [ -n "$HELMCHARTVERSION" ]; then
+  DRIVERVERSION=$HELMCHARTVERSION
+fi
 
 # export the name of the debug log, so child processes will see it
 export DEBUGLOG="${SCRIPTDIR}/install-debug.log"

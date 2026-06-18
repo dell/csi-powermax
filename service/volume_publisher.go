@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/dell/csi-powermax/v2/pkg/file"
@@ -169,18 +170,45 @@ func (p *u4p104VolumePublisher) Publish(ctx context.Context, req *csi.Controller
 		}
 	}
 
-	// Get host details for port group selection
-	host, err := p.legacyClient.GetHostByID(ctx, symID, hostID)
-	if err != nil {
-		log.Errorf("10.4 ControllerPublishVolume: Failed to fetch host details for %s on %s: %s", hostID, symID, err.Error())
-		return nil, status.Errorf(codes.NotFound, "Failed to fetch host details for %s on %s: %s", hostID, symID, err.Error())
-	}
+	// Check if the MaskingView already exists
+	existingMV, mvErr := p.legacyClient.GetMaskingViewByID(ctx, symID, tgtMaskingViewID)
+	var portGroupID string
+	if mvErr == nil && existingMV != nil {
+		// MaskingView exists — validate Host and SG match before proceeding.
+		// This mirrors the legacy check in storage_group_svc.go:addVolumesToSGMV.
+		// If they diverge (e.g. node rename, transport flip, prefix change) the
+		// atomic PublishMaskingViews call would fail anyway; returning a clear error
+		// here avoids that unnecessary round-trip and matches legacy behaviour.
+		// vSphere MVs carry the host via HostGroupID instead of HostID, so check both.
+		hostMatch := strings.EqualFold(existingMV.HostID, hostID) || strings.EqualFold(existingMV.HostGroupID, hostID)
+		sgMatch := strings.EqualFold(existingMV.StorageGroupID, tgtStorageGroupID)
+		if !hostMatch || !sgMatch {
+			errormsg := fmt.Sprintf("10.4 ControllerPublishVolume: Existing masking view %s with conflicting SG %s or Host %s",
+				tgtMaskingViewID, tgtStorageGroupID, hostID)
+			log.Error(errormsg)
+			return nil, status.Error(codes.Internal, errormsg)
+		}
+		// All entities are consistent — reuse the existing PortGroup to avoid
+		// modification errors (the original CSME-250 fix).
+		portGroupID = existingMV.PortGroupID
+		log.Infof("10.4 ControllerPublishVolume: Using existing PortGroup %s from MaskingView %s", portGroupID, tgtMaskingViewID)
+	} else {
+		// MaskingView doesn't exist, select or create a port group
+		log.Debugf("10.4 ControllerPublishVolume: MaskingView %s not found, will select/create port group", tgtMaskingViewID)
 
-	// Select or create the port group
-	portGroupID, err := p.s.SelectOrCreatePortGroup(ctx, symID, host, p.legacyClient)
-	if err != nil {
-		log.Errorf("10.4 ControllerPublishVolume: Failed to select/create port group for host %s on %s: %s", hostID, symID, err.Error())
-		return nil, status.Errorf(codes.Internal, "Failed to select/create port group for host %s on %s: %s", hostID, symID, err.Error())
+		// Get host details for port group selection
+		host, err := p.legacyClient.GetHostByID(ctx, symID, hostID)
+		if err != nil {
+			log.Errorf("10.4 ControllerPublishVolume: Failed to fetch host details for %s on %s: %s", hostID, symID, err.Error())
+			return nil, status.Errorf(codes.NotFound, "Failed to fetch host details for %s on %s: %s", hostID, symID, err.Error())
+		}
+
+		// Select or create the port group
+		portGroupID, err = p.s.SelectOrCreatePortGroup(ctx, symID, host, p.legacyClient)
+		if err != nil {
+			log.Errorf("10.4 ControllerPublishVolume: Failed to select/create port group for host %s on %s: %s", hostID, symID, err.Error())
+			return nil, status.Errorf(codes.Internal, "Failed to select/create port group for host %s on %s: %s", hostID, symID, err.Error())
+		}
 	}
 
 	publishContext := make(map[string]string)

@@ -49,6 +49,7 @@ type RevProxy interface {
 	ServeReverseProxy(res http.ResponseWriter, req *http.Request)
 	UpdateConfig(proxyConfig config.ProxyConfig) error
 	GetRouter() http.Handler
+	SetAuthToken(token string)
 }
 
 // ServerOpts - Proxy server configuration
@@ -127,10 +128,69 @@ func (s *Server) Config() *config.ProxyConfig {
 	return s.config
 }
 
+// isSidecarMode detects if running as sidecar by checking multiple indicators
+func isSidecarMode() bool {
+	// Method 1: Check the DeployAsSidecar environment variable set by the operator
+	// In sidecar mode, the operator sets DeployAsSidecar=true
+	deployAsSidecar := getEnv("DeployAsSidecar", "") // No default for more accurate detection
+
+	// Method 2: Check if we're running in the same pod as CSI driver containers
+	// by checking for CSI driver environment variables or container presence
+
+	// Check for CSI driver specific environment variables that indicate sidecar mode
+	csiDriverEnvVars := []string{
+		"X_CSI_POWERMAX_ENDPOINT",
+		"X_CSI_POWERMAX_USER",
+		"X_CSI_POWERMAX_PASSWORD",
+		"X_CSI_POWERMAX_NODENAME",
+		"X_CSI_POWERMAX_PORTGROUPS",
+	}
+
+	hasCSIEnvVars := false
+	for _, envVar := range csiDriverEnvVars {
+		if getEnv(envVar, "") != "" {
+			hasCSIEnvVars = true
+			break
+		}
+	}
+
+	// Method 3: Check pod name and namespace patterns
+	podName := getEnv("POD_NAME", "")
+
+	// CSI driver pods typically have specific naming patterns
+	isCSIDriverPod := strings.Contains(podName, "controller") ||
+		strings.Contains(podName, "node") ||
+		strings.Contains(podName, "csi-")
+
+	// Debug logging to understand the mode detection
+	log.Infof("DeployAsSidecar environment variable: '%s'", deployAsSidecar)
+	log.Infof("Has CSI driver environment variables: %t", hasCSIEnvVars)
+	log.Infof("Pod name: '%s', Is CSI driver pod: %t", podName, isCSIDriverPod)
+
+	// Determine sidecar mode based on multiple indicators
+	isSidecar := false
+
+	// Primary check: DeployAsSidecar environment variable explicitly set
+	if deployAsSidecar != "" {
+		lowerValue := strings.ToLower(strings.TrimSpace(deployAsSidecar))
+		isSidecar = lowerValue == "true" || lowerValue == "1" || lowerValue == "yes"
+		log.Infof("DeployAsSidecar explicitly set, sidecar mode: %t", isSidecar)
+	} else {
+		// Fallback check: If we have CSI driver env vars and are in a CSI driver pod
+		isSidecar = hasCSIEnvVars && isCSIDriverPod
+		log.Infof("DeployAsSidecar not set, using fallback detection, sidecar mode: %t", isSidecar)
+	}
+
+	log.Infof("Final sidecar mode determination: %t", isSidecar)
+	return isSidecar
+}
+
 // Setup sets up the server and the proxy configuration
 // this includes - reading the secret or config map, creating appropriate proxy instance
 // and setting up the signal handler channel
 func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
+	// Auth token validation is handled during loading in the proxy configuration section below
+
 	// Read the config from secret if secret provided
 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
 		log.Info("Reading config using secret")
@@ -210,6 +270,32 @@ func (s *Server) Setup(k8sUtils k8sutils.UtilsInterface) error {
 		s.Proxy = proxy
 		s.SetConfig(proxyConfig)
 		s.SigChan = make(chan os.Signal, 1)
+	}
+
+	// Load shared auth token if configured
+	// Note: Auth token is only used in standalone mode, not in sidecar mode
+	isSidecar := isSidecarMode()
+	if tokenFile := getEnv(common.EnvProxyAuthTokenFile, ""); tokenFile != "" {
+		if isSidecar {
+			log.Info("Sidecar deployment detected - auth token is not used in sidecar mode, skipping")
+			// Skip auth token loading entirely in sidecar mode
+		} else {
+			log.Info("Standalone deployment detected - loading auth token")
+			tokenBytes, err := os.ReadFile(filepath.Clean(tokenFile))
+			if err != nil {
+				log.Warnf("Proxy auth token file %s not found or not readable in standalone mode, continuing without auth token: %v", tokenFile, err)
+				// Continue deployment without auth token - don't fail
+			} else {
+				token := strings.TrimSpace(string(tokenBytes))
+				if token == "" {
+					log.Warnf("Proxy auth token file %s is empty in standalone mode, continuing without auth token", tokenFile)
+					// Continue deployment without auth token - don't fail
+				} else {
+					s.Proxy.SetAuthToken(token)
+					log.Info("Proxy auth token loaded successfully for standalone deployment")
+				}
+			}
+		}
 	}
 
 	return nil
@@ -314,7 +400,7 @@ func (s *Server) SetupConfigWatcher(k8sUtils k8sutils.UtilsInterface, v *viper.V
 }
 
 func (s *Server) configChangeConfigMap(k8sUtils k8sutils.UtilsInterface, vcm *viper.Viper) {
-	log.Infof("Received a config change event for configmap - all settings %v", vcm.AllSettings())
+	log.Infof("Received a config change event for configmap - all settings")
 	var proxyConfigMap config.ProxyConfigMap
 	err := vcm.Unmarshal(&proxyConfigMap)
 	if err != nil {
@@ -336,12 +422,12 @@ func (s *Server) configChangeConfigMap(k8sUtils k8sutils.UtilsInterface, vcm *vi
 		if err != nil {
 			log.Errorf("Error in updating the config: %s", err.Error())
 		}
-		log.Infof("Updated proxy config: %+v", proxyConfig)
+		log.Infof("Updated proxy config")
 	}
 }
 
 func (s *Server) configChangeSecret(k8sUtils k8sutils.UtilsInterface, vs *viper.Viper) {
-	log.Infof("Received a config change event for secret - all settings %v", vs.AllSettings())
+	log.Info("Received a config change event for secret")
 	var proxySecret config.ProxySecret
 	err := vs.Unmarshal(&proxySecret)
 	if err != nil {
@@ -361,7 +447,7 @@ func (s *Server) configChangeSecret(k8sUtils k8sutils.UtilsInterface, vs *viper.
 }
 
 func (s *Server) configChangeParamsConfigMap(k8sUtils k8sutils.UtilsInterface, vcmp *viper.Viper) {
-	log.Infof("Received a config change event for params configmap - all settings %v", vcmp.AllSettings())
+	log.Infof("Received a config change event for params configmap")
 	var ParamsConfigMap config.ParamsConfigMap
 	err := vcmp.Unmarshal(&ParamsConfigMap)
 	if err != nil {

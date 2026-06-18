@@ -39,6 +39,7 @@ import (
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
+	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/proxy"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/servermock"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
 	"github.com/dell/csmlog"
@@ -1355,6 +1356,332 @@ func TestK8sInitFunc(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSetup(t *testing.T) {
+	origUseSecret := os.Getenv(common.EnvReverseProxyUseSecret)
+	origTokenFile := os.Getenv(common.EnvProxyAuthTokenFile)
+	origDeployAsSidecar := os.Getenv("DeployAsSidecar")
+	defer func() {
+		os.Setenv(common.EnvReverseProxyUseSecret, origUseSecret)
+		os.Setenv(common.EnvProxyAuthTokenFile, origTokenFile)
+		os.Setenv("DeployAsSidecar", origDeployAsSidecar)
+	}()
+
+	tests := []struct {
+		name        string
+		setupFunc   func() func()
+		expectError bool
+	}{
+		{
+			name: "Setup with invalid config directory",
+			setupFunc: func() func() {
+				origUseSecret := os.Getenv(common.EnvReverseProxyUseSecret)
+				origDeployAsSidecar := os.Getenv("DeployAsSidecar")
+				os.Setenv(common.EnvReverseProxyUseSecret, "false")
+				os.Setenv("DeployAsSidecar", "false")
+				opts := ServerOpts{
+					ConfigDir:      "/nonexistent-dir",
+					ConfigFileName: "config.yaml",
+				}
+				server := &Server{Opts: opts}
+				err := server.Setup(k8smock.Init())
+				if err == nil {
+					t.Errorf("Expected error for invalid config directory")
+				}
+				return func() {
+					os.Setenv(common.EnvReverseProxyUseSecret, origUseSecret)
+					os.Setenv("DeployAsSidecar", origDeployAsSidecar)
+				}
+			},
+			expectError: false,
+		},
+		{
+			name: "Setup with secret mode but invalid secret path",
+			setupFunc: func() func() {
+				origUseSecret := os.Getenv(common.EnvReverseProxyUseSecret)
+				origSecretPath := os.Getenv(common.EnvSecretFilePath)
+				origParamsPath := os.Getenv(common.EnvPowermaxConfigPath)
+				origDeployAsSidecar := os.Getenv("DeployAsSidecar")
+				os.Setenv(common.EnvReverseProxyUseSecret, "true")
+				os.Setenv(common.EnvSecretFilePath, "/nonexistent/secret.yaml")
+				os.Setenv(common.EnvPowermaxConfigPath, "/nonexistent/params.yaml")
+				os.Setenv("DeployAsSidecar", "false")
+				opts := ServerOpts{
+					ConfigDir:      common.TempConfigDir,
+					ConfigFileName: tmpSAConfigFile,
+				}
+				server := &Server{Opts: opts}
+				err := server.Setup(k8smock.Init())
+				if err == nil {
+					t.Errorf("Expected error for invalid secret path")
+				}
+				return func() {
+					os.Setenv(common.EnvReverseProxyUseSecret, origUseSecret)
+					os.Setenv(common.EnvSecretFilePath, origSecretPath)
+					os.Setenv(common.EnvPowermaxConfigPath, origParamsPath)
+					os.Setenv("DeployAsSidecar", origDeployAsSidecar)
+				}
+			},
+			expectError: false,
+		},
+		{
+			name: "Setup with invalid params config path in secret mode",
+			setupFunc: func() func() {
+				origUseSecret := os.Getenv(common.EnvReverseProxyUseSecret)
+				origParamsPath := os.Getenv(common.EnvPowermaxConfigPath)
+				origDeployAsSidecar := os.Getenv("DeployAsSidecar")
+				os.Setenv(common.EnvReverseProxyUseSecret, "true")
+				os.Setenv(common.EnvPowermaxConfigPath, "/nonexistent/params.yaml")
+				os.Setenv("DeployAsSidecar", "false")
+				opts := ServerOpts{
+					ConfigDir:      common.TempConfigDir,
+					ConfigFileName: tmpSAConfigFile,
+				}
+				server := &Server{Opts: opts}
+				err := server.Setup(k8smock.Init())
+				// This should fail because params config path is invalid
+				if err == nil {
+					t.Errorf("Expected error for invalid params config path")
+				}
+				return func() {
+					os.Setenv(common.EnvReverseProxyUseSecret, origUseSecret)
+					os.Setenv(common.EnvPowermaxConfigPath, origParamsPath)
+					os.Setenv("DeployAsSidecar", origDeployAsSidecar)
+				}
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cleanup := tt.setupFunc()
+			defer cleanup()
+		})
+	}
+}
+
+func TestIsSidecarMode(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupFunc     func() func()
+		expectSidecar bool
+	}{
+		{
+			name: "DeployAsSidecar explicitly set to true",
+			setupFunc: func() func() {
+				origDeployAsSidecar := os.Getenv("DeployAsSidecar")
+				origPodName := os.Getenv("POD_NAME")
+				origEndpoint := os.Getenv("X_CSI_POWERMAX_ENDPOINT")
+				os.Setenv("DeployAsSidecar", "true")
+				os.Unsetenv("POD_NAME")
+				os.Unsetenv("X_CSI_POWERMAX_ENDPOINT")
+				return func() {
+					os.Setenv("DeployAsSidecar", origDeployAsSidecar)
+					os.Setenv("POD_NAME", origPodName)
+					os.Setenv("X_CSI_POWERMAX_ENDPOINT", origEndpoint)
+				}
+			},
+			expectSidecar: true,
+		},
+		{
+			name: "DeployAsSidecar explicitly set to false",
+			setupFunc: func() func() {
+				origDeployAsSidecar := os.Getenv("DeployAsSidecar")
+				origPodName := os.Getenv("POD_NAME")
+				origEndpoint := os.Getenv("X_CSI_POWERMAX_ENDPOINT")
+				os.Setenv("DeployAsSidecar", "false")
+				os.Unsetenv("POD_NAME")
+				os.Unsetenv("X_CSI_POWERMAX_ENDPOINT")
+				return func() {
+					os.Setenv("DeployAsSidecar", origDeployAsSidecar)
+					os.Setenv("POD_NAME", origPodName)
+					os.Setenv("X_CSI_POWERMAX_ENDPOINT", origEndpoint)
+				}
+			},
+			expectSidecar: false,
+		},
+		{
+			name: "DeployAsSidecar set to 1",
+			setupFunc: func() func() {
+				origDeployAsSidecar := os.Getenv("DeployAsSidecar")
+				origPodName := os.Getenv("POD_NAME")
+				origEndpoint := os.Getenv("X_CSI_POWERMAX_ENDPOINT")
+				os.Setenv("DeployAsSidecar", "1")
+				os.Unsetenv("POD_NAME")
+				os.Unsetenv("X_CSI_POWERMAX_ENDPOINT")
+				return func() {
+					os.Setenv("DeployAsSidecar", origDeployAsSidecar)
+					os.Setenv("POD_NAME", origPodName)
+					os.Setenv("X_CSI_POWERMAX_ENDPOINT", origEndpoint)
+				}
+			},
+			expectSidecar: true,
+		},
+		{
+			name: "DeployAsSidecar set to yes",
+			setupFunc: func() func() {
+				origDeployAsSidecar := os.Getenv("DeployAsSidecar")
+				origPodName := os.Getenv("POD_NAME")
+				origEndpoint := os.Getenv("X_CSI_POWERMAX_ENDPOINT")
+				os.Setenv("DeployAsSidecar", "yes")
+				os.Unsetenv("POD_NAME")
+				os.Unsetenv("X_CSI_POWERMAX_ENDPOINT")
+				return func() {
+					os.Setenv("DeployAsSidecar", origDeployAsSidecar)
+					os.Setenv("POD_NAME", origPodName)
+					os.Setenv("X_CSI_POWERMAX_ENDPOINT", origEndpoint)
+				}
+			},
+			expectSidecar: true,
+		},
+		{
+			name: "DeployAsSidecar not set, but CSI env vars present and pod name indicates CSI driver",
+			setupFunc: func() func() {
+				origDeployAsSidecar := os.Getenv("DeployAsSidecar")
+				origPodName := os.Getenv("POD_NAME")
+				origEndpoint := os.Getenv("X_CSI_POWERMAX_ENDPOINT")
+				os.Unsetenv("DeployAsSidecar")
+				os.Setenv("POD_NAME", "csi-powermax-controller-abc123")
+				os.Setenv("X_CSI_POWERMAX_ENDPOINT", "https://unisphere.example.com")
+				return func() {
+					os.Setenv("DeployAsSidecar", origDeployAsSidecar)
+					os.Setenv("POD_NAME", origPodName)
+					os.Setenv("X_CSI_POWERMAX_ENDPOINT", origEndpoint)
+				}
+			},
+			expectSidecar: true,
+		},
+		{
+			name: "DeployAsSidecar not set, CSI env vars present but pod name does not indicate CSI driver",
+			setupFunc: func() func() {
+				origDeployAsSidecar := os.Getenv("DeployAsSidecar")
+				origPodName := os.Getenv("POD_NAME")
+				origEndpoint := os.Getenv("X_CSI_POWERMAX_ENDPOINT")
+				os.Unsetenv("DeployAsSidecar")
+				os.Setenv("POD_NAME", "my-app-xyz")
+				os.Setenv("X_CSI_POWERMAX_ENDPOINT", "https://unisphere.example.com")
+				return func() {
+					os.Setenv("DeployAsSidecar", origDeployAsSidecar)
+					os.Setenv("POD_NAME", origPodName)
+					os.Setenv("X_CSI_POWERMAX_ENDPOINT", origEndpoint)
+				}
+			},
+			expectSidecar: false,
+		},
+		{
+			name: "DeployAsSidecar not set, pod name indicates CSI driver but no CSI env vars",
+			setupFunc: func() func() {
+				origDeployAsSidecar := os.Getenv("DeployAsSidecar")
+				origPodName := os.Getenv("POD_NAME")
+				origEndpoint := os.Getenv("X_CSI_POWERMAX_ENDPOINT")
+				os.Unsetenv("DeployAsSidecar")
+				os.Setenv("POD_NAME", "csi-powermax-node-abc123")
+				os.Unsetenv("X_CSI_POWERMAX_ENDPOINT")
+				return func() {
+					os.Setenv("DeployAsSidecar", origDeployAsSidecar)
+					os.Setenv("POD_NAME", origPodName)
+					os.Setenv("X_CSI_POWERMAX_ENDPOINT", origEndpoint)
+				}
+			},
+			expectSidecar: false,
+		},
+		{
+			name: "DeployAsSidecar not set, no CSI env vars or pod name",
+			setupFunc: func() func() {
+				origDeployAsSidecar := os.Getenv("DeployAsSidecar")
+				origPodName := os.Getenv("POD_NAME")
+				origEndpoint := os.Getenv("X_CSI_POWERMAX_ENDPOINT")
+				os.Unsetenv("DeployAsSidecar")
+				os.Unsetenv("POD_NAME")
+				os.Unsetenv("X_CSI_POWERMAX_ENDPOINT")
+				return func() {
+					os.Setenv("DeployAsSidecar", origDeployAsSidecar)
+					os.Setenv("POD_NAME", origPodName)
+					os.Setenv("X_CSI_POWERMAX_ENDPOINT", origEndpoint)
+				}
+			},
+			expectSidecar: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cleanup := tt.setupFunc()
+			defer cleanup()
+			result := isSidecarMode()
+			if result != tt.expectSidecar {
+				t.Errorf("isSidecarMode() = %v, want %v", result, tt.expectSidecar)
+			}
+		})
+	}
+}
+
+func TestEventHandler(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupFunc   func() func()
+		expectError bool
+	}{
+		{
+			name: "EventHandler with mounted secret enabled",
+			setupFunc: func() func() {
+				origUseSecret := os.Getenv(common.EnvReverseProxyUseSecret)
+				os.Setenv(common.EnvReverseProxyUseSecret, "true")
+				server := &Server{}
+				server.SetConfig(&config.ProxyConfig{})
+				secret := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-secret",
+						Namespace: common.DefaultNameSpace,
+					},
+				}
+				server.EventHandler(k8smock.Init(), secret)
+				return func() {
+					os.Setenv(common.EnvReverseProxyUseSecret, origUseSecret)
+				}
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cleanup := tt.setupFunc()
+			defer cleanup()
+		})
+	}
+}
+
+func TestSignalHandler(t *testing.T) {
+	server := &Server{
+		HTTPServer: &http.Server{},
+		SigChan:    make(chan os.Signal, 1),
+	}
+	server.SignalHandler(k8smock.Init())
+	// Send a signal to trigger the handler
+	time.Sleep(50 * time.Millisecond)
+	server.SigChan <- syscall.SIGHUP
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestStart(t *testing.T) {
+	proxy, err := proxy.NewProxy(config.ProxyConfig{
+		Port: "8080",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create proxy: %v", err)
+	}
+	server := &Server{
+		Port:       "8080",
+		Proxy:      proxy,
+		HTTPServer: &http.Server{},
+	}
+	// Start the server in a goroutine
+	go server.Start()
+	// Wait a bit for the server to start
+	time.Sleep(100 * time.Millisecond)
 }
 
 func TestStartServerFuncFailure(t *testing.T) {

@@ -1,7 +1,7 @@
 github.com/dell/csmlog v1.1.0 h1:M2pi9a/xTI2FtQNruOoCs2LPACsdJIqPmtUYIH3Y2cI=
 github.com/dell/csmlog v1.1.0/go.mod h1:+I49NJrSPD8DhS7PY37vfIwM0lIHAvGm22zRoMG2ygU=
-github.com/dell/gopowermax/v2 v2.13.0 h1:bsEUfKyEeLCFksZ86I1kJJNmSEELzB8lZi9j0qyT6jk=
-github.com/dell/gopowermax/v2 v2.13.0/go.mod h1:F2DSQ9MlqryFRu9tmX/p1V4bw2ZBZbRhEa/kut+Qfg8=
+github.com/dell/gopowermax/v2 v2.13.1 h1:CXPXrTKFjgP0/HVR6zrd/K5UBKJAqos9buNNM2m/E2E=
+github.com/dell/gopowermax/v2 v2.13.1/go.mod h1:F2DSQ9MlqryFRu9tmX/p1V4bw2ZBZbRhEa/kut+Qfg8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=

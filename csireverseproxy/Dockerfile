@@ -15,7 +15,7 @@
 ############################
 ARG GOIMAGE
 ARG BASEIMAGE
-ARG VERSION="2.16.0"
+ARG VERSION="2.16.1"
 
 FROM $GOIMAGE as builder
 

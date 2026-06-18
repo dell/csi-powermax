@@ -197,4 +197,9 @@ const (
 
 	// EnvSpaceReclamationTimeout is the timeout for each reclamation operation
 	EnvSpaceReclamationTimeout = "X_CSI_SPACE_RECLAMATION_TIMEOUT"
+
+	// EnvProxyAuthTokenFile is the path to a file containing a shared auth token
+	// used for authenticating requests between the CSI driver and the reverse proxy.
+	// Both driver and proxy must mount the same K8s Secret.
+	EnvProxyAuthTokenFile = "X_CSI_REVPROXY_AUTH_TOKEN_FILE" // #nosec G101
 )

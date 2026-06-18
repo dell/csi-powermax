@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -56,8 +57,10 @@ import (
 
 // Constants for the service
 const (
-	Name                       = "csi-powermax.dellemc.com"         // Name is the name of the CSI plug-in.
-	ApplicationName            = "CSI Driver for Dell EMC PowerMax" // ApplicationName is the name used to register with Powermax REST APIs
+	Name            = "csi-powermax.dellemc.com"         // Name is the name of the CSI plug-in.
+	ApplicationName = "CSI Driver for Dell EMC PowerMax" // ApplicationName is the name used to register with Powermax REST APIs
+	// ProxyAuthTokenHeader is the HTTP header for shared auth token
+	ProxyAuthTokenHeader       = "X-Proxy-Auth-Token" // #nosec G101 -- header name, not a credential
 	defaultPrivDir             = "/dev/disk/csi-powermax"
 	defaultLockCleanupDuration = 4
 	csiPrefix                  = "csi-"
@@ -215,6 +218,7 @@ type service struct {
 	useNVMeTCP                bool
 	iscsiTargets              map[string][]string
 	nvmeTargets               *sync.Map
+	authToken                 string // shared auth token for reverse proxy authentication
 
 	// Timeout for storage pool cache
 	storagePoolCacheDuration time.Duration
@@ -568,6 +572,24 @@ func (s *service) BeforeServe(
 
 	if tlsCertDir, ok := csictx.LookupEnv(ctx, EnvTLSCertDirName); ok {
 		opts.TLSCertDir = tlsCertDir
+	}
+
+	// Load shared auth token if configured
+	if tokenFile, ok := csictx.LookupEnv(ctx, EnvProxyAuthTokenFile); ok {
+		tokenBytes, err := os.ReadFile(filepath.Clean(tokenFile))
+		if err != nil {
+			log.Warnf("Proxy auth token file %s not found or not readable, continuing without auth token: %v", tokenFile, err)
+			// Continue deployment without auth token - don't fail
+		} else {
+			token := strings.TrimSpace(string(tokenBytes))
+			if token == "" {
+				log.Warnf("Proxy auth token file %s is empty, continuing without auth token", tokenFile)
+				// Continue deployment without auth token - don't fail
+			} else {
+				s.authToken = token
+				log.Info("Proxy auth token loaded successfully")
+			}
+		}
 	}
 
 	opts.TransportProtocol = s.getTransportProtocolFromEnv()
@@ -929,6 +951,14 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 			return status.Errorf(codes.FailedPrecondition,
 				"unable to create PowerMax client: %s", err.Error())
 		}
+		// Set the proxy auth token header if configured, so all requests to the
+		// reverse proxy include the shared auth token for authentication
+		if s.authToken != "" {
+			headers := make(http.Header)
+			headers.Set(ProxyAuthTokenHeader, s.authToken)
+			c.SetCustomHTTPHeaders(headers)
+			log.Info("Proxy auth token header set on PowerMax client")
+		}
 		s.adminClient = c
 
 		for i := 0; i < maxAuthenticateRetryCount; i++ {
@@ -956,6 +986,12 @@ func (s *service) createPowerMaxClients(ctx context.Context) error {
 			log.Warnf("unable to create 10.4 PowerMax client: %s, will use main client", err.Error())
 			s.adminClient104 = s.adminClient
 		} else {
+			// Set the proxy auth token header on the 10.4 client as well
+			if s.authToken != "" {
+				headers := make(http.Header)
+				headers.Set(ProxyAuthTokenHeader, s.authToken)
+				c104.SetCustomHTTPHeaders(headers)
+			}
 			for i := 0; i < maxAuthenticateRetryCount; i++ {
 				err = c104.Authenticate(ctx, &pmax.ConfigConnect{
 					Endpoint: endPoint,

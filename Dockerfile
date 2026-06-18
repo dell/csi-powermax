@@ -12,7 +12,7 @@
 #
 ARG GOIMAGE
 ARG BASEIMAGE
-ARG VERSION="2.17.0"
+ARG VERSION="2.17.1"
 
 # Stage to build the driver
 FROM $GOIMAGE as builder
@@ -35,7 +35,7 @@ LABEL vendor="Dell Technologies" \
     name="csi-powermax" \
     summary="CSI Driver for Dell EMC PowerMax" \
     description="CSI Driver for provisioning persistent storage from Dell EMC PowerMax" \
-    release="1.17.0" \
+    release="1.17.1" \
     version=$VERSION \
     license="Apache-2.0"
 COPY ./licenses /licenses
