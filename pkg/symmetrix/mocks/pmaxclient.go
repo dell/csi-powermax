@@ -712,6 +712,20 @@ func (mr *MockPmaxClientMockRecorder) GetCreateVolInSGPayload(arg0, arg1, arg2, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCreateVolInSGPayload", reflect.TypeOf((*MockPmaxClient)(nil).GetCreateVolInSGPayload), varargs...)
 }
 
+// GetCustomHTTPHeaders mocks base method.
+func (m *MockPmaxClient) GetCustomHTTPHeaders() http.Header {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCustomHTTPHeaders")
+	ret0, _ := ret[0].(http.Header)
+	return ret0
+}
+
+// GetCustomHTTPHeaders indicates an expected call of GetCustomHTTPHeaders.
+func (mr *MockPmaxClientMockRecorder) GetCustomHTTPHeaders() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCustomHTTPHeaders", reflect.TypeOf((*MockPmaxClient)(nil).GetCustomHTTPHeaders))
+}
+
 // GetDirectorIDList mocks base method.
 func (m *MockPmaxClient) GetDirectorIDList(arg0 context.Context, arg1 string) (*v100.DirectorIDList, error) {
 	m.ctrl.T.Helper()
@@ -816,44 +830,6 @@ func (mr *MockPmaxClientMockRecorder) GetHTTPClient() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHTTPClient", reflect.TypeOf((*MockPmaxClient)(nil).GetHTTPClient))
 }
 
-// GetCustomHTTPHeaders mocks base method.
-func (m *MockPmaxClient) GetCustomHTTPHeaders() http.Header {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetCustomHTTPHeaders")
-	ret0, _ := ret[0].(http.Header)
-	return ret0
-}
-
-// GetCustomHTTPHeaders indicates an expected call of GetCustomHTTPHeaders.
-func (mr *MockPmaxClientMockRecorder) GetCustomHTTPHeaders() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCustomHTTPHeaders", reflect.TypeOf((*MockPmaxClient)(nil).GetCustomHTTPHeaders))
-}
-
-// SetCustomHTTPHeaders mocks base method.
-func (m *MockPmaxClient) SetCustomHTTPHeaders(arg0 http.Header) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetCustomHTTPHeaders", arg0)
-}
-
-// SetCustomHTTPHeaders indicates an expected call of SetCustomHTTPHeaders.
-func (mr *MockPmaxClientMockRecorder) SetCustomHTTPHeaders(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetCustomHTTPHeaders", reflect.TypeOf((*MockPmaxClient)(nil).SetCustomHTTPHeaders), arg0)
-}
-
-// SetToken mocks base method.
-func (m *MockPmaxClient) SetToken(arg0 string) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetToken", arg0)
-}
-
-// SetToken indicates an expected call of SetToken.
-func (mr *MockPmaxClientMockRecorder) SetToken(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetToken", reflect.TypeOf((*MockPmaxClient)(nil).SetToken), arg0)
-}
-
 // GetHostByID mocks base method.
 func (m *MockPmaxClient) GetHostByID(arg0 context.Context, arg1, arg2 string) (*v100.Host, error) {
 	m.ctrl.T.Helper()
@@ -914,21 +890,6 @@ func (mr *MockPmaxClientMockRecorder) GetHostList(arg0, arg1 interface{}) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHostList", reflect.TypeOf((*MockPmaxClient)(nil).GetHostList), arg0, arg1)
 }
 
-// GetISCSITargets mocks base method.
-func (m *MockPmaxClient) GetISCSITargets(arg0 context.Context, arg1 string) ([]pmax.ISCSITarget, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetISCSITargets", arg0, arg1)
-	ret0, _ := ret[0].([]pmax.ISCSITarget)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetISCSITargets indicates an expected call of GetISCSITargets.
-func (mr *MockPmaxClientMockRecorder) GetISCSITargets(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetISCSITargets", reflect.TypeOf((*MockPmaxClient)(nil).GetISCSITargets), arg0, arg1)
-}
-
 // GetISCSIEndpoints mocks base method.
 func (m *MockPmaxClient) GetISCSIEndpoints(arg0 context.Context, arg1 string) ([]pmax.ISCSITarget, error) {
 	m.ctrl.T.Helper()
@@ -942,6 +903,21 @@ func (m *MockPmaxClient) GetISCSIEndpoints(arg0 context.Context, arg1 string) ([
 func (mr *MockPmaxClientMockRecorder) GetISCSIEndpoints(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetISCSIEndpoints", reflect.TypeOf((*MockPmaxClient)(nil).GetISCSIEndpoints), arg0, arg1)
+}
+
+// GetISCSITargets mocks base method.
+func (m *MockPmaxClient) GetISCSITargets(arg0 context.Context, arg1 string) ([]pmax.ISCSITarget, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetISCSITargets", arg0, arg1)
+	ret0, _ := ret[0].([]pmax.ISCSITarget)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetISCSITargets indicates an expected call of GetISCSITargets.
+func (mr *MockPmaxClientMockRecorder) GetISCSITargets(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetISCSITargets", reflect.TypeOf((*MockPmaxClient)(nil).GetISCSITargets), arg0, arg1)
 }
 
 // GetInitiatorByID mocks base method.
@@ -1574,6 +1550,21 @@ func (mr *MockPmaxClientMockRecorder) GetStorageGroupMetrics(arg0, arg1, arg2, a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStorageGroupMetrics", reflect.TypeOf((*MockPmaxClient)(nil).GetStorageGroupMetrics), arg0, arg1, arg2, arg3, arg4, arg5)
 }
 
+// GetStorageGroupMetricsBulk mocks base method.
+func (m *MockPmaxClient) GetStorageGroupMetricsBulk(arg0 context.Context, arg1 string) (*v100.StorageGroupPerfCategoryResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetStorageGroupMetricsBulk", arg0, arg1)
+	ret0, _ := ret[0].(*v100.StorageGroupPerfCategoryResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetStorageGroupMetricsBulk indicates an expected call of GetStorageGroupMetricsBulk.
+func (mr *MockPmaxClientMockRecorder) GetStorageGroupMetricsBulk(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStorageGroupMetricsBulk", reflect.TypeOf((*MockPmaxClient)(nil).GetStorageGroupMetricsBulk), arg0, arg1)
+}
+
 // GetStorageGroupMigration mocks base method.
 func (m *MockPmaxClient) GetStorageGroupMigration(arg0 context.Context, arg1 string) (*v100.MigrationStorageGroups, error) {
 	m.ctrl.T.Helper()
@@ -1913,7 +1904,13 @@ func (m *MockPmaxClient) GetVolumesByIdentifier(arg0 context.Context, arg1, arg2
 	return ret0, ret1
 }
 
-// GetVolumesByIdentifier mocks base method.
+// GetVolumesByIdentifier indicates an expected call of GetVolumesByIdentifier.
+func (mr *MockPmaxClientMockRecorder) GetVolumesByIdentifier(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumesByIdentifier", reflect.TypeOf((*MockPmaxClient)(nil).GetVolumesByIdentifier), arg0, arg1, arg2)
+}
+
+// GetVolumesByIdentifierMatch mocks base method.
 func (m *MockPmaxClient) GetVolumesByIdentifierMatch(arg0 context.Context, arg1, arg2 string) (*v100.Volumev1, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetVolumesByIdentifierMatch", arg0, arg1, arg2)
@@ -1922,16 +1919,25 @@ func (m *MockPmaxClient) GetVolumesByIdentifierMatch(arg0 context.Context, arg1,
 	return ret0, ret1
 }
 
-// GetVolumesByIdentifier indicates an expected call of GetVolumesByIdentifier.
-func (mr *MockPmaxClientMockRecorder) GetVolumesByIdentifier(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumesByIdentifier", reflect.TypeOf((*MockPmaxClient)(nil).GetVolumesByIdentifier), arg0, arg1, arg2)
-}
-
 // GetVolumesByIdentifierMatch indicates an expected call of GetVolumesByIdentifierMatch.
 func (mr *MockPmaxClientMockRecorder) GetVolumesByIdentifierMatch(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumesByIdentifierMatch", reflect.TypeOf((*MockPmaxClient)(nil).GetVolumesByIdentifierMatch), arg0, arg1, arg2)
+}
+
+// GetVolumesCapacityBulk mocks base method.
+func (m *MockPmaxClient) GetVolumesCapacityBulk(arg0 context.Context, arg1 string) (*v100.Volumev1, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVolumesCapacityBulk", arg0, arg1)
+	ret0, _ := ret[0].(*v100.Volumev1)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVolumesCapacityBulk indicates an expected call of GetVolumesCapacityBulk.
+func (mr *MockPmaxClientMockRecorder) GetVolumesCapacityBulk(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumesCapacityBulk", reflect.TypeOf((*MockPmaxClient)(nil).GetVolumesCapacityBulk), arg0, arg1)
 }
 
 // GetVolumesInStorageGroupIterator mocks base method.
@@ -2281,6 +2287,30 @@ func (m *MockPmaxClient) SetAllowedArrays(arg0 []string) error {
 func (mr *MockPmaxClientMockRecorder) SetAllowedArrays(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAllowedArrays", reflect.TypeOf((*MockPmaxClient)(nil).SetAllowedArrays), arg0)
+}
+
+// SetCustomHTTPHeaders mocks base method.
+func (m *MockPmaxClient) SetCustomHTTPHeaders(arg0 http.Header) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetCustomHTTPHeaders", arg0)
+}
+
+// SetCustomHTTPHeaders indicates an expected call of SetCustomHTTPHeaders.
+func (mr *MockPmaxClientMockRecorder) SetCustomHTTPHeaders(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetCustomHTTPHeaders", reflect.TypeOf((*MockPmaxClient)(nil).SetCustomHTTPHeaders), arg0)
+}
+
+// SetToken mocks base method.
+func (m *MockPmaxClient) SetToken(arg0 string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetToken", arg0)
+}
+
+// SetToken indicates an expected call of SetToken.
+func (mr *MockPmaxClientMockRecorder) SetToken(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetToken", reflect.TypeOf((*MockPmaxClient)(nil).SetToken), arg0)
 }
 
 // UpdateHostFlags mocks base method.

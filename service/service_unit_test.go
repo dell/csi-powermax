@@ -59,6 +59,20 @@ var (
 	debugUnitTest    = false
 )
 
+func init() {
+	// Initialize the global service instance for testing
+	s = service{
+		opts: Opts{
+			PodmonPort: ":8083",
+		},
+		loggedInArrays:     map[string]bool{},
+		loggedInNVMeArrays: map[string]bool{},
+		nvmeTargets:        new(sync.Map),
+		probeStatus:        new(sync.Map),
+		k8sUtils:           k8smock.Init(),
+	}
+}
+
 var (
 	counters = [60]int{}
 	testwg   sync.WaitGroup

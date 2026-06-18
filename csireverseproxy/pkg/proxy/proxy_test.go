@@ -1173,8 +1173,8 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 				}
 			})),
 			expect: &httptest.ResponseRecorder{
-				Code: http.StatusInternalServerError,
-				Body: bytes.NewBuffer([]byte(`failed to find array id in the configuration`)),
+				Code: http.StatusUnauthorized,
+				Body: bytes.NewBuffer([]byte(`unauthorized for this array`)),
 			},
 		},
 		{
@@ -1395,8 +1395,8 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 			},
 			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
 			expect: &httptest.ResponseRecorder{
-				Code: http.StatusInternalServerError,
-				Body: bytes.NewBuffer([]byte(`failed to find array id in the configuration`)),
+				Code: http.StatusUnauthorized,
+				Body: bytes.NewBuffer([]byte(`unauthorized for this array`)),
 			},
 		},
 		{

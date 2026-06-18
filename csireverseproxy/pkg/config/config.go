@@ -820,12 +820,11 @@ func NewProxyConfig(configMap *ProxyConfigMap, k8sUtils k8sutils.UtilsInterface)
 func (c *ProxyConfigMap) CustomUnmarshal(vcm *viper.Viper) error {
 	settings := vcm.AllSettings()
 
-	log.Infof("viper all settings: %+v\n", vcm.AllSettings())
 	// Retrieve all settings as a map
 	// Custom handling for URL fields before unmarshaling
 	for i, managementServer := range vcm.Get("config.managementservers").([]interface{}) {
 		serverMap := managementServer.(map[string]interface{})
-		log.Infof("serverMap: %+v", serverMap)
+		log.Infof("serverMap:")
 		// Check if the "url" field exists and is a string
 		if urlStr, ok := serverMap["url"].(string); ok {
 			parsedURL, err := url.Parse(urlStr)
