@@ -20,15 +20,47 @@ package service
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/dell/csmlog"
 	"github.com/gorilla/mux"
 )
+
+// podmonAuthMiddleware returns a middleware that validates Bearer token authentication
+// for the podmon API endpoints. If the token is empty, authentication is skipped
+// for backward compatibility with deployments that have not yet configured a token.
+func podmonAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := PodmonAPIToken
+		if token == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "missing authorization header", http.StatusUnauthorized)
+			return
+		}
+		const bearerPrefix = "Bearer "
+		// RFC 6750: the "Bearer" scheme is case-insensitive
+		if !strings.HasPrefix(strings.ToLower(authHeader), strings.ToLower(bearerPrefix)) {
+			http.Error(w, "invalid authorization header format", http.StatusUnauthorized)
+			return
+		}
+		provided := strings.TrimSpace(authHeader[len(bearerPrefix):])
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			http.Error(w, "invalid token", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func (s *service) newProbeStatus() {
 	s.probeStatusMutex.Lock()
@@ -38,9 +70,8 @@ func (s *service) newProbeStatus() {
 
 // startAPIService reads nodes to array status periodically
 func (s *service) startAPIService(ctx context.Context) {
-	log := log.WithContext(ctx)
 	if !s.opts.IsPodmonEnabled {
-		log.Info("podmon is not enabled")
+		csmlog.WithContext(ctx).Info("podmon is not enabled")
 		return
 	}
 	s.SetPollingFrequency(ctx)
@@ -50,14 +81,14 @@ func (s *service) startAPIService(ctx context.Context) {
 
 // apiRouter serves http requests
 func (s *service) apiRouter(_ context.Context) {
-	log := csmlog.GetLogger()
-	log.Infof("starting http server on port %s", s.opts.PodmonPort)
+	csmlog.Infof("starting http server on port %s", s.opts.PodmonPort)
 	// create a new mux router
 	router := mux.NewRouter()
 	// route to connectivity status
 	// connectivityStatus is the handlers
 	router.HandleFunc(ArrayStatus, s.connectivityStatus).Methods("GET")
 	router.HandleFunc(ArrayStatus+"/"+"{symID}", s.getArrayConnectivityStatus).Methods("GET")
+	router.Use(podmonAuthMiddleware)
 	// start http server to serve requests
 	server := &http.Server{
 		Addr:         s.opts.PodmonPort,
@@ -67,37 +98,37 @@ func (s *service) apiRouter(_ context.Context) {
 	}
 	err := server.ListenAndServe()
 	if err != nil {
-		log.Errorf("unable to start http server to serve status requests due to %s", err)
+		csmlog.Errorf("unable to start http server to serve status requests due to %s", err)
 	}
-	log.Infof("started http server to serve status requests at %s", s.opts.PodmonPort)
+	csmlog.Infof("started http server to serve status requests at %s", s.opts.PodmonPort)
 }
 
 // connectivityStatus handler returns array connectivity status
 func (s *service) connectivityStatus(w http.ResponseWriter, _ *http.Request) {
-	log.Infof("connectivityStatus called, status is %v \n", s.probeStatus)
+	csmlog.Infof("connectivityStatus called, status is %v \n", s.probeStatus)
 	// w.Header().Set("Content-Type", "application/json")
 	if s.probeStatus == nil {
-		log.Errorf("error probeStatus map in cache is empty")
+		csmlog.Errorf("error probeStatus map in cache is empty")
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
 		return
 	}
 
 	// convert struct to JSON
-	log.Debugf("ProbeStatus fetched from the cache has %+v", s.probeStatus)
+	csmlog.Debugf("ProbeStatus fetched from the cache has %+v", s.probeStatus)
 
 	jsonResponse, err := MarshalSyncMapToJSON(s.probeStatus)
 	if err != nil {
-		log.Errorf("error %s during marshaling to json", err)
+		csmlog.Errorf("error %s during marshaling to json", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
 		return
 	}
-	log.Info("sending connectivityStatus for all arrays ")
+	csmlog.Info("sending connectivityStatus for all arrays ")
 	w.Header().Set("Content-Type", "application/json")
 	_, err = w.Write(jsonResponse) // #nosec G705
 	if err != nil {
-		log.Errorf("unable to write response %s", err)
+		csmlog.Errorf("unable to write response %s", err)
 	}
 }
 
@@ -111,11 +142,11 @@ func MarshalSyncMapToJSON(m *sync.Map) ([]byte, error) {
 			tmpMap[k.(string)] = value.(ArrayConnectivityStatus)
 			return true
 		default:
-			log.Errorf("invalid data is stored in cache")
+			csmlog.Errorf("invalid data is stored in cache")
 			return false
 		}
 	})
-	log.Debugf("map value is %+v", tmpMap)
+	csmlog.Debugf("map value is %+v", tmpMap)
 	if len(tmpMap) == 0 {
 		return nil, fmt.Errorf("invalid data is stored in cache")
 	}
@@ -125,7 +156,7 @@ func MarshalSyncMapToJSON(m *sync.Map) ([]byte, error) {
 // getArrayConnectivityStatus handler lists status of the requested array
 func (s *service) getArrayConnectivityStatus(w http.ResponseWriter, r *http.Request) {
 	symID := mux.Vars(r)["symID"]
-	log.Infof("GetArrayConnectivityStatus called for array %s \n", symID)
+	csmlog.Infof("GetArrayConnectivityStatus called for array %s \n", symID)
 	status, found := s.probeStatus.Load(symID)
 	if !found {
 		// specify status code
@@ -138,39 +169,37 @@ func (s *service) getArrayConnectivityStatus(w http.ResponseWriter, r *http.Requ
 	// convert status struct to JSON
 	jsonResponse, err := json.Marshal(status)
 	if err != nil {
-		log.Errorf("error %s during marshaling to json", err)
+		csmlog.Errorf("error %s during marshaling to json", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Set("Content-Type", "application/json")
 		return
 	}
-	log.Infof("sending response %+v for array %s \n", status, symID)
+	csmlog.Infof("sending response %+v for array %s \n", status, symID)
 	// update response
 	_, err = w.Write(jsonResponse) // #nosec G705
 	if err != nil {
-		log.Errorf("unable to write response %s", err)
+		csmlog.Errorf("unable to write response %s", err)
 	}
 }
 
 // startNodeToArrayConnectivityCheck starts connectivityTest as one goroutine for each array
 func (s *service) startNodeToArrayConnectivityCheck(ctx context.Context) {
-	log := log.WithContext(ctx)
-	log.Debug("startNodeToArrayConnectivityCheck called")
+	csmlog.WithContext(ctx).Debug("startNodeToArrayConnectivityCheck called")
 	s.probeStatus = new(sync.Map)
 	pMaxArrays := s.retryableGetSymmetrixIDList()
 	for _, arr := range pMaxArrays.SymmetrixIDs {
 		go s.testConnectivityAndUpdateStatus(ctx, arr, Timeout)
 	}
 
-	log.Infof("startNodeToArrayConnectivityCheck is running probes at pollingFrequency %d ", s.GetPollingFrequency()/2)
+	csmlog.WithContext(ctx).Infof("startNodeToArrayConnectivityCheck is running probes at pollingFrequency %d ", s.GetPollingFrequency()/2)
 }
 
 // testConnectivityAndUpdateStatus runs probe to test connectivity from node to array
 // updates probeStatus map[array]ArrayConnectivityStatus
 func (s *service) testConnectivityAndUpdateStatus(ctx context.Context, symID string, timeout time.Duration) {
-	log := log.WithContext(ctx)
 	defer func() {
 		if err := recover(); err != nil {
-			log.Errorf("panic occurred in testConnectivityAndUpdateStatus: %s", err)
+			csmlog.Errorf("panic occurred in testConnectivityAndUpdateStatus: %s", err)
 		}
 		// if panic occurs restart new goroutine
 		go s.testConnectivityAndUpdateStatus(ctx, symID, timeout)
@@ -179,37 +208,37 @@ func (s *service) testConnectivityAndUpdateStatus(ctx context.Context, symID str
 	for {
 		select {
 		case <-ctx.Done():
-			log.Infof("connectivity monitor for %s canceled", symID)
+			csmlog.WithContext(ctx).Infof("connectivity monitor for %s canceled", symID)
 			return
 		default:
 		}
 		// add timeout to context
 		timeOutCtx, cancel := context.WithTimeout(ctx, timeout)
-		log.Debugf("Running probe for array %s at time %v \n", symID, time.Now())
+		csmlog.WithContext(ctx).Debugf("Running probe for array %s at time %v \n", symID, time.Now())
 		if existingStatus, ok := s.probeStatus.Load(symID); !ok {
-			log.Debugf("%s not in probeStatus ", symID)
+			csmlog.WithContext(ctx).Debugf("%s not in probeStatus ", symID)
 		} else {
 			if status, ok = existingStatus.(ArrayConnectivityStatus); !ok {
-				log.Errorf("failed to extract ArrayConnectivityStatus for array '%s'", symID)
+				csmlog.WithContext(ctx).Errorf("failed to extract ArrayConnectivityStatus for array '%s'", symID)
 			}
 		}
 		// for the first time status will not be there.
-		log.Debugf("array %s , status is %+v", symID, status)
+		csmlog.WithContext(ctx).Debugf("array %s , status is %+v", symID, status)
 		// run nodeProbe to test connectivity
 		err := s.nodeProbeBySymID(timeOutCtx, symID)
 		if err == nil {
-			log.Debugf("Probe successful for %s", symID)
+			csmlog.WithContext(ctx).Debugf("Probe successful for %s", symID)
 			status.LastSuccess = time.Now().Unix()
 		} else {
-			log.Debugf("Probe failed for array '%s' error:'%s'", symID, err)
+			csmlog.WithContext(ctx).Debugf("Probe failed for array '%s' error:'%s'", symID, err)
 		}
 		status.LastAttempt = time.Now().Unix()
-		log.Debugf("array %s , storing status %+v", symID, status)
+		csmlog.WithContext(ctx).Debugf("array %s , storing status %+v", symID, status)
 		s.probeStatus.Store(symID, status)
 		cancel()
 		select {
 		case <-ctx.Done():
-			log.Infof("connectivity monitor for %s canceled during sleep", symID)
+			csmlog.WithContext(ctx).Infof("connectivity monitor for %s canceled during sleep", symID)
 			cancel()
 			return
 		case <-time.After(time.Second * time.Duration(s.GetPollingFrequency()/2)):

@@ -1212,6 +1212,96 @@ func TestU4P104VolumePublisher_ExistingMV_VsphereHostGroupIDMatch(t *testing.T) 
 	assert.Equal(t, effectiveWWN, resp.PublishContext[PublishContextDeviceWWN])
 }
 
+// ---------------------------------------------------------------------------
+// Tests for Metro non-uniform publish: shouldSkipRemotePublish (U-012 through U-014)
+// These test the decision logic for whether to skip remote array publishing
+// when the node's host does not exist on the remote array.
+// ---------------------------------------------------------------------------
+
+func TestShouldSkipRemotePublish_RemoteHostNotFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+	symIDRemote := "000120000002"
+	hostID := "csi-node--worker-1"
+
+	// Remote host NOT found — non-uniform Metro
+	mockClient.EXPECT().GetHostByID(gomock.Any(), symIDRemote, hostID).
+		Return(nil, errors.New("host not found")).Times(1)
+
+	svc := &service{}
+	skip, err := svc.shouldSkipRemotePublish(context.Background(), mockClient, symIDRemote, hostID)
+	assert.NoError(t, err)
+	assert.True(t, skip, "should skip remote publish when host not found on remote array")
+}
+
+func TestShouldSkipRemotePublish_RemoteHostFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+	symIDRemote := "000120000002"
+	hostID := "csi-node--worker-1"
+
+	// Remote host IS found — uniform Metro
+	mockClient.EXPECT().GetHostByID(gomock.Any(), symIDRemote, hostID).
+		Return(&types.Host{HostID: hostID, HostType: "iSCSI"}, nil).Times(1)
+
+	svc := &service{}
+	skip, err := svc.shouldSkipRemotePublish(context.Background(), mockClient, symIDRemote, hostID)
+	assert.NoError(t, err)
+	assert.False(t, skip, "should NOT skip remote publish when host exists on remote array")
+}
+
+func TestShouldSkipRemotePublish_NoRemoteSymID(t *testing.T) {
+	svc := &service{}
+	// Empty remoteSymID means non-Metro volume — nothing to skip
+	skip, err := svc.shouldSkipRemotePublish(context.Background(), nil, "", "")
+	assert.NoError(t, err)
+	assert.True(t, skip, "should skip (no-op) when there is no remote array")
+}
+
+// Tests for non-uniform Metro: shouldSkipRemotePublish used for local array check
+// In non-uniform Metro, shouldSkipRemotePublish is also called with the local symID
+// to determine whether to skip local publish (site2 node has no host on R1).
+
+func TestShouldSkipRemotePublish_LocalArrayHostNotFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+	symIDLocal := "000120000001"
+	hostID := "csi-node--worker-1"
+
+	// Local host NOT found — site2 node, should skip local publish
+	mockClient.EXPECT().GetHostByID(gomock.Any(), symIDLocal, hostID).
+		Return(nil, errors.New("host not found")).Times(1)
+
+	svc := &service{}
+	skip, err := svc.shouldSkipRemotePublish(context.Background(), mockClient, symIDLocal, hostID)
+	assert.NoError(t, err)
+	assert.True(t, skip, "should skip local publish when host not found on local array (site2 node)")
+}
+
+func TestShouldSkipRemotePublish_LocalArrayHostFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+	symIDLocal := "000120000001"
+	hostID := "csi-node--worker-1"
+
+	// Local host IS found — site1 node, should NOT skip local publish
+	mockClient.EXPECT().GetHostByID(gomock.Any(), symIDLocal, hostID).
+		Return(&types.Host{HostID: hostID, HostType: "iSCSI"}, nil).Times(1)
+
+	svc := &service{}
+	skip, err := svc.shouldSkipRemotePublish(context.Background(), mockClient, symIDLocal, hostID)
+	assert.NoError(t, err)
+	assert.False(t, skip, "should NOT skip local publish when host exists on local array (site1 node)")
+}
+
 func TestBuildPublishMaskingViewsParam(t *testing.T) {
 	param := buildPublishMaskingViewsParam("csi-mv--worker-1", "csi-sg-1", "011AB", "csi-node--worker-1", "csi-pg-1")
 

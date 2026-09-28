@@ -43,8 +43,6 @@ var localSGVolumeList map[string]*types.VolumeIterator
 // CacheReset is flag for cache
 var CacheReset bool
 
-var log = csmlog.GetLogger()
-
 const (
 	// CsiNoSrpSGPrefix to be used as filter
 	CsiNoSrpSGPrefix = "csi-no-srp-sg-"
@@ -63,7 +61,7 @@ func ResetCache() {
 		SGToRemoteVols = make(map[string][]string)
 		localSGVolumeList = make(map[string]*types.VolumeIterator)
 		CacheReset = true
-		log.Debugf("Migration cache reset done.")
+		csmlog.Debugf("Migration cache reset done.")
 	}
 }
 
@@ -78,7 +76,6 @@ func ListContains(a []string, x string) bool {
 }
 
 func getOrCreateSGMigration(ctx context.Context, symID, remoteSymID, storageGroupID string, pmaxClient pmax.Pmax) (*types.MigrationSession, error) {
-	log := log.WithContext(ctx)
 	migrationSG, err := pmaxClient.GetStorageGroupMigrationByID(ctx, symID, storageGroupID)
 	if err != nil {
 		if strings.Contains(err.Error(), "is not in a migration") || migrationSG == nil {
@@ -92,7 +89,7 @@ func getOrCreateSGMigration(ctx context.Context, symID, remoteSymID, storageGrou
 			return nil, err
 		}
 	}
-	log.Debugf("Migration session for sg %s: session: %v", storageGroupID, migrationSG)
+	csmlog.WithContext(ctx).Debugf("Migration session for sg %s: session: %v", storageGroupID, migrationSG)
 	return migrationSG, nil
 }
 
@@ -101,7 +98,6 @@ func getOrCreateSGMigration(ctx context.Context, symID, remoteSymID, storageGrou
 // 2. Create migration session for no-srp SG
 // 3. Create default SRP storage group on remote array, and maintain a list of volumes to be added.
 var StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, clusterPrefix string, pmaxClient pmax.Pmax) (bool, error) {
-	log := log.WithContext(ctx)
 	// Before running no-srp-sg migrate call, remove the volumes from srp SG
 	// for all the SG for this cluster on local sym ID
 	localSgList, err := pmaxClient.GetStorageGroupIDList(ctx, symID, CsiVolumePrefix+clusterPrefix, true)
@@ -112,7 +108,7 @@ var StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, cluste
 	for _, localSGID := range localSgList.StorageGroupIDs {
 		volumeIDList, err := pmaxClient.GetVolumesInStorageGroupIterator(ctx, symID, localSGID)
 		if err != nil {
-			log.Error("Error getting  storage group volume list: " + err.Error())
+			csmlog.Error("Error getting  storage group volume list: " + err.Error())
 			return false, status.Errorf(codes.Internal, "Error getting storage group volume list: %s", err.Error())
 		}
 		// check the no of volumes in SG localSGID, if exist continue, else ignore
@@ -123,7 +119,7 @@ var StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, cluste
 			for _, vol := range volumeIDList.ResultList.VolumeList {
 				_, err := pmaxClient.RemoveVolumesFromStorageGroup(ctx, symID, localSGID, true, vol.VolumeIDs)
 				if err != nil {
-					log.Errorf("Error removing volumes %s from protected SG %s with error: %s", vol.VolumeIDs, localSGID, err.Error())
+					csmlog.Errorf("Error removing volumes %s from protected SG %s with error: %s", vol.VolumeIDs, localSGID, err.Error())
 				}
 			}
 		}
@@ -137,14 +133,14 @@ var StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, cluste
 	for _, storageGroupID := range localSgNoSrpList.StorageGroupIDs {
 		sg, err := pmaxClient.GetStorageGroup(ctx, symID, storageGroupID)
 		if err != nil {
-			log.Errorf("Failed to fetch details of SG(%s) - Error (%s)", storageGroupID, err.Error())
+			csmlog.Errorf("Failed to fetch details of SG(%s) - Error (%s)", storageGroupID, err.Error())
 			return false, status.Errorf(codes.Internal, "Failed to fetch details of SG(%s) - Error (%s)", storageGroupID, err.Error())
 		}
 		if sg.NumOfVolumes > 0 {
 			// send migrate call to remote side for SG having volumes
 			migrationSG, err := getOrCreateSGMigration(ctx, symID, remoteSymID, storageGroupID, pmaxClient)
 			if err != nil {
-				log.Errorf("Failed to create array migration session for target array (%s) - Error (%s)", remoteSymID, err.Error())
+				csmlog.Errorf("Failed to create array migration session for target array (%s) - Error (%s)", remoteSymID, err.Error())
 				return false, status.Errorf(codes.Internal, "Failed to create array migration session for target array(%s) - Error (%s)", remoteSymID, err.Error())
 			}
 			for _, pair := range migrationSG.DevicePairs {
@@ -180,7 +176,7 @@ var StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, cluste
 			_, err = pmaxClient.CreateStorageGroup(ctx, remoteSymID, localSGID, sg.SRP,
 				sg.SLO, true, optionalPayload)
 			if err != nil {
-				log.Error("Error creating storage group on remote array: " + err.Error())
+				csmlog.Error("Error creating storage group on remote array: " + err.Error())
 				return false, status.Errorf(codes.Internal, "Error creating storage group on remote array: %s", err.Error())
 			}
 		}
@@ -202,14 +198,13 @@ var StorageGroupMigration = func(ctx context.Context, symID, remoteSymID, cluste
 // StorageGroupCommit does a "commit" on all the migration session SG
 // Returns true if not sessions found, all migration completed
 var StorageGroupCommit = func(ctx context.Context, symID, action string, pmaxClient pmax.Pmax) (bool, error) {
-	log := log.WithContext(ctx)
 	// for all the SG in saved local SG
 	mgSGList, err := pmaxClient.GetStorageGroupMigration(ctx, symID)
 	if err != nil {
 		return false, err
 	}
 	if len(mgSGList.MigratingNameList) == 0 {
-		log.Debug("No storage group in migration, all migration completed!")
+		csmlog.Debug("No storage group in migration, all migration completed!")
 		return true, nil
 	}
 	for _, id := range mgSGList.MigratingNameList {
@@ -231,19 +226,18 @@ var StorageGroupCommit = func(ctx context.Context, symID, action string, pmaxCli
 
 // AddVolumesToRemoteSG adds remote volumes to default SRP SG on remote array
 var AddVolumesToRemoteSG = func(ctx context.Context, remoteSymID string, pmaxClient pmax.Pmax) (bool, error) {
-	log := log.WithContext(ctx)
 	// add all the volumes in SGtoRemoteVols
-	log.Debugf("SGToRemoteVols: %v", SGToRemoteVols)
+	csmlog.Debugf("SGToRemoteVols: %v", SGToRemoteVols)
 	if len(SGToRemoteVols) == 0 {
 		// This could be due to driver restart, which will make the objects nil, send warning to do manual addition
-		log.Debugf("Add remote volumes to default SG manually using U4P")
+		csmlog.Debugf("Add remote volumes to default SG manually using U4P")
 		return false, nil
 	}
 	for storageGroup, remoteVols := range SGToRemoteVols {
 		if len(remoteVols) > 0 {
 			err := pmaxClient.AddVolumesToStorageGroupS(ctx, remoteSymID, storageGroup, true, remoteVols...)
 			if err != nil {
-				log.Error(fmt.Sprintf("Could not add volume in SG on R2: %s: %s", remoteSymID, err.Error()))
+				csmlog.Error(fmt.Sprintf("Could not add volume in SG on R2: %s: %s", remoteSymID, err.Error()))
 				return false, status.Errorf(codes.Internal, "Could not add volume in SG on R2: %s: %s", remoteSymID, err.Error())
 			}
 		}

@@ -28,10 +28,7 @@ type Cache interface {
 	Remove(string)
 }
 
-var (
-	_   Cache = new(cache)
-	log       = csmlog.GetLogger()
-)
+var _ Cache = new(cache)
 
 // New creates instance of timed key-value store.
 func New(name string, ttl time.Duration) Cache {
@@ -99,6 +96,6 @@ func (c *cache) cleanupCallback(key string) func() {
 		c.cmu.Lock()
 		defer c.cmu.Unlock()
 		delete(c.store, key)
-		log.Debugf("Removed %s from store: %s", key, c.name)
+		csmlog.Debugf("Removed %s from store: %s", key, c.name)
 	}
 }

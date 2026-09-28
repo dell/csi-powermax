@@ -47,14 +47,14 @@ type Device struct {
 func GetDevice(path string) (*Device, error) {
 	fi, err := os.Lstat(path)
 	if err != nil {
-		log.Error("Could not lstat path: " + path)
+		csmlog.Error("Could not lstat path: " + path)
 		return nil, err
 	}
 
 	// eval any symlinks and make sure it points to a device
 	d, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		log.Error("Could not evaluate symlinks path: " + path)
+		csmlog.Error("Could not evaluate symlinks path: " + path)
 		return nil, err
 	}
 
@@ -67,7 +67,8 @@ func GetDevice(path string) (*Device, error) {
 		dm = dm | os.ModeDevice
 	} else if dm&os.ModeDevice == 0 { // Execute only if not in unit test
 		return nil, fmt.Errorf(
-			"%s is not a block device", path)
+			"%s is not a block device", path,
+		)
 	}
 
 	dev := &Device{
@@ -75,7 +76,7 @@ func GetDevice(path string) (*Device, error) {
 		FullPath: path,
 		RealDev:  strings.Replace(d, "\\", "/", -1),
 	}
-	log.Debug(fmt.Sprintf("Device: %#v", dev))
+	csmlog.Debug(fmt.Sprintf("Device: %#v", dev))
 	return dev, nil
 }
 
@@ -155,7 +156,6 @@ func publishVolume(
 		"privateMount": privTgt,
 	}
 	ctx := context.WithValue(context.Background(), gofsutil.ContextKey("RequestID"), reqID)
-	log := log.WithContext(ctx)
 
 	// Check if device is already mounted
 	devMnts, err := getDevMounts(sysDevice)
@@ -167,7 +167,7 @@ func publishVolume(
 
 	if len(devMnts) == 0 {
 		// Device isn't mounted anywhere, do the private mount
-		log.WithFields(f).Debug("attempting mount to private area")
+		csmlog.WithFields(f).Debug("attempting mount to private area")
 
 		// Make sure private mount point exists
 		var created bool
@@ -180,7 +180,7 @@ func publishVolume(
 
 		alreadyMounted := false
 		if !created {
-			log.WithFields(f).Debug("private mount target already exists")
+			csmlog.WithFields(f).Debug("private mount target already exists")
 
 			// The place where our device is supposed to be mounted
 			// already exists, but we also know that our device is not mounted anywhere
@@ -201,7 +201,7 @@ func publishVolume(
 				// This used to fail if m.Path==privTgt, but this will not work for
 				// idempotent retries and must be avoided.
 				if m.Path == privTgt {
-					log.Debug(fmt.Sprintf("MOUNT: %#v", m))
+					csmlog.Debug(fmt.Sprintf("MOUNT: %#v", m))
 					resolvedMountDevice := evalSymlinks(m.Device)
 					if resolvedMountDevice != sysDevice.RealDev {
 						// Check if the old device still exists before hard-failing
@@ -210,9 +210,9 @@ func publishVolume(
 						if statErr != nil && os.IsNotExist(statErr) {
 							// Device doesn't exist (ENOENT) - it's a stale mount
 							// Clean it up and proceed
-							log.Infof("Detected stale mount from disconnected device %s, cleaning up", resolvedMountDevice)
+							csmlog.Infof("Detected stale mount from disconnected device %s, cleaning up", resolvedMountDevice)
 							if err := gofsutil.Unmount(ctx, privTgt); err != nil {
-								log.Warnf("Unmount of stale mount %s failed: %s", privTgt, err.Error())
+								csmlog.Warnf("Unmount of stale mount %s failed: %s", privTgt, err.Error())
 							}
 							// After cleanup, don't set alreadyMounted - let the normal mount flow proceed
 						} else {
@@ -238,7 +238,8 @@ func publishVolume(
 				return err
 			}
 			if err := handlePrivFSMount(
-				ctx, accMode, sysDevice, mntFlags, fs, privTgt); err != nil {
+				ctx, accMode, sysDevice, mntFlags, fs, privTgt,
+			); err != nil {
 				// K8S may have removed the desired mount point. Clean up the private target.
 				cleanupPrivateTarget(reqID, privTgt)
 				return err
@@ -249,10 +250,10 @@ func publishVolume(
 		// Device is already mounted. Need to ensure that it is already
 		// mounted to the expected private mount, with correct rw/ro perms
 		mounted := false
-		log.Infof("A devMnts: %#v", devMnts)
+		csmlog.Infof("A devMnts: %#v", devMnts)
 		for _, m := range devMnts {
 			if m.Path == target {
-				log.Infof("mount %#v already mounted to requested target %s", m, target)
+				csmlog.Infof("mount %#v already mounted to requested target %s", m, target)
 				mounted = true
 			}
 			if m.Path == privTgt {
@@ -262,11 +263,12 @@ func publishVolume(
 					rwo = "ro"
 				}
 				if rwo == "" || contains(m.Opts, rwo) {
-					log.WithFields(f).Debug(
-						"private mount already in place")
+					csmlog.WithFields(f).Debug(
+						"private mount already in place",
+					)
 					break
 				}
-				log.WithFields(f).Infof("mount %#v rwo %s", m, rwo)
+				csmlog.WithFields(f).Infof("mount %#v rwo %s", m, rwo)
 				return status.Error(codes.InvalidArgument,
 					"access mode conflicts with existing mounts")
 			}
@@ -290,7 +292,7 @@ func publishVolume(
 	// target path was already there, and if so is correct device and characteristics
 	if len(targetMnts) > 0 {
 		for _, m := range targetMnts {
-			log.Infof("pathMnt: %#v", m)
+			csmlog.Infof("pathMnt: %#v", m)
 			if m.Device == sysDevice.RealDev || m.Device == sysDevice.FullPath || m.Source == privTgt {
 				// volume already published to target
 				// if mount options look good, do nothing
@@ -299,12 +301,12 @@ func publishVolume(
 					rwo = "ro"
 				}
 				if rwo != "" && !contains(m.Opts, rwo) {
-					log.WithFields(f).Infof("mount %#v rwo %s", m, rwo)
+					csmlog.WithFields(f).Infof("mount %#v rwo %s", m, rwo)
 					return status.Error(codes.Internal, "volume previously published with different mount options")
 
 				}
 				// Existing mount satisfies request
-				log.WithFields(f).Info("volume already published to target")
+				csmlog.WithFields(f).Info("volume already published to target")
 				return nil
 			}
 			return status.Error(codes.AlreadyExists, "target already has a conflicting mount")
@@ -347,19 +349,18 @@ func cleanupPrivateTarget(reqID, privTgt string) {
 		"CSIRequestID": reqID,
 		"privTgt":      privTgt,
 	}
-	log := log.WithFields(fields)
-	log.Info("Cleaning up private target")
+	csmlog.WithFields(fields).Info("Cleaning up private target")
 	if privErr := gofsutil.Unmount(context.Background(), privTgt); privErr != nil {
-		log.Errorf("Error unmounting privTgt %s: %s", privTgt, privErr)
+		csmlog.WithFields(fields).Errorf("Error unmounting privTgt %s: %s", privTgt, privErr)
 	}
 	if privErr := removeWithRetry(privTgt); privErr != nil {
-		log.Errorf("Error removing privTgt %s: %s", privTgt, privErr)
+		csmlog.WithFields(fields).Errorf("Error removing privTgt %s: %s", privTgt, privErr)
 	}
 }
 
 // mountBlock bind mounts the device to the required target
 func mountBlock(device *Device, target string, mntFlags []string, singleAccess bool) error {
-	log.Infof("mountBlock called device %#v target %s mntFlags %#v", device, target, mntFlags)
+	csmlog.Infof("mountBlock called device %#v target %s mntFlags %#v", device, target, mntFlags)
 	// Check to see if already mounted
 	mnts, err := getDevMounts(device)
 	if err != nil {
@@ -367,7 +368,7 @@ func mountBlock(device *Device, target string, mntFlags []string, singleAccess b
 	}
 	for _, mnt := range mnts {
 		if mnt.Path == target {
-			log.Info("Block volume target is already mounted")
+			csmlog.Info("Block volume target is already mounted")
 			return nil
 		} else if singleAccess {
 			return status.Error(codes.InvalidArgument, "Access mode conflicts with existing mounts")
@@ -483,14 +484,14 @@ func mkfile(path string) (bool, error) {
 		if os.IsNotExist(err) {
 			file, err := os.OpenFile(path, os.O_CREATE, 0o600) // #nosec G304
 			if err != nil {
-				log.Errorf("Unable to create file: %s with error: %s", path, err.Error())
+				csmlog.Errorf("Unable to create file: %s with error: %s", path, err.Error())
 			} else {
 				file.Close() // #nosec G20
-				log.Debugf("created file: %s", path)
+				csmlog.Debugf("created file: %s", path)
 				return true, nil
 			}
 		} else {
-			log.Errorf("Unable to create file: %s  error: %s", path, err.Error())
+			csmlog.Errorf("Unable to create file: %s  error: %s", path, err.Error())
 		}
 		return false, err
 	}
@@ -507,13 +508,13 @@ func mkdir(path string) (bool, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			if err := os.Mkdir(path, 0o750); err != nil {
-				log.Errorf("Unable to create directory: %s with error: %s", path, err.Error())
+				csmlog.Errorf("Unable to create directory: %s with error: %s", path, err.Error())
 			} else {
-				log.Debugf("created directory: %s", path)
+				csmlog.Debugf("created directory: %s", path)
 				return true, nil
 			}
 		} else {
-			log.Errorf("Unable to create directory: %s  error: %s", path, err.Error())
+			csmlog.Errorf("Unable to create directory: %s  error: %s", path, err.Error())
 		}
 		return false, err
 	}
@@ -535,7 +536,6 @@ func unpublishVolume(
 	lastUnmounted := false
 
 	ctx := context.Background()
-	log := log.WithContext(ctx)
 	id := req.GetVolumeId()
 
 	target := req.GetTargetPath()
@@ -582,7 +582,7 @@ func unpublishVolume(
 	}
 
 	for _, t := range tgtMnt {
-		log.WithFields(f).Debugf("Unmounting %s", t)
+		csmlog.WithFields(f).Debugf("Unmounting %s", t)
 		if err := gofsutil.Unmount(ctx, t); err != nil {
 			return lastUnmounted, status.Errorf(codes.Internal,
 				"Error unmounting target: %s", err.Error())
@@ -590,7 +590,7 @@ func unpublishVolume(
 	}
 
 	if privMnt {
-		log.WithFields(f).Debug(fmt.Sprintf("Unmounting %s", privTgt))
+		csmlog.WithFields(f).Debug(fmt.Sprintf("Unmounting %s", privTgt))
 		if lastUnmounted, err = unmountPrivMount(ctx, sysDevice, privTgt); err != nil {
 			return lastUnmounted, status.Errorf(codes.Internal,
 				"Error unmounting private mount: %s", err.Error())
@@ -598,7 +598,7 @@ func unpublishVolume(
 	} else {
 		mnts, err := getDevMounts(sysDevice)
 		if err == nil && len(mnts) == 0 {
-			log.Info("No private mount or remaining mounts device: " + sysDevice.Name)
+			csmlog.Info("No private mount or remaining mounts device: " + sysDevice.Name)
 			lastUnmounted = true
 		}
 	}
@@ -611,7 +611,6 @@ func unmountPrivMount(
 	dev *Device,
 	target string,
 ) (bool, error) {
-	log := log.WithContext(ctx)
 	mnts, err := getDevMounts(dev)
 	if err != nil {
 		return false, err
@@ -620,10 +619,10 @@ func unmountPrivMount(
 	// Handle no private mount (which is odd because we had one to call here)
 	// It implies deleting the target mount also cleaned up the private mount
 	if len(mnts) == 0 {
-		log.Info("No private mounts for device: " + dev.RealDev)
+		csmlog.WithContext(ctx).Info("No private mounts for device: " + dev.RealDev)
 		err := removeWithRetry(target)
 		if err != nil {
-			log.Error("error removing private mount target: " + err.Error())
+			csmlog.WithContext(ctx).Error("error removing private mount target: " + err.Error())
 		}
 		return true, nil
 	}
@@ -656,7 +655,7 @@ func unmountPrivMount(
 				}
 			}
 			if hasOtherMounts {
-				log.Debugf("Detected non-private mounts while unmounting %s; skipping private mount cleanup", target)
+				csmlog.WithContext(ctx).Debugf("Detected non-private mounts while unmounting %s; skipping private mount cleanup", target)
 				break
 			}
 
@@ -672,10 +671,10 @@ func unmountPrivMount(
 								// Last retry - return error
 								return false, err
 							}
-							log.Infof("Unmount of %s failed (retry %d/%d): %s", m.Path, retry+1, maxRetries, err.Error())
+							csmlog.WithContext(ctx).Infof("Unmount of %s failed (retry %d/%d): %s", m.Path, retry+1, maxRetries, err.Error())
 						} else {
 							// Non-critical path unmount failed - log but continue
-							log.Infof("Unmount of %s: %s", m.Path, err.Error())
+							csmlog.WithContext(ctx).Infof("Unmount of %s: %s", m.Path, err.Error())
 						}
 					} else {
 						mnts[i].Path = ""
@@ -685,7 +684,7 @@ func unmountPrivMount(
 
 			// If all unmounted successfully, break out of retry loop
 			if allUnmounted {
-				log.Debugf("All mounts unmounted successfully after %d retries", retry+1)
+				csmlog.WithContext(ctx).Debugf("All mounts unmounted successfully after %d retries", retry+1)
 				break
 			}
 
@@ -695,7 +694,7 @@ func unmountPrivMount(
 				// Refresh mount table to get current state
 				mnts, err = getDevMounts(dev)
 				if err != nil {
-					log.Warnf("Failed to refresh mount table during retry: %s", err.Error())
+					csmlog.WithContext(ctx).Warnf("Failed to refresh mount table during retry: %s", err.Error())
 				}
 				// Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms (max)
 				if backoff < 800*time.Millisecond {
@@ -704,10 +703,10 @@ func unmountPrivMount(
 			}
 		}
 
-		log.Debugf("Removing directory: %s", target)
+		csmlog.WithContext(ctx).Debugf("Removing directory: %s", target)
 		err := removeWithRetry(target)
 		if err != nil {
-			log.Error("error removing private mount target: " + err.Error())
+			csmlog.WithContext(ctx).Error("error removing private mount target: " + err.Error())
 		}
 	}
 
@@ -715,7 +714,7 @@ func unmountPrivMount(
 	for _, m := range mnts {
 		if m.Path != "" {
 			lastUnmounted = false
-			log.Debug(fmt.Sprintf("remaining dev mount: %#v", m))
+			csmlog.WithContext(ctx).Debug(fmt.Sprintf("remaining dev mount: %#v", m))
 		}
 	}
 
@@ -779,7 +778,7 @@ func evalSymlinks(path string) string {
 	// eval any symlinks and make sure it points to a device
 	d, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		log.Error("Could not evaluate symlinks for path: " + path)
+		csmlog.Error("Could not evaluate symlinks for path: " + path)
 		return path
 	}
 	return d

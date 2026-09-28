@@ -169,7 +169,7 @@ func TestGetQueryMode(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			result := getQueryMode(tt.mode)
 			if result != tt.expected {
 				t.Errorf("getQueryMode(%s) = %s, want %s", tt.mode, result, tt.expected)
@@ -479,7 +479,7 @@ func TestService_GetOrCreateRDFGroup(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			s := &service{
 				opts: Opts{
 					ClusterPrefix: "CP",
@@ -501,3 +501,28 @@ func TestService_GetOrCreateRDFGroup(t *testing.T) {
 		})
 	}
 }
+
+/*
+func TestReplicationErrorPaths(t *testing.T) {
+	tests := []struct {
+		name        string
+		expectError bool
+	}{
+		{
+			name:        "RDF group error path placeholder",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(_ *testing.T) {
+			s := &service{}
+			ctx := context.Background()
+
+			_ = s
+			_ = ctx
+			_ = tt.expectError
+		})
+	}
+}
+*/

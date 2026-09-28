@@ -18,6 +18,8 @@ import (
 	"net/http"
 	"sync/atomic"
 	"time"
+
+	"github.com/dell/csmlog"
 )
 
 // Envoy is an interface for failover/failback enabled proxy clients
@@ -36,6 +38,7 @@ type Envoy interface {
 	RemoveBackupHTTPClient()
 	ConfigureHealthParams(int, int, int, time.Duration)
 	HasHealthDeteriorated() bool
+	SetRequestObserver(RequestObserver)
 }
 
 // NewEnvoy creates an envoy object which implements Envoy interface
@@ -51,27 +54,30 @@ var _ Envoy = new(envoy)
 
 // Envoy
 type envoy struct {
-	primary       *Proxy
-	backup        *Proxy
-	primaryHTTP   *http.Client
-	backupHTTP    *http.Client
-	healthMonitor ProxyHealth
-	active        int32
+	primary         *Proxy
+	backup          *Proxy
+	primaryHTTP     *http.Client
+	backupHTTP      *http.Client
+	healthMonitor   ProxyHealth
+	active          int32
+	requestObserver RequestObserver
 }
 
 func (e *envoy) updateTransport(proxy *Proxy) {
 	transport := proxy.ReverseProxy.Transport
 	proxy.ReverseProxy.Transport = &Transport{
-		RoundTripper:  transport,
-		HealthHandler: e.healthHandler,
+		RoundTripper:    transport,
+		HealthHandler:   e.healthHandler,
+		RequestObserver: e.requestObserver,
 	}
 }
 
 func (e *envoy) updateHTTPClientTransport(client *http.Client) {
 	transport := client.Transport
 	client.Transport = &Transport{
-		RoundTripper:  transport,
-		HealthHandler: e.healthHandler,
+		RoundTripper:    transport,
+		HealthHandler:   e.healthHandler,
+		RequestObserver: e.requestObserver,
 	}
 }
 
@@ -135,10 +141,10 @@ func (e *envoy) healthHandler(isSuccess bool) {
 		if e.healthMonitor.ReportFailure() {
 			if atomic.LoadInt32(&e.active) == 0 {
 				atomic.AddInt32(&e.active, 1)
-				log.Info("Switched to backup proxy")
+				csmlog.Info("Switched to backup proxy")
 			} else {
 				atomic.AddInt32(&e.active, -1)
-				log.Info("Switched back to primary proxy")
+				csmlog.Info("Switched back to primary proxy")
 			}
 		}
 	}
@@ -158,6 +164,24 @@ func (e *envoy) GetActiveHTTPClient() *http.Client {
 		return e.primaryHTTP
 	}
 	return e.backupHTTP
+}
+
+// SetRequestObserver sets the request observer for the envoy
+func (e *envoy) SetRequestObserver(observer RequestObserver) {
+	e.requestObserver = observer
+	// Update transports with the new observer
+	if e.primary != nil && e.primary.ReverseProxy != nil {
+		e.updateTransport(e.primary)
+	}
+	if e.backup != nil && e.backup.ReverseProxy != nil {
+		e.updateTransport(e.backup)
+	}
+	if e.primaryHTTP != nil {
+		e.updateHTTPClientTransport(e.primaryHTTP)
+	}
+	if e.backupHTTP != nil {
+		e.updateHTTPClientTransport(e.backupHTTP)
+	}
 }
 
 // RemoveBackupProxy removes the backup proxy client from envoy

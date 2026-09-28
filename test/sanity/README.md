@@ -36,6 +36,6 @@ The error message is: " rpc error: code = OutOfRange desc = bad capacity: size i
 
 9. A test to create a volume from an existing source volume. Same problem as 2.
 
-10. A test to expand volume fails because the returned expanded byte size is approximate size in cylinder bytes. Whereas the test expects the volume size to be same as requested size.
+10. A test to expand volume fails because the returned expanded byte size is approximate size in cylinder bytes (rounded to nearest cylinder). The test expects the volume size to be exactly the same as requested size, but PowerMax allocates storage in cylinder units (typically 520KB per cylinder), causing slight size differences. This is expected behavior for PowerMax arrays.
 
 11. A volume lifecycle test, the cleanup section of this test fails because the csi-powermax driver is getting DeleteVolume call before ControllerUnpublishVolume call, which is not a supported scenario for a published volume.

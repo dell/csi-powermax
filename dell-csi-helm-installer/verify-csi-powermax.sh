@@ -15,8 +15,8 @@
 
 # verify-csi-powermax method
 function verify-csi-powermax() {
-  verify_k8s_versions "1.34" "1.36"
-  verify_openshift_versions "4.18" "4.21"
+  verify_k8s_versions "1.35" "1.37"
+  verify_openshift_versions "4.19" "4.22"
   verify_helm_values_version "${DRIVER_VERSION}"
   verify_namespace "${NS}"
   verify_required_secrets "${RELEASE}-creds"
@@ -26,7 +26,7 @@ function verify-csi-powermax() {
   verify_snap_requirements
   verify_optional_replication_requirements
   verify_iscsi_installation
-  verify_helm_3
+  verify_helm
   verify_authorization_proxy_server
 }
 

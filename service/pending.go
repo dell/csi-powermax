@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dell/csmlog"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -76,7 +78,7 @@ func (volID volumeIDType) checkAndUpdatePendingState(ps *pendingState) error {
 	}
 	startTime := ps.pendingMap[volID]
 	if startTime.IsZero() == false || GetInducePendingError() {
-		log.Infof("volumeID %s pending %s", volID, time.Now().Sub(startTime))
+		csmlog.Infof("volumeID %s pending %s", volID, time.Now().Sub(startTime))
 		return status.Errorf(codes.Unavailable, "pending")
 	}
 	if ps.maxPending > 0 && ps.npending >= ps.maxPending || GetInduceOverloadError() {

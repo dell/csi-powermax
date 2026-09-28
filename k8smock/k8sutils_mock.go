@@ -23,6 +23,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	kubernetesFake "k8s.io/client-go/kubernetes/fake"
+	metricsv1beta1api "k8s.io/metrics/pkg/apis/metrics/v1beta1"
+	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
 var mockUtils *MockUtils
@@ -67,6 +69,16 @@ func (m *MockUtils) GetPVCForVolume(_ context.Context, _ string, _ string) (*cor
 // GetClient is mock implementation for GetClient
 func (m *MockUtils) GetClient() kubernetes.Interface {
 	return m.KubernetesClient
+}
+
+// GetMetricsClient is mock implementation for GetMetricsClient
+func (m *MockUtils) GetMetricsClient() metricsv.Interface {
+	return nil
+}
+
+// GetPodMetrics is mock implementation for GetPodMetrics
+func (m *MockUtils) GetPodMetrics(_ context.Context, _ string, _ string) (*metricsv1beta1api.PodMetrics, error) {
+	return nil, nil
 }
 
 // Added a new mocking capability to help enable mocking this dynamically
@@ -150,4 +162,33 @@ func (m *MockUtilsInterface) GetClient() kubernetes.Interface {
 func (mr *MockUtilsInterfaceMockRecorder) GetClient() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClient", reflect.TypeOf((*MockUtilsInterface)(nil).GetClient))
+}
+
+// GetMetricsClient mocks base method
+func (m *MockUtilsInterface) GetMetricsClient() metricsv.Interface {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMetricsClient")
+	ret0, _ := ret[0].(metricsv.Interface)
+	return ret0
+}
+
+// GetMetricsClient indicates an expected call of GetMetricsClient
+func (mr *MockUtilsInterfaceMockRecorder) GetMetricsClient() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMetricsClient", reflect.TypeOf((*MockUtilsInterface)(nil).GetMetricsClient))
+}
+
+// GetPodMetrics mocks base method
+func (m *MockUtilsInterface) GetPodMetrics(ctx context.Context, namespace, podName string) (*metricsv1beta1api.PodMetrics, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPodMetrics", ctx, namespace, podName)
+	ret0, _ := ret[0].(*metricsv1beta1api.PodMetrics)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPodMetrics indicates an expected call of GetPodMetrics
+func (mr *MockUtilsInterfaceMockRecorder) GetPodMetrics(ctx, namespace, podName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPodMetrics", reflect.TypeOf((*MockUtilsInterface)(nil).GetPodMetrics), ctx, namespace, podName)
 }

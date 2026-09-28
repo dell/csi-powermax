@@ -21,6 +21,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/dell/csmlog"
 )
 
 // ArrayConnectivityStatus Status of the array probe
@@ -36,39 +38,46 @@ const (
 
 // QueryArrayStatus make API call to the specified url to retrieve connection status
 func (s *service) QueryArrayStatus(ctx context.Context, url string) (bool, error) {
-	log := log.WithContext(ctx)
 	defer func() {
 		if err := recover(); err != nil {
-			log.Infof("panic occurred in queryStatus: %v", err)
+			csmlog.Infof("panic occurred in queryStatus: %v", err)
 		}
 	}()
 	client := http.Client{
 		Timeout: Timeout,
 	}
-	resp, err := client.Get(url)
-
-	log.Debugf("Received response %+v for url %s", resp, url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		log.Errorf("failed to call API %s due to %s ", url, err.Error())
+		csmlog.WithContext(ctx).Errorf("Failed to build array status request for %s: %v", url, err)
+		return false, err
+	}
+	if PodmonAPIToken != "" {
+		req.Header.Set("Authorization", "Bearer "+PodmonAPIToken)
+	}
+	resp, err := client.Do(req)
+
+	csmlog.WithContext(ctx).Debugf("Received response %+v for url %s", resp, url)
+	if err != nil {
+		csmlog.WithContext(ctx).Errorf("failed to call API %s due to %s ", url, err.Error())
 		return false, err
 	}
 	defer resp.Body.Close() // #nosec G307
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Errorf("failed to read API response due to %s ", err.Error())
+		csmlog.WithContext(ctx).Errorf("failed to read API response due to %s ", err.Error())
 		return false, err
 	}
 	if resp.StatusCode != 200 {
-		log.Errorf("Found unexpected response from the server while fetching array status %d ", resp.StatusCode)
+		csmlog.WithContext(ctx).Errorf("Found unexpected response from the server while fetching array status %d ", resp.StatusCode)
 		return false, fmt.Errorf("unexpected response from the server")
 	}
 	var statusResponse ArrayConnectivityStatus
 	err = json.Unmarshal(bodyBytes, &statusResponse)
 	if err != nil {
-		log.Errorf("unable to unmarshal and determine connectivity due to %s ", err)
+		csmlog.WithContext(ctx).Errorf("unable to unmarshal and determine connectivity due to %s ", err)
 		return false, err
 	}
-	log.Infof("API Response received is %+v\n", statusResponse)
+	csmlog.WithContext(ctx).Infof("API Response received is %+v\n", statusResponse)
 	// responseObject has last success and last attempt timestamp in Unix format
 	timeDiff := statusResponse.LastAttempt - statusResponse.LastSuccess
 	tolerance := s.SetPollingFrequency(ctx)
@@ -76,11 +85,11 @@ func (s *service) QueryArrayStatus(ctx context.Context, url string) (bool, error
 	// checking if the status response is stale and connectivity test is still running
 	// since nodeProbe is run at frequency tolerance/2, ideally below check should never be true
 	if (currTime - statusResponse.LastAttempt) > tolerance*2 {
-		log.Errorf("seems like connectivity test is not being run, current time is %d and last run was at %d", currTime, statusResponse.LastAttempt)
+		csmlog.WithContext(ctx).Errorf("seems like connectivity test is not being run, current time is %d and last run was at %d", currTime, statusResponse.LastAttempt)
 		// considering connectivity is broken
 		return false, nil
 	}
-	log.Debugf("last connectivity was  %d sec back, tolerance is %d sec", timeDiff, tolerance)
+	csmlog.WithContext(ctx).Debugf("last connectivity was  %d sec back, tolerance is %d sec", timeDiff, tolerance)
 	// give 2s leeway for tolerance check
 	if timeDiff <= tolerance+2 {
 		return true, nil

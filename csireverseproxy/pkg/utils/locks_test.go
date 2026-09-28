@@ -48,7 +48,7 @@ func TestLock(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			lock := &Lock{
 				ID:          "test-resource",
 				LockType:    common.LockType(tt.lockType),
@@ -105,7 +105,7 @@ func TestReleaseLock(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			lock := &Lock{
 				ID:          "test-resource",
 				LockType:    tt.lockType,
@@ -158,7 +158,7 @@ func TestLockRequestHandler(t *testing.T) {
 	time.Sleep(100 * time.Millisecond) // Allow goroutine to start
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			lockRequestsQueue <- tt.request
 			time.Sleep(100 * time.Millisecond) // Allow processing time
 

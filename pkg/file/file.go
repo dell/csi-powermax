@@ -54,11 +54,8 @@ const (
 	NFSExportIDParam                     = "NFSExportID"
 )
 
-var log = csmlog.GetLogger()
-
 // CreateFileSystem creates a file system
 func CreateFileSystem(ctx context.Context, reqID string, accessibility *csi.TopologyRequirement, params map[string]string, symID, storagePoolID, serviceLevel, nasServerName, fileSystemIdentifier, allowRoot string, sizeInMiB int64, pmaxClient pmax.Pmax) (*csi.CreateVolumeResponse, error) {
-	log := log.WithContext(ctx)
 	// Get NAS Server ID from NASServer Name
 	nasServerList, err := pmaxClient.GetNASServerList(ctx, symID, types.QueryParams{QueryName: nasServerName})
 	if err != nil {
@@ -68,7 +65,7 @@ func CreateFileSystem(ctx context.Context, reqID string, accessibility *csi.Topo
 		return nil, status.Errorf(codes.Internal, "No NAS server found with name %s on %s", nasServerName, symID)
 	}
 	nasServerID := nasServerList.Entries[0].ID
-	log.Infof("found NASServerID: %s, for NASServer name: %s", nasServerID, nasServerName)
+	csmlog.WithContext(ctx).Infof("found NASServerID: %s, for NASServer name: %s", nasServerID, nasServerName)
 	// log all parameters used in CreateFileSystem call
 	fields := map[string]interface{}{
 		"SymmetrixID":                        symID,
@@ -85,7 +82,7 @@ func CreateFileSystem(ctx context.Context, reqID string, accessibility *csi.Topo
 		HeaderPersistentVolumeClaimName:      params[CSIPersistentVolumeClaimName],
 		HeaderPersistentVolumeClaimNamespace: params[CSIPVCNamespace],
 	}
-	log.WithFields(fields).Info("Executing CreateVolume: FileSystem with following fields")
+	csmlog.WithFields(fields).Info("Executing CreateVolume: FileSystem with following fields")
 
 	var fileSystem *types.FileSystem
 	var alreadyExist bool
@@ -127,7 +124,7 @@ func CreateFileSystem(ctx context.Context, reqID string, accessibility *csi.Topo
 	csiResp := &csi.CreateVolumeResponse{
 		Volume: volResp,
 	}
-	log.WithFields(fields).Infof("Created volume : fileSystem with ID: %s", volResp.VolumeId)
+	csmlog.WithFields(fields).Infof("Created volume : fileSystem with ID: %s", volResp.VolumeId)
 	return csiResp, nil
 }
 
@@ -160,7 +157,6 @@ func DeleteFileSystem(ctx context.Context, symID, fileSystemID string, pmaxClien
 
 // CreateNFSExport creates a NFS export for the given file system
 func CreateNFSExport(ctx context.Context, reqID, symID, fsID string, am *csi.VolumeCapability_AccessMode, volumeContext map[string]string, pmaxClient pmax.Pmax) (*csi.ControllerPublishVolumeResponse, error) {
-	log := log.WithContext(ctx)
 	nasServerID := volumeContext[NASServerIDParam]
 	nasServerName := volumeContext[NASServerNameParam]
 	allowRoot := volumeContext[AllowRootParam]
@@ -174,7 +170,7 @@ func CreateNFSExport(ctx context.Context, reqID, symID, fsID string, am *csi.Vol
 		AllowRootParam:     allowRoot,
 		"Access Mode":      am.GetMode().String(),
 	}
-	log.WithFields(fields).Info("Executing ControllerPublishVolume: FileSystem with following fields")
+	csmlog.WithFields(fields).Info("Executing ControllerPublishVolume: FileSystem with following fields")
 	// check if fileSystem exist
 	fs, err := pmaxClient.GetFileSystemByID(ctx, symID, fsID)
 	if err != nil {
@@ -246,13 +242,12 @@ func checkIfNFSExportExist(ctx context.Context, symID, fsID string, nfsName stri
 
 // DeleteNFSExport deletes a NFS Export for the given file system
 func DeleteNFSExport(ctx context.Context, reqID, symID, fsID string, pmaxClient pmax.Pmax) (*csi.ControllerUnpublishVolumeResponse, error) {
-	log := log.WithContext(ctx)
 	// get the fileSystem
 	fs, err := pmaxClient.GetFileSystemByID(ctx, symID, fsID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			// The file system is already deleted
-			log.Infof("DeleteNFSExport: Could not find file system: %s/%s so assume it's already deleted", symID, fsID)
+			csmlog.WithContext(ctx).Infof("DeleteNFSExport: Could not find file system: %s/%s so assume it's already deleted", symID, fsID)
 			return &csi.ControllerUnpublishVolumeResponse{}, nil
 		}
 		return nil, status.Errorf(codes.Internal, "Could not retrieve fileSystem: (%s)", err.Error())
@@ -264,7 +259,7 @@ func DeleteNFSExport(ctx context.Context, reqID, symID, fsID string, pmaxClient 
 		"fileSystemID":  fsID,
 		"NFSExportName": fs.Name,
 	}
-	log.WithFields(fields).Info("Executing ControllerUnpublishVolume: FileSystem with following fields")
+	csmlog.WithFields(fields).Info("Executing ControllerUnpublishVolume: FileSystem with following fields")
 
 	// check if NFS exist
 	alreadyExist, nfsExport, err := checkIfNFSExportExist(ctx, symID, fsID, fs.Name, pmaxClient)
@@ -287,7 +282,6 @@ func DeleteNFSExport(ctx context.Context, reqID, symID, fsID string, pmaxClient 
 func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt string, publishContext map[string]string, _ pmax.Pmax) (
 	*csi.NodeStageVolumeResponse, error,
 ) {
-	log := log.WithContext(ctx)
 	nasServerName := publishContext[NASServerNameParam]
 	nasServerID := publishContext[NASServerIDParam]
 	nfsExportPath := publishContext[NFSExportPathParam]
@@ -306,7 +300,7 @@ func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt str
 		AllowRootParam:     allowRoot,
 		"Staging Path":     privTgt,
 	}
-	log.WithFields(fields).Info("Executing NodeStageVolume: FileSystem with following fields")
+	csmlog.WithFields(fields).Info("Executing NodeStageVolume: FileSystem with following fields")
 
 	found, err := isReadyToPublishNFS(privTgt)
 	if err != nil {
@@ -320,20 +314,19 @@ func StageFileSystem(ctx context.Context, reqID, symID, fsID string, privTgt str
 		return nil, status.Errorf(codes.Internal,
 			"can't create target folder %s: %s", privTgt, err.Error())
 	}
-	log.Info("stage path successfully created")
+	csmlog.WithContext(ctx).Info("stage path successfully created")
 
 	if err := Mount(ctx, nfsExportPath, privTgt, "nfs"); err != nil {
 		return nil, status.Errorf(codes.Internal,
 			"error mount nfs share %s to target path: %s", nfsExportPath, err.Error())
 	}
-	log.Info("mount successfully done")
+	csmlog.WithContext(ctx).Info("mount successfully done")
 
 	return &csi.NodeStageVolumeResponse{}, nil
 }
 
 // PublishFileSystem bind the file system mount on the node
 func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, reqID, symID, fsID string, _ pmax.Pmax) (*csi.NodePublishVolumeResponse, error) {
-	log := log.WithContext(ctx)
 	// get params for publish
 	publishContext := req.GetPublishContext()
 	targetPath := req.GetTargetPath()
@@ -356,7 +349,7 @@ func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, r
 		AllowRootParam:     allowRoot,
 		"TargetPath":       targetPath,
 	}
-	log.WithFields(fields).Info("Executing NodePublishVolume: FileSystem with following fields")
+	csmlog.WithFields(fields).Info("Executing NodePublishVolume: FileSystem with following fields")
 
 	published, err := isAlreadyPublished(targetPath)
 	if err != nil {
@@ -370,7 +363,7 @@ func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, r
 		return nil, status.Errorf(codes.Internal,
 			"can't create target folder %s: %s", targetPath, err.Error())
 	}
-	log.Info("target path successfully created")
+	csmlog.WithContext(ctx).Info("target path successfully created")
 
 	mountCap := req.GetVolumeCapability().GetMount()
 	mntFlags := mountCap.GetMountFlags()
@@ -384,13 +377,12 @@ func PublishFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, r
 			"error bind disk %s to target path %s: err %s", stagingPath, targetPath, err.Error())
 	}
 
-	log.Info("volume successfully binded")
+	csmlog.WithContext(ctx).Info("volume successfully binded")
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
 // ExpandFileSystem expands the given file system on the array
 func ExpandFileSystem(ctx context.Context, reqID, symID, fsID string, requestedSize int64, pmaxClient pmax.Pmax) (*csi.ControllerExpandVolumeResponse, error) {
-	log := log.WithContext(ctx)
 	// log all parameters used in ExpandVolume call
 	fields := map[string]interface{}{
 		"RequestID":     reqID,
@@ -398,7 +390,7 @@ func ExpandFileSystem(ctx context.Context, reqID, symID, fsID string, requestedS
 		"FileSystemID":  fsID,
 		"RequestedSize": requestedSize,
 	}
-	log.WithFields(fields).Info("Executing ExpandVolume: FileSystem with following fields")
+	csmlog.WithFields(fields).Info("Executing ExpandVolume: FileSystem with following fields")
 
 	fs, err := pmaxClient.GetFileSystemByID(ctx, symID, fsID)
 	if err != nil {
@@ -406,13 +398,13 @@ func ExpandFileSystem(ctx context.Context, reqID, symID, fsID string, requestedS
 	}
 	allocatedSize := fs.SizeTotal
 	if requestedSize < allocatedSize {
-		log.Errorf("Attempting to shrink size of file system (%s) from (%d) MiB to (%d) MiB",
+		csmlog.WithContext(ctx).Errorf("Attempting to shrink size of file system (%s) from (%d) MiB to (%d) MiB",
 			fs.Name, allocatedSize, requestedSize)
 		return nil, status.Error(codes.InvalidArgument,
 			"Attempting to shrink the volume size - unsupported operation")
 	}
 	if requestedSize == allocatedSize {
-		log.Infof("Idempotent call detected for file system(%s) with requested size (%d) MiB and allocated size (%d) MiB",
+		csmlog.WithContext(ctx).Infof("Idempotent call detected for file system(%s) with requested size (%d) MiB and allocated size (%d) MiB",
 			fs.Name, requestedSize, allocatedSize)
 		return &csi.ControllerExpandVolumeResponse{
 			CapacityBytes:         allocatedSize * MiBSizeInBytes,
@@ -423,7 +415,7 @@ func ExpandFileSystem(ctx context.Context, reqID, symID, fsID string, requestedS
 	// Expand the file system
 	fs, err = pmaxClient.ModifyFileSystem(ctx, symID, fsID, types.ModifyFileSystem{SizeTotal: requestedSize})
 	if err != nil {
-		log.Errorf("Failed to execute ModifyFileSystem()/expand with error (%s)", err.Error())
+		csmlog.WithContext(ctx).Errorf("Failed to execute ModifyFileSystem()/expand with error (%s)", err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	// return the response with NodeExpansionRequired = false, as NodeExpandVolume in not required for a file system
@@ -441,7 +433,7 @@ func isReadyToPublishNFS(stagingPath string) (bool, error) {
 		return found, err
 	}
 	if !found {
-		log.Warn("staged device not found")
+		csmlog.Warn("staged device not found")
 		return found, nil
 	}
 	return found, nil
@@ -463,7 +455,7 @@ func getTargetMount(target string) (gofsutil.Info, bool, error) {
 	var targetMount gofsutil.Info
 	mounts, err := GetMounts(context.Background())
 	if err != nil {
-		log.Error("could not reliably determine existing mount status")
+		csmlog.Error("could not reliably determine existing mount status")
 		return targetMount, false, status.Error(codes.Internal, "could not reliably determine existing mount status")
 	}
 	found := false
@@ -471,7 +463,7 @@ func getTargetMount(target string) (gofsutil.Info, bool, error) {
 		if mount.Path == target {
 			found = true
 			targetMount = mount
-			log.Infof("matching targetMount %s target %s", target, mount.Path)
+			csmlog.Infof("matching targetMount %s target %s", target, mount.Path)
 		}
 	}
 	return targetMount, found, nil

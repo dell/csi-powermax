@@ -442,3 +442,82 @@ func TestPowerMax_GetDefaultServiceLevel(t *testing.T) {
 		})
 	}
 }
+
+// ─── GetClient / GetPowerMax / GetArrayClient / RemoveClient ──────────────────
+
+func TestPowerMax_GetClient_ReturnsNonNil(t *testing.T) {
+	c, err := pmax.NewClientWithArgs("/", "test", true, true, "")
+	if err != nil {
+		t.Fatalf("failed to create pmax client: %v", err)
+	}
+	p := &PowerMax{SymID: "000120000099", client: c}
+	got := p.GetClient()
+	if got == nil {
+		t.Error("expected non-nil client from GetClient()")
+	}
+}
+
+func TestGetPowerMax_Found(t *testing.T) {
+	c, err := pmax.NewClientWithArgs("/", "test", true, true, "")
+	if err != nil {
+		t.Fatalf("failed to create pmax client: %v", err)
+	}
+	Initialize([]string{"000120000010"}, c)
+	defer RemoveClient("000120000010")
+
+	p, err := GetPowerMax("000120000010")
+	if err != nil {
+		t.Errorf("expected no error for registered array, got %v", err)
+	}
+	if p == nil {
+		t.Error("expected non-nil PowerMax for registered array")
+	}
+}
+
+func TestGetPowerMax_NotFound(t *testing.T) {
+	_, err := GetPowerMax("999999999999")
+	if err == nil {
+		t.Error("expected error for unregistered array, got nil")
+	}
+}
+
+func TestGetArrayClient_Found(t *testing.T) {
+	c, err := pmax.NewClientWithArgs("/", "test", true, true, "")
+	if err != nil {
+		t.Fatalf("failed to create pmax client: %v", err)
+	}
+	Initialize([]string{"000120000011"}, c)
+	defer RemoveClient("000120000011")
+
+	got := GetArrayClient("000120000011")
+	if got == nil {
+		t.Error("expected non-nil client from GetArrayClient for registered array")
+	}
+}
+
+func TestGetArrayClient_NotFound_ReturnsNil(t *testing.T) {
+	got := GetArrayClient("999999999998")
+	if got != nil {
+		t.Errorf("expected nil client for unregistered array, got %v", got)
+	}
+}
+
+func TestRemoveClient_Existing(t *testing.T) {
+	c, err := pmax.NewClientWithArgs("/", "test", true, true, "")
+	if err != nil {
+		t.Fatalf("failed to create pmax client: %v", err)
+	}
+	Initialize([]string{"000120000012"}, c)
+
+	RemoveClient("000120000012")
+
+	_, err = GetPowerMax("000120000012")
+	if err == nil {
+		t.Error("expected error after RemoveClient, got nil")
+	}
+}
+
+func TestRemoveClient_NonExistent_NoOp(_ *testing.T) {
+	// Must not panic when the array is not registered.
+	RemoveClient("999999999997")
+}

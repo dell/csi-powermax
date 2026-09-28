@@ -289,7 +289,7 @@ func TestGetRouter_ServeVolume(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -323,7 +323,7 @@ func TestGetRouter_ServeVolume(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -355,7 +355,7 @@ func TestGetRouter_ServeVolume(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -388,7 +388,7 @@ func TestGetRouter_ServeVolume(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -421,7 +421,7 @@ func TestGetRouter_ServeVolume(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
 			})),
 		},
@@ -451,7 +451,7 @@ func TestGetRouter_ServeVolume(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(``))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -463,7 +463,7 @@ func TestGetRouter_ServeVolume(t *testing.T) {
 	utils.InitializeLock()
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			proxy := tc.proxy(tc.server)
 			if proxy == nil {
 				return
@@ -515,7 +515,7 @@ func TestGetRouter_GetVolumes(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -547,7 +547,7 @@ func TestGetRouter_GetVolumes(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -580,7 +580,7 @@ func TestGetRouter_GetVolumes(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				// TODO: return error such that http.client.Do(req) recievs it
 				http.Error(w, "internal error", http.StatusInternalServerError)
 			})),
@@ -611,7 +611,7 @@ func TestGetRouter_GetVolumes(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
 			})),
 		},
@@ -641,7 +641,7 @@ func TestGetRouter_GetVolumes(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(``))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -653,7 +653,7 @@ func TestGetRouter_GetVolumes(t *testing.T) {
 	utils.InitializeLock()
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			proxy := tc.proxy(tc.server)
 			if proxy == nil {
 				return
@@ -704,7 +704,7 @@ func TestGetRouter_ServeReverseProxy(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -734,14 +734,14 @@ func TestGetRouter_ServeReverseProxy(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+			server: fakeServer(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})),
 		},
 	}
 
 	utils.InitializeLock()
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			proxy := tc.proxy(tc.server)
 			if proxy == nil {
 				return
@@ -845,7 +845,7 @@ func TestGetRouter_ServeVersions(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -877,7 +877,7 @@ func TestGetRouter_ServeVersions(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -909,7 +909,7 @@ func TestGetRouter_ServeVersions(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+			server: fakeServer(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})),
 		},
 		{
 			name: "Fail: ServeVersions - unauthorized - wrong password",
@@ -937,14 +937,14 @@ func TestGetRouter_ServeVersions(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+			server: fakeServer(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})),
 		},
 	}
 
 	utils.InitializeLock()
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			proxy := tc.proxy(tc.server)
 			if proxy == nil {
 				return
@@ -993,7 +993,7 @@ func TestGetRouter_ServePerformance(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -1025,14 +1025,14 @@ func TestGetRouter_ServePerformance(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+			server: fakeServer(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})),
 		},
 	}
 
 	utils.InitializeLock()
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			proxy := tc.proxy(tc.server)
 			if proxy == nil {
 				return
@@ -1085,7 +1085,7 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -1125,7 +1125,7 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -1166,7 +1166,7 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -1206,7 +1206,7 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
 			})),
 			expect: &httptest.ResponseRecorder{
@@ -1243,7 +1243,7 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(``))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -1259,7 +1259,7 @@ func TestGetRouter_ServeVolumePerformance(t *testing.T) {
 	utils.InitializeLock()
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			proxy := tc.proxy(tc.server)
 			if proxy == nil {
 				return
@@ -1317,7 +1317,7 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -1357,7 +1357,7 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+			server: fakeServer(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})),
 			expect: &httptest.ResponseRecorder{
 				Code: http.StatusInternalServerError,
 				Body: bytes.NewBuffer([]byte(`failed to decode request`)),
@@ -1393,7 +1393,7 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+			server: fakeServer(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})),
 			expect: &httptest.ResponseRecorder{
 				Code: http.StatusUnauthorized,
 				Body: bytes.NewBuffer([]byte(`unauthorized for this array`)),
@@ -1428,7 +1428,7 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
 			})),
 			expect: &httptest.ResponseRecorder{
@@ -1465,7 +1465,7 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(``))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -1481,7 +1481,7 @@ func TestGetRouter_ServeFSPerformance(t *testing.T) {
 	utils.InitializeLock()
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			proxy := tc.proxy(tc.server)
 			if proxy == nil {
 				return
@@ -1555,7 +1555,7 @@ func TestGetRouter_ServeIterator(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -1593,7 +1593,7 @@ func TestGetRouter_ServeIterator(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+			server: fakeServer(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})),
 		},
 		{
 			name: "Fail: ServeIterator - unauthorized",
@@ -1637,7 +1637,7 @@ func TestGetRouter_ServeIterator(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -1649,7 +1649,7 @@ func TestGetRouter_ServeIterator(t *testing.T) {
 	utils.InitializeLock()
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			proxy := tc.proxy(tc.server)
 			if proxy == nil {
 				return
@@ -1701,7 +1701,7 @@ func TestGetRouter_ServeSymmetrix(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				list := types.SymmetrixIDList{
 					SymmetrixIDs: []string{"00000000-1111-2abc-def3-44gh55ij66kl"},
 				}
@@ -1742,7 +1742,7 @@ func TestGetRouter_ServeSymmetrix(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+			server: fakeServer(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})),
 		},
 		{
 			name: "Fail: ServeSymmetrix - Bad Response",
@@ -1773,7 +1773,7 @@ func TestGetRouter_ServeSymmetrix(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
 			})),
 		},
@@ -1806,7 +1806,7 @@ func TestGetRouter_ServeSymmetrix(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				bytes, _ := json.Marshal(``)
 
 				_, err := w.Write(bytes)
@@ -1844,7 +1844,7 @@ func TestGetRouter_ServeSymmetrix(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				list := types.SymmetrixIDList{}
 
 				bytes, _ := json.Marshal(list)
@@ -1860,7 +1860,7 @@ func TestGetRouter_ServeSymmetrix(t *testing.T) {
 	utils.InitializeLock()
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			proxy := tc.proxy(tc.server)
 			if proxy == nil {
 				return
@@ -1912,7 +1912,7 @@ func TestGetRouter_ServeReplicationCapabilities(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				result := types.SymReplicationCapabilities{
 					SymmetrixCapability: []types.SymmetrixCapability{
 						{
@@ -1959,7 +1959,7 @@ func TestGetRouter_ServeReplicationCapabilities(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})),
+			server: fakeServer(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})),
 		},
 		{
 			name: "Fail: ServeReplicationCapabilities - Bad Response",
@@ -1990,7 +1990,7 @@ func TestGetRouter_ServeReplicationCapabilities(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
 			})),
 		},
@@ -2023,7 +2023,7 @@ func TestGetRouter_ServeReplicationCapabilities(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				bytes, _ := json.Marshal(``)
 
 				_, err := w.Write(bytes)
@@ -2061,7 +2061,7 @@ func TestGetRouter_ServeReplicationCapabilities(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				result := types.SymReplicationCapabilities{
 					SymmetrixCapability: []types.SymmetrixCapability{},
 					Successful:          false,
@@ -2081,7 +2081,7 @@ func TestGetRouter_ServeReplicationCapabilities(t *testing.T) {
 	utils.InitializeLock()
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			proxy := tc.proxy(tc.server)
 			if proxy == nil {
 				return
@@ -2210,7 +2210,7 @@ func TestGetRouter_GetPortGroups(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -2242,7 +2242,7 @@ func TestGetRouter_GetPortGroups(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(`{"id": "00000000-1111-2abc-def3-44gh55ij66kl_0"}`))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -2275,7 +2275,7 @@ func TestGetRouter_GetPortGroups(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				// TODO: return error such that http.client.Do(req) recievs it
 				http.Error(w, "internal error", http.StatusInternalServerError)
 			})),
@@ -2306,7 +2306,7 @@ func TestGetRouter_GetPortGroups(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusUnauthorized)
 			})),
 		},
@@ -2336,7 +2336,7 @@ func TestGetRouter_GetPortGroups(t *testing.T) {
 					return req
 				},
 			},
-			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server: fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				_, err := w.Write([]byte(``))
 				if err != nil {
 					t.Errorf("expected nil error, got %v", err)
@@ -2348,7 +2348,7 @@ func TestGetRouter_GetPortGroups(t *testing.T) {
 	utils.InitializeLock()
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			proxy := tc.proxy(tc.server)
 			if proxy == nil {
 				return
@@ -2415,7 +2415,7 @@ func TestURLSchemeValidation_Simple(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			var req *http.Request
 			var err error
 

@@ -17,6 +17,8 @@ package service
 import (
 	"context"
 
+	"github.com/dell/csmlog"
+
 	"github.com/coreos/go-systemd/v22/dbus"
 
 	"github.com/dell/gobrick"
@@ -25,18 +27,15 @@ import (
 type customLogger struct{}
 
 func (lg *customLogger) Info(ctx context.Context, format string, args ...interface{}) {
-	log := log.WithContext(ctx)
-	log.Infof(format, args...)
+	csmlog.WithContext(ctx).Infof(format, args...)
 }
 
 func (lg *customLogger) Debug(ctx context.Context, format string, args ...interface{}) {
-	log := log.WithContext(ctx)
-	log.Debugf(format, args...)
+	csmlog.WithContext(ctx).Debugf(format, args...)
 }
 
 func (lg *customLogger) Error(ctx context.Context, format string, args ...interface{}) {
-	log := log.WithContext(ctx)
-	log.Errorf(format, args...)
+	csmlog.WithContext(ctx).Errorf(format, args...)
 }
 
 type iSCSIConnector interface {
@@ -65,7 +64,8 @@ func (s *service) initISCSIConnector(chroot string) {
 	if s.iscsiConnector == nil {
 		setupGobrick(s)
 		s.iscsiConnector = gobrick.NewISCSIConnector(
-			gobrick.ISCSIConnectorParams{Chroot: chroot})
+			gobrick.ISCSIConnectorParams{Chroot: chroot},
+		)
 	}
 }
 
@@ -73,7 +73,8 @@ func (s *service) initFCConnector(chroot string) {
 	if s.fcConnector == nil {
 		setupGobrick(s)
 		s.fcConnector = gobrick.NewFCConnector(
-			gobrick.FCConnectorParams{Chroot: chroot})
+			gobrick.FCConnectorParams{Chroot: chroot},
+		)
 	}
 }
 
@@ -81,7 +82,8 @@ func (s *service) initNVMeTCPConnector(chroot string) {
 	if s.nvmeTCPConnector == nil {
 		setupGobrick(s)
 		s.nvmeTCPConnector = gobrick.NewNVMeConnector(
-			gobrick.NVMeConnectorParams{Chroot: chroot})
+			gobrick.NVMeConnectorParams{Chroot: chroot},
+		)
 	}
 }
 
@@ -102,7 +104,7 @@ func (s *service) createDbusConnection() error {
 	if s.dBusConn == nil {
 		conn, err := dbusNewConnectionFunc()
 		if err != nil {
-			log.Errorf("Failed to initialize connection to dbus. Error - %s", err.Error())
+			csmlog.Errorf("Failed to initialize connection to dbus. Error - %s", err.Error())
 			return err
 		}
 		s.dBusConn = conn

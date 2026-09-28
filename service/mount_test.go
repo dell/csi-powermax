@@ -530,3 +530,48 @@ func Test_validateVolumeCapability(t *testing.T) {
 		})
 	}
 }
+
+/*
+func TestMountErrorPaths(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupMock   func()
+		expectError bool
+	}{
+		{
+			name: "Error getting mount info",
+			setupMock: func() {
+				gofsutil.UseMockFS()
+				gofsutil.GOFSMock.InduceGetMountsError = true
+			},
+			expectError: true,
+		},
+		{
+			name: "Error unmounting volume",
+			setupMock: func() {
+				gofsutil.UseMockFS()
+				gofsutil.GOFSMock.InduceUnmountError = true
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gofsutil.GOFSMock.InduceGetMountsError = false
+			gofsutil.GOFSMock.InduceUnmountError = false
+			gofsutil.GOFSMockMounts = make([]gofsutil.Info, 0)
+
+			tt.setupMock()
+
+			t.Cleanup(func() {
+				gofsutil.GOFSMock.InduceGetMountsError = false
+				gofsutil.GOFSMock.InduceUnmountError = false
+				gofsutil.GOFSMockMounts = make([]gofsutil.Info, 0)
+			})
+
+			_ = tt.expectError
+		})
+	}
+}
+*/

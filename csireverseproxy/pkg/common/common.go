@@ -25,6 +25,20 @@ import (
 	"github.com/dell/csmlog"
 )
 
+// RequestObservation captures a single REST request outcome.
+type RequestObservation struct {
+	Method     string
+	Path       string
+	StatusCode int
+	Duration   time.Duration
+	Err        error
+}
+
+// RequestObserver receives request observations without importing metrics code.
+type RequestObserver interface {
+	ObserveRequest(RequestObservation)
+}
+
 const (
 	// MinimumFailureCountForFailover - threshold beyond which failover can be done to the backup server
 	MinimumFailureCountForFailover = 10
@@ -35,8 +49,6 @@ const (
 	// MaximumConsecutiveFailureCountForFailover - max consecutive failure count irrespective of time to do failover.
 	MaximumConsecutiveFailureCountForFailover = 10
 )
-
-var log = csmlog.GetLogger()
 
 // Credentials represent a pair of username and password
 type Credentials struct {
@@ -120,7 +132,7 @@ func (health *proxyHealth) ReportFailure() bool {
 	health.consecutiveFailureCount++
 	// if the continuous failure count is greater than the maximum failure count, return true
 	if health.consecutiveFailureCount > health.maximumConsFailureCount {
-		log.Debugf("consecutive failure reached!")
+		csmlog.Debugf("consecutive failure reached!")
 		health.consecutiveFailureCount = 0
 		health.reset()
 		return true
@@ -168,7 +180,7 @@ type SymmURL struct {
 
 // ModifyResponse - callback function which is called by the reverseproxy
 // currently not implemented
-func (proxy *Proxy) ModifyResponse(res *http.Response) error {
+func (proxy *Proxy) ModifyResponse(_ *http.Response) error {
 	return nil
 }
 
@@ -179,23 +191,38 @@ type LockType string
 // Transport - represents the custom http transport implementation
 type Transport struct {
 	http.RoundTripper
-	HealthHandler func(bool)
+	HealthHandler   func(bool)
+	RequestObserver RequestObserver
 }
 
 // RoundTrip - this method is called every time after the completion of the reverseproxy
 // request
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	requestID := req.Header.Get("RequestID")
+	start := time.Now()
 	resp, err := t.RoundTripper.RoundTrip(req)
+	// Capture request observation only if metrics is enabled (observer is set)
+	if t.RequestObserver != nil {
+		obs := RequestObservation{
+			Method: req.Method,
+			Path:   req.URL.Path,
+		}
+		obs.Duration = time.Since(start)
+		if resp != nil {
+			obs.StatusCode = resp.StatusCode
+		}
+		obs.Err = err
+		t.RequestObserver.ObserveRequest(obs)
+	}
 	if err != nil {
 		t.HealthHandler(false)
-		log.Debugf("Request ID: %s - Reporing server error to proxy health", requestID)
+		csmlog.Debugf("Request ID: %s - Reporing server error to proxy health", requestID)
 	} else if resp.StatusCode == 401 || resp.StatusCode == 403 || int(resp.StatusCode/100) == 5 {
 		t.HealthHandler(false)
-		log.Debugf("Request ID: %s - Reporing non-200 code to proxy health", requestID)
+		csmlog.Debugf("Request ID: %s - Reporing non-200 code to proxy health", requestID)
 	} else if int(resp.StatusCode/100) == 2 {
 		t.HealthHandler(true)
-		log.Debugf("Request ID: %s - Reporting 2xx response to proxy health", requestID)
+		csmlog.Debugf("Request ID: %s - Reporting 2xx response to proxy health", requestID)
 	}
 	return resp, err
 }

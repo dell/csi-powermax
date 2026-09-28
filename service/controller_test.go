@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dell/csi-powermax/v2/k8smock"
 	"github.com/dell/csi-powermax/v2/k8sutils"
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix"
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
@@ -37,6 +38,8 @@ import (
 	"github.com/golang/mock/gomock"
 	gmock "github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // DeletionWorker interface for testing purposes
@@ -799,8 +802,8 @@ func Test_service_createMetroVolume(t *testing.T) {
 				hostLimitName:     "a-host-limit-name",
 			},
 			setup: func() {
-				requestLockFunc = func(_, _ string) int {
-					return 0
+				requestLockFunc = func(_, _ string) (int, error) {
+					return 0, nil
 				}
 				releaseLockFunc = func(_, _ string, _ int) {}
 
@@ -844,8 +847,8 @@ func Test_service_createMetroVolume(t *testing.T) {
 				hostLimitName:     "a-host-limit-name",
 			},
 			setup: func() {
-				requestLockFunc = func(_, _ string) int {
-					return 0
+				requestLockFunc = func(_, _ string) (int, error) {
+					return 0, nil
 				}
 				releaseLockFunc = func(_, _ string, _ int) {}
 
@@ -896,8 +899,8 @@ func Test_service_createMetroVolume(t *testing.T) {
 				hostDynDist:       "",
 			},
 			setup: func() {
-				requestLockFunc = func(_, _ string) int {
-					return 0
+				requestLockFunc = func(_, _ string) (int, error) {
+					return 0, nil
 				}
 				releaseLockFunc = func(_, _ string, _ int) {}
 
@@ -959,7 +962,7 @@ func Test_service_createMetroVolume(t *testing.T) {
 				remoteRDFGrpNo:     "20",
 			},
 			setup: func() {
-				requestLockFunc = func(_, _ string) int { return 0 }
+				requestLockFunc = func(_, _ string) (int, error) { return 0, nil }
 				releaseLockFunc = func(_, _ string, _ int) {}
 
 				initDefaultClient()
@@ -1060,7 +1063,7 @@ func Test_service_createMetroVolume(t *testing.T) {
 				remoteRDFGrpNo:     "20",
 			},
 			setup: func() {
-				requestLockFunc = func(_, _ string) int { return 0 }
+				requestLockFunc = func(_, _ string) (int, error) { return 0, nil }
 				releaseLockFunc = func(_, _ string, _ int) {}
 
 				initDefaultClient()
@@ -2258,7 +2261,7 @@ func TestIsNodeNVMe(t *testing.T) {
 			nodeID:              "node1",
 			getMaskingViewError: errors.New("unable to get masking view"),
 			getHostByIDError:    errors.New("unable to get Host byID"),
-			wantErr:             errors.New("Failed to fetch host id from array for node: node1"),
+			wantErr:             errors.New("Failed to fetch host id from array sym1 for node: node1"),
 			want:                false,
 		},
 	}
@@ -2276,7 +2279,7 @@ func TestIsNodeNVMe(t *testing.T) {
 			pmaxClient.EXPECT().GetHostByID(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(&types.Host{
 				HostType: "NVMe/TCP",
 			}, tt.getHostByIDError)
-			got, err := s.IsNodeNVMe(context.Background(), tt.symID, tt.nodeID, pmaxClient)
+			got, err := s.IsNodeNVMe(context.Background(), tt.symID, tt.nodeID, pmaxClient, "")
 
 			if tt.want != got {
 				t.Errorf("service.IsNodeNVMe() = %v, want %v", got, tt.want)
@@ -2812,6 +2815,8 @@ func Test_service_ControllerUnpublishVolume(t *testing.T) {
 		}
 
 		c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+		// Non-uniform Metro: node has no host on remote array — unpublish should skip remote
+		c.EXPECT().GetHostList(gomock.Any(), gomock.Any()).AnyTimes().Return(&types.HostList{HostIDs: []string{}}, nil)
 
 		resp, err := s.ControllerUnpublishVolume(ctx, req)
 		assert.Empty(t, resp)
@@ -2822,6 +2827,138 @@ func Test_service_ControllerUnpublishVolume(t *testing.T) {
 		assert.Nil(t, err)
 		assert.Empty(t, resp)
 	})
+}
+
+// Test_service_ControllerUnpublishVolume_Site1 tests non-uniform Metro unpublish
+// where node has host on local (R1) only — local unpublish proceeds, remote skipped.
+func Test_service_ControllerUnpublishVolume_Site1(t *testing.T) {
+	LockRequestHandler()
+	ctx := context.Background()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+	c.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), "1").AnyTimes().Return(&types.Volume{
+		VolumeIdentifier: "csi--validVolume",
+		VolumeID:         "1",
+		RDFGroupIDList:   []types.RDFGroupID{{RDFGroupNumber: 42, Label: "label"}},
+	}, nil)
+
+	nodeID := "test-node-id"
+	iscsiHostID, _, _ := s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+	localSymID := "0001"
+	remoteSymID := "0002"
+
+	// Local array has the node's host, remote array does not
+	c.EXPECT().GetHostList(gomock.Any(), localSymID).AnyTimes().
+		Return(&types.HostList{HostIDs: []string{iscsiHostID}}, nil)
+	c.EXPECT().GetHostList(gomock.Any(), remoteSymID).AnyTimes().
+		Return(&types.HostList{HostIDs: []string{}}, nil)
+
+	symmetrix.Initialize([]string{localSymID, remoteSymID}, c)
+	defer symmetrix.RemoveClient(localSymID)
+	defer symmetrix.RemoveClient(remoteSymID)
+
+	volIDRemote := s.createCSIVolumeID("", "validVolume", localSymID+":"+remoteSymID, "1:1")
+	req := &csi.ControllerUnpublishVolumeRequest{
+		VolumeId: volIDRemote,
+		NodeId:   nodeID,
+	}
+
+	resp, err := s.ControllerUnpublishVolume(ctx, req)
+	assert.Nil(t, err, "site1 unpublish should succeed")
+	assert.NotNil(t, resp)
+}
+
+// Test_service_ControllerUnpublishVolume_Site2 tests non-uniform Metro unpublish
+// where node has host on remote (R2) only — local skipped, remote unpublish proceeds.
+func Test_service_ControllerUnpublishVolume_Site2(t *testing.T) {
+	LockRequestHandler()
+	ctx := context.Background()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+	c.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), "1").AnyTimes().Return(&types.Volume{
+		VolumeIdentifier: "csi--validVolume",
+		VolumeID:         "1",
+		RDFGroupIDList:   []types.RDFGroupID{{RDFGroupNumber: 42, Label: "label"}},
+	}, nil)
+
+	nodeID := "test-node-id"
+	iscsiHostID, _, _ := s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+	localSymID := "0001"
+	remoteSymID := "0002"
+
+	// Remote array has the node's host, local array does not
+	c.EXPECT().GetHostList(gomock.Any(), localSymID).AnyTimes().
+		Return(&types.HostList{HostIDs: []string{}}, nil)
+	c.EXPECT().GetHostList(gomock.Any(), remoteSymID).AnyTimes().
+		Return(&types.HostList{HostIDs: []string{iscsiHostID}}, nil)
+
+	symmetrix.Initialize([]string{localSymID, remoteSymID}, c)
+	defer symmetrix.RemoveClient(localSymID)
+	defer symmetrix.RemoveClient(remoteSymID)
+
+	volIDRemote := s.createCSIVolumeID("", "validVolume", localSymID+":"+remoteSymID, "1:1")
+	req := &csi.ControllerUnpublishVolumeRequest{
+		VolumeId: volIDRemote,
+		NodeId:   nodeID,
+	}
+
+	resp, err := s.ControllerUnpublishVolume(ctx, req)
+	assert.Nil(t, err, "site2 unpublish should succeed")
+	assert.NotNil(t, resp)
+}
+
+// Test_service_ControllerUnpublishVolume_Uniform tests uniform Metro unpublish
+// where node has host on both arrays — both unpublish proceed.
+func Test_service_ControllerUnpublishVolume_Uniform(t *testing.T) {
+	LockRequestHandler()
+	ctx := context.Background()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+	c.EXPECT().GetVolumeByID(gomock.Any(), gomock.Any(), "1").AnyTimes().Return(&types.Volume{
+		VolumeIdentifier: "csi--validVolume",
+		VolumeID:         "1",
+		RDFGroupIDList:   []types.RDFGroupID{{RDFGroupNumber: 42, Label: "label"}},
+	}, nil)
+
+	nodeID := "test-node-id"
+	iscsiHostID, _, _ := s.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+	localSymID := "0001"
+	remoteSymID := "0002"
+
+	// Both arrays have the node's host
+	c.EXPECT().GetHostList(gomock.Any(), localSymID).AnyTimes().
+		Return(&types.HostList{HostIDs: []string{iscsiHostID}}, nil)
+	c.EXPECT().GetHostList(gomock.Any(), remoteSymID).AnyTimes().
+		Return(&types.HostList{HostIDs: []string{iscsiHostID}}, nil)
+
+	symmetrix.Initialize([]string{localSymID, remoteSymID}, c)
+	defer symmetrix.RemoveClient(localSymID)
+	defer symmetrix.RemoveClient(remoteSymID)
+
+	volIDRemote := s.createCSIVolumeID("", "validVolume", localSymID+":"+remoteSymID, "1:1")
+	req := &csi.ControllerUnpublishVolumeRequest{
+		VolumeId: volIDRemote,
+		NodeId:   nodeID,
+	}
+
+	resp, err := s.ControllerUnpublishVolume(ctx, req)
+	assert.Nil(t, err, "uniform unpublish should succeed")
+	assert.NotNil(t, resp)
 }
 
 func Test_service_getArrayIDFromTopologyRequirement(t *testing.T) {
@@ -3186,6 +3323,59 @@ func Test_service_getArrayIDFromTopologyRequirement(t *testing.T) {
 	}
 }
 
+// Test_service_getArrayIDFromTopologyRequirement_CapacityBasedSelection
+// proves that when a zone has multiple arrays, the driver selects the one
+// with the lowest capacity utilization, and skips arrays marked unavailable
+// in the capacity cache rather than blindly using the first candidate.
+func Test_service_getArrayIDFromTopologyRequirement_CapacityBasedSelection(t *testing.T) {
+	topologyRequirement := &csi.TopologyRequirement{
+		Preferred: []*csi.Topology{
+			{
+				Segments: map[string]string{
+					"topology.kubernetes.io/zone": "us-east-1a",
+				},
+			},
+		},
+	}
+	storageArrayConfig := map[string]StorageArrayConfig{
+		"000000000001": {Labels: map[string]interface{}{"topology.kubernetes.io/zone": "us-east-1a"}},
+		"000000000002": {Labels: map[string]interface{}{"topology.kubernetes.io/zone": "us-east-1a"}},
+	}
+
+	t.Run("lowest utilization array is selected (AC-001)", func(t *testing.T) {
+		s := &service{opts: Opts{StorageArrays: storageArrayConfig}, capCache: newCapacityCache()}
+		now := time.Now()
+		s.capCache.recordPollSuccess("000000000001", 80.0, now)
+		s.capCache.recordPollSuccess("000000000002", 20.0, now)
+
+		got := s.getArrayIDFromTopologyRequirement(topologyRequirement)
+		assert.Equal(t, "000000000002", got)
+	})
+
+	t.Run("unavailable array is skipped, provisioning continues on remaining array (AC-003)", func(t *testing.T) {
+		s := &service{opts: Opts{StorageArrays: storageArrayConfig}, capCache: newCapacityCache()}
+		now := time.Now()
+		s.capCache.recordPollSuccess("000000000001", 10.0, now)
+		s.capCache.invalidate("000000000001")
+		s.capCache.recordPollSuccess("000000000002", 90.0, now)
+
+		got := s.getArrayIDFromTopologyRequirement(topologyRequirement)
+		assert.Equal(t, "000000000002", got, "should skip the unavailable array even though its utilization is lower")
+	})
+
+	t.Run("all arrays unavailable returns empty ArrayID (AC-006 surfaces as SYMID-required error upstream)", func(t *testing.T) {
+		s := &service{opts: Opts{StorageArrays: storageArrayConfig}, capCache: newCapacityCache()}
+		now := time.Now()
+		s.capCache.recordPollSuccess("000000000001", 10.0, now)
+		s.capCache.invalidate("000000000001")
+		s.capCache.recordPollSuccess("000000000002", 20.0, now)
+		s.capCache.invalidate("000000000002")
+
+		got := s.getArrayIDFromTopologyRequirement(topologyRequirement)
+		assert.Empty(t, got)
+	})
+}
+
 func Test_service_getArrayIDFromTopology(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -3235,6 +3425,244 @@ func Test_service_getArrayIDFromTopology(t *testing.T) {
 
 			got := s.getArrayIDFromTopology(tt.topology)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_service_buildMetroAccessibleTopology(t *testing.T) {
+	tests := []struct {
+		name               string
+		storageArrayConfig map[string]StorageArrayConfig
+		accessibility      *csi.TopologyRequirement
+		localSymID         string
+		remoteSymID        string
+		wantLen            int
+		wantSite1Array     string
+		wantSite2Array     string
+		wantProtocolSuffix string // expected protocol suffix like ".iscsi"
+	}{
+		{
+			name:          "nil accessibility returns nil",
+			accessibility: nil,
+			localSymID:    "000120001647",
+			remoteSymID:   "000120001965",
+			wantLen:       0,
+		},
+		{
+			name: "empty preferred returns nil",
+			accessibility: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{},
+			},
+			localSymID:  "000120001647",
+			remoteSymID: "000120001965",
+			wantLen:     0,
+		},
+		{
+			name: "missing local array config falls back to original",
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000120001965": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site2"}},
+			},
+			accessibility: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{Segments: map[string]string{"topology.kubernetes.io/site": "site1"}},
+				},
+			},
+			localSymID:  "000120001647",
+			remoteSymID: "000120001965",
+			wantLen:     1, // Falls back to original
+		},
+		{
+			name: "missing remote array config falls back to original",
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000120001647": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+			},
+			accessibility: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{Segments: map[string]string{"topology.kubernetes.io/site": "site1"}},
+				},
+			},
+			localSymID:  "000120001647",
+			remoteSymID: "000120001965",
+			wantLen:     1, // Falls back to original
+		},
+		{
+			name: "both arrays configured - builds topology for both sites",
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000120001647": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+				"000120001965": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site2"}},
+			},
+			accessibility: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{Segments: map[string]string{
+						"topology.kubernetes.io/site":           "site1",
+						"csi-powermax.dellemc.com/000120001647": "csi-powermax.dellemc.com",
+					}},
+				},
+			},
+			localSymID:     "000120001647",
+			remoteSymID:    "000120001965",
+			wantLen:        2, // One for each site
+			wantSite1Array: "000120001647",
+			wantSite2Array: "000120001965",
+		},
+		{
+			name: "empty labels on local array falls back to original",
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000120001647": {Labels: map[string]interface{}{}},
+				"000120001965": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site2"}},
+			},
+			accessibility: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{Segments: map[string]string{"topology.kubernetes.io/site": "site1"}},
+				},
+			},
+			localSymID:  "000120001647",
+			remoteSymID: "000120001965",
+			wantLen:     1, // Falls back to original
+		},
+		{
+			name: "protocol suffix extracted and applied to both sites - iscsi",
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000120001647": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+				"000120001965": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site2"}},
+			},
+			accessibility: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{Segments: map[string]string{
+						"topology.kubernetes.io/site":                 "site1",
+						"csi-powermax.dellemc.com/000120001647":       "csi-powermax.dellemc.com",
+						"csi-powermax.dellemc.com/000120001647.iscsi": "csi-powermax.dellemc.com",
+					}},
+				},
+			},
+			localSymID:         "000120001647",
+			remoteSymID:        "000120001965",
+			wantLen:            2,
+			wantSite1Array:     "000120001647",
+			wantSite2Array:     "000120001965",
+			wantProtocolSuffix: ".iscsi",
+		},
+		{
+			name: "protocol suffix extracted and applied to both sites - fc",
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000120001647": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+				"000120001965": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site2"}},
+			},
+			accessibility: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{Segments: map[string]string{
+						"topology.kubernetes.io/site":              "site1",
+						"csi-powermax.dellemc.com/000120001647":    "csi-powermax.dellemc.com",
+						"csi-powermax.dellemc.com/000120001647.fc": "csi-powermax.dellemc.com",
+					}},
+				},
+			},
+			localSymID:         "000120001647",
+			remoteSymID:        "000120001965",
+			wantLen:            2,
+			wantSite1Array:     "000120001647",
+			wantSite2Array:     "000120001965",
+			wantProtocolSuffix: ".fc",
+		},
+		{
+			name: "multiple preferred topologies - still creates only 2 entries",
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000120001647": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+				"000120001965": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site2"}},
+			},
+			accessibility: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{Segments: map[string]string{
+						"topology.kubernetes.io/site":                 "site1",
+						"csi-powermax.dellemc.com/000120001647":       "csi-powermax.dellemc.com",
+						"csi-powermax.dellemc.com/000120001647.iscsi": "csi-powermax.dellemc.com",
+					}},
+					{Segments: map[string]string{
+						"topology.kubernetes.io/site":                 "site1",
+						"csi-powermax.dellemc.com/000120001647":       "csi-powermax.dellemc.com",
+						"csi-powermax.dellemc.com/000120001647.iscsi": "csi-powermax.dellemc.com",
+					}},
+					{Segments: map[string]string{
+						"topology.kubernetes.io/site":                 "site2",
+						"csi-powermax.dellemc.com/000120001647":       "csi-powermax.dellemc.com",
+						"csi-powermax.dellemc.com/000120001647.iscsi": "csi-powermax.dellemc.com",
+						"csi-powermax.dellemc.com/000120001965":       "csi-powermax.dellemc.com",
+					}},
+				},
+			},
+			localSymID:         "000120001647",
+			remoteSymID:        "000120001965",
+			wantLen:            2, // Still only 2 entries, one per site
+			wantSite1Array:     "000120001647",
+			wantSite2Array:     "000120001965",
+			wantProtocolSuffix: ".iscsi",
+		},
+		{
+			name: "site1 topology should not contain remote array keys",
+			storageArrayConfig: map[string]StorageArrayConfig{
+				"000120001647": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+				"000120001965": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site2"}},
+			},
+			accessibility: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{Segments: map[string]string{
+						"topology.kubernetes.io/site":                 "site1",
+						"csi-powermax.dellemc.com/000120001647":       "csi-powermax.dellemc.com",
+						"csi-powermax.dellemc.com/000120001647.iscsi": "csi-powermax.dellemc.com",
+					}},
+				},
+			},
+			localSymID:         "000120001647",
+			remoteSymID:        "000120001965",
+			wantLen:            2,
+			wantSite1Array:     "000120001647",
+			wantSite2Array:     "000120001965",
+			wantProtocolSuffix: ".iscsi",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				opts: Opts{
+					StorageArrays: tt.storageArrayConfig,
+				},
+			}
+			got := s.buildMetroAccessibleTopology(tt.accessibility, tt.localSymID, tt.remoteSymID)
+			if tt.wantLen == 0 {
+				assert.Nil(t, got)
+			} else {
+				assert.Equal(t, tt.wantLen, len(got))
+				if tt.wantLen == 2 && tt.wantSite1Array != "" {
+					// Verify site1 topology has correct array
+					site1Found := false
+					site2Found := false
+					for _, topo := range got {
+						if topo.Segments["topology.kubernetes.io/site"] == "site1" {
+							site1Found = true
+							assert.Contains(t, topo.Segments, "csi-powermax.dellemc.com/"+tt.wantSite1Array)
+							// Verify site1 does NOT contain remote array keys
+							assert.NotContains(t, topo.Segments, "csi-powermax.dellemc.com/"+tt.wantSite2Array)
+							// Verify protocol key is present if expected
+							if tt.wantProtocolSuffix != "" {
+								assert.Contains(t, topo.Segments, "csi-powermax.dellemc.com/"+tt.wantSite1Array+tt.wantProtocolSuffix)
+							}
+						}
+						if topo.Segments["topology.kubernetes.io/site"] == "site2" {
+							site2Found = true
+							assert.Contains(t, topo.Segments, "csi-powermax.dellemc.com/"+tt.wantSite2Array)
+							// Verify site2 does NOT contain local array keys
+							assert.NotContains(t, topo.Segments, "csi-powermax.dellemc.com/"+tt.wantSite1Array)
+							// Verify protocol key is present if expected
+							if tt.wantProtocolSuffix != "" {
+								assert.Contains(t, topo.Segments, "csi-powermax.dellemc.com/"+tt.wantSite2Array+tt.wantProtocolSuffix)
+							}
+						}
+					}
+					assert.True(t, site1Found, "site1 topology should be present")
+					assert.True(t, site2Found, "site2 topology should be present")
+				}
+			}
 		})
 	}
 }
@@ -3577,6 +4005,10 @@ func setupFCInitiatorMocks(client *mocks.MockPmaxClient, symID string) {
 	client.EXPECT().GetInitiatorList(gomock.Any(), symID, "5000000000000001", false, false).Return(&types.InitiatorList{
 		InitiatorIDs: []string{"FA-1D:0:5000000000000001"},
 	}, nil)
+	client.EXPECT().GetInitiatorByID(gomock.Any(), symID, "FA-1D:0:5000000000000001").Return(&types.Initiator{
+		OnFabric: true,
+		LoggedIn: true,
+	}, nil)
 }
 
 func Test_service_SelectOrCreateFCPGForHost(t *testing.T) {
@@ -3646,7 +4078,7 @@ func Test_service_SelectOrCreateFCPGForHost(t *testing.T) {
 				client.EXPECT().GetPortListByProtocol(gomock.Any(), "000120000001", "SCSI_FC").Return(nil, errors.New("port list error"))
 			},
 			expectedError: true,
-			errorMsg:      "Failed to fetch SCSI_FC port",
+			errorMsg:      "failed to fetch SCSI_FC ports for array",
 		},
 		{
 			name:  "GetInitiatorList error skips initiator and returns no valid initiator error",
@@ -3708,7 +4140,7 @@ func Test_service_SelectOrCreateFCPGForHost(t *testing.T) {
 			errorMsg:      "failed to fetch Fibre channel port groups for array(enhanced API)",
 		},
 		{
-			name:  "enhanced API invalid base64-encoded port ID returns error",
+			name:  "enhanced API invalid base64-encoded port ID is skipped and creates a new port group",
 			symID: "000120000001",
 			host:  defaultHost,
 			setup: func(client *mocks.MockPmaxClient) {
@@ -3723,11 +4155,11 @@ func Test_service_SelectOrCreateFCPGForHost(t *testing.T) {
 				client.EXPECT().GetPortGroupListByType(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupListResult{
 					Results: []types.PortGroupListv1{
 						{
-							ID:       "pg1",
+							ID:       "csi-ABC-pg1",
 							Protocol: FcIscsiID,
 							Ports: []types.PortValues{
 								{
-									// bad base64 encoding triggers error
+									// bad base64 encoding is skipped
 									PortID:   "!!!invalid-base64!!!",
 									Type:     "Fibre",
 									Director: types.DirectorID{ID: "FA-1D"},
@@ -3736,9 +4168,10 @@ func Test_service_SelectOrCreateFCPGForHost(t *testing.T) {
 						},
 					},
 				}, nil)
+				client.EXPECT().CreatePortGroup(gomock.Any(), "000120000001", "csi-ABC-FA-1D-0-PG", gomock.Any(), "SCSI_FC").Return(&types.PortGroup{}, nil).Times(1)
 			},
-			expectedError: true,
-			errorMsg:      "Failed to fetch Fibre channel port ID",
+			expectedPGID:  "csi-ABC-FA-1D-0-PG",
+			expectedError: false,
 		},
 		{
 			name:  "enhanced API finds matching port group",
@@ -3757,7 +4190,7 @@ func Test_service_SelectOrCreateFCPGForHost(t *testing.T) {
 				client.EXPECT().GetPortGroupListByType(gomock.Any(), "000120000001", "fibre").Return(&types.PortGroupListResult{
 					Results: []types.PortGroupListv1{
 						{
-							ID:       "pg-enhanced-match",
+							ID:       "csi-ABC-pg-enhanced-match",
 							Protocol: FcIscsiID,
 							Ports: []types.PortValues{
 								{
@@ -3770,7 +4203,7 @@ func Test_service_SelectOrCreateFCPGForHost(t *testing.T) {
 					},
 				}, nil)
 			},
-			expectedPGID:  "pg-enhanced-match",
+			expectedPGID:  "csi-ABC-pg-enhanced-match",
 			expectedError: false,
 		},
 		{
@@ -3802,7 +4235,7 @@ func Test_service_SelectOrCreateFCPGForHost(t *testing.T) {
 						},
 					},
 				}, nil)
-				client.EXPECT().CreatePortGroup(gomock.Any(), "000120000001", "csi-ABC-FA-1D-0-PG", gomock.Any(), "SCSI_FC").Return(&types.PortGroup{}, nil)
+				client.EXPECT().CreatePortGroup(gomock.Any(), "000120000001", "csi-ABC-FA-1D-0-PG", []types.PortKey{{DirectorID: "FA-1D", PortID: "0"}}, "SCSI_FC").Return(&types.PortGroup{}, nil)
 			},
 			expectedPGID:  "csi-ABC-FA-1D-0-PG",
 			expectedError: false,
@@ -4507,4 +4940,479 @@ func Test_service_updatePublishContext(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSelectOrCreateFCPGForHost_V4_CSIPrefixFiltering tests that V4 arrays
+// filter port groups by CSI prefix, matching the legacy behavior
+func TestSelectOrCreateFCPGForHost_V4_CSIPrefixFiltering(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	symID := "000197900111"
+	clusterPrefix := "test-cluster"
+
+	t.Run("V4 array filters by CSI prefix", func(t *testing.T) {
+		mockClient := mocks.NewMockPmaxClient(ctrl)
+
+		// Mock versionCache calls
+		mockClient.EXPECT().GetHTTPClient().Return(&http.Client{}).AnyTimes()
+		mockClient.EXPECT().GetVersionDetails(gomock.Any()).
+			Return(&types.VersionDetails{APIVersion: "103"}, nil).AnyTimes()
+		mockClient.EXPECT().GetSymmetrixByID(gomock.Any(), symID).
+			Return(&types.Symmetrix{SymmetrixID: symID, Microcode: "6079"}, nil).AnyTimes()
+
+		// Setup host
+		host := &types.Host{
+			HostID:     "test-host",
+			HostType:   "Fibre",
+			Initiators: []string{"10000000c98a5e5e"},
+		}
+
+		// Mock GetPortListByProtocol
+		mockClient.EXPECT().GetPortListByProtocol(gomock.Any(), symID, "SCSI_FC").
+			Return(&types.PortList{
+				SymmetrixPortKey: []types.PortKey{
+					{DirectorID: "FA-1D", PortID: "4"},
+				},
+			}, nil).Times(1)
+
+		// Mock GetInitiatorList
+		mockClient.EXPECT().GetInitiatorList(gomock.Any(), symID, "10000000c98a5e5e", false, false).
+			Return(&types.InitiatorList{
+				InitiatorIDs: []string{"FA-1D:4:10000000c98a5e5e"},
+			}, nil).Times(1)
+		mockClient.EXPECT().GetInitiatorByID(gomock.Any(), symID, "FA-1D:4:10000000c98a5e5e").Return(&types.Initiator{
+			OnFabric: true,
+			LoggedIn: true,
+		}, nil).Times(1)
+
+		// Mock GetPortGroupListByType - returns both CSI and non-CSI port groups
+		portGroupListResult := &types.PortGroupListResult{
+			Results: []types.PortGroupListv1{
+				{
+					ID:       "manual-pg-1", // Should be ignored
+					Protocol: FcIscsiID,
+					Ports: []types.PortValues{
+						{PortID: "RkEtMUR8NA", Director: types.DirectorID{ID: "FA-1D"}},
+					},
+				},
+				{
+					ID:       "csi-test-cluster-FA-1D-4-PG", // Should be selected
+					Protocol: FcIscsiID,
+					Ports: []types.PortValues{
+						{PortID: "RkEtMUR8NA", Director: types.DirectorID{ID: "FA-1D"}},
+					},
+				},
+			},
+		}
+		mockClient.EXPECT().GetPortGroupListByType(gomock.Any(), symID, "fibre").
+			Return(portGroupListResult, nil).Times(1)
+
+		svc := &service{
+			opts: Opts{ClusterPrefix: clusterPrefix},
+		}
+
+		pgID, err := svc.SelectOrCreateFCPGForHost(ctx, symID, host, mockClient)
+
+		assert.NoError(t, err)
+		assert.Equal(t, "csi-test-cluster-FA-1D-4-PG", pgID)
+		assert.Contains(t, pgID, "csi-"+clusterPrefix)
+	})
+}
+
+// TestSelectOrCreateFCPGForHost_V4_IgnoresNonCSIPortGroups tests that V4 implementation
+// correctly ignores non-CSI managed port groups even if they have matching ports
+func TestSelectOrCreateFCPGForHost_V4_IgnoresNonCSIPortGroups(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+	symID := "000197900111"
+	clusterPrefix := "prod"
+
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+
+	// Mock versionCache calls
+	mockClient.EXPECT().GetHTTPClient().Return(&http.Client{}).AnyTimes()
+	mockClient.EXPECT().GetVersionDetails(gomock.Any()).
+		Return(&types.VersionDetails{APIVersion: "103"}, nil).AnyTimes()
+	mockClient.EXPECT().GetSymmetrixByID(gomock.Any(), symID).
+		Return(&types.Symmetrix{SymmetrixID: symID, Microcode: "6079"}, nil).AnyTimes()
+
+	host := &types.Host{
+		HostID:     "test-host",
+		HostType:   "Fibre",
+		Initiators: []string{"10000000c98a5e5e"},
+	}
+
+	// Mock GetPortListByProtocol
+	mockClient.EXPECT().GetPortListByProtocol(gomock.Any(), symID, "SCSI_FC").
+		Return(&types.PortList{
+			SymmetrixPortKey: []types.PortKey{
+				{DirectorID: "FA-1D", PortID: "4"},
+			},
+		}, nil).Times(1)
+
+	// Mock GetInitiatorList
+	mockClient.EXPECT().GetInitiatorList(gomock.Any(), symID, "10000000c98a5e5e", false, false).
+		Return(&types.InitiatorList{
+			InitiatorIDs: []string{"FA-1D:4:10000000c98a5e5e"},
+		}, nil).Times(1)
+	mockClient.EXPECT().GetInitiatorByID(gomock.Any(), symID, "FA-1D:4:10000000c98a5e5e").Return(&types.Initiator{
+		OnFabric: true,
+		LoggedIn: true,
+	}, nil).Times(1)
+
+	// Return multiple non-CSI port groups and one CSI port group
+	portGroupListResult := &types.PortGroupListResult{
+		Results: []types.PortGroupListv1{
+			{
+				ID:       "admin-pg-1",
+				Protocol: FcIscsiID,
+				Ports: []types.PortValues{
+					{PortID: "RkEtMUR8NA", Director: types.DirectorID{ID: "FA-1D"}},
+				},
+			},
+			{
+				ID:       "manual-pg-2",
+				Protocol: FcIscsiID,
+				Ports: []types.PortValues{
+					{PortID: "RkEtMUR8NA", Director: types.DirectorID{ID: "FA-1D"}},
+				},
+			},
+			{
+				ID:       "csi-prod-FA-1D-4-PG",
+				Protocol: FcIscsiID,
+				Ports: []types.PortValues{
+					{PortID: "RkEtMUR8NA", Director: types.DirectorID{ID: "FA-1D"}},
+				},
+			},
+		},
+	}
+	mockClient.EXPECT().GetPortGroupListByType(gomock.Any(), symID, "fibre").
+		Return(portGroupListResult, nil).Times(1)
+
+	svc := &service{
+		opts: Opts{ClusterPrefix: clusterPrefix},
+	}
+
+	pgID, err := svc.SelectOrCreateFCPGForHost(ctx, symID, host, mockClient)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "csi-prod-FA-1D-4-PG", pgID, "Should select CSI-managed port group")
+	assert.Contains(t, pgID, "csi-"+clusterPrefix, "Selected port group must have CSI prefix")
+	assert.NotContains(t, pgID, "admin-pg", "Should not select admin port group")
+	assert.NotContains(t, pgID, "manual-pg", "Should not select manual port group")
+}
+
+func TestControllerModifyVolume_Unimplemented(t *testing.T) {
+	svc := &service{}
+
+	tests := []struct {
+		name string
+		req  *csi.ControllerModifyVolumeRequest
+	}{
+		{
+			name: "returns Unimplemented with nil request",
+			req:  nil,
+		},
+		{
+			name: "returns Unimplemented with valid volume ID",
+			req: &csi.ControllerModifyVolumeRequest{
+				VolumeId:          validLocalVolumeID,
+				MutableParameters: map[string]string{"key": "value"},
+			},
+		},
+		{
+			name: "returns Unimplemented with empty request",
+			req:  &csi.ControllerModifyVolumeRequest{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := svc.ControllerModifyVolume(context.Background(), tt.req)
+			assert.Nil(t, resp)
+			assert.Error(t, err)
+
+			st, ok := status.FromError(err)
+			assert.True(t, ok, "error should be a gRPC status error")
+			assert.Equal(t, codes.Unimplemented, st.Code())
+			assert.Contains(t, st.Message(), "ControllerModifyVolume is not supported for PowerMax")
+			assert.Contains(t, st.Message(), "no suitable volume parameters")
+		})
+	}
+}
+
+func TestControllerGetCapabilities_NoModifyVolume(t *testing.T) {
+	svc := &service{}
+
+	resp, err := svc.ControllerGetCapabilities(context.Background(), &csi.ControllerGetCapabilitiesRequest{})
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+
+	for _, cap := range resp.Capabilities {
+		rpc := cap.GetRpc()
+		if rpc != nil {
+			assert.NotEqual(t, csi.ControllerServiceCapability_RPC_MODIFY_VOLUME, rpc.GetType(),
+				"MODIFY_VOLUME capability should not be advertised for PowerMax")
+		}
+	}
+}
+
+func Test_service_SelectOrCreateFCPGForHost_PortLimit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	client := mocks.NewMockPmaxClient(ctrl)
+	client.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	symID := "000120000001"
+	clusterPrefix := "ABC"
+
+	// Build 40 valid SCSI_FC ports from a single initiator
+	var scsiPortKeys []types.PortKey
+	var initiatorIDs []string
+	for i := 0; i < 40; i++ {
+		portID := fmt.Sprintf("%02d", i)
+		scsiPortKeys = append(scsiPortKeys, types.PortKey{DirectorID: "FA-1D", PortID: portID})
+		initiatorIDs = append(initiatorIDs, fmt.Sprintf("FA-1D:%s:5000000000000001", portID))
+	}
+
+	client.EXPECT().GetPortListByProtocol(gomock.Any(), symID, "SCSI_FC").Return(&types.PortList{
+		SymmetrixPortKey: scsiPortKeys,
+	}, nil)
+	client.EXPECT().GetInitiatorList(gomock.Any(), symID, "5000000000000001", false, false).Return(&types.InitiatorList{
+		InitiatorIDs: initiatorIDs,
+	}, nil)
+	client.EXPECT().GetInitiatorByID(gomock.Any(), symID, gomock.Any()).Return(&types.Initiator{
+		OnFabric: true,
+		LoggedIn: true,
+	}, nil).AnyTimes()
+	client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+		APIVersion: "102",
+	}, nil)
+	client.EXPECT().GetSymmetrixByID(gomock.Any(), symID).Return(&types.Symmetrix{
+		SymmetrixID: symID,
+		Microcode:   "5978.441.0",
+	}, nil)
+	client.EXPECT().GetPortGroupList(gomock.Any(), symID, "fibre").Return(&types.PortGroupList{
+		PortGroupIDs: []string{"other-pg"},
+	}, nil)
+
+	var capturedPortKeys []types.PortKey
+	client.EXPECT().CreatePortGroup(gomock.Any(), symID, gomock.Any(), gomock.Any(), "SCSI_FC").DoAndReturn(func(_ context.Context, _, _ string, portKeys []types.PortKey, _ string) (*types.PortGroup, error) {
+		capturedPortKeys = portKeys
+		return &types.PortGroup{}, nil
+	}).Times(1)
+
+	host := &types.Host{
+		HostID:     "host1",
+		HostType:   "Fibre",
+		Initiators: []string{"5000000000000001"},
+	}
+	svc := &service{
+		opts: Opts{ClusterPrefix: clusterPrefix},
+	}
+
+	pgID, err := svc.SelectOrCreateFCPGForHost(context.Background(), symID, host, client)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, pgID)
+	assert.Len(t, capturedPortKeys, MaxFCPortsInPortGroup)
+}
+
+func Test_service_SelectOrCreateFCPGForHost_SkipsInactiveInitiators(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	client := mocks.NewMockPmaxClient(ctrl)
+	client.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	symID := "000120000001"
+	clusterPrefix := "ABC"
+
+	// Two ports are returned for the same WWN; one is OnFabric=false, the other is valid
+	client.EXPECT().GetPortListByProtocol(gomock.Any(), symID, "SCSI_FC").Return(&types.PortList{
+		SymmetrixPortKey: []types.PortKey{
+			{DirectorID: "FA-1D", PortID: "0"},
+			{DirectorID: "FA-1D", PortID: "1"},
+		},
+	}, nil)
+	client.EXPECT().GetInitiatorList(gomock.Any(), symID, "5000000000000001", false, false).Return(&types.InitiatorList{
+		InitiatorIDs: []string{"FA-1D:0:5000000000000001", "FA-1D:1:5000000000000001"},
+	}, nil)
+	client.EXPECT().GetInitiatorByID(gomock.Any(), symID, gomock.Any()).DoAndReturn(func(_ context.Context, _, initiatorID string) (*types.Initiator, error) {
+		if strings.HasPrefix(initiatorID, "FA-1D:0") {
+			return &types.Initiator{OnFabric: false, LoggedIn: true}, nil
+		}
+		return &types.Initiator{OnFabric: true, LoggedIn: true}, nil
+	}).AnyTimes()
+	client.EXPECT().GetVersionDetails(gomock.Any()).Return(&types.VersionDetails{
+		APIVersion: "102",
+	}, nil)
+	client.EXPECT().GetSymmetrixByID(gomock.Any(), symID).Return(&types.Symmetrix{
+		SymmetrixID: symID,
+		Microcode:   "5978.441.0",
+	}, nil)
+	client.EXPECT().GetPortGroupList(gomock.Any(), symID, "fibre").Return(&types.PortGroupList{
+		PortGroupIDs: []string{"other-pg"},
+	}, nil)
+	client.EXPECT().CreatePortGroup(gomock.Any(), symID, "csi-ABC-FA-1D-1-PG", []types.PortKey{{DirectorID: "FA-1D", PortID: "1"}}, "SCSI_FC").Return(&types.PortGroup{}, nil).Times(1)
+
+	host := &types.Host{
+		HostID:     "host1",
+		HostType:   "Fibre",
+		Initiators: []string{"5000000000000001"},
+	}
+	svc := &service{
+		opts: Opts{ClusterPrefix: clusterPrefix},
+	}
+
+	pgID, err := svc.SelectOrCreateFCPGForHost(context.Background(), symID, host, client)
+	assert.NoError(t, err)
+	assert.Equal(t, "csi-ABC-FA-1D-1-PG", pgID)
+}
+
+func TestNamingSanitization(t *testing.T) {
+	svc := &service{
+		opts: Opts{
+			ClusterPrefix: "CSM",
+		},
+	}
+
+	nodeID := "worker-2-90y5itjvh0quk.domain"
+
+	t.Run("ISCSI naming", func(t *testing.T) {
+		hostID, sgID, mvID := svc.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+		assert.NotContains(t, hostID, ".")
+		assert.NotContains(t, sgID, ".")
+		assert.NotContains(t, mvID, ".")
+		assert.Equal(t, "csi-no-srp-sg-CSM-worker-2-90y5itjvh0quk-domain", sgID)
+		assert.Equal(t, "csi-mv-CSM-worker-2-90y5itjvh0quk-domain", mvID)
+		assert.Equal(t, "csi-node-CSM-worker-2-90y5itjvh0quk-domain", hostID)
+	})
+
+	t.Run("FC naming", func(t *testing.T) {
+		hostID, sgID, mvID := svc.GetFCHostSGAndMVIDFromNodeID(nodeID)
+		assert.NotContains(t, hostID, ".")
+		assert.NotContains(t, sgID, ".")
+		assert.NotContains(t, mvID, ".")
+		assert.Equal(t, "csi-no-srp-sg-CSM-worker-2-90y5itjvh0quk-domain-FC", sgID)
+		assert.Equal(t, "csi-mv-CSM-worker-2-90y5itjvh0quk-domain-FC", mvID)
+		assert.Equal(t, "csi-node-CSM-worker-2-90y5itjvh0quk-domain-FC", hostID)
+	})
+
+	t.Run("NVMeTCP naming", func(t *testing.T) {
+		hostID, sgID, mvID := svc.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
+		assert.NotContains(t, hostID, ".")
+		assert.NotContains(t, sgID, ".")
+		assert.NotContains(t, mvID, ".")
+		assert.Equal(t, "csi-no-srp-sg-CSM-worker-2-90y5itjvh0quk-domain-NVMETCP", sgID)
+		assert.Equal(t, "csi-mv-CSM-worker-2-90y5itjvh0quk-domain-NVMETCP", mvID)
+		assert.Equal(t, "csi-node-CSM-worker-2-90y5itjvh0quk-domain-NVMETCP", hostID)
+	})
+}
+
+// TestGetAdoptedHostIDFromNodeLabels covers the controller-side resolution of a BFS
+// adopted host (FR-2A.1): the local node cache, the Kubernetes label lookup, the
+// negative result, error propagation, and the TTL cache that keeps the publish path
+// from issuing an API GET per call.
+func TestGetAdoptedHostIDFromNodeLabels(t *testing.T) {
+	symID := "000197900111"
+	driverName := "csi-powermax.dellemc.com"
+	hostLabel := driverName + "/" + symID + ".adoptedHost"
+
+	newSvc := func(k8s k8sutils.UtilsInterface) *service {
+		s := &service{k8sUtils: k8s}
+		s.opts.DriverName = driverName
+		s.opts.HostManagementMode = HostMgmtModeAdopt
+		return s
+	}
+
+	t.Run("create mode returns empty without API call", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		k8s := k8smock.NewMockUtilsInterface(ctrl) // no calls expected
+
+		svc := &service{k8sUtils: k8s}
+		svc.opts.DriverName = driverName
+		svc.opts.HostManagementMode = HostMgmtModeCreate // default mode
+
+		hostID, err := svc.getAdoptedHostIDFromNodeLabels(context.Background(), symID, "worker-1")
+		assert.NoError(t, err)
+		assert.Empty(t, hostID)
+	})
+
+	t.Run("adopt mode with nil k8sUtils returns empty", func(t *testing.T) {
+		svc := &service{k8sUtils: nil}
+		svc.opts.DriverName = driverName
+		svc.opts.HostManagementMode = HostMgmtModeAdopt
+
+		hostID, err := svc.getAdoptedHostIDFromNodeLabels(context.Background(), symID, "worker-1")
+		assert.NoError(t, err)
+		assert.Empty(t, hostID)
+	})
+
+	t.Run("local adoption state short-circuits the API lookup", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		k8s := k8smock.NewMockUtilsInterface(ctrl) // no calls expected
+
+		svc := newSvc(k8s)
+		svc.adoptedHosts = map[string]adoptedHostInfo{symID: {HostID: "BFS_Host_Node01"}}
+
+		hostID, err := svc.getAdoptedHostIDFromNodeLabels(context.Background(), symID, "worker-1")
+		assert.NoError(t, err)
+		assert.Equal(t, "BFS_Host_Node01", hostID)
+	})
+
+	t.Run("adopted host read from node labels", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		nodeName := "worker-cached.domain.local"
+
+		k8s := k8smock.NewMockUtilsInterface(ctrl)
+		k8s.EXPECT().GetNodeLabels(nodeName).
+			Return(map[string]string{hostLabel: "BFS_Host_Node01"}, nil)
+
+		svc := newSvc(k8s)
+		hostID, err := svc.getAdoptedHostIDFromNodeLabels(context.Background(), symID, nodeName)
+		assert.NoError(t, err)
+		assert.Equal(t, "BFS_Host_Node01", hostID)
+	})
+
+	t.Run("node without the label resolves to not adopted", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		nodeName := "worker-plain.domain.local"
+
+		k8s := k8smock.NewMockUtilsInterface(ctrl)
+		k8s.EXPECT().GetNodeLabels(nodeName).
+			Return(map[string]string{"kubernetes.io/os": "linux"}, nil)
+
+		svc := newSvc(k8s)
+		hostID, err := svc.getAdoptedHostIDFromNodeLabels(context.Background(), symID, nodeName)
+		assert.NoError(t, err)
+		assert.Empty(t, hostID)
+	})
+
+	t.Run("lookup failure is surfaced, not silently treated as not adopted", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		nodeName := "worker-missing.domain.local"
+
+		k8s := k8smock.NewMockUtilsInterface(ctrl)
+		k8s.EXPECT().GetNodeLabels(nodeName).Return(nil, errors.New("nodes \"x\" not found")).AnyTimes()
+
+		svc := newSvc(k8s)
+		hostID, err := svc.getAdoptedHostIDFromNodeLabels(context.Background(), symID, nodeName)
+		assert.Error(t, err)
+		assert.Empty(t, hostID)
+		assert.Contains(t, err.Error(), "failed to resolve adopted host")
+
+		// The best-effort wrapper deliberately swallows the error for callers that
+		// cannot surface one.
+		assert.Empty(t, svc.adoptedHostIDOrEmpty(context.Background(), symID, nodeName))
+	})
 }

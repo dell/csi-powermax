@@ -17,11 +17,14 @@ package service
 import (
 	"container/heap"
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dell/csmlog"
 
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
@@ -44,6 +47,8 @@ var (
 	cleanupStarted      = false
 	symmRepCapabilities = make(map[string]types.SymmetrixCapability)
 	mutex               sync.Mutex
+	// ErrArrayNotManaged is returned when a PowerMax array is not being managed by Unisphere
+	ErrArrayNotManaged = errors.New("array is not being managed by Unisphere")
 )
 
 // SnapSession is an intermediate structure to share session info
@@ -128,12 +133,12 @@ func (scw *snapCleanupWorker) requestCleanup(req *snapCleanupRequest) {
 	for i := range scw.Queue {
 		if scw.Queue[i].snapshotID == req.snapshotID && scw.Queue[i].symmetrixID == req.symmetrixID {
 			// Found!
-			log.Warnf("Snapshot ID: %s already present in the deletion queue", req.snapshotID)
+			csmlog.Warnf("Snapshot ID: %s already present in the deletion queue", req.snapshotID)
 			return
 		}
 	}
 	heap.Push(&scw.Queue, req)
-	log.WithFields(fields).Debug("Queued for Deletion")
+	csmlog.WithFields(fields).Debug("Queued for Deletion")
 }
 
 func (scw *snapCleanupWorker) queueForRetry(req *snapCleanupRequest) {
@@ -156,7 +161,6 @@ func (scw *snapCleanupWorker) removeItem() *snapCleanupRequest {
 
 // UnlinkTargets unlinks all the target devices from the snapshot
 func (s *service) UnlinkTargets(ctx context.Context, symID, srcDevID string, pmaxClient pmax.Pmax) error {
-	log := log.WithContext(ctx)
 	// Get all the snapshot relation on the volume
 	SrcSession, _, err := s.GetSnapSessions(ctx, symID, srcDevID, pmaxClient)
 	if err != nil {
@@ -166,7 +170,7 @@ func (s *service) UnlinkTargets(ctx context.Context, symID, srcDevID string, pma
 	if SrcSession != nil {
 		err := s.UnlinkSnapshot(ctx, symID, &SrcSession[0], MaxUnlinkCount, pmaxClient)
 		if err != nil {
-			log.Error("UnlinkSnapshot failed for target session:" + srcDevID)
+			csmlog.WithContext(ctx).Error("UnlinkSnapshot failed for target session:" + srcDevID)
 			return err
 		}
 	}
@@ -185,9 +189,9 @@ func RemoveReplicationCapability(symID string) {
 // This function checks if the PowerMax array has the SnapVX license.
 // It returns an error if the array does not meet the expectations.
 func (s *service) IsSnapshotLicensed(ctx context.Context, symID string, pmaxClient pmax.Pmax) (err error) {
-	log := log.WithContext(ctx)
 	if _, err := pmaxClient.IsAllowedArray(symID); err != nil {
-		return err
+		// Wrap gopowermax "array not managed" error with our sentinel error
+		return fmt.Errorf("%w: %v", ErrArrayNotManaged, err)
 	}
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -202,14 +206,15 @@ func (s *service) IsSnapshotLicensed(ctx context.Context, symID string, pmaxClie
 		for _, symmCapability := range repCapabilities.SymmetrixCapability {
 			if symmCapability.SymmetrixID == symID {
 				symmRepCapabilities[symID] = symmCapability
-				log.Infof("License information with PowerMax %s is cached", symID)
+				csmlog.WithContext(ctx).Infof("License information with PowerMax %s is cached", symID)
 				break
 			}
 		}
 
 		symmRepCapability, ok = symmRepCapabilities[symID]
 		if !ok {
-			return fmt.Errorf("PowerMax array (%s) is not being managed by Unisphere", symID)
+			// Array not found in replication capabilities - wrap with sentinel error
+			return fmt.Errorf("PowerMax array (%s): %w", symID, ErrArrayNotManaged)
 		}
 	}
 
@@ -234,7 +239,6 @@ func (s *service) IsSnapshotLicensed(ctx context.Context, symID string, pmaxClie
 // snapID: It can be empty to terminate all the snapshots on a source volume or terminates the
 // spefified snapshot
 func (s *service) UnlinkAndTerminate(ctx context.Context, symID, deviceID, snapID string, pmaxClient pmax.Pmax) error {
-	log := log.WithContext(ctx)
 	var noOfSnapsOnSrc int
 	// Get all the snapshot relation on the volume
 	SrcSessions, TgtSession, err := s.GetSnapSessions(ctx, symID, deviceID, pmaxClient)
@@ -246,19 +250,19 @@ func (s *service) UnlinkAndTerminate(ctx context.Context, symID, deviceID, snapI
 
 	if TgtSession == nil && noOfSnapsOnSrc == 0 {
 		// This volume is not participating in any snap relationships
-		log.Debugf("Couldn't find any snapshot on %s", deviceID)
+		csmlog.WithContext(ctx).Debugf("Couldn't find any snapshot on %s", deviceID)
 		return fmt.Errorf("Couldn't find any source or target session for %s", deviceID)
 	}
 
 	if TgtSession != nil {
 		err = s.UnlinkSnapshot(ctx, symID, TgtSession, 0, pmaxClient)
 		if err != nil {
-			log.Error("UnlinkSnapshot failed for target session" + TgtSession.Source)
+			csmlog.WithContext(ctx).Error("UnlinkSnapshot failed for target session" + TgtSession.Source)
 			return err
 		}
 	}
 
-	log.Debugf("Source sesion length (%d) : Snapshot name (%s)", noOfSnapsOnSrc, snapID)
+	csmlog.WithContext(ctx).Debugf("Source sesion length (%d) : Snapshot name (%s)", noOfSnapsOnSrc, snapID)
 
 	if noOfSnapsOnSrc > 0 {
 		// The list needs to be sorted in descending order to terminate the
@@ -274,7 +278,7 @@ func (s *service) UnlinkAndTerminate(ctx context.Context, symID, deviceID, snapI
 			if SrcSessions[i].Name == snapID || snapID == "" {
 				err = s.UnlinkSnapshot(ctx, symID, &SrcSessions[i], 0, pmaxClient)
 				if err != nil {
-					log.Error("UnlinkSnapshot failed for source session: " + SrcSessions[i].Source)
+					csmlog.WithContext(ctx).Error("UnlinkSnapshot failed for source session: " + SrcSessions[i].Source)
 					return err
 				}
 				if SrcSessions[i].Expired {
@@ -282,7 +286,7 @@ func (s *service) UnlinkAndTerminate(ctx context.Context, symID, deviceID, snapI
 				}
 				err = s.TerminateSnapshot(ctx, symID, SrcSessions[i].Source, SrcSessions[i].Name, pmaxClient)
 				if err != nil {
-					log.Error("Failed to terminate snapshot (%s)" + SrcSessions[i].Name)
+					csmlog.WithContext(ctx).Error("Failed to terminate snapshot (%s)" + SrcSessions[i].Name)
 					return fmt.Errorf("Failed to terminate snapshot - Error(%s)", err.Error())
 				}
 				noOfSnapsOnSrc--
@@ -299,13 +303,13 @@ func (s *service) UnlinkAndTerminate(ctx context.Context, symID, deviceID, snapI
 		// volume to deletion worker queue
 		vol, err = pmaxClient.GetVolumeByID(ctx, symID, deviceID)
 		if err != nil {
-			log.Errorf("Failed to find source snapshot volume. Error (%s) ", err.Error())
+			csmlog.WithContext(ctx).Errorf("Failed to find source snapshot volume. Error (%s) ", err.Error())
 			return nil
 		}
 		if s.isSourceTaggedToDelete(vol.VolumeIdentifier) {
 			err = s.MarkVolumeForDeletion(ctx, symID, vol, pmaxClient)
 			if err != nil {
-				log.Error("MarkVolumeForDeletion failed with error - " + err.Error())
+				csmlog.WithContext(ctx).Error("MarkVolumeForDeletion failed with error - " + err.Error())
 			}
 		}
 	}
@@ -317,7 +321,6 @@ func (s *service) UnlinkAndTerminate(ctx context.Context, symID, deviceID, snapI
 // unlink in one go. A value of 0 means, it unlinks all the targets else specified
 // by number of targets in maxUnlinkCount
 func (s *service) UnlinkSnapshot(ctx context.Context, symID string, snapSession *SnapSession, maxUnlinkCount int, pmaxClient pmax.Pmax) (err error) {
-	log := log.WithContext(ctx)
 	if snapSession.Target == nil {
 		return err
 	}
@@ -326,11 +329,11 @@ func (s *service) UnlinkSnapshot(ctx context.Context, symID string, snapSession 
 		if target.Defined {
 			TargetList := []types.VolumeList{{Name: target.Target}}
 			SourceList := []types.VolumeList{{Name: snapSession.Source}}
-			log.Debugf("Executing Unlink on (%s) with source (%v) target (%v)", snapSession.Name, SourceList, TargetList)
+			csmlog.WithContext(ctx).Debugf("Executing Unlink on (%s) with source (%v) target (%v)", snapSession.Name, SourceList, TargetList)
 			err = pmaxClient.ModifySnapshotS(ctx, symID, SourceList, TargetList, snapSession.Name, Unlink, "", snapSession.Generation, false)
 			if err != nil {
 				if strings.Contains(err.Error(), "The Device(s) is (are) already in the desired state or mode") {
-					log.Debugf("Unlink on (%s) with source (%v) target (%v) is already done", snapSession.Name, SourceList, TargetList)
+					csmlog.WithContext(ctx).Debugf("Unlink on (%s) with source (%v) target (%v) is already done", snapSession.Name, SourceList, TargetList)
 					return nil
 				}
 				return err
@@ -338,7 +341,7 @@ func (s *service) UnlinkSnapshot(ctx context.Context, symID string, snapSession 
 			if maxUnlinkCount != 0 {
 				counter++
 				if counter == maxUnlinkCount {
-					log.Debugf("Max Unlink count reached")
+					csmlog.WithContext(ctx).Debugf("Max Unlink count reached")
 					break
 				}
 			}
@@ -353,11 +356,10 @@ func (s *service) UnlinkSnapshot(ctx context.Context, symID string, snapSession 
 // The caller of this function should take a lock on the source device
 // before making a call to this function
 func (s *service) TerminateSnapshot(ctx context.Context, symID string, srcDev string, snapID string, pmaxClient pmax.Pmax) (err error) {
-	log := log.WithContext(ctx)
 	// Ensure that the snapshot is not already deleted by a simultaneous operation
 	snap, err := pmaxClient.GetSnapshotInfo(ctx, symID, srcDev, snapID)
 	if err != nil || snap.VolumeSnapshotSource == nil {
-		log.Info("Snapshot is already deleted: " + snapID)
+		csmlog.WithContext(ctx).Info("Snapshot is already deleted: " + snapID)
 		return nil
 	}
 
@@ -370,8 +372,7 @@ func (s *service) TerminateSnapshot(ctx context.Context, symID string, srcDev st
 
 // RemoveSnapshot deletes a snapshot
 func (s *service) RemoveSnapshot(ctx context.Context, symID string, srcDev string, snapID string, Generation int64, pmaxClient pmax.Pmax) (err error) {
-	log := log.WithContext(ctx)
-	log.Info(fmt.Sprintf("Deleting snapshot (%s) with generation (%d)", snapID, Generation))
+	csmlog.WithContext(ctx).Info(fmt.Sprintf("Deleting snapshot (%s) with generation (%d)", snapID, Generation))
 
 	sourceVolumes := []types.VolumeList{}
 	sourceVolumes = append(sourceVolumes, types.VolumeList{Name: srcDev})
@@ -393,13 +394,12 @@ func (s *service) IsVolumeInSnapSession(ctx context.Context, symID, deviceID str
 
 // GetSnapSessions return snapshot source and target sessions
 func (s *service) GetSnapSessions(ctx context.Context, symID, deviceID string, pmaxClient pmax.Pmax) (srcSession []SnapSession, tgtSession *SnapSession, err error) {
-	log := log.WithContext(ctx)
 	snapInfo, err := pmaxClient.GetVolumeSnapInfo(ctx, symID, deviceID)
 	if err != nil {
-		log.Errorf("GetVolumeSnapInfo failed for (%s): (%s)", deviceID, err.Error())
+		csmlog.WithContext(ctx).Errorf("GetVolumeSnapInfo failed for (%s): (%s)", deviceID, err.Error())
 		return srcSession, tgtSession, err
 	}
-	log.Debugf("For Volume (%s), Snap Info: %v", deviceID, snapInfo)
+	csmlog.WithContext(ctx).Debugf("For Volume (%s), Snap Info: %v", deviceID, snapInfo)
 	for _, volumeSnapshotSource := range snapInfo.VolumeSnapshotSource {
 		snapSession := SnapSession{
 			Source:     deviceID,
@@ -423,10 +423,10 @@ func (s *service) GetSnapSessions(ctx context.Context, symID, deviceID string, p
 		var pVolInfo *types.VolumeResultPrivate
 		pVolInfo, err = pmaxClient.GetPrivVolumeByID(ctx, symID, deviceID)
 		if err != nil {
-			log.Errorf("GetPrivVolumeByID failed for (%s): (%s)", deviceID, err.Error())
+			csmlog.WithContext(ctx).Errorf("GetPrivVolumeByID failed for (%s): (%s)", deviceID, err.Error())
 			return srcSession, tgtSession, err
 		}
-		log.Debugf("For Volume (%s), Priv Vol Info: %v", deviceID, pVolInfo)
+		csmlog.WithContext(ctx).Debugf("For Volume (%s), Priv Vol Info: %v", deviceID, pVolInfo)
 		// Ensure that this indeed is a target device
 		if &pVolInfo.TimeFinderInfo != nil &&
 			pVolInfo.TimeFinderInfo.SnapVXTgt {
@@ -453,7 +453,10 @@ func (s *service) GetSnapSessions(ctx context.Context, symID, deviceID string, p
 // volume as a target to a snapshot
 func (s *service) LinkVolumeToSnapshot(ctx context.Context, symID, srcDevID, tgtDevID, snapID string, reqID string, isCopy bool, pmaxClient pmax.Pmax) (err error) {
 	lockHandle := fmt.Sprintf("%s%s", srcDevID, symID)
-	lockNum := requestLockFunc(lockHandle, reqID)
+	lockNum, err := requestLockFunc(lockHandle, reqID)
+	if err != nil {
+		return err
+	}
 	defer releaseLockFunc(lockHandle, reqID, lockNum)
 
 	// Verify that the snapshot exists on the array
@@ -481,10 +484,9 @@ func (s *service) LinkVolumeToSnapshot(ctx context.Context, symID, srcDevID, tgt
 // to a temporary snapshot created from the source volume
 // Used for legacy V3 or below arrays that do not support the CloneVolumeFromVolume API
 func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *types.Volume, tgtDevID, snapID string, reqID string, isCopy bool, pmaxClient pmax.Pmax) error {
-	log := log.WithContext(ctx)
 	// Create a snapshot from the Source
 	// Set max 1 hr lifetime for the temporary snapshot
-	log.Debugf("Creating snapshot %s on %s and linking it to %s", snapID, vol.VolumeID, tgtDevID)
+	csmlog.WithContext(ctx).Debugf("Creating snapshot %s on %s and linking it to %s", snapID, vol.VolumeID, tgtDevID)
 	var TTL int64 = 1
 	snapInfo, err := s.CreateSnapshotFromVolume(ctx, symID, vol, snapID, TTL, reqID, pmaxClient)
 	if err != nil {
@@ -499,7 +501,7 @@ func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *typ
 	err = s.LinkVolumeToSnapshot(ctx, symID, vol.VolumeID, tgtDevID, snapID, reqID, isCopy, pmaxClient)
 	if err != nil {
 		if strings.Contains(err.Error(), errDesiredState) {
-			log.Infof("Link of %s on %s is in desired state", vol.VolumeID, tgtDevID)
+			csmlog.WithContext(ctx).Infof("Link of %s on %s is in desired state", vol.VolumeID, tgtDevID)
 		} else {
 			return err
 		}
@@ -516,10 +518,12 @@ func (s *service) LinkVolumeToVolume(ctx context.Context, symID string, vol *typ
 
 // CreateSnapshotFromVolume creates a snapshot on a source volume
 func (s *service) CreateSnapshotFromVolume(ctx context.Context, symID string, vol *types.Volume, snapID string, TTL int64, reqID string, pmaxClient pmax.Pmax) (snapshot *types.VolumeSnapshot, err error) {
-	log := log.WithContext(ctx)
-	log.Debugf("Creating snapshot %s on %s", snapID, vol.VolumeID)
+	csmlog.WithContext(ctx).Debugf("Creating snapshot %s on %s", snapID, vol.VolumeID)
 	lockHandle := fmt.Sprintf("%s%s", vol.VolumeID, symID)
-	lockNum := requestLockFunc(lockHandle, reqID)
+	lockNum, err := requestLockFunc(lockHandle, reqID)
+	if err != nil {
+		return nil, err
+	}
 	defer releaseLockFunc(lockHandle, reqID, lockNum)
 	deviceID := vol.VolumeID
 	// Unlink this device if it is a target of another snapshot
@@ -541,7 +545,10 @@ func (s *service) CreateSnapshotFromVolume(ctx context.Context, symID string, vo
 				// At times, source and target can be same
 				if vol.VolumeID != tgtSession.Source {
 					lockTarget := fmt.Sprintf("%s%s", tgtSession.Source, symID)
-					lockNum := RequestLock(lockTarget, reqID)
+					lockNum, err := RequestLock(lockTarget, reqID)
+					if err != nil {
+						return nil, status.Errorf(codes.Internal, "failed to acquire lock: %v", err)
+					}
 					defer ReleaseLock(lockTarget, reqID, lockNum)
 				}
 				// Snapshot for which deviceID is a target, might have got terminated by now
@@ -567,14 +574,14 @@ func (s *service) CreateSnapshotFromVolume(ctx context.Context, symID string, vo
 		}
 	}
 	// Create a new snapshot
-	log.Info(fmt.Sprintf("Creating snapshot (%s) of source (%s) on PMAX array (%s)", snapID, deviceID, symID))
+	csmlog.WithContext(ctx).Info(fmt.Sprintf("Creating snapshot (%s) of source (%s) on PMAX array (%s)", snapID, deviceID, symID))
 	SourceList := []types.VolumeList{}
 	SourceList = append(SourceList, types.VolumeList{Name: deviceID})
 	err = pmaxClient.CreateSnapshot(ctx, symID, snapID, SourceList, TTL)
 	if err != nil {
 		return nil, fmt.Errorf("CreateSnapshot failed with error (%s)", err.Error())
 	}
-	log.Info(fmt.Sprintf("Snapshot (%s) created successfully", snapID))
+	csmlog.WithContext(ctx).Info(fmt.Sprintf("Snapshot (%s) created successfully", snapID))
 	return pmaxClient.GetSnapshotInfo(ctx, symID, deviceID, snapID)
 }
 
@@ -595,7 +602,7 @@ func (s *service) startSnapCleanupWorker() error {
 		s.snapCleaner.MaxRetries = 10
 	}
 
-	log.Infof("Starting snapshots cleanup worker thread")
+	csmlog.Infof("Starting snapshots cleanup worker thread")
 	if !cleanupStarted {
 		go snapCleanupThread(context.Background(), s.snapCleaner, s)
 		cleanupStarted = true
@@ -606,7 +613,6 @@ func (s *service) startSnapCleanupWorker() error {
 // snapCleanupThread - Deletes temporary snapshots and snapshots
 // that are pending but marked for deletion
 func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) {
-	log := log.WithContext(ctx)
 	var tempSnapTag string
 	var delSnapTag string
 
@@ -616,7 +622,7 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 	/*for i := 0; i < 10; i++ {
 		symIDList, err = pmaxClient.GetSymmetrixIDList()
 		if err != nil {
-			log.Error("Could not retrieve SymmetrixID list: " + err.Error())
+			csmlog.WithContext(ctx).Error("Could not retrieve SymmetrixID list: " + err.Error())
 			time.Sleep(1 * time.Minute)
 		} else if symIDList != nil {
 			break
@@ -629,13 +635,13 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 	for _, symID := range s.opts.ManagedArrays {
 		select {
 		case <-ctx.Done():
-			log.Infof("snap cleanup worker context canceled before processing %s", symID)
+			csmlog.WithContext(ctx).Infof("snap cleanup worker context canceled before processing %s", symID)
 			return
 		default:
 		}
 		pmaxClient, err := s.GetPowerMaxClient(symID)
 		if err != nil {
-			log.Error(err.Error())
+			csmlog.WithContext(ctx).Error(err.Error())
 			continue
 		}
 		if err := s.IsSnapshotLicensed(ctx, symID, pmaxClient); err != nil {
@@ -645,7 +651,7 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 			types.IncludeDetails: true,
 		})
 		if err != nil {
-			log.Error("Could not retrieve Snapshot IDs to be deleted")
+			csmlog.WithContext(ctx).Error("Could not retrieve Snapshot IDs to be deleted")
 			continue
 		}
 		for _, id := range volList.SymDevice {
@@ -653,18 +659,18 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 				if snap.Generation == 0 {
 					success, snapID := s.findSnapIDFromSnapName(snap.Name)
 					if success {
-						if (strings.HasPrefix(snapID, tempSnapTag)) ||
+						if strings.HasPrefix(snapID, tempSnapTag) ||
 							strings.HasPrefix(snapID, delSnapTag) {
 							// Push the snapshot to cleanup worker
 							var cleanReq snapCleanupRequest
 							cleanReq.snapshotID = snapID
 							cleanReq.symmetrixID = symID
 							cleanReq.volumeID = id.Name
-							log.Debugf("Pushing (%s) on vol (%s) to the queue", snapID, id.Name)
+							csmlog.WithContext(ctx).Debugf("Pushing (%s) on vol (%s) to the queue", snapID, id.Name)
 							s.snapCleaner.requestCleanup(&cleanReq)
 						}
 					} else {
-						log.Debugf("Snapshot (%s) is not in a supported format", snap.Name)
+						csmlog.WithContext(ctx).Debugf("Snapshot (%s) is not in a supported format", snap.Name)
 					}
 				}
 			}
@@ -674,13 +680,13 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Infof("snap cleanup worker context canceled, exiting")
+			csmlog.WithContext(ctx).Infof("snap cleanup worker context canceled, exiting")
 			return
 		default:
 		}
 		select {
 		case <-ctx.Done():
-			log.Infof("snap cleanup worker context canceled, exiting")
+			csmlog.WithContext(ctx).Infof("snap cleanup worker context canceled, exiting")
 			return
 		default:
 		}
@@ -693,33 +699,37 @@ func snapCleanupThread(ctx context.Context, scw *snapCleanupWorker, s *service) 
 				reqID = req.requestID
 			}
 			lockHandle := fmt.Sprintf("%s%s", req.volumeID, req.symmetrixID)
-			lockNum := RequestLock(lockHandle, reqID)
+			lockNum, err := RequestLock(lockHandle, reqID)
+			if err != nil {
+				csmlog.WithContext(ctx).Errorf("Failed to acquire lock for snapshot cleanup: %s", err.Error())
+				continue
+			}
 			pmaxClient, err := s.GetPowerMaxClient(req.symmetrixID)
 			if err != nil {
-				log.Error(err.Error())
+				csmlog.WithContext(ctx).Error(err.Error())
 				continue
 			}
 			err = s.UnlinkAndTerminate(ctx, req.symmetrixID, req.volumeID, req.snapshotID, pmaxClient)
 			if err != nil {
 				// Check if Snapshot is already deleted
 				if strings.Contains(err.Error(), "Volume is neither a source nor target") {
-					log.Errorf("Snapshot (%s) already terminated from Volume (%s) on PowerMax (%s)", req.snapshotID, req.volumeID, req.symmetrixID)
+					csmlog.WithContext(ctx).Errorf("Snapshot (%s) already terminated from Volume (%s) on PowerMax (%s)", req.snapshotID, req.volumeID, req.symmetrixID)
 				} else {
 					if req.retries == scw.MaxRetries {
 						// push back to the que for retry
 						req.retries++
 						scw.queueForRetry(req)
 					}
-					log.Infof("Could not terminate Snapshot (%s) Error (%s)", req.snapshotID, err.Error())
+					csmlog.WithContext(ctx).Infof("Could not terminate Snapshot (%s) Error (%s)", req.snapshotID, err.Error())
 				}
 			} else {
-				log.Infof("Snapshot (%s) is terminated from Volume (%s) on PowerMax (%s)", req.snapshotID, req.volumeID, req.symmetrixID)
+				csmlog.WithContext(ctx).Infof("Snapshot (%s) is terminated from Volume (%s) on PowerMax (%s)", req.snapshotID, req.volumeID, req.symmetrixID)
 			}
 			ReleaseLock(lockHandle, reqID, lockNum)
 		}
 		select {
 		case <-ctx.Done():
-			log.Infof("snap cleanup worker context canceled while sleeping, exiting")
+			csmlog.WithContext(ctx).Infof("snap cleanup worker context canceled while sleeping, exiting")
 			return
 		case <-time.After(scw.PollingInterval):
 		}

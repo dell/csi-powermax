@@ -45,21 +45,24 @@ func init() {
 			&format,
 			"f",
 			"ver",
-			"The output format: env, go, json, mk, rpm, ver")
+			"The output format: env, go, json, mk, rpm, ver",
+		)
 	}
 	if flag.Lookup("o") == nil {
 		flag.StringVar(
 			&output,
 			"o",
 			"",
-			"The output file")
+			"The output file",
+		)
 	}
 	if flag.Lookup("x") == nil {
 		flag.BoolVar(
 			&export,
 			"x",
 			false,
-			"Export env vars. Used with -f env")
+			"Export env vars. Used with -f env",
+		)
 	}
 }
 
@@ -113,7 +116,8 @@ func main() {
 
 	gitdesc := chkErr(doExec("git", "describe", "--long", "--dirty"))
 	rx := regexp.MustCompile(
-		`^[^\d]*(\d+)\.(\d+)\.(\d+)(?:-([a-zA-Z].+?))?(?:-(\d+)-g(.+?)(?:-(dirty))?)?\s*$`)
+		`^[^\d]*(\d+)\.(\d+)\.(\d+)(?:-([a-zA-Z].+?))?(?:-(\d+)-g(.+?)(?:-(dirty))?)?\s*$`,
+	)
 	m := rx.FindStringSubmatch(gitdesc)
 	if len(m) == 0 {
 		errorExit(fmt.Sprintf("error: match git describe failed: %s\n", gitdesc))

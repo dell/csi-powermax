@@ -190,12 +190,11 @@ func (mockUtils *MockUtils) GetCredentialsFromSecret(secret *corev1.Secret) (*co
 }
 
 // StartInformer - mock implementation for StartInformer
-func (mockUtils *MockUtils) StartInformer(callback func(k8sutils.UtilsInterface, *corev1.Secret)) {
+func (mockUtils *MockUtils) StartInformer(_ func(k8sutils.UtilsInterface, *corev1.Secret)) {
 }
 
 // StopInformer - mock implementation for StopInformer
 func (mockUtils *MockUtils) StopInformer() {
-	return
 }
 
 // CreateNewCertSecret - creates a new mock secret for certs

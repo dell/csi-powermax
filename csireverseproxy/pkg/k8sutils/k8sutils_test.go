@@ -37,7 +37,7 @@ import (
 
 const kubeconfigFileDir = "../../test-config/tmp"
 
-func InitMockK8sUtils(namespace, certDirectory string, inCluster bool, resyncPeriod time.Duration, kubeClient *KubernetesClient) (*K8sUtils, error) {
+func InitMockK8sUtils(namespace, certDirectory string, _ bool, resyncPeriod time.Duration, kubeClient *KubernetesClient) (*K8sUtils, error) {
 	kubeClient.Clientset = fake.NewSimpleClientset()
 
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient.Clientset, resyncPeriod, informers.WithNamespace(namespace))
@@ -117,7 +117,7 @@ func TestInit(t *testing.T) {
 			client: KubernetesClient{
 				Clientset:         fake.NewSimpleClientset(),
 				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
-				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+				NewForConfigFunc: func(_ *rest.Config) (kubernetes.Interface, error) {
 					return fake.NewSimpleClientset(), nil
 				},
 				GetPathFromEnvFunc: func() string { return kubeconfigFileDir },
@@ -129,7 +129,7 @@ func TestInit(t *testing.T) {
 			client: KubernetesClient{
 				Clientset:         fake.NewSimpleClientset(),
 				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
-				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+				NewForConfigFunc: func(_ *rest.Config) (kubernetes.Interface, error) {
 					return fake.NewSimpleClientset(), nil
 				},
 				GetPathFromEnvFunc: func() string { return kubeconfigFileDir },
@@ -144,7 +144,7 @@ func TestInit(t *testing.T) {
 			client: KubernetesClient{
 				Clientset:         fake.NewSimpleClientset(),
 				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, errors.Errorf("rest.InConfig failed") },
-				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+				NewForConfigFunc: func(_ *rest.Config) (kubernetes.Interface, error) {
 					return fake.NewSimpleClientset(), nil
 				},
 				GetPathFromEnvFunc: func() string { return kubeconfigFileDir },
@@ -159,7 +159,7 @@ func TestInit(t *testing.T) {
 			client: KubernetesClient{
 				Clientset:         fake.NewSimpleClientset(),
 				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
-				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+				NewForConfigFunc: func(_ *rest.Config) (kubernetes.Interface, error) {
 					return fake.NewSimpleClientset(), errors.Errorf("kubernetes.NewForConfig failed")
 				},
 				GetPathFromEnvFunc: func() string { return kubeconfigFileDir },
@@ -174,7 +174,7 @@ func TestInit(t *testing.T) {
 			client: KubernetesClient{
 				Clientset:         fake.NewSimpleClientset(),
 				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
-				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+				NewForConfigFunc: func(_ *rest.Config) (kubernetes.Interface, error) {
 					return fake.NewSimpleClientset(), errors.Errorf("kubernetes.NewForConfig failed")
 				},
 				GetPathFromEnvFunc: func() string { return kubeconfigFileDir },
@@ -189,7 +189,7 @@ func TestInit(t *testing.T) {
 			client: KubernetesClient{
 				Clientset:         fake.NewSimpleClientset(),
 				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
-				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+				NewForConfigFunc: func(_ *rest.Config) (kubernetes.Interface, error) {
 					return fake.NewSimpleClientset(), errors.Errorf("kubeconfig not found")
 				},
 				GetPathFromEnvFunc: func() string { return "" },
@@ -201,7 +201,7 @@ func TestInit(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			k8sUtils = tt.utils // Resets the k8sUtils global for all except the first one
 			_, err := Init(common.DefaultNameSpace, "/tmp/certs", tt.inCluster, time.Minute, &tt.client)
 
@@ -252,7 +252,7 @@ func TestGetKubeConfigPathFromEnv(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			os.Setenv("HOME", tt.homeEnv)
 			os.Setenv("X_CSI_KUBECONFIG_PATH", tt.xcsiEnv)
 
@@ -311,7 +311,7 @@ func TestGetCredentialsFromSecret(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			cred, err := tt.utils.GetCredentialsFromSecret(tt.secret)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetCredentialsFromSecret error = %v, wantErr %v", err, tt.wantErr)
@@ -388,7 +388,7 @@ func TestGetCredentialsFromSecretName(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			cred, err := tt.utils.GetCredentialsFromSecretName(tt.secretName)
 
 			// Create the secret
@@ -449,7 +449,7 @@ func TestGetCertFileFromSecret(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			// Set up any necessary test fixtures
 			err := os.MkdirAll("/tmp/certs", 0o700)
 			if err != nil {
@@ -514,7 +514,7 @@ func TestGetCertFileFromSecretName(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			// Set up any necessary test fixtures
 			err := os.MkdirAll("/tmp/certs", 0o700)
 			if err != nil {
@@ -609,7 +609,7 @@ func TestStartInformer(t *testing.T) {
 	close(utils.stopCh)
 }
 
-func TestStopInformer(t *testing.T) {
+func TestStopInformer(_ *testing.T) {
 	mockUtils, err := InitMockK8sUtils(common.DefaultNameSpace, "/tmp/certs", false, time.Second, &KubernetesClient{})
 	if err != nil {
 		fmt.Println("Error initializing mock k8s utils:", err)

@@ -24,13 +24,11 @@ import (
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
-
 	"github.com/dell/csmlog"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-var log = csmlog.GetLogger()
 
 func TestMain(m *testing.M) {
 	status := 0
@@ -39,26 +37,26 @@ func TestMain(m *testing.M) {
 	}
 	err := utils.RemoveTempFiles()
 	if err != nil {
-		log.Fatalf("Failed to cleanup temp files. (%s)", err.Error())
+		csmlog.Fatalf("Failed to cleanup temp files. (%s)", err.Error())
 		status = 1
 	}
 	os.Exit(status)
 }
 
-func TestInit(t *testing.T) {
+func TestInit(_ *testing.T) {
 	k8sUtils := Init()
 	fmt.Printf("mockUtils: %+v\n", k8sUtils)
 }
 
-func TestStartInformer(t *testing.T) {
-	dummyEventHandler := func(ui k8sutils.UtilsInterface, secret *corev1.Secret) {}
+func TestStartInformer(_ *testing.T) {
+	dummyEventHandler := func(_ k8sutils.UtilsInterface, _ *corev1.Secret) {}
 
 	mockUtils := Init()
 	mockUtils.StartInformer(dummyEventHandler)
 	fmt.Printf("mockUtils: %+v\n", mockUtils)
 }
 
-func TestStopInformer(t *testing.T) {
+func TestStopInformer(_ *testing.T) {
 	mockUtils.StopInformer()
 }
 
@@ -331,7 +329,7 @@ func TestUpdateSecret(t *testing.T) {
 		{
 			name:      "Nil secret",
 			mockUtils: Init(),
-			getSecretFunc: func(secret *corev1.Secret) *corev1.Secret {
+			getSecretFunc: func(_ *corev1.Secret) *corev1.Secret {
 				return nil
 			},
 			createSecret:  false,
@@ -340,7 +338,7 @@ func TestUpdateSecret(t *testing.T) {
 		{
 			name:      "k8s utils nil",
 			mockUtils: nil,
-			getSecretFunc: func(secret *corev1.Secret) *corev1.Secret {
+			getSecretFunc: func(_ *corev1.Secret) *corev1.Secret {
 				return nil
 			},
 			createSecret:  false,

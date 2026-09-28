@@ -16,6 +16,9 @@
 # every other configuration is ignored
 # Please refer to the doc website about a detailed explanation of each configuration parameter
 # and the various possible inputs
+#
+# Note: For multi-array zone support with capacity-based selection, it is recommended
+# to use topology labels in the secret instead of this static configuration.
 allowedConnections:
   # nodeName: Name of the node on which user wants to apply given rules
   # Allowed values:

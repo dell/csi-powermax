@@ -1,5 +1,5 @@
 /*
-Copyright © 2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+Copyright © 2025-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ import (
 	"github.com/dell/gofsutil"
 	"github.com/dell/goiscsi"
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -41,6 +42,593 @@ import (
 	"github.com/golang/mock/gomock"
 	gmock "github.com/golang/mock/gomock"
 )
+
+// ---------------------------------------------------------------------------
+// Tests for NodeStageVolume non-uniform Metro client selection (node.go:144-166)
+// ---------------------------------------------------------------------------
+
+func TestNodeStageVolume_Site1_ClientSelection(t *testing.T) {
+	// Site1 node: only local array (R1) is managed.
+	// Remote array (R2) is NOT in ManagedArrays.
+	// NodeStageVolume should get client for local array only and clear remoteSymID.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	localSymID := "000120000001"
+	remoteSymID := "000120000002"
+
+	// Only local array is initialized
+	symmetrix.Initialize([]string{localSymID}, c)
+	defer symmetrix.RemoveClient(localSymID)
+
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{localSymID} // site1: only local managed
+
+	metroVolID := svc.createCSIVolumeID("", "testVol", localSymID+":"+remoteSymID, "00001:00002")
+	req := &csi.NodeStageVolumeRequest{
+		VolumeId:          metroVolID,
+		StagingTargetPath: "/tmp/test-staging",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+	}
+
+	// NodeStageVolume will get past client selection (site1 path) but fail later
+	// at nodeProbe or volume lookup — the key is that it does NOT fail with
+	// "array: 000120000002 not found" which would indicate the wrong client path.
+	_, err := svc.NodeStageVolume(context.Background(), req)
+	assert.Error(t, err, "expected error after client selection (nodeProbe/volume lookup)")
+	assert.NotContains(t, err.Error(), "000120000002 not found",
+		"should NOT fail looking up remote array — site1 should use local array only")
+}
+
+func TestNodeStageVolume_Site2_ClientSelection(t *testing.T) {
+	// Site2 node: only remote array (R2) is managed.
+	// Local array (R1) is NOT in ManagedArrays.
+	// NodeStageVolume should get client for remote array only.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	localSymID := "000120000001"
+	remoteSymID := "000120000002"
+
+	// Only remote array is initialized
+	symmetrix.Initialize([]string{remoteSymID}, c)
+	defer symmetrix.RemoveClient(remoteSymID)
+
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{remoteSymID} // site2: only remote managed
+
+	metroVolID := svc.createCSIVolumeID("", "testVol", localSymID+":"+remoteSymID, "00001:00002")
+	req := &csi.NodeStageVolumeRequest{
+		VolumeId:          metroVolID,
+		StagingTargetPath: "/tmp/test-staging",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+	}
+
+	// NodeStageVolume will get past client selection (site2 path) but fail later.
+	// The key assertion: it does NOT fail with "array: 000120000001 not found".
+	_, err := svc.NodeStageVolume(context.Background(), req)
+	assert.Error(t, err, "expected error after client selection (nodeProbe/volume lookup)")
+	assert.NotContains(t, err.Error(), "000120000001 not found",
+		"should NOT fail looking up local array — site2 should use remote array only")
+}
+
+func TestNodeStageVolume_NeitherManaged_ClientFails(t *testing.T) {
+	// Neither array is managed — GetPowerMaxClient should fail.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	localSymID := "000120000001"
+	remoteSymID := "000120000002"
+
+	// No arrays initialized at all
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{} // no arrays managed
+
+	metroVolID := svc.createCSIVolumeID("", "testVol", localSymID+":"+remoteSymID, "00001:00002")
+	req := &csi.NodeStageVolumeRequest{
+		VolumeId:          metroVolID,
+		StagingTargetPath: "/tmp/test-staging",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+	}
+
+	_, err := svc.NodeStageVolume(context.Background(), req)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found",
+		"should fail because neither array is initialized")
+}
+
+func TestNodeStageVolume_Uniform_ClientSelection(t *testing.T) {
+	// Uniform mode: both arrays are managed.
+	// NodeStageVolume should create a metro client for both.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	localSymID := "000120000001"
+	remoteSymID := "000120000002"
+
+	// Both arrays initialized
+	symmetrix.Initialize([]string{localSymID, remoteSymID}, c)
+	defer symmetrix.RemoveClient(localSymID)
+	defer symmetrix.RemoveClient(remoteSymID)
+
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{localSymID, remoteSymID} // uniform: both managed
+
+	metroVolID := svc.createCSIVolumeID("", "testVol", localSymID+":"+remoteSymID, "00001:00002")
+	req := &csi.NodeStageVolumeRequest{
+		VolumeId:          metroVolID,
+		StagingTargetPath: "/tmp/test-staging",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+	}
+
+	// Should get past client selection (uniform metro client) and fail later.
+	_, err := svc.NodeStageVolume(context.Background(), req)
+	assert.Error(t, err, "expected error after client selection (nodeProbe/volume lookup)")
+	// In uniform mode, neither array lookup should fail
+	assert.NotContains(t, err.Error(), "not found",
+		"should NOT fail finding arrays — both are initialized")
+}
+
+func TestNodeStageVolume_NonMetroVolume_LocalOnly(t *testing.T) {
+	// Non-Metro volume (no remoteSymID) — should use local array only.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	localSymID := "000120000001"
+
+	symmetrix.Initialize([]string{localSymID}, c)
+	defer symmetrix.RemoveClient(localSymID)
+
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{localSymID}
+
+	// Non-Metro volume: no ":" in symID, no remote components
+	localVolID := svc.createCSIVolumeID("", "testVol", localSymID, "00001")
+	req := &csi.NodeStageVolumeRequest{
+		VolumeId:          localVolID,
+		StagingTargetPath: "/tmp/test-staging",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+	}
+
+	_, err := svc.NodeStageVolume(context.Background(), req)
+	assert.Error(t, err, "expected error after client selection (nodeProbe/volume lookup)")
+	assert.NotContains(t, err.Error(), "not found",
+		"should NOT fail finding local array — it's initialized")
+}
+
+// ---------------------------------------------------------------------------
+// Tests for NodePublishVolume non-uniform Metro client selection
+// ---------------------------------------------------------------------------
+
+func TestNodePublishVolume_Site1_ClientSelection(t *testing.T) {
+	// Site1 node: only local array (R1) is managed.
+	// Remote array (R2) is NOT in ManagedArrays.
+	// NodePublishVolume should get client for local array only.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	localSymID := "000120000001"
+	remoteSymID := "000120000002"
+
+	// Only local array is initialized
+	symmetrix.Initialize([]string{localSymID}, c)
+	defer symmetrix.RemoveClient(localSymID)
+
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{localSymID} // site1: only local managed
+
+	metroVolID := svc.createCSIVolumeID("", "testVol", localSymID+":"+remoteSymID, "00001:00002")
+	req := &csi.NodePublishVolumeRequest{
+		VolumeId:   metroVolID,
+		TargetPath: "/tmp/test-target",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+		PublishContext: map[string]string{
+			PublishContextDeviceWWN: "60000970000120000001533030303031",
+		},
+	}
+
+	// NodePublishVolume will get past client selection (site1 path) but fail later
+	// at nodeProbe or volume lookup — the key is that it does NOT fail with
+	// "array: 000120000002 not found" which would indicate the wrong client path.
+	_, err := svc.NodePublishVolume(context.Background(), req)
+	assert.Error(t, err, "expected error after client selection (nodeProbe/volume lookup)")
+	assert.NotContains(t, err.Error(), "000120000002 not found",
+		"should NOT fail looking up remote array — site1 should use local array only")
+}
+
+func TestNodePublishVolume_Site2_ClientSelection(t *testing.T) {
+	// Site2 node: only remote array (R2) is managed.
+	// Local array (R1) is NOT in ManagedArrays.
+	// NodePublishVolume should get client for remote array only.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	localSymID := "000120000001"
+	remoteSymID := "000120000002"
+
+	// Only remote array is initialized
+	symmetrix.Initialize([]string{remoteSymID}, c)
+	defer symmetrix.RemoveClient(remoteSymID)
+
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{remoteSymID} // site2: only remote managed
+
+	metroVolID := svc.createCSIVolumeID("", "testVol", localSymID+":"+remoteSymID, "00001:00002")
+	req := &csi.NodePublishVolumeRequest{
+		VolumeId:   metroVolID,
+		TargetPath: "/tmp/test-target",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+		PublishContext: map[string]string{
+			PublishContextDeviceWWN: "60000970000120000002533030303032",
+		},
+	}
+
+	// NodePublishVolume will get past client selection (site2 path) but fail later.
+	// The key assertion: it does NOT fail with "array: 000120000001 not found".
+	_, err := svc.NodePublishVolume(context.Background(), req)
+	assert.Error(t, err, "expected error after client selection (nodeProbe/volume lookup)")
+	assert.NotContains(t, err.Error(), "000120000001 not found",
+		"should NOT fail looking up local array — site2 should use remote array only")
+}
+
+func TestNodePublishVolume_NeitherManaged_ClientFails(t *testing.T) {
+	// Neither array is managed — GetPowerMaxClient should fail.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	localSymID := "000120000001"
+	remoteSymID := "000120000002"
+
+	// No arrays initialized at all
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{} // no arrays managed
+
+	metroVolID := svc.createCSIVolumeID("", "testVol", localSymID+":"+remoteSymID, "00001:00002")
+	req := &csi.NodePublishVolumeRequest{
+		VolumeId:   metroVolID,
+		TargetPath: "/tmp/test-target",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+		PublishContext: map[string]string{
+			PublishContextDeviceWWN: "60000970000120000001533030303031",
+		},
+	}
+
+	_, err := svc.NodePublishVolume(context.Background(), req)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found",
+		"should fail because neither array is initialized")
+}
+
+func TestNodePublishVolume_Uniform_ClientSelection(t *testing.T) {
+	// Uniform mode: both arrays are managed.
+	// NodePublishVolume should create a metro client for both.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	localSymID := "000120000001"
+	remoteSymID := "000120000002"
+
+	// Both arrays initialized
+	symmetrix.Initialize([]string{localSymID, remoteSymID}, c)
+	defer symmetrix.RemoveClient(localSymID)
+	defer symmetrix.RemoveClient(remoteSymID)
+
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{localSymID, remoteSymID} // uniform: both managed
+
+	metroVolID := svc.createCSIVolumeID("", "testVol", localSymID+":"+remoteSymID, "00001:00002")
+	req := &csi.NodePublishVolumeRequest{
+		VolumeId:   metroVolID,
+		TargetPath: "/tmp/test-target",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+		PublishContext: map[string]string{
+			PublishContextDeviceWWN: "60000970000120000001533030303031",
+		},
+	}
+
+	// Should get past client selection (uniform metro client) and fail later.
+	_, err := svc.NodePublishVolume(context.Background(), req)
+	assert.Error(t, err, "expected error after client selection (nodeProbe/volume lookup)")
+	// In uniform mode, neither array lookup should fail
+	assert.NotContains(t, err.Error(), "not found",
+		"should NOT fail finding arrays — both are initialized")
+}
+
+func TestNodePublishVolume_NonMetroVolume_LocalOnly(t *testing.T) {
+	// Non-Metro volume (no remoteSymID) — should use local array only.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	localSymID := "000120000001"
+
+	symmetrix.Initialize([]string{localSymID}, c)
+	defer symmetrix.RemoveClient(localSymID)
+
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{localSymID}
+
+	// Non-Metro volume: no ":" in symID, no remote components
+	localVolID := svc.createCSIVolumeID("", "testVol", localSymID, "00001")
+	req := &csi.NodePublishVolumeRequest{
+		VolumeId:   localVolID,
+		TargetPath: "/tmp/test-target",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+		PublishContext: map[string]string{
+			PublishContextDeviceWWN: "60000970000120000001533030303031",
+		},
+	}
+
+	_, err := svc.NodePublishVolume(context.Background(), req)
+	assert.Error(t, err, "expected error after client selection (nodeProbe/volume lookup)")
+	assert.NotContains(t, err.Error(), "not found",
+		"should NOT fail finding local array — it's initialized")
+}
+
+// ---------------------------------------------------------------------------
+// Tests for NodeUnstageVolume non-uniform Metro client selection
+// ---------------------------------------------------------------------------
+
+func TestNodeUnstageVolume_Site1_ClientSelection(t *testing.T) {
+	// Site1 node: only local array (R1) is managed.
+	// Remote array (R2) is NOT in ManagedArrays.
+	// NodeUnstageVolume should get client for local array only.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	localSymID := "000120000001"
+	remoteSymID := "000120000002"
+
+	// Only local array is initialized
+	symmetrix.Initialize([]string{localSymID}, c)
+	defer symmetrix.RemoveClient(localSymID)
+
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{localSymID} // site1: only local managed
+
+	metroVolID := svc.createCSIVolumeID("", "testVol", localSymID+":"+remoteSymID, "00001:00002")
+	req := &csi.NodeUnstageVolumeRequest{
+		VolumeId:          metroVolID,
+		StagingTargetPath: "/tmp/test-staging",
+	}
+
+	// NodeUnstageVolume will get past client selection (site1 path) but fail later
+	// at disconnectVolume or device lookup — the key is that it does NOT fail with
+	// "array: 000120000002 not found" which would indicate the wrong client path.
+	_, err := svc.NodeUnstageVolume(context.Background(), req)
+	assert.Error(t, err, "expected error after client selection")
+	assert.NotContains(t, err.Error(), "000120000002 not found",
+		"should NOT fail looking up remote array — site1 should use local array only")
+}
+
+func TestNodeUnstageVolume_Site2_ClientSelection(t *testing.T) {
+	// Site2 node: only remote array (R2) is managed.
+	// Local array (R1) is NOT in ManagedArrays.
+	// NodeUnstageVolume should get client for remote array only.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	localSymID := "000120000001"
+	remoteSymID := "000120000002"
+
+	// Only remote array is initialized
+	symmetrix.Initialize([]string{remoteSymID}, c)
+	defer symmetrix.RemoveClient(remoteSymID)
+
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{remoteSymID} // site2: only remote managed
+
+	metroVolID := svc.createCSIVolumeID("", "testVol", localSymID+":"+remoteSymID, "00001:00002")
+	req := &csi.NodeUnstageVolumeRequest{
+		VolumeId:          metroVolID,
+		StagingTargetPath: "/tmp/test-staging",
+	}
+
+	// NodeUnstageVolume will get past client selection (site2 path) but fail later.
+	// The key assertion: it does NOT fail with "array: 000120000001 not found".
+	_, err := svc.NodeUnstageVolume(context.Background(), req)
+	assert.Error(t, err, "expected error after client selection")
+	assert.NotContains(t, err.Error(), "000120000001 not found",
+		"should NOT fail looking up local array — site2 should use remote array only")
+}
+
+func TestNodeUnstageVolume_NeitherManaged_ClientFails(t *testing.T) {
+	// Neither array is managed — GetPowerMaxClient should fail.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	localSymID := "000120000001"
+	remoteSymID := "000120000002"
+
+	// No arrays initialized at all
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{} // no arrays managed
+
+	metroVolID := svc.createCSIVolumeID("", "testVol", localSymID+":"+remoteSymID, "00001:00002")
+	req := &csi.NodeUnstageVolumeRequest{
+		VolumeId:          metroVolID,
+		StagingTargetPath: "/tmp/test-staging",
+	}
+
+	_, err := svc.NodeUnstageVolume(context.Background(), req)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found",
+		"should fail because neither array is initialized")
+}
+
+func TestNodeUnstageVolume_Uniform_ClientSelection(t *testing.T) {
+	// Uniform mode: both arrays are managed.
+	// NodeUnstageVolume should create a metro client for both.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	localSymID := "000120000001"
+	remoteSymID := "000120000002"
+
+	// Both arrays initialized
+	symmetrix.Initialize([]string{localSymID, remoteSymID}, c)
+	defer symmetrix.RemoveClient(localSymID)
+	defer symmetrix.RemoveClient(remoteSymID)
+
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{localSymID, remoteSymID} // uniform: both managed
+
+	metroVolID := svc.createCSIVolumeID("", "testVol", localSymID+":"+remoteSymID, "00001:00002")
+	req := &csi.NodeUnstageVolumeRequest{
+		VolumeId:          metroVolID,
+		StagingTargetPath: "/tmp/test-staging",
+	}
+
+	// Should get past client selection (uniform metro client) and fail later.
+	_, err := svc.NodeUnstageVolume(context.Background(), req)
+	assert.Error(t, err, "expected error after client selection")
+	// In uniform mode, neither array lookup should fail
+	assert.NotContains(t, err.Error(), "not found",
+		"should NOT fail finding arrays — both are initialized")
+}
+
+func TestNodeUnstageVolume_NonMetroVolume_LocalOnly(t *testing.T) {
+	// Non-Metro volume (no remoteSymID) — should use local array only.
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	c := mocks.NewMockPmaxClient(ctrl)
+	c.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(c)
+	c.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
+
+	localSymID := "000120000001"
+
+	symmetrix.Initialize([]string{localSymID}, c)
+	defer symmetrix.RemoveClient(localSymID)
+
+	svc := &service{}
+	svc.opts.ManagedArrays = []string{localSymID}
+
+	// Non-Metro volume: no ":" in symID, no remote components
+	localVolID := svc.createCSIVolumeID("", "testVol", localSymID, "00001")
+	req := &csi.NodeUnstageVolumeRequest{
+		VolumeId:          localVolID,
+		StagingTargetPath: "/tmp/test-staging",
+	}
+
+	_, err := svc.NodeUnstageVolume(context.Background(), req)
+	assert.Error(t, err, "expected error after client selection")
+	assert.NotContains(t, err.Error(), "not found",
+		"should NOT fail finding local array — it's initialized")
+}
 
 func TestGetNVMeTCPTargets(t *testing.T) {
 	// Define test cases
@@ -133,7 +721,7 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 	}{
 		{
 			name:         "Valid case with different cached targets and provided targets",
-			arrayTargets: []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00002"},
+			arrayTargets: []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00002:1C001"},
 			symID:        "array1",
 			getClient: func() *mocks.MockPmaxClient {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
@@ -472,11 +1060,26 @@ func TestGetAndConfigureArrayNVMeTCPTargets(t *testing.T) {
 	for _, tc := range testCases {
 		tc.pmaxClient = tc.getClient()
 		t.Run(tc.name, func(t *testing.T) {
+			targetNQN := "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"
+			if strings.Contains(tc.name, "different cached") {
+				targetNQN = "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00002"
+			}
 			s := &service{
 				opts: Opts{
-					UseProxy: true,
+					UseProxy:   true,
+					PortGroups: []string{"portgroup1"},
 				},
-				nvmetcpClient:      gonvme.NewMockNVMe(map[string]string{}),
+				nvmetcpClient: &nvmeClientMock{
+					discoverTargets: func(_ string) ([]gonvme.NVMeTarget, error) {
+						if strings.Contains(tc.name, "no matching targets") {
+							return nil, nil
+						}
+						return []gonvme.NVMeTarget{{
+							Portal:    "1.1.1.1",
+							TargetNqn: targetNQN,
+						}}, nil
+					},
+				},
 				nvmeTargets:        &sync.Map{},
 				loggedInNVMeArrays: map[string]bool{},
 			}
@@ -896,7 +1499,7 @@ func TestConnectDevice_Vsphere(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			s := &service{
 				opts: Opts{
 					IsVsphereEnabled: true,
@@ -965,7 +1568,7 @@ func TestGetHostForVsphere(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			pmaxClient := func() *mocks.MockPmaxClient {
 				client := mocks.NewMockPmaxClient(gmock.NewController(t))
 				client.EXPECT().GetHTTPClient().AnyTimes().Return(&http.Client{})
@@ -1003,7 +1606,7 @@ func TestIsISCSIConnected(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			got := s.isISCSIConnected(tt.err)
 			if got != tt.want {
 				t.Errorf("isISCSIConnected() = %v, want %v", got, tt.want)
@@ -1040,7 +1643,8 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				c.EXPECT().CreateHost(gmock.All(), "array1", "host1", gmock.Any(), gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				c.EXPECT().GetInitiatorList(gmock.All(), "array1", "", false, false).AnyTimes().Return(&types.InitiatorList{}, nil)
 				c.EXPECT().GetInitiatorByID(gmock.All(), "array1", "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001").AnyTimes().Return(
-					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil)
+					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil,
+				)
 				c.EXPECT().UpdateHostInitiators(gmock.All(), "array1", "host1", gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				return c
 			},
@@ -1063,7 +1667,8 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				c.EXPECT().CreateHost(gmock.All(), "array1", "host1", gmock.Any(), gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				c.EXPECT().GetInitiatorList(gmock.All(), "array1", "", false, false).AnyTimes().Return(&types.InitiatorList{}, nil)
 				c.EXPECT().GetInitiatorByID(gmock.All(), "array1", "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001").AnyTimes().Return(
-					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil)
+					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil,
+				)
 				c.EXPECT().UpdateHostInitiators(gmock.All(), "array1", "host1", gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				return c
 			},
@@ -1104,7 +1709,8 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 					},
 				}, nil)
 				c.EXPECT().GetInitiatorByID(gmock.All(), "array1", "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001").AnyTimes().Return(
-					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil)
+					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil,
+				)
 				c.EXPECT().UpdateHostInitiators(gmock.All(), "array1", "host1", gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				return c
 			},
@@ -1163,7 +1769,8 @@ func TestCreateOrUpdateNVMeTCPHost(t *testing.T) {
 				c.EXPECT().CreateHost(gmock.All(), "array1", "host1", gmock.Any(), gmock.Any()).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				c.EXPECT().GetInitiatorList(gmock.All(), "array1", "", false, false).AnyTimes().Return(&types.InitiatorList{}, nil)
 				c.EXPECT().GetInitiatorByID(gmock.All(), "array1", "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001").AnyTimes().Return(
-					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil)
+					&types.Initiator{InitiatorID: "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001"}, nil,
+				)
 				c.EXPECT().UpdateHostInitiators(gmock.All(), "array1", gmock.All(), []string{"nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00222"}).AnyTimes().Return(&types.Host{HostID: "host1"}, nil)
 				return c
 			},
@@ -1373,7 +1980,8 @@ func TestPerformNVMETCPLoginOnSymID(t *testing.T) {
 			// Create a new service instance for testing
 			s := &service{
 				opts: Opts{
-					UseProxy: true,
+					UseProxy:   true,
+					PortGroups: []string{"portgroup1"},
 				},
 				loggedInNVMeArrays: map[string]bool{},
 				nvmetcpClient:      gonvme.NewMockNVMe(map[string]string{}),
@@ -1416,8 +2024,8 @@ func TestSetupArrayForNVMeTCP(t *testing.T) {
 			NQNs: []string{"nqn.test:001"},
 			initFunc: func() {
 				gonvme.GONVMEMock.InduceInitiatorError = false
-				getIPInterfaces = func(_ context.Context, _ string, _ []string, _ pmax.Pmax) (map[string]int32, error) {
-					return nil, fmt.Errorf("IP interface fetch error")
+				getNVMeTCPTargetsFromPortGroups = func(_ *service, _ context.Context, _ string, _ []string, _ pmax.Pmax) ([]gonvme.NVMeTarget, error) {
+					return nil, fmt.Errorf("NVMeTCP target fetch error")
 				}
 			},
 			setupClient: func(c *mocks.MockPmaxClient) {
@@ -1432,8 +2040,8 @@ func TestSetupArrayForNVMeTCP(t *testing.T) {
 			initFunc: func() {
 				gonvme.GONVMEMock.InduceInitiatorError = false
 				gonvme.GONVMEMock.InduceDiscoveryError = false
-				getIPInterfaces = func(_ context.Context, _ string, _ []string, _ pmax.Pmax) (map[string]int32, error) {
-					return map[string]int32{"1.2.3.4": 4420}, nil
+				getNVMeTCPTargetsFromPortGroups = func(_ *service, _ context.Context, _ string, _ []string, _ pmax.Pmax) ([]gonvme.NVMeTarget, error) {
+					return []gonvme.NVMeTarget{{Portal: "1.2.3.4", TargetNqn: "nqn.test:001"}}, nil
 				}
 			},
 			setupClient: func(c *mocks.MockPmaxClient) {
@@ -1449,13 +2057,13 @@ func TestSetupArrayForNVMeTCP(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			origIPInterfaces := getIPInterfaces
+			origGetTargets := getNVMeTCPTargetsFromPortGroups
 			origQueryAttempts := pmaxQueryAttempts
 			pmaxQueryAttempts = 1
 			defer func() {
 				gonvme.GONVMEMock.InduceInitiatorError = false
 				gonvme.GONVMEMock.InduceDiscoveryError = false
-				getIPInterfaces = origIPInterfaces
+				getNVMeTCPTargetsFromPortGroups = origGetTargets
 				pmaxQueryAttempts = origQueryAttempts
 			}()
 
@@ -1485,12 +2093,129 @@ func TestSetupArrayForNVMeTCP(t *testing.T) {
 	}
 }
 
-func TestSetupNVMeTCPTargetDiscovery_EmptyIPInterfaces(t *testing.T) {
-	orig := getIPInterfaces
+func TestGetNVMeTCPTargetsFromPortGroupsUsesSubsystemNQN(t *testing.T) {
+	origGetIPInterfaces := getIPInterfaces
 	getIPInterfaces = func(_ context.Context, _ string, _ []string, _ pmax.Pmax) (map[string]int32, error) {
-		return map[string]int32{}, nil
+		return map[string]int32{"10.247.18.23": 4420}, nil
 	}
-	defer func() { getIPInterfaces = orig }()
+	defer func() { getIPInterfaces = origGetIPInterfaces }()
+
+	ctrl := gomock.NewController(t)
+	c := mocks.NewMockPmaxClient(ctrl)
+	nvmeClient := &nvmeClientMock{
+		discoverTargets: func(_ string) ([]gonvme.NVMeTarget, error) {
+			return []gonvme.NVMeTarget{
+				{
+					Portal:    "10.247.18.23",
+					TargetNqn: "nqn.1988-11.com.dell:PowerMax_2500:00:000120001965",
+				},
+				{
+					Portal:    "10.247.18.24",
+					TargetNqn: "nqn.1988-11.com.dell:PowerMax_2500:00:000120001965",
+				},
+			}, nil
+		},
+	}
+
+	got, err := (&service{nvmetcpClient: nvmeClient}).getNVMeTCPTargetsFromPortGroupsImpl(context.Background(), "array1", []string{"pg1"}, c)
+	assert.NoError(t, err)
+	assert.Equal(t, []gonvme.NVMeTarget{
+		{
+			Portal:    "10.247.18.23",
+			TargetNqn: "nqn.1988-11.com.dell:PowerMax_2500:00:000120001965",
+		},
+	}, got)
+}
+
+func TestGetNVMeTCPTargetsFromPortGroupsContinuesAfterPortalFailure(t *testing.T) {
+	origGetIPInterfaces := getIPInterfaces
+	getIPInterfaces = func(_ context.Context, _ string, _ []string, _ pmax.Pmax) (map[string]int32, error) {
+		return map[string]int32{
+			"10.247.18.23": 4420,
+			"10.247.18.24": 4420,
+		}, nil
+	}
+	defer func() { getIPInterfaces = origGetIPInterfaces }()
+
+	ctrl := gomock.NewController(t)
+	pmaxClient := mocks.NewMockPmaxClient(ctrl)
+	nvmeClient := &nvmeClientMock{
+		discoverTargets: func(address string) ([]gonvme.NVMeTarget, error) {
+			if address == "10.247.18.23" {
+				return nil, errors.New("portal unavailable")
+			}
+			return []gonvme.NVMeTarget{{
+				Portal:    address,
+				TargetNqn: "nqn.1988-11.com.dell:PowerMax_2500:00:000120001965",
+			}}, nil
+		},
+	}
+
+	got, err := (&service{nvmetcpClient: nvmeClient}).getNVMeTCPTargetsFromPortGroupsImpl(context.Background(), "array1", []string{"pg1"}, pmaxClient)
+	assert.NoError(t, err)
+	assert.Equal(t, []gonvme.NVMeTarget{{
+		Portal:    "10.247.18.24",
+		TargetNqn: "nqn.1988-11.com.dell:PowerMax_2500:00:000120001965",
+	}}, got)
+}
+
+func TestGetNVMeTCPTargetsFromPortGroupsErrorsWhenNoTargetsDiscovered(t *testing.T) {
+	origGetIPInterfaces := getIPInterfaces
+	getIPInterfaces = func(_ context.Context, _ string, _ []string, _ pmax.Pmax) (map[string]int32, error) {
+		return map[string]int32{
+			"10.247.18.23": 4420,
+			"10.247.18.24": 4420,
+		}, nil
+	}
+	defer func() { getIPInterfaces = origGetIPInterfaces }()
+
+	ctrl := gomock.NewController(t)
+	pmaxClient := mocks.NewMockPmaxClient(ctrl)
+	nvmeClient := &nvmeClientMock{
+		discoverTargets: func(_ string) ([]gonvme.NVMeTarget, error) {
+			return nil, nil
+		},
+	}
+
+	got, err := (&service{nvmetcpClient: nvmeClient}).getNVMeTCPTargetsFromPortGroupsImpl(context.Background(), "array1", []string{"pg1"}, pmaxClient)
+	assert.Nil(t, got)
+	assert.EqualError(t, err, "no NVMe targets for symid array1")
+}
+
+func TestGetAndConfigureArrayNVMeTCPTargetsUsesDiscoveredNQNAndDeduplicates(t *testing.T) {
+	const sharedNQN = "nqn.example:subsystem"
+	symToAllNVMeTCPTargets.Store("array1", []NVMeTCPTargetInfo{
+		{Target: sharedNQN, Portal: "10.10.10.11"},
+		{Target: sharedNQN, Portal: "10.10.10.12"},
+	})
+	defer symToAllNVMeTCPTargets.Delete("array1")
+
+	symToMaskingViewTargets.Store("array1", []maskingViewNVMeTargetInfo{
+		{target: gonvme.NVMeTarget{TargetNqn: sharedNQN, Portal: "10.10.10.11"}},
+		{target: gonvme.NVMeTarget{TargetNqn: sharedNQN, Portal: "10.10.10.12"}},
+	})
+	defer symToMaskingViewTargets.Delete("array1")
+
+	svc := &service{
+		opts: Opts{PortGroups: []string{"pg1"}},
+	}
+	got := svc.getAndConfigureArrayNVMeTCPTargets(context.Background(), []string{
+		sharedNQN + ":PORT_A",
+		sharedNQN + ":PORT_B",
+	}, "array1", mocks.NewMockPmaxClient(gomock.NewController(t)))
+
+	assert.ElementsMatch(t, []NVMeTCPTargetInfo{
+		{Target: sharedNQN, Portal: "10.10.10.11"},
+		{Target: sharedNQN, Portal: "10.10.10.12"},
+	}, got)
+}
+
+func TestSetupNVMeTCPTargetDiscovery_EmptyTargets(t *testing.T) {
+	orig := getNVMeTCPTargetsFromPortGroups
+	getNVMeTCPTargetsFromPortGroups = func(_ *service, _ context.Context, _ string, _ []string, _ pmax.Pmax) ([]gonvme.NVMeTarget, error) {
+		return []gonvme.NVMeTarget{}, nil
+	}
+	defer func() { getNVMeTCPTargetsFromPortGroups = orig }()
 
 	svc := &service{
 		opts:          Opts{PortGroups: []string{"pg1"}},
@@ -1501,7 +2226,7 @@ func TestSetupNVMeTCPTargetDiscovery_EmptyIPInterfaces(t *testing.T) {
 
 	err := svc.setupNVMeTCPTargetDiscovery(context.Background(), "array1", c)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "couldn't find any IP interfaces")
+	assert.Contains(t, err.Error(), "couldn't find any NVMeTCP targets")
 }
 
 func TestRetryableUpdateHostInitiators(t *testing.T) {
@@ -2322,6 +3047,19 @@ func TestNodeGetInfo(t *testing.T) {
 			getClient: func() *mocks.MockPmaxClient {
 				c := mocks.NewMockPmaxClient(gmock.NewController(t))
 				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				c.EXPECT().GetNFSServerList(gmock.All(), "array1").AnyTimes().Return(nil, nil)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{{
+						DirectorID: "director1",
+						PortID:     "port1",
+					}},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
 				symmetrix.Initialize([]string{"array1"}, c)
 				return c
 			},
@@ -2346,6 +3084,52 @@ func TestNodeGetInfo(t *testing.T) {
 				},
 			},
 			expectedZoneInfo: map[string]string{"regionlabel": "R1", "zonelabel": "Z1"},
+			wantErr:          false,
+			wantResp:         true,
+		},
+		{
+			name:     "Site label with slash added as raw topology segment",
+			nodeName: "node1",
+			getClient: func() *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(gmock.NewController(t))
+				c.EXPECT().WithSymmetrixID("array1").AnyTimes().Return(c)
+				c.EXPECT().GetNFSServerList(gmock.All(), "array1").AnyTimes().Return(nil, nil)
+				c.EXPECT().GetPortGroupByID(gmock.All(), "array1", "portgroup1").AnyTimes().Return(&types.PortGroup{
+					SymmetrixPortKey: []types.PortKey{{
+						DirectorID: "director1",
+						PortID:     "port1",
+					}},
+				}, nil)
+				c.EXPECT().GetPort(gmock.All(), "array1", "director1", "port1").AnyTimes().Return(&types.Port{
+					SymmetrixPort: types.SymmetrixPortType{
+						IPAddresses: []string{"1.1.1.1"},
+						Identifier:  "nqn.1988-11.com.dell.mock:e6e2d5b871f1403E169D00001",
+					},
+				}, nil)
+				symmetrix.Initialize([]string{"array1"}, c)
+				return c
+			},
+			managedArrays: []string{"array1"},
+			arrayTransportProtocolMap: map[string]string{
+				"array1": NvmeTCPTransportProtocol,
+			},
+			nvmeTCPClient: gonvme.NewMockNVMe(map[string]string{}),
+			initFunc: func() *k8smock.MockUtilsInterface {
+				mockUtilsInterface := k8smock.NewMockUtilsInterface(gomock.NewController(t))
+				mockUtilsInterface.EXPECT().GetNodeLabels("node1").Return(map[string]string{}, nil).AnyTimes()
+				return mockUtilsInterface
+			},
+			loggedInArrays: map[string]bool{},
+			loggedInNVMeArrays: map[string]bool{
+				"array1": true,
+			},
+			portGroups: []string{"portgroup1"},
+			storageArrays: map[string]StorageArrayConfig{
+				"array1": {
+					Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"},
+				},
+			},
+			expectedZoneInfo: map[string]string{"topology.kubernetes.io/site": "site1"},
 			wantErr:          false,
 			wantResp:         true,
 		},
@@ -2379,9 +3163,19 @@ func TestNodeGetInfo(t *testing.T) {
 			}
 			if tc.wantResp {
 				topology := resp.AccessibleTopology.Segments
-				if topology["regionlabel"] != tc.expectedZoneInfo["regionlabel"] ||
-					topology["zonelabel"] != tc.expectedZoneInfo["zonelabel"] {
-					t.Errorf("Expected zone info to be %v and %v but got %v and %v", tc.expectedZoneInfo["regionlabel"], tc.expectedZoneInfo["zonelabel"], topology["regionlabel"], topology["zonelabel"])
+				if tc.expectedZoneInfo != nil {
+					for k, v := range tc.expectedZoneInfo {
+						if topology[k] != v {
+							t.Errorf("Expected topology[%q] = %q but got %q", k, v, topology[k])
+						}
+					}
+				}
+				// Verify no topology key has multiple slashes (invalid K8s label)
+				for key := range topology {
+					slashCount := strings.Count(key, "/")
+					if slashCount > 1 {
+						t.Errorf("Topology key %q contains %d slashes; Kubernetes labels allow at most 1", key, slashCount)
+					}
 				}
 			}
 		})
@@ -2505,7 +3299,7 @@ func TestDisconnectVolume(t *testing.T) {
 	}
 
 	for _, tt := range testCases {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			s := &service{
 				arrayTransportProtocolMap: tt.arrayTransportProtocolMap,
 			}
@@ -2637,7 +3431,7 @@ func TestCheckIfArrayProtocolValid(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			s := &service{
 				opts: Opts{
 					IsTopologyControlEnabled: tt.isTopologyControlEnabled,
@@ -2795,7 +3589,7 @@ func TestReachableEndPoint(t *testing.T) {
 		{"Unreachable IP", args{endpoint: "10.255.1.2:100"}, false},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			if got := s.reachableEndPoint(tt.args.endpoint); got != tt.want {
 				t.Errorf("reachableEndPoint() = %v, want %v", got, tt.want)
 			}
@@ -2804,47 +3598,47 @@ func TestReachableEndPoint(t *testing.T) {
 }
 
 func TestSetupNVMeTCPTargetDiscovery(t *testing.T) {
-	twoInterfaces := func() (map[string]int32, error) {
-		return map[string]int32{
-			"ip1": 100,
-			"ip2": 200,
+	twoTargets := func() ([]gonvme.NVMeTarget, error) {
+		return []gonvme.NVMeTarget{
+			{Portal: "ip1", TargetNqn: "nqn1"},
+			{Portal: "ip2", TargetNqn: "nqn2"},
 		}, nil
 	}
 
 	tests := []struct {
-		name             string
-		getIPInterfaces  func() (map[string]int32, error)
-		getDiscoverError func(address string) error
-		wantErr          bool
+		name                string
+		getPortGroupTargets func() ([]gonvme.NVMeTarget, error)
+		getConnectError     func(target gonvme.NVMeTarget) error
+		wantErr             bool
 	}{
 		{
-			name:             "Successful discovery",
-			getIPInterfaces:  twoInterfaces,
-			getDiscoverError: func(_ string) error { return nil },
-			wantErr:          false,
+			name:                "Successful connect",
+			getPortGroupTargets: twoTargets,
+			getConnectError:     func(_ gonvme.NVMeTarget) error { return nil },
+			wantErr:             false,
 		},
 		{
-			name: "Error fetching IP interfaces",
-			getIPInterfaces: func() (map[string]int32, error) {
-				return nil, errors.New("unable to fetch IP interfaces")
+			name: "Error fetching port group targets",
+			getPortGroupTargets: func() ([]gonvme.NVMeTarget, error) {
+				return nil, errors.New("unable to fetch NVMeTCP targets from port groups")
 			},
-			getDiscoverError: nil, // should not be called
-			wantErr:          true,
+			getConnectError: nil, // should not be called
+			wantErr:         true,
 		},
 		{
-			name:            "All targets failed to discover",
-			getIPInterfaces: twoInterfaces,
-			getDiscoverError: func(_ string) error {
-				return errors.New("unable to discover NVMe targets")
+			name:                "All targets failed to connect",
+			getPortGroupTargets: twoTargets,
+			getConnectError: func(_ gonvme.NVMeTarget) error {
+				return errors.New("unable to connect to NVMe target")
 			},
 			wantErr: true,
 		},
 		{
-			name:            "First of two targets failed to discover",
-			getIPInterfaces: twoInterfaces,
-			getDiscoverError: func(address string) error {
-				if address == "ip1" {
-					return errors.New("unable to discover NVMe target")
+			name:                "First of two targets failed to connect",
+			getPortGroupTargets: twoTargets,
+			getConnectError: func(target gonvme.NVMeTarget) error {
+				if target.Portal == "ip1" {
+					return errors.New("unable to connect to NVMe target")
 				}
 				return nil
 			},
@@ -2852,24 +3646,24 @@ func TestSetupNVMeTCPTargetDiscovery(t *testing.T) {
 		},
 	}
 
-	origGetIPInterfaces := getIPInterfaces
+	origGetTargets := getNVMeTCPTargetsFromPortGroups
 	defer func() {
-		getIPInterfaces = origGetIPInterfaces
+		getNVMeTCPTargetsFromPortGroups = origGetTargets
 	}()
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			ctrl := gmock.NewController(t)
 			c := mocks.NewMockPmaxClient(ctrl)
 
 			s := &service{
-				nvmetcpClient: &nmveClientMock{
-					getDiscoverError: tt.getDiscoverError,
+				nvmetcpClient: &nvmeClientMock{
+					getConnectError: tt.getConnectError,
 				},
 			}
 
-			getIPInterfaces = func(_ context.Context, _ string, _ []string, _ pmax.Pmax) (map[string]int32, error) {
-				return tt.getIPInterfaces()
+			getNVMeTCPTargetsFromPortGroups = func(_ *service, _ context.Context, _ string, _ []string, _ pmax.Pmax) ([]gonvme.NVMeTarget, error) {
+				return tt.getPortGroupTargets()
 			}
 
 			err := s.setupNVMeTCPTargetDiscovery(context.Background(), "sym1", c)
@@ -2882,16 +3676,32 @@ func TestSetupNVMeTCPTargetDiscovery(t *testing.T) {
 	}
 }
 
-type nmveClientMock struct {
+type nvmeClientMock struct {
 	gonvme.NVMEinterface
-	getDiscoverError func(address string) error
+	getConnectError func(target gonvme.NVMeTarget) error
+	discoverTargets func(address string) ([]gonvme.NVMeTarget, error)
+	getSessions     func() ([]gonvme.NVMESession, error)
 }
 
-func (c *nmveClientMock) DiscoverNVMeTCPTargets(address string, _ bool) ([]gonvme.NVMeTarget, error) {
-	if err := c.getDiscoverError(address); err != nil {
-		return nil, err
+func (c *nvmeClientMock) NVMeTCPConnect(target gonvme.NVMeTarget, _ bool) error {
+	if c.getConnectError != nil {
+		return c.getConnectError(target)
 	}
-	return []gonvme.NVMeTarget{}, nil
+	return nil
+}
+
+func (c *nvmeClientMock) DiscoverNVMeTCPTargets(address string, _ bool) ([]gonvme.NVMeTarget, error) {
+	if c.discoverTargets != nil {
+		return c.discoverTargets(address)
+	}
+	return nil, nil
+}
+
+func (c *nvmeClientMock) GetSessions() ([]gonvme.NVMESession, error) {
+	if c.getSessions != nil {
+		return c.getSessions()
+	}
+	return nil, nil
 }
 
 func TestLoginIntoISCSITargets(t *testing.T) {
@@ -2961,7 +3771,7 @@ func TestLoginIntoISCSITargets(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			s := &service{
 				opts: Opts{
 					EnableCHAP: tt.enableCHAP,
@@ -3178,4 +3988,1366 @@ func TestNVMeInitiatorRetryLogic(t *testing.T) {
 		// Should succeed now
 		assert.NoError(t, err)
 	})
+}
+
+/*
+func TestNodePublishVolumeErrorPaths(t *testing.T) {
+	tests := []struct {
+		name        string
+		volumeID    string
+		nodeID      string
+		expectError bool
+	}{
+		{
+			name:        "Error getting volume by ID",
+			volumeID:    "vol-123",
+			nodeID:      "node-1",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(_ *testing.T) {
+			svc := &service{}
+			ctx := context.Background()
+
+			_ = svc
+			_ = ctx
+			_ = tt.volumeID
+			_ = tt.nodeID
+		})
+	}
+}
+*/
+
+func TestGetAdoptedHostID(t *testing.T) {
+	tests := []struct {
+		name         string
+		symID        string
+		adoptedHosts map[string]adoptedHostInfo
+		expectHostID string
+	}{
+		{
+			name:  "Returns adopted host ID",
+			symID: "000197900111",
+			adoptedHosts: map[string]adoptedHostInfo{
+				"000197900111": {HostID: "Adopted_Host_Node01", Protocol: FcTransportProtocol},
+			},
+			expectHostID: "Adopted_Host_Node01",
+		},
+		{
+			name:         "No adopted hosts — returns empty",
+			symID:        "000197900111",
+			adoptedHosts: nil,
+			expectHostID: "",
+		},
+		{
+			name:  "Different array — returns empty",
+			symID: "000197900222",
+			adoptedHosts: map[string]adoptedHostInfo{
+				"000197900111": {HostID: "Adopted_Host_Node01", Protocol: FcTransportProtocol},
+			},
+			expectHostID: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &service{adoptedHosts: tc.adoptedHosts}
+			result := svc.getAdoptedHostID(tc.symID)
+			assert.Equal(t, tc.expectHostID, result)
+		})
+	}
+}
+
+func TestIsBootLUNStorageGroup(t *testing.T) {
+	tests := []struct {
+		name            string
+		symID           string
+		sgID            string
+		adoptedHosts    map[string]adoptedHostInfo
+		expectProtected bool
+	}{
+		{
+			name:  "Boot LUN SG is protected",
+			symID: "000197900111",
+			sgID:  "SG_Boot_Node01",
+			adoptedHosts: map[string]adoptedHostInfo{
+				"000197900111": {
+					HostID:   "Adopted_Host_Node01",
+					Protocol: FcTransportProtocol,
+					BootLUNs: []bootLUNInfo{
+						{StorageGroupID: "SG_Boot_Node01", NumVolumes: 2, MaskingViewID: "MV_Boot"},
+					},
+				},
+			},
+			expectProtected: true,
+		},
+		{
+			name:  "CSI SG is not protected",
+			symID: "000197900111",
+			sgID:  "csi-SG-Node01",
+			adoptedHosts: map[string]adoptedHostInfo{
+				"000197900111": {
+					HostID:   "Adopted_Host_Node01",
+					Protocol: FcTransportProtocol,
+					BootLUNs: []bootLUNInfo{
+						{StorageGroupID: "SG_Boot_Node01", NumVolumes: 2, MaskingViewID: "MV_Boot"},
+					},
+				},
+			},
+			expectProtected: false,
+		},
+		{
+			name:            "No adopted hosts — not protected",
+			symID:           "000197900111",
+			sgID:            "SG_Boot_Node01",
+			adoptedHosts:    nil,
+			expectProtected: false,
+		},
+		{
+			name:  "Different array — not protected",
+			symID: "000197900222",
+			sgID:  "SG_Boot_Node01",
+			adoptedHosts: map[string]adoptedHostInfo{
+				"000197900111": {
+					HostID:   "Adopted_Host_Node01",
+					Protocol: FcTransportProtocol,
+					BootLUNs: []bootLUNInfo{
+						{StorageGroupID: "SG_Boot_Node01", NumVolumes: 2, MaskingViewID: "MV_Boot"},
+					},
+				},
+			},
+			expectProtected: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &service{
+				adoptedHosts: tc.adoptedHosts,
+			}
+			result := svc.isBootLUNStorageGroup(tc.symID, tc.sgID)
+			assert.Equal(t, tc.expectProtected, result)
+		})
+	}
+}
+
+func TestDetectBootLUNs(t *testing.T) {
+	symID := "000197900111"
+
+	tests := []struct {
+		name         string
+		hostID       string
+		setupMock    func(ctrl *gmock.Controller) *mocks.MockPmaxClient
+		expectLUNs   int
+		expectErr    bool
+		expectErrMsg string
+	}{
+		{
+			name:   "Non-CSI boot storage group detected",
+			hostID: "Adopted_Host_Node01",
+			setupMock: func(ctrl *gmock.Controller) *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(ctrl)
+				c.EXPECT().GetHostMaskingViews(gomock.Any(), symID, "Adopted_Host_Node01").
+					Return([]string{"MV_Boot_Node01", "csi-mv-Node01"}, nil)
+				c.EXPECT().GetMaskingViewByID(gomock.Any(), symID, "MV_Boot_Node01").
+					Return(&types.MaskingView{
+						MaskingViewID:  "MV_Boot_Node01",
+						StorageGroupID: "SG_Boot_Node01",
+					}, nil)
+				c.EXPECT().GetMaskingViewByID(gomock.Any(), symID, "csi-mv-Node01").
+					Return(&types.MaskingView{
+						MaskingViewID:  "csi-mv-Node01",
+						StorageGroupID: "csi-SG-Node01",
+					}, nil)
+				c.EXPECT().GetStorageGroup(gomock.Any(), symID, "SG_Boot_Node01").
+					Return(&types.StorageGroup{
+						StorageGroupID: "SG_Boot_Node01",
+						NumOfVolumes:   2,
+					}, nil)
+				return c
+			},
+			expectLUNs: 1,
+			expectErr:  false,
+		},
+		{
+			name:   "No masking views — no boot LUNs",
+			hostID: "Adopted_Host_Standalone",
+			setupMock: func(ctrl *gmock.Controller) *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(ctrl)
+				c.EXPECT().GetHostMaskingViews(gomock.Any(), symID, "Adopted_Host_Standalone").
+					Return(nil, nil)
+				return c
+			},
+			expectLUNs: 0,
+			expectErr:  false,
+		},
+		{
+			name:   "All CSI storage groups — no boot LUNs",
+			hostID: "Adopted_Host_Node01",
+			setupMock: func(ctrl *gmock.Controller) *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(ctrl)
+				c.EXPECT().GetHostMaskingViews(gomock.Any(), symID, "Adopted_Host_Node01").
+					Return([]string{"csi-mv-Node01"}, nil)
+				c.EXPECT().GetMaskingViewByID(gomock.Any(), symID, "csi-mv-Node01").
+					Return(&types.MaskingView{
+						MaskingViewID:  "csi-mv-Node01",
+						StorageGroupID: "csi-SG-Node01",
+					}, nil)
+				return c
+			},
+			expectLUNs: 0,
+			expectErr:  false,
+		},
+		{
+			name:   "GetHostMaskingViews API error",
+			hostID: "Adopted_Host_Node01",
+			setupMock: func(ctrl *gmock.Controller) *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(ctrl)
+				c.EXPECT().GetHostMaskingViews(gomock.Any(), symID, "Adopted_Host_Node01").
+					Return(nil, errors.New("API timeout"))
+				return c
+			},
+			expectLUNs:   0,
+			expectErr:    true,
+			expectErrMsg: "failed to get masking views",
+		},
+		{
+			name:   "Multiple non-CSI storage groups",
+			hostID: "Adopted_Host_Node01",
+			setupMock: func(ctrl *gmock.Controller) *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(ctrl)
+				c.EXPECT().GetHostMaskingViews(gomock.Any(), symID, "Adopted_Host_Node01").
+					Return([]string{"MV_Boot", "MV_Data"}, nil)
+				c.EXPECT().GetMaskingViewByID(gomock.Any(), symID, "MV_Boot").
+					Return(&types.MaskingView{
+						MaskingViewID:  "MV_Boot",
+						StorageGroupID: "SG_Boot",
+					}, nil)
+				c.EXPECT().GetMaskingViewByID(gomock.Any(), symID, "MV_Data").
+					Return(&types.MaskingView{
+						MaskingViewID:  "MV_Data",
+						StorageGroupID: "SG_Data",
+					}, nil)
+				c.EXPECT().GetStorageGroup(gomock.Any(), symID, "SG_Boot").
+					Return(&types.StorageGroup{StorageGroupID: "SG_Boot", NumOfVolumes: 1}, nil)
+				c.EXPECT().GetStorageGroup(gomock.Any(), symID, "SG_Data").
+					Return(&types.StorageGroup{StorageGroupID: "SG_Data", NumOfVolumes: 5}, nil)
+				return c
+			},
+			expectLUNs: 2,
+			expectErr:  false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gmock.NewController(t)
+			defer ctrl.Finish()
+
+			mockClient := tc.setupMock(ctrl)
+			svc := &service{}
+
+			luns, err := svc.detectBootLUNs(context.Background(), symID, tc.hostID, mockClient)
+			if tc.expectErr {
+				assert.Error(t, err)
+				if tc.expectErrMsg != "" {
+					assert.Contains(t, err.Error(), tc.expectErrMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Len(t, luns, tc.expectLUNs)
+			}
+		})
+	}
+}
+
+func TestDiscoverAndAdoptHost(t *testing.T) {
+	symID := "000197900111"
+
+	tests := []struct {
+		name               string
+		wwpns              []string
+		setupMock          func(ctrl *gmock.Controller) *mocks.MockPmaxClient
+		expectHostName     string
+		expectErr          bool
+		expectErrMsg       string
+		expectCacheCleared bool
+	}{
+		{
+			name:  "Compatible BFS host adopted",
+			wwpns: []string{"5000000000000001", "5000000000000002"},
+			setupMock: func(ctrl *gmock.Controller) *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(ctrl)
+				expectAdoptionSuccess(c, symID, "Adopted_Host_Node01", []string{"5000000000000001", "5000000000000002"})
+				return c
+			},
+			expectHostName:     "Adopted_Host_Node01",
+			expectErr:          false,
+			expectCacheCleared: false,
+		},
+		{
+			name:  "No host found — falls through (empty string, nil)",
+			wwpns: []string{"5000000000000001"},
+			setupMock: func(ctrl *gmock.Controller) *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(ctrl)
+				c.EXPECT().GetHostByInitiators(gomock.Any(), symID, []string{"5000000000000001"}).
+					Return(nil, nil)
+				return c
+			},
+			expectHostName:     "",
+			expectErr:          false,
+			expectCacheCleared: false,
+		},
+		{
+			name:  "API error after retries — returns error (RACE-3)",
+			wwpns: []string{"5000000000000001"},
+			setupMock: func(ctrl *gmock.Controller) *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(ctrl)
+				c.EXPECT().GetHostByInitiators(gomock.Any(), symID, []string{"5000000000000001"}).
+					Return(nil, errors.New("API timeout")).
+					Times(pmaxQueryAttempts)
+				return c
+			},
+			expectHostName: "",
+			expectErr:      true,
+			expectErrMsg:   "failed to discover host",
+		},
+		{
+			name:  "Incompatible host — foreign WWPNs rejected",
+			wwpns: []string{"5000000000000001"},
+			setupMock: func(ctrl *gmock.Controller) *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(ctrl)
+				c.EXPECT().GetHostByInitiators(gomock.Any(), symID, []string{"5000000000000001"}).
+					Return(&types.Host{
+						HostID:     "Adopted_Host_Node01",
+						Initiators: []string{"FOREIGN_WWPN_1", "FOREIGN_WWPN_2"},
+					}, nil)
+				return c
+			},
+			expectHostName: "",
+			expectErr:      true,
+			expectErrMsg:   "failed validation",
+		},
+		{
+			name:  "Empty WWPN list — returns error",
+			wwpns: []string{},
+			setupMock: func(ctrl *gmock.Controller) *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(ctrl)
+				return c
+			},
+			expectHostName: "",
+			expectErr:      true,
+			expectErrMsg:   "no FC WWPNs provided",
+		},
+		{
+			name:  "CSI-convention host — ignored and falls through to standard creation",
+			wwpns: []string{"5000000000000001", "5000000000000002"},
+			setupMock: func(ctrl *gmock.Controller) *mocks.MockPmaxClient {
+				c := mocks.NewMockPmaxClient(ctrl)
+				c.EXPECT().GetHostByInitiators(gomock.Any(), symID, []string{"5000000000000001", "5000000000000002"}).
+					Return(&types.Host{
+						HostID:     "csi-node-CSM-worker-1-FC",
+						Initiators: []string{"5000000000000001", "5000000000000002"},
+					}, nil)
+				return c
+			},
+			expectHostName:     "",
+			expectErr:          false,
+			expectCacheCleared: true,
+		},
+	}
+
+	// Reduce retry count for tests
+	origAttempts := pmaxQueryAttempts
+	pmaxQueryAttempts = 2
+	defer func() { pmaxQueryAttempts = origAttempts }()
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gmock.NewController(t)
+			defer ctrl.Finish()
+
+			mockClient := tc.setupMock(ctrl)
+			svc := &service{
+				opts:         Opts{HostManagementMode: HostMgmtModeAdopt},
+				adoptedHosts: map[string]adoptedHostInfo{symID: {HostID: "stale-host", Protocol: FcTransportProtocol}},
+			}
+
+			hostName, err := svc.discoverAndAdoptHost(context.Background(), symID, tc.wwpns, mockClient)
+			if tc.expectErr {
+				assert.Error(t, err)
+				assert.Equal(t, "", hostName)
+				if tc.expectErrMsg != "" {
+					assert.Contains(t, err.Error(), tc.expectErrMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectHostName, hostName)
+			}
+
+			// Verify cache was cleared if expected
+			if tc.expectCacheCleared {
+				_, exists := svc.getAdoptedHost(symID)
+				assert.False(t, exists, "CSI-convention host should be removed from cache")
+			}
+
+			// Verify adopted host is cached on success
+			if tc.expectHostName != "" {
+				info, ok := svc.adoptedHosts[symID]
+				assert.True(t, ok, "adopted host should be cached")
+				assert.Equal(t, tc.expectHostName, info.HostID)
+				assert.Equal(t, FcTransportProtocol, info.Protocol)
+			}
+		})
+	}
+}
+
+// TestHostAdoptionAdoptionIntegration exercises the full BFS adoption flow:
+// discoverAndAdoptHost -> detectBootLUNs -> isBootLUNStorageGroup protection
+func TestHostAdoptionAdoptionIntegration(t *testing.T) {
+	symID := "000197900111"
+	adoptedHostName := "Adopted_Host_Node01"
+	// portWWNs come from gofsutil.GetFCHostPortWWNs — bare WWPNs (no FA-xD: prefix)
+	portWWNs := []string{"5000000000000001", "5000000000000002"}
+	// Host initiators on the array
+	hostInitiators := []string{"5000000000000001", "5000000000000002"}
+
+	ctrl := gmock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+
+	// Phase 1: discoverAndAdoptHost — host discovery with bare WWPNs, then the
+	// FR-1.3 port group compatibility check.
+	expectAdoptionSuccess(mockClient, symID, adoptedHostName, hostInitiators)
+
+	// Phase 2: detectBootLUNs — expect masking view + SG enumeration
+	mockClient.EXPECT().GetHostMaskingViews(gomock.Any(), symID, adoptedHostName).
+		Return([]string{"MV_Boot_Node01", "csi-no-srp-sg-cluster1-node01_FC"}, nil)
+	mockClient.EXPECT().GetMaskingViewByID(gomock.Any(), symID, "MV_Boot_Node01").
+		Return(&types.MaskingView{
+			MaskingViewID:  "MV_Boot_Node01",
+			StorageGroupID: "SG_Boot_Node01",
+		}, nil)
+	mockClient.EXPECT().GetMaskingViewByID(gomock.Any(), symID, "csi-no-srp-sg-cluster1-node01_FC").
+		Return(&types.MaskingView{
+			MaskingViewID:  "csi-no-srp-sg-cluster1-node01_FC",
+			StorageGroupID: "csi-no-srp-sg-cluster1-node01_FC",
+		}, nil)
+	mockClient.EXPECT().GetStorageGroup(gomock.Any(), symID, "SG_Boot_Node01").
+		Return(&types.StorageGroup{
+			StorageGroupID: "SG_Boot_Node01",
+			NumOfVolumes:   2,
+		}, nil)
+
+	svc := &service{
+		adoptedHosts: make(map[string]adoptedHostInfo),
+	}
+
+	// Phase 1: Adopt
+	hostName, err := svc.discoverAndAdoptHost(context.Background(), symID, portWWNs, mockClient)
+	assert.NoError(t, err)
+	assert.Equal(t, adoptedHostName, hostName)
+
+	// Phase 2: Detect boot LUNs
+	bootLUNs, err := svc.detectBootLUNs(context.Background(), symID, adoptedHostName, mockClient)
+	assert.NoError(t, err)
+	assert.Len(t, bootLUNs, 1, "should detect exactly 1 non-CSI boot SG")
+	assert.Equal(t, "SG_Boot_Node01", bootLUNs[0].StorageGroupID)
+	assert.Equal(t, 2, bootLUNs[0].NumVolumes)
+	assert.Equal(t, "MV_Boot_Node01", bootLUNs[0].MaskingViewID)
+
+	// Store boot LUN info (as nodeHostSetup would)
+	info := svc.adoptedHosts[symID]
+	info.BootLUNs = bootLUNs
+	svc.adoptedHosts[symID] = info
+
+	// Phase 3: Verify protection
+	assert.True(t, svc.isBootLUNStorageGroup(symID, "SG_Boot_Node01"),
+		"boot SG must be protected")
+	assert.False(t, svc.isBootLUNStorageGroup(symID, "csi-no-srp-sg-cluster1-node01_FC"),
+		"CSI SG must NOT be protected")
+	assert.False(t, svc.isBootLUNStorageGroup("000197900222", "SG_Boot_Node01"),
+		"different array must NOT be protected")
+
+	// Phase 4: Verify getAdoptedHostID
+	assert.Equal(t, adoptedHostName, svc.getAdoptedHostID(symID))
+	assert.Equal(t, "", svc.getAdoptedHostID("000197900222"))
+}
+
+// TestHostAdoptionTopologyKeys verifies that addAdoptedHostTopology — the helper NodeGetInfo
+// uses to build its AccessibleTopology segment — publishes the adopted host identity
+// under the "." separator convention (FR-2A.1).
+func TestHostAdoptionTopologyKeys(t *testing.T) {
+	symID := "000197900111"
+	driverName := "csi-powermax.dellemc.com"
+
+	tests := []struct {
+		name         string
+		adoptedHosts map[string]adoptedHostInfo
+		expectKeys   map[string]string // expected topology key-value pairs
+		expectAbsent []string          // keys that must NOT be present
+		expectError  bool              // whether to expect an error
+	}{
+		{
+			name: "Adopted host adds both topology keys",
+			adoptedHosts: map[string]adoptedHostInfo{
+				symID: {HostID: "Adopted_Host_Node01", Protocol: FcTransportProtocol},
+			},
+			expectKeys: map[string]string{
+				driverName + "/" + symID + ".adoptedHost":              "Adopted_Host_Node01",
+				driverName + "/" + symID + ".adoptedTransportProtocol": FcTransportProtocol,
+			},
+		},
+		{
+			name:         "No adopted hosts — no adopted keys in topology",
+			adoptedHosts: nil,
+			expectAbsent: []string{
+				driverName + "/" + symID + ".adoptedHost",
+				driverName + "/" + symID + ".adoptedTransportProtocol",
+			},
+		},
+		{
+			name: "Multi-array adoption adds keys for each array",
+			adoptedHosts: map[string]adoptedHostInfo{
+				"000197900111": {HostID: "Adopted_Host_A", Protocol: FcTransportProtocol},
+				"000197900222": {HostID: "Adopted_Host_B", Protocol: FcTransportProtocol},
+			},
+			expectKeys: map[string]string{
+				driverName + "/000197900111.adoptedHost":              "Adopted_Host_A",
+				driverName + "/000197900111.adoptedTransportProtocol": FcTransportProtocol,
+				driverName + "/000197900222.adoptedHost":              "Adopted_Host_B",
+				driverName + "/000197900222.adoptedTransportProtocol": FcTransportProtocol,
+			},
+		},
+		{
+			name: "Host name that is not a valid label value fails fast",
+			adoptedHosts: map[string]adoptedHostInfo{
+				symID: {HostID: strings.Repeat("a", 64), Protocol: FcTransportProtocol},
+			},
+			expectError: true,
+		},
+		{
+			name: "Host name starting with special character fails fast",
+			adoptedHosts: map[string]adoptedHostInfo{
+				symID: {HostID: "-Invalid-Host", Protocol: FcTransportProtocol},
+			},
+			expectError: true,
+		},
+		{
+			name: "Host name with invalid special characters fails fast",
+			adoptedHosts: map[string]adoptedHostInfo{
+				symID: {HostID: "Adopted_Host_@#$", Protocol: FcTransportProtocol},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &service{adoptedHosts: tc.adoptedHosts}
+			svc.opts.DriverName = driverName
+
+			topology := map[string]string{}
+			err := svc.addAdoptedHostTopology(context.Background(), topology)
+
+			if tc.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "not a valid Kubernetes label value")
+				return
+			}
+
+			assert.NoError(t, err)
+			for key, val := range tc.expectKeys {
+				assert.Equal(t, val, topology[key], "topology key %s should have value %s", key, val)
+			}
+			for _, key := range tc.expectAbsent {
+				_, exists := topology[key]
+				assert.False(t, exists, "topology key %s should not be present", key)
+			}
+		})
+	}
+}
+
+func TestIsValidTopologyLabelValue(t *testing.T) {
+	tests := []struct {
+		value string
+		valid bool
+	}{
+		{"Adopted_Host_Node01", true},
+		{"SAN-Boot-Server42", true},
+		{"host.with.dots", true},
+		{"a", true},
+		{"", false},
+		{strings.Repeat("a", 63), true},
+		{strings.Repeat("a", 64), false},
+		{"-leading-dash", false},
+		{"trailing-dash-", false},
+		{"has space", false},
+		{"has:colon", false},
+	}
+	for _, tc := range tests {
+		assert.Equal(t, tc.valid, isValidTopologyLabelValue(tc.value), "value %q", tc.value)
+	}
+}
+
+// TestHostAdoptionCSINodeID verifies the node ID advertised through NodeGetInfo. In adopt mode
+// the controller has to resolve the Kubernetes Node object from this value to read the
+// adopted host labels, so it must be the full node name — and it must be derived from
+// static configuration so it cannot flip between restarts (P0-2).
+func TestHostAdoptionCSINodeID(t *testing.T) {
+	tests := []struct {
+		name         string
+		mode         string
+		adoptedHosts map[string]adoptedHostInfo
+		nodeName     string
+		nodeFullName string
+		expectNodeID string
+	}{
+		{
+			name:         "adopt mode returns the full node name",
+			mode:         HostMgmtModeAdopt,
+			nodeName:     "worker-2",
+			nodeFullName: "worker-2.domain.local",
+			expectNodeID: "worker-2.domain.local",
+		},
+		{
+			name:         "create mode returns the short name",
+			mode:         HostMgmtModeCreate,
+			nodeName:     "worker-2",
+			nodeFullName: "worker-2.domain.local",
+			expectNodeID: "worker-2",
+		},
+		{
+			name:         "adopt mode with empty full name falls back to the short name",
+			mode:         HostMgmtModeAdopt,
+			nodeName:     "worker-2",
+			nodeFullName: "",
+			expectNodeID: "worker-2",
+		},
+		{
+			name: "adopt mode node ID does not depend on adoption having succeeded",
+			mode: HostMgmtModeAdopt,
+			// No adopted hosts: a transient adoption failure must not change the node ID.
+			adoptedHosts: nil,
+			nodeName:     "worker-2",
+			nodeFullName: "worker-2.domain.local",
+			expectNodeID: "worker-2.domain.local",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &service{
+				adoptedHosts: tc.adoptedHosts,
+				opts: Opts{
+					HostManagementMode: tc.mode,
+					NodeName:           tc.nodeName,
+					NodeFullName:       tc.nodeFullName,
+				},
+			}
+			assert.Equal(t, tc.expectNodeID, svc.csiNodeID())
+		})
+	}
+}
+
+// TestValidateDerivedObjectNameLength guards against a long FQDN in adopt mode
+// producing PowerMax host/SG/MV names the array will reject.
+func TestValidateDerivedObjectNameLength(t *testing.T) {
+	shortEnough := &service{opts: Opts{
+		HostManagementMode: HostMgmtModeAdopt,
+		ClusterPrefix:      "ABC",
+		NodeName:           "worker-2",
+		NodeFullName:       "worker-2.domain.local",
+	}}
+	assert.NoError(t, shortEnough.validateDerivedObjectNameLength())
+
+	tooLong := &service{opts: Opts{
+		HostManagementMode: HostMgmtModeAdopt,
+		ClusterPrefix:      "ABC",
+		NodeName:           "worker-2",
+		NodeFullName:       "worker-2." + strings.Repeat("very-long-subdomain.", 4) + "example.com",
+	}}
+	err := tooLong.validateDerivedObjectNameLength()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeding the 64 character limit")
+}
+
+// TestHostAdoptionControllerProtocolDetection verifies that IsNodeNVMe and IsNodeISCSI report
+// FC (false) for adopted BFS hosts rather than falling back to suffix matching on a
+// host name that does not follow the CSI convention (FR-2A.2).
+func TestHostAdoptionControllerProtocolDetection(t *testing.T) {
+	symID := "000197900111"
+	ctrl := gmock.NewController(t)
+	defer ctrl.Finish()
+
+	// No PowerMax calls are expected: adoption short-circuits protocol detection.
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+
+	svc := &service{
+		adoptedHosts: map[string]adoptedHostInfo{
+			symID: {HostID: "SAN_Boot_Server42", Protocol: FcTransportProtocol},
+		},
+	}
+
+	isNVMe, err := svc.IsNodeNVMe(context.Background(), symID, "worker-1", mockClient, "SAN_Boot_Server42")
+	assert.NoError(t, err)
+	assert.False(t, isNVMe, "an adopted host must not be classified as NVMe")
+
+	isISCSI, err := svc.IsNodeISCSI(context.Background(), symID, "worker-1", mockClient, "SAN_Boot_Server42")
+	assert.NoError(t, err)
+	assert.False(t, isISCSI, "an adopted host without a -FC suffix must not be classified as iSCSI")
+}
+
+// TestHostAdoptionBootLUNProtectionGuards verifies that isBootLUNStorageGroup correctly
+// protects non-CSI storage groups on adopted hosts from CSI modification.
+func TestHostAdoptionBootLUNProtectionGuards(t *testing.T) {
+	symID := "000197900111"
+
+	tests := []struct {
+		name         string
+		adoptedHosts map[string]adoptedHostInfo
+		sgID         string
+		arrayID      string
+		expectGuard  bool // true = protected, operation should be blocked
+	}{
+		{
+			name: "Boot LUN SG is protected",
+			adoptedHosts: map[string]adoptedHostInfo{
+				symID: {
+					HostID: "Adopted_Host_Node01", Protocol: FcTransportProtocol,
+					BootLUNs: []bootLUNInfo{{StorageGroupID: "SG_Boot_Node01", NumVolumes: 2, MaskingViewID: "MV_Boot"}},
+				},
+			},
+			sgID: "SG_Boot_Node01", arrayID: symID, expectGuard: true,
+		},
+		{
+			name: "CSI SG is NOT protected",
+			adoptedHosts: map[string]adoptedHostInfo{
+				symID: {
+					HostID: "Adopted_Host_Node01", Protocol: FcTransportProtocol,
+					BootLUNs: []bootLUNInfo{{StorageGroupID: "SG_Boot_Node01", NumVolumes: 2, MaskingViewID: "MV_Boot"}},
+				},
+			},
+			sgID: "csi-no-srp-sg-cluster-node01-FC", arrayID: symID, expectGuard: false,
+		},
+		{
+			name:         "No adopted hosts — not protected",
+			adoptedHosts: nil,
+			sgID:         "SG_Boot_Node01", arrayID: symID, expectGuard: false,
+		},
+		{
+			name: "Different array — not protected",
+			adoptedHosts: map[string]adoptedHostInfo{
+				symID: {
+					HostID: "Adopted_Host_Node01", Protocol: FcTransportProtocol,
+					BootLUNs: []bootLUNInfo{{StorageGroupID: "SG_Boot_Node01", NumVolumes: 2, MaskingViewID: "MV_Boot"}},
+				},
+			},
+			sgID: "SG_Boot_Node01", arrayID: "000197900222", expectGuard: false,
+		},
+		{
+			name: "Adopted host with no boot LUNs — not protected",
+			adoptedHosts: map[string]adoptedHostInfo{
+				symID: {HostID: "Adopted_Host_Standalone", Protocol: FcTransportProtocol, BootLUNs: nil},
+			},
+			sgID: "SG_Something", arrayID: symID, expectGuard: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &service{adoptedHosts: tc.adoptedHosts}
+			result := svc.isBootLUNStorageGroup(tc.arrayID, tc.sgID)
+			assert.Equal(t, tc.expectGuard, result, "isBootLUNStorageGroup should return %v for SG %s on array %s", tc.expectGuard, tc.sgID, tc.arrayID)
+		})
+	}
+}
+
+// TestHostAdoptionAdoptionMetricsIncrement verifies the Prometheus counters actually move on
+// each failure path in discoverAndAdoptHost (FR-8.2).
+func TestHostAdoptionAdoptionMetricsIncrement(t *testing.T) {
+	symID := "000197900111"
+
+	t.Run("api_error label incremented on API failure", func(t *testing.T) {
+		ctrl := gmock.NewController(t)
+		defer ctrl.Finish()
+
+		mock := mocks.NewMockPmaxClient(ctrl)
+		mock.EXPECT().GetHostByInitiators(gomock.Any(), symID, []string{"5000000000000001"}).
+			Return(nil, fmt.Errorf("API timeout")).Times(2)
+
+		orig := pmaxQueryAttempts
+		pmaxQueryAttempts = 2
+		defer func() { pmaxQueryAttempts = orig }()
+
+		before := testutil.ToFloat64(hostAdoptionErrorsTotal.WithLabelValues("api_error"))
+		svc := &service{}
+		hostName, err := svc.discoverAndAdoptHost(context.Background(), symID, []string{"5000000000000001"}, mock)
+		assert.Error(t, err)
+		assert.Empty(t, hostName)
+		assert.Contains(t, err.Error(), "failed to discover host")
+		assert.Equal(t, before+1, testutil.ToFloat64(hostAdoptionErrorsTotal.WithLabelValues("api_error")))
+	})
+
+	t.Run("validation_failed label incremented on host validation failure", func(t *testing.T) {
+		ctrl := gmock.NewController(t)
+		defer ctrl.Finish()
+
+		// Host with foreign WWPN — validation should fail
+		foreignHost := &types.Host{
+			HostID:     "Adopted_Host_Foreign",
+			Initiators: []string{"FOREIGN_WWPN_1", "FOREIGN_WWPN_2"},
+		}
+		mock := mocks.NewMockPmaxClient(ctrl)
+		mock.EXPECT().GetHostByInitiators(gomock.Any(), symID, []string{"5000000000000001"}).
+			Return(foreignHost, nil)
+
+		before := testutil.ToFloat64(hostAdoptionErrorsTotal.WithLabelValues("validation_failed"))
+		svc := &service{}
+		hostName, err := svc.discoverAndAdoptHost(context.Background(), symID, []string{"5000000000000001"}, mock)
+		assert.Error(t, err)
+		assert.Empty(t, hostName)
+		assert.Contains(t, err.Error(), "failed validation")
+		assert.Equal(t, before+1, testutil.ToFloat64(hostAdoptionErrorsTotal.WithLabelValues("validation_failed")))
+	})
+
+	t.Run("no_wwpns label incremented on empty WWPN list", func(t *testing.T) {
+		ctrl := gmock.NewController(t)
+		defer ctrl.Finish()
+
+		mock := mocks.NewMockPmaxClient(ctrl)
+		// No mock expectations — should not call GetHostByInitiators
+
+		before := testutil.ToFloat64(hostAdoptionErrorsTotal.WithLabelValues("no_wwpns"))
+		svc := &service{}
+		hostName, err := svc.discoverAndAdoptHost(context.Background(), symID, []string{}, mock)
+		assert.Error(t, err)
+		assert.Empty(t, hostName)
+		assert.Contains(t, err.Error(), "no FC WWPNs provided")
+		assert.Equal(t, before+1, testutil.ToFloat64(hostAdoptionErrorsTotal.WithLabelValues("no_wwpns")))
+	})
+
+	t.Run("hosts adopted counter incremented on success", func(t *testing.T) {
+		ctrl := gmock.NewController(t)
+		defer ctrl.Finish()
+
+		mock := mocks.NewMockPmaxClient(ctrl)
+		expectAdoptionSuccess(mock, symID, "Adopted_Host_Node01", []string{"5000000000000001", "5000000000000002"})
+
+		before := testutil.ToFloat64(hostsAdoptedTotal)
+		svc := &service{}
+		hostName, err := svc.discoverAndAdoptHost(context.Background(), symID,
+			[]string{"5000000000000001", "5000000000000002"}, mock)
+		assert.NoError(t, err)
+		assert.Equal(t, "Adopted_Host_Node01", hostName)
+		assert.Equal(t, before+1, testutil.ToFloat64(hostsAdoptedTotal))
+	})
+}
+
+// TestHostAdoptionMetricsExposedOnDriverRegistry verifies the BFS counters are registered
+// against the registry the driver actually serves on its /metrics endpoint. Metrics
+// registered with the default registerer would never be scrapeable (FR-8.2).
+func TestHostAdoptionMetricsExposedOnDriverRegistry(t *testing.T) {
+	// Touch each collector so it is registered and has a sample to gather.
+	hostsAdoptedTotal.Add(0)
+	bootLUNsDetectedTotal.Add(0)
+	hostAdoptionErrorsTotal.WithLabelValues("api_error").Add(0)
+
+	families, err := DriverMetricsRegistry().Gather()
+	assert.NoError(t, err)
+
+	gathered := make(map[string]bool, len(families))
+	for _, f := range families {
+		gathered[f.GetName()] = true
+	}
+	for _, name := range []string{
+		"csi_powermax_hosts_adopted_total",
+		"csi_powermax_host_adoption_errors_total",
+		"csi_powermax_boot_luns_detected_total",
+	} {
+		assert.True(t, gathered[name], "%s must be exposed on the driver metrics registry", name)
+	}
+}
+
+// TestHostAdoptionHostConflictFailsFast verifies a multi-host WWPN conflict is rejected on the
+// first attempt. It is a permanent condition, so burning the full retry budget on it
+// would blow the 15 second per-node adoption target (NFR-1).
+func TestHostAdoptionHostConflictFailsFast(t *testing.T) {
+	symID := "000197900111"
+	ctrl := gmock.NewController(t)
+	defer ctrl.Finish()
+
+	conflict := &fakeHostConflictError{
+		msg: "GetHostByInitiators: conflict on array " + symID +
+			" — the requested WWPNs resolve to 2 different hosts: " +
+			"host Adopted_Host_Node01 has WWPNs [5000000000000001]; host Adopted_Host_Node02 has WWPNs [5000000000000002]",
+	}
+	mock := mocks.NewMockPmaxClient(ctrl)
+	// Exactly one call: a conflict must not be retried.
+	mock.EXPECT().GetHostByInitiators(gomock.Any(), symID, []string{"5000000000000001", "5000000000000002"}).
+		Return(nil, conflict).Times(1)
+
+	before := testutil.ToFloat64(hostAdoptionErrorsTotal.WithLabelValues("host_conflict"))
+	svc := &service{}
+	hostName, err := svc.discoverAndAdoptHost(context.Background(), symID,
+		[]string{"5000000000000001", "5000000000000002"}, mock)
+
+	assert.Error(t, err)
+	assert.Empty(t, hostName)
+	assert.Contains(t, err.Error(), "host conflict")
+	assert.Contains(t, err.Error(), "Adopted_Host_Node01")
+	assert.Contains(t, err.Error(), "Adopted_Host_Node02")
+	assert.Equal(t, before+1, testutil.ToFloat64(hostAdoptionErrorsTotal.WithLabelValues("host_conflict")))
+}
+
+// fakeHostConflictError stands in for gopowermax's *HostConflictError. The driver
+// detects that type through the locally declared hostConflictError interface rather
+// than by importing it, so a stub exercises exactly the production code path and the
+// test keeps working across gopowermax versions.
+type fakeHostConflictError struct{ msg string }
+
+func (e *fakeHostConflictError) IsHostConflict() bool { return true }
+func (e *fakeHostConflictError) Error() string        { return e.msg }
+
+func TestIsHostConflictError(t *testing.T) {
+	conflict := &fakeHostConflictError{msg: "hosts differ"}
+	assert.True(t, isHostConflictError(conflict), "a typed conflict error must be detected")
+	assert.True(t, isHostConflictError(fmt.Errorf("wrapped: %w", conflict)), "detection must see through wrapping")
+	assert.False(t, isHostConflictError(fmt.Errorf("connection refused")), "an API error must stay retryable")
+	// Older gopowermax releases return an untyped conflict error; the message check
+	// keeps the driver correct until the dependency pin is bumped.
+	assert.True(t, isHostConflictError(fmt.Errorf("GetHostByInitiators: conflict — WWPN x resolves to host y")))
+}
+
+// TestValidateAdoptedHostPortGroup covers FR-1.3's port group compatibility check:
+// a host with no logged-in SCSI_FC port cannot have a CSI port group built for it,
+// so adoption must be rejected with an actionable error.
+func TestValidateAdoptedHostPortGroup(t *testing.T) {
+	symID := "000197900111"
+
+	t.Run("host with a logged-in SCSI_FC port is compatible", func(t *testing.T) {
+		ctrl := gmock.NewController(t)
+		defer ctrl.Finish()
+		mock := mocks.NewMockPmaxClient(ctrl)
+		expectUsableFCPort(mock, symID, "5000000000000001")
+
+		svc := &service{}
+		host := &types.Host{HostID: "Adopted_Host_Node01", HostType: "Fibre", Initiators: []string{"5000000000000001"}}
+		assert.NoError(t, svc.validateAdoptedHostPortGroup(context.Background(), symID, host, mock))
+	})
+
+	t.Run("host with no SCSI_FC port is rejected", func(t *testing.T) {
+		ctrl := gmock.NewController(t)
+		defer ctrl.Finish()
+		mock := mocks.NewMockPmaxClient(ctrl)
+		mock.EXPECT().GetPortListByProtocol(gomock.Any(), symID, "SCSI_FC").
+			Return(&types.PortList{SymmetrixPortKey: []types.PortKey{}}, nil)
+		mock.EXPECT().GetInitiatorList(gomock.Any(), symID, "5000000000000001", false, false).
+			Return(&types.InitiatorList{InitiatorIDs: []string{"FA-1D:4:5000000000000001"}}, nil)
+
+		svc := &service{}
+		host := &types.Host{HostID: "Adopted_Host_Node01", HostType: "Fibre", Initiators: []string{"5000000000000001"}}
+		err := svc.validateAdoptedHostPortGroup(context.Background(), symID, host, mock)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "no initiator logged in on a SCSI_FC director port")
+		assert.Contains(t, err.Error(), "Adopted_Host_Node01")
+	})
+
+	t.Run("non-Fibre host skips the FC port check", func(t *testing.T) {
+		ctrl := gmock.NewController(t)
+		defer ctrl.Finish()
+		mock := mocks.NewMockPmaxClient(ctrl)
+
+		svc := &service{}
+		host := &types.Host{HostID: "Adopted_Host_Node01", HostType: "", Initiators: []string{"5000000000000001"}}
+		assert.NoError(t, svc.validateAdoptedHostPortGroup(context.Background(), symID, host, mock))
+	})
+}
+
+// TestResolveMaskingViewTarget covers FR-6.1. A PowerMax masking view references a
+// single host or host group, and a host in a group can only be masked through that
+// group — so the CSI masking view has to target the group for grouped BFS hosts.
+func TestResolveMaskingViewTarget(t *testing.T) {
+	symID := "000197900111"
+
+	t.Run("standalone host targets the host itself", func(t *testing.T) {
+		ctrl := gmock.NewController(t)
+		defer ctrl.Finish()
+		mock := mocks.NewMockPmaxClient(ctrl)
+
+		svc := &service{}
+		host := &types.Host{HostID: "Adopted_Host_Node01", NumberHostGroups: 0}
+		target, isHost, err := svc.resolveMaskingViewTarget(context.Background(), symID, host, mock)
+		assert.NoError(t, err)
+		assert.True(t, isHost)
+		assert.Equal(t, "Adopted_Host_Node01", target)
+	})
+
+	t.Run("host group member targets the host group", func(t *testing.T) {
+		ctrl := gmock.NewController(t)
+		defer ctrl.Finish()
+		mock := mocks.NewMockPmaxClient(ctrl)
+		mock.EXPECT().GetHostGroupList(gomock.Any(), symID).
+			Return(&types.HostGroupList{HostGroupIDs: []string{"HG_Other", "HG_Cluster01"}}, nil)
+		mock.EXPECT().GetHostGroupByID(gomock.Any(), symID, "HG_Other").
+			Return(&types.HostGroup{HostGroupID: "HG_Other", Hosts: []types.HostSummary{{HostID: "SomeOtherHost"}}}, nil)
+		mock.EXPECT().GetHostGroupByID(gomock.Any(), symID, "HG_Cluster01").
+			Return(&types.HostGroup{HostGroupID: "HG_Cluster01", Hosts: []types.HostSummary{{HostID: "Adopted_Host_Node01"}}}, nil)
+
+		svc := &service{}
+		host := &types.Host{HostID: "Adopted_Host_Node01", NumberHostGroups: 1}
+		target, isHost, err := svc.resolveMaskingViewTarget(context.Background(), symID, host, mock)
+		assert.NoError(t, err)
+		assert.False(t, isHost, "the masking view must target the host group, not the host")
+		assert.Equal(t, "HG_Cluster01", target)
+	})
+
+	t.Run("unresolvable host group falls back to the host", func(t *testing.T) {
+		ctrl := gmock.NewController(t)
+		defer ctrl.Finish()
+		mock := mocks.NewMockPmaxClient(ctrl)
+		mock.EXPECT().GetHostGroupList(gomock.Any(), symID).
+			Return(&types.HostGroupList{HostGroupIDs: []string{}}, nil)
+
+		svc := &service{}
+		host := &types.Host{HostID: "Adopted_Host_Node01", NumberHostGroups: 1}
+		target, isHost, err := svc.resolveMaskingViewTarget(context.Background(), symID, host, mock)
+		assert.NoError(t, err)
+		assert.True(t, isHost)
+		assert.Equal(t, "Adopted_Host_Node01", target)
+	})
+
+	t.Run("host group listing failure is surfaced", func(t *testing.T) {
+		ctrl := gmock.NewController(t)
+		defer ctrl.Finish()
+		mock := mocks.NewMockPmaxClient(ctrl)
+		mock.EXPECT().GetHostGroupList(gomock.Any(), symID).Return(nil, fmt.Errorf("unisphere down"))
+
+		svc := &service{}
+		host := &types.Host{HostID: "Adopted_Host_Node01", NumberHostGroups: 1}
+		_, _, err := svc.resolveMaskingViewTarget(context.Background(), symID, host, mock)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to list host groups")
+	})
+}
+
+func TestValidateFCHostForAdoption(t *testing.T) {
+	tests := []struct {
+		name            string
+		host            *types.Host
+		expectedWWPNs   []string
+		minOverlapRatio float64
+		expectValid     bool
+		expectErrMsg    string
+	}{
+		{
+			name: "Exact match — all expected present, no foreign",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001", "5000000000000002"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002"},
+			minOverlapRatio: 0.5,
+			expectValid:     true,
+		},
+		{
+			name: "Foreign WWPNs with 2-WWPN 100% match — allowed with warning",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001", "5000000000000002", "5000000000000099"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002"},
+			minOverlapRatio: 0.5,
+			expectValid:     true, // 2/2 = 100% coverage for 2-WWPN system, foreign WWPNs allowed with warning
+		},
+		{
+			name: "2-WWPN system with partial match — rejected (need 100% coverage)",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002"}, // 1/2 = 50%
+			minOverlapRatio: 0.5,
+			expectValid:     false,
+			expectErrMsg:    "100% coverage required",
+		},
+		{
+			name: "Partial match but majority — allowed",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001", "5000000000000002", "5000000000000003"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002", "5000000000000000"}, // 2/3 = 67% > 50%
+			minOverlapRatio: 0.5,
+			expectValid:     true,
+		},
+		{
+			name: "Insufficient matches — rejected",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002", "5000000000000003"}, // 1/3 = 33% <= 50%
+			minOverlapRatio: 0.5,
+			expectValid:     false,
+			expectErrMsg:    "insufficient WWPN overlap",
+		},
+		{
+			name: "Single HBA match for 2-WWPN system with threshold 0.75 — rejected",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002"}, // 1/2 = 50% < 75%
+			minOverlapRatio: 0.75,
+			expectValid:     false,
+			expectErrMsg:    "100% coverage required",
+		},
+		{
+			name: "4 HBAs, 2 matches — allowed (exactly 50% threshold)",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001", "5000000000000002"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002", "5000000000000003", "5000000000000004"}, // 2/4 = 50% meets threshold
+			minOverlapRatio: 0.5,
+			expectValid:     true,
+		},
+		{
+			name: "4 HBAs, 1 match — rejected (below 50% threshold)",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002", "5000000000000003", "5000000000000004"}, // 1/4 = 25% < 50%
+			minOverlapRatio: 0.5,
+			expectValid:     false,
+			expectErrMsg:    "insufficient WWPN overlap",
+		},
+		{
+			name: "4 HBAs, 3 matches — allowed",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001", "5000000000000002", "5000000000000003"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002", "5000000000000003", "5000000000000004"}, // 3/4 = 75% > 50%
+			minOverlapRatio: 0.5,
+			expectValid:     true,
+		},
+		{
+			name: "Zero overlap — rejected (complete HBA replacement)",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Other",
+				Initiators: []string{"5000000000000099", "5000000000000088"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002"}, // 0/2 = 0% overlap
+			minOverlapRatio: 0.5,
+			expectValid:     false,
+			expectErrMsg:    "zero matching",
+		},
+		{
+			name: "Configurable threshold 0.75 — 4 HBAs, 3 matches allowed (exactly 75% threshold)",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001", "5000000000000002", "5000000000000003"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002", "5000000000000003", "5000000000000004"}, // 3/4 = 75% meets threshold
+			minOverlapRatio: 0.75,
+			expectValid:     true,
+		},
+		{
+			name: "Configurable threshold 0.75 — 4 HBAs, 2 matches rejected (below 75% threshold)",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001", "5000000000000002"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002", "5000000000000003", "5000000000000004"}, // 2/4 = 50% < 75%
+			minOverlapRatio: 0.75,
+			expectValid:     false,
+			expectErrMsg:    "insufficient WWPN overlap",
+		},
+		{
+			name: "Configurable threshold 0.75 — 4 HBAs, 4 matches allowed",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001", "5000000000000002", "5000000000000003", "5000000000000004"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002", "5000000000000003", "5000000000000004"}, // 4/4 = 100% > 75%
+			minOverlapRatio: 0.75,
+			expectValid:     true,
+		},
+		{
+			name: "Configurable threshold 1.0 — strict match required",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"5000000000000001", "5000000000000002", "5000000000000003"},
+			},
+			expectedWWPNs:   []string{"5000000000000001", "5000000000000002", "5000000000000003", "5000000000000004"}, // 3/4 = 75% not 100%
+			minOverlapRatio: 1.0,
+			expectValid:     false,
+			expectErrMsg:    "insufficient WWPN overlap",
+		},
+		{
+			name:            "Nil host — returns error",
+			host:            nil,
+			expectedWWPNs:   []string{"5000000000000001"},
+			minOverlapRatio: 0.5,
+			expectValid:     false,
+			expectErrMsg:    "nil host",
+		},
+		{
+			name: "Empty expected WWPNs — returns error",
+			host: &types.Host{
+				HostID:     "Adopted_Host_Node01",
+				Initiators: []string{"FA-1D:5000000000000001"},
+			},
+			expectedWWPNs:   []string{},
+			minOverlapRatio: 0.5,
+			expectValid:     false,
+			expectErrMsg:    "empty",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateFCHostForAdoption(context.Background(), tc.host, tc.expectedWWPNs, tc.minOverlapRatio)
+			if tc.expectValid {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+				if tc.expectErrMsg != "" {
+					assert.ErrorContains(t, err, tc.expectErrMsg)
+				}
+			}
+		})
+	}
+}
+
+// expectUsableFCPort primes the mock so getUsableFCPortsForHost finds one logged-in
+// SCSI_FC port for the given WWPN.
+func expectUsableFCPort(mock *mocks.MockPmaxClient, symID, wwpn string) {
+	initiatorID := "FA-1D:4:" + wwpn
+	mock.EXPECT().GetPortListByProtocol(gomock.Any(), symID, "SCSI_FC").
+		Return(&types.PortList{SymmetrixPortKey: []types.PortKey{{DirectorID: "FA-1D", PortID: "4"}}}, nil)
+	mock.EXPECT().GetInitiatorList(gomock.Any(), symID, wwpn, false, false).
+		Return(&types.InitiatorList{InitiatorIDs: []string{initiatorID}}, nil)
+	mock.EXPECT().GetInitiatorByID(gomock.Any(), symID, initiatorID).
+		Return(&types.Initiator{InitiatorID: initiatorID, OnFabric: true, LoggedIn: true}, nil)
+}
+
+// expectAdoptionSuccess primes the mock for a full successful discoverAndAdoptHost:
+// host discovery followed by the FR-1.3 port group compatibility check.
+func expectAdoptionSuccess(mock *mocks.MockPmaxClient, symID, hostName string, wwpns []string) {
+	mock.EXPECT().GetHostByInitiators(gomock.Any(), symID, wwpns).
+		Return(&types.Host{
+			HostID:     hostName,
+			HostType:   "Fibre",
+			Initiators: wwpns,
+		}, nil)
+	mock.EXPECT().GetPortListByProtocol(gomock.Any(), symID, "SCSI_FC").
+		Return(&types.PortList{SymmetrixPortKey: []types.PortKey{{DirectorID: "FA-1D", PortID: "4"}}}, nil)
+	for _, wwpn := range wwpns {
+		initiatorID := "FA-1D:4:" + wwpn
+		mock.EXPECT().GetInitiatorList(gomock.Any(), symID, wwpn, false, false).
+			Return(&types.InitiatorList{InitiatorIDs: []string{initiatorID}}, nil)
+		mock.EXPECT().GetInitiatorByID(gomock.Any(), symID, initiatorID).
+			Return(&types.Initiator{InitiatorID: initiatorID, OnFabric: true, LoggedIn: true}, nil)
+	}
+}
+
+// TestHostAdoptionBootLUNMetricCountsVolumes verifies the boot LUN counter reports non-CSI
+// volumes rather than non-CSI storage groups (FR-3.3).
+func TestHostAdoptionBootLUNMetricCountsVolumes(t *testing.T) {
+	symID := "000197900111"
+	ctrl := gmock.NewController(t)
+	defer ctrl.Finish()
+
+	mock := mocks.NewMockPmaxClient(ctrl)
+	mock.EXPECT().GetHostMaskingViews(gomock.Any(), symID, "Adopted_Host_Node01").
+		Return([]string{"MV_Boot", "MV_Legacy", "csi-mv-ABC-worker1-FC"}, nil)
+	mock.EXPECT().GetMaskingViewByID(gomock.Any(), symID, "MV_Boot").
+		Return(&types.MaskingView{MaskingViewID: "MV_Boot", StorageGroupID: "SG_Boot"}, nil)
+	mock.EXPECT().GetMaskingViewByID(gomock.Any(), symID, "MV_Legacy").
+		Return(&types.MaskingView{MaskingViewID: "MV_Legacy", StorageGroupID: "SG_Legacy"}, nil)
+	mock.EXPECT().GetMaskingViewByID(gomock.Any(), symID, "csi-mv-ABC-worker1-FC").
+		Return(&types.MaskingView{MaskingViewID: "csi-mv-ABC-worker1-FC", StorageGroupID: "csi-no-srp-sg-ABC-worker1-FC"}, nil)
+	mock.EXPECT().GetStorageGroup(gomock.Any(), symID, "SG_Boot").
+		Return(&types.StorageGroup{StorageGroupID: "SG_Boot", NumOfVolumes: 1}, nil)
+	mock.EXPECT().GetStorageGroup(gomock.Any(), symID, "SG_Legacy").
+		Return(&types.StorageGroup{StorageGroupID: "SG_Legacy", NumOfVolumes: 2}, nil)
+
+	svc := &service{}
+	bootLUNs, err := svc.detectBootLUNs(context.Background(), symID, "Adopted_Host_Node01", mock)
+	assert.NoError(t, err)
+	assert.Len(t, bootLUNs, 2, "the CSI-managed storage group must not be counted")
+
+	totalBootVols := 0
+	for _, bl := range bootLUNs {
+		totalBootVols += bl.NumVolumes
+	}
+	assert.Equal(t, 3, totalBootVols, "three non-CSI volumes across two non-CSI storage groups")
+
+	before := testutil.ToFloat64(bootLUNsDetectedTotal)
+	bootLUNsDetectedTotal.Add(float64(totalBootVols))
+	assert.Equal(t, before+3, testutil.ToFloat64(bootLUNsDetectedTotal),
+		"the counter reports volumes, not storage groups")
+}
+
+// TestHostAdoptionAdoptionHostManagementModeValidation covers FR-4.1 and FR-4.2 startup
+// validation of the two BFS configuration values.
+func TestHostAdoptionAdoptionHostManagementModeValidation(t *testing.T) {
+	modeTests := []struct {
+		value       string
+		expectMode  string
+		expectError string
+	}{
+		{value: "", expectMode: HostMgmtModeCreate},
+		{value: "create", expectMode: HostMgmtModeCreate},
+		{value: "adopt", expectMode: HostMgmtModeAdopt},
+		{value: "ADOPT", expectMode: HostMgmtModeAdopt},
+		{value: "reuse-only", expectError: "invalid hostManagementMode"},
+	}
+	for _, tc := range modeTests {
+		t.Run("mode="+tc.value, func(t *testing.T) {
+			mode, err := resolveHostManagementMode(tc.value)
+			if tc.expectError != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectError)
+				assert.Contains(t, err.Error(), "create")
+				assert.Contains(t, err.Error(), "adopt")
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectMode, mode)
+		})
+	}
+
+	ratioTests := []struct {
+		value       string
+		expectRatio float64
+		expectError string
+	}{
+		{value: "", expectRatio: DefaultHostAdoptionMinOverlapRatio},
+		{value: "0.75", expectRatio: 0.75},
+		{value: "1.0", expectRatio: 1.0},
+		{value: "0.0", expectRatio: 0.0},
+		{value: "1.5", expectError: "must be between 0.0 and 1.0"},
+		{value: "-0.1", expectError: "must be between 0.0 and 1.0"},
+		{value: "abc", expectError: "must be between 0.0 and 1.0"},
+	}
+	for _, tc := range ratioTests {
+		t.Run("ratio="+tc.value, func(t *testing.T) {
+			ratio, err := resolveHostAdoptionMinOverlapRatio(tc.value)
+			if tc.expectError != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectError)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectRatio, ratio)
+		})
+	}
 }

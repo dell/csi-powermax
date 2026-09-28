@@ -922,3 +922,24 @@ func TestInitEventRecorder_Success(t *testing.T) {
 	recorder2 := initEventRecorder()
 	assert.Equal(t, recorder, recorder2)
 }
+
+// ---------------------------------------------------------------------------
+// Tests for newEventRecorder (out-of-cluster fails at InClusterConfig)
+// ---------------------------------------------------------------------------
+
+func TestNewEventRecorder_FailsOutOfCluster(t *testing.T) {
+	// Save the original function to restore later
+	origFn := newEventRecorderFunc
+	defer func() {
+		newEventRecorderFunc = origFn
+	}()
+
+	// Mock newEventRecorder to simulate out-of-cluster failure
+	newEventRecorderFunc = func() (record.EventRecorder, error) {
+		return nil, errors.New("failed to get in-cluster config: running outside k8s cluster")
+	}
+
+	_, err := newEventRecorderFunc()
+	assert.Error(t, err, "expected error when running outside a k8s cluster")
+	assert.Contains(t, err.Error(), "failed to get in-cluster config")
+}

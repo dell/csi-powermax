@@ -45,8 +45,6 @@ const (
 	InternalPrefix      = Prefix + "/internal"
 )
 
-var log = csmlog.GetLogger()
-
 // WriteHTTPError - given a statuscode and error message, writes a HTTP error using the
 // ResponseWriter
 func WriteHTTPError(w http.ResponseWriter, errorMsg string, statusCode int) {
@@ -84,7 +82,7 @@ func BasicAuth(credentials common.Credentials) string {
 func Elapsed(requestID string, op string) func() {
 	start := time.Now()
 	return func() {
-		log.Infof("Request ID: %s - %s time: %v", requestID, op, time.Since(start))
+		csmlog.Infof("Request ID: %s - %s time: %v", requestID, op, time.Since(start))
 	}
 }
 
@@ -113,7 +111,7 @@ func WriteHTTPResponse(w http.ResponseWriter, val interface{}) {
 	_, err = w.Write(jsonBytes)
 	if err != nil {
 		_, _ = w.Write([]byte(err.Error()))
-		log.Error("Couldn't write to ResponseWriter")
+		csmlog.Error("Couldn't write to ResponseWriter")
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
@@ -179,13 +177,13 @@ func RemoveTempFiles() error {
 	tmpConfigDir := rootDir + "/../" + common.TempConfigDir
 	certFiles, err := os.ReadDir(certsDir)
 	if err != nil {
-		log.Fatalf("Failed to list cert files in `%s`", certsDir)
-		return err
+		// If cert directory doesn't exist, skip cert cleanup
+		certFiles = []os.DirEntry{}
 	}
 	configFiles, err := os.ReadDir(tmpConfigDir)
 	if err != nil {
-		log.Fatalf("Failed to list config files in `%s`", tmpConfigDir)
-		return err
+		// If tmp config directory doesn't exist, skip config cleanup
+		configFiles = []os.DirEntry{}
 	}
 	files := append(configFiles, certFiles...)
 	for _, file := range files {
@@ -197,7 +195,7 @@ func RemoveTempFiles() error {
 			err = os.Remove(tmpConfigDir + "/" + fileName)
 		}
 		if err != nil {
-			log.Fatalf("Failed to remove `%s`. (%s)", fileName, err.Error())
+			csmlog.Fatalf("Failed to remove `%s`. (%s)", fileName, err.Error())
 		}
 	}
 	return nil

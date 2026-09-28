@@ -29,11 +29,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
+	"strconv"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/spf13/viper"
 
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config"
@@ -45,7 +47,6 @@ import (
 	"github.com/dell/csmlog"
 
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 
 	corev1 "k8s.io/api/core/v1"
@@ -77,7 +78,7 @@ const (
 	timeoutEndpoint           = "/univmax/timeout"
 	defaultEndpoint           = "/univmax"
 	primaryCertSecretName     = "cert-secret-4"
-	backupCertSecretName      = "cert-secret-9"
+	backupCertSecretName      = "cert-secret-9" // #nosec G101
 	proxySecretName           = "proxy-secret-1"
 	proxySecretName2          = "proxy-secret-2"
 	storageArrayID            = "000000000001"
@@ -91,7 +92,7 @@ const (
 )
 
 var (
-	server                              *Server
+	proxyServer                         *Server
 	primaryMockServer, backupMockServer *mockServer
 	httpClient                          *http.Client
 )
@@ -101,31 +102,46 @@ var (
 	fileMutex = &sync.Mutex{}
 )
 
+func getAvailablePort() string {
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return common.DefaultPort
+	}
+	defer l.Close()
+	return strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
+}
+
 func startTestServer(config string) error {
-	if server != nil {
+	if proxyServer != nil {
 		return nil
 	}
 	var err error
 	k8sUtils = k8smock.Init()
 	os.Setenv(common.EnvInClusterConfig, "true")
+	port := getAvailablePort()
 	serverOpts := getServerOpts()
+	serverOpts.Port = port
 	serverOpts.ConfigDir = common.TempConfigDir
 	// Create test proxy config and start the server
 	serverOpts.ConfigFileName = tmpSAConfigFile
 
 	if config == "secret" {
-		log.Infof("Reverse proxy reading mounted secret")
+		csmlog.Infof("Reverse proxy reading mounted secret")
 		os.Setenv(common.EnvReverseProxyUseSecret, "true")
 		os.Setenv(common.EnvSecretFilePath, common.TempConfigDir+"/"+tmpSAConfigFile)
-		os.Setenv(common.EnvPowermaxConfigPath, common.TestConfigDir+"/"+paramsConfigMapFile)
+		paramsPath, paramsErr := createTempParamsConfig(port)
+		if paramsErr != nil {
+			return paramsErr
+		}
+		os.Setenv(common.EnvPowermaxConfigPath, paramsPath)
 		err = createTempSecret()
 		if err != nil {
 			return err
 		}
 	} else {
-		log.Infof("Reverse proxy reading mounted config map")
+		csmlog.Infof("Reverse proxy reading mounted config map")
 		os.Setenv(common.EnvReverseProxyUseSecret, "false")
-		err := createTempConfig()
+		err := createTempConfig(port)
 		if err != nil {
 			return err
 		}
@@ -151,12 +167,25 @@ func startTestServer(config string) error {
 	if err != nil {
 		return err
 	}
-	server, err = startServer(k8sUtils, serverOpts)
+	proxyServer, err = startServer(k8sUtils, serverOpts)
 	if err == nil {
-		log.Infof("started revproxy server successfully on port %s", serverOpts.Port)
+		csmlog.Infof("started revproxy server successfully on port %s", serverOpts.Port)
 	}
 
 	return err
+}
+
+func createTempParamsConfig(port string) (string, error) {
+	paramsConfig, err := config.ReadParamsConfigMapFromPath(filepath.Join(common.TestConfigDir, paramsConfigMapFile), viper.New())
+	if err != nil {
+		return "", err
+	}
+	paramsConfig.Port = port
+	outputPath := filepath.Join(common.TempConfigDir, paramsConfigMapFile)
+	if err := writeYAMLConfig(paramsConfig, paramsConfigMapFile, common.TempConfigDir); err != nil {
+		return "", err
+	}
+	return outputPath, nil
 }
 
 func getURL(port, path string) string {
@@ -171,7 +200,7 @@ func getHTTPClient() *http.Client {
 		return httpClient
 	}
 	tlsConfig := tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // #nosec G402
 	}
 	tr := &http.Transport{
 		TLSClientConfig:     &tlsConfig,
@@ -227,11 +256,11 @@ func runRequestLoop(count int, duration time.Duration, port, path string) error 
 	var wg sync.WaitGroup
 	for i := 0; i < count; i++ {
 		wg.Add(1)
-		go func(i int) {
+		go func(_ int) {
 			defer wg.Done()
 			_, err := doHTTPRequest(port, path)
 			if err != nil {
-				log.Error(err.Error())
+				csmlog.Error(err.Error())
 			}
 		}(i)
 	}
@@ -239,7 +268,7 @@ func runRequestLoop(count int, duration time.Duration, port, path string) error 
 	time.Sleep(duration)
 	_, err := doHTTPRequest(port, path)
 	if err != nil {
-		log.Error(err.Error())
+		csmlog.Error(err.Error())
 	}
 	return nil
 }
@@ -251,9 +280,9 @@ func stopServers() {
 	if backupMockServer != nil {
 		backupMockServer.server.Close()
 	}
-	if server != nil {
-		server.SigChan <- syscall.SIGHUP
-		server = nil
+	if proxyServer != nil {
+		proxyServer.SigChan <- syscall.SIGHUP
+		proxyServer = nil
 	}
 }
 
@@ -264,7 +293,7 @@ func readYAMLConfig(filename, fileDir string) (config.ProxyConfigMap, error) {
 	file := filepath.Join(fileDir, filename)
 	yamlFile, err := os.ReadFile(file)
 	if err != nil {
-		log.Infof("Failed to read config file: %v", err)
+		csmlog.Infof("Failed to read config file: %v", err)
 		return configmap, err
 	}
 	err = yaml.Unmarshal(yamlFile, &configmap)
@@ -313,18 +342,23 @@ func writeYAMLConfig(val interface{}, fileName, fileDir string) error {
 	if err != nil {
 		return err
 	}
+	// Create directory if it doesn't exist
+	err = os.MkdirAll(fileDir, 0o777)
+	if err != nil {
+		return err
+	}
 	filepath := filepath.Join(fileDir, fileName)
 	return os.WriteFile(filepath, file, 0o777)
 }
 
-func createTempConfig() error {
+func createTempConfig(port string) error {
 	proxyConfigMap, err := readYAMLConfig(common.TestConfigFileName, common.TestConfigDir)
 	if err != nil {
-		log.Fatalf("Failed to read sample config file. (%s)", err.Error())
+		csmlog.Fatalf("Failed to read sample config file. (%s)", err.Error())
 		return err
 	}
 
-	proxyConfigMap.Port = common.DefaultPort
+	proxyConfigMap.Port = port
 	// Create a ManagementServerConfig
 	tempMgmtServerConfig := createTempManagementServers()
 	proxyConfigMap.Config.ManagementServerConfig = tempMgmtServerConfig
@@ -333,7 +367,7 @@ func createTempConfig() error {
 	proxyConfigMap.Config.StorageArrayConfig = tempStorageArrayConfig
 	err = writeYAMLConfig(proxyConfigMap, tmpSAConfigFile, common.TempConfigDir)
 	if err != nil {
-		log.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
+		csmlog.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
 	}
 	return err
 }
@@ -341,7 +375,7 @@ func createTempConfig() error {
 func createTempSecret() error {
 	proxySecret, err := readYAMLSecret(common.TestSecretFileName, common.TestConfigDir)
 	if err != nil {
-		log.Fatalf("Failed to read secret (%s)", err.Error())
+		csmlog.Fatalf("Failed to read secret (%s)", err.Error())
 		return err
 	}
 
@@ -353,7 +387,7 @@ func createTempSecret() error {
 	proxySecret.StorageArrayConfig = tempStorageArrayConfig
 	err = writeYAMLConfig(proxySecret, tmpSAConfigFile, common.TempConfigDir)
 	if err != nil {
-		log.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
+		csmlog.Fatalf("Failed to create a temporary config file. (%s)", err.Error())
 	}
 	return err
 }
@@ -418,49 +452,49 @@ func InitializeSetup(config string) {
 	var err error
 
 	// Start the mock server
-	log.Info("Creating primary mock server...")
+	csmlog.Info("Creating primary mock server...")
 	primaryMockServer, err = createMockServer(primaryPort)
 	if err != nil {
-		log.Fatalf("Failed to create primary mock server. (%s)", err.Error())
+		csmlog.Fatalf("Failed to create primary mock server. (%s)", err.Error())
 		os.Exit(1)
 	}
-	log.Infof("Primary mock server listening on %s", primaryMockServer.server.URL)
-	log.Info("Creating backup mock server...")
+	csmlog.Infof("Primary mock server listening on %s", primaryMockServer.server.URL)
+	csmlog.Info("Creating backup mock server...")
 	backupMockServer, err = createMockServer(backupPort)
 	if err != nil {
-		log.Fatalf("Failed to create backup mock server. (%s)", err.Error())
+		csmlog.Fatalf("Failed to create backup mock server. (%s)", err.Error())
 		stopServers()
 		os.Exit(1)
 	}
-	log.Infof("Backup mock server listening on %s", backupMockServer.server.URL)
+	csmlog.Infof("Backup mock server listening on %s", backupMockServer.server.URL)
 	// Start proxy server and other services
-	log.Info("Starting proxy server...")
+	csmlog.Info("Starting proxy server...")
 	err = startTestServer(config)
 	if err != nil {
-		log.Fatalf("Failed to start proxy server. (%s)", err.Error())
+		csmlog.Fatalf("Failed to start proxy server. (%s)", err.Error())
 		stopServers()
 		os.Exit(1)
 	}
 
 	err = serverReady()
 	if err != nil {
-		log.Fatalf("Failed to start proxy server. (%s)", err.Error())
+		csmlog.Fatalf("Failed to start proxy server. (%s)", err.Error())
 		stopServers()
 		os.Exit(1)
 	}
-	log.Info("Proxy server started successfully")
+	csmlog.Info("Proxy server started successfully")
 }
 
 func TearDownSetup() {
-	log.Info("Stopping the mock and proxy servers")
+	csmlog.Info("Stopping the mock and proxy servers")
 	stopServers()
-	log.Info("Removing the certs, temp files")
+	csmlog.Info("Removing the certs, temp files")
 	err := utils.RemoveTempFiles()
 	if err != nil {
-		log.Fatal(err.Error())
+		csmlog.Fatal(err.Error())
 		os.Exit(1)
 	}
-	log.Info("Proxy and mock servers stopped successfully")
+	csmlog.Info("Proxy and mock servers stopped successfully")
 	time.Sleep(5 * time.Second)
 }
 
@@ -469,7 +503,7 @@ func TestMultipleRuns(t *testing.T) {
 	TearDownSetup()
 	// Run the tests multiple times with different configurations (secret or configmap)
 	t.Run("TestSecretCase", func(t *testing.T) {
-		log.Infof("#### Running tests with secret ####")
+		csmlog.Infof("#### Running tests with secret ####")
 		os.Setenv(common.EnvReverseProxyUseSecret, "true")
 		InitializeSetup("secret")
 		defer TearDownSetup()
@@ -481,11 +515,11 @@ func TestMultipleRuns(t *testing.T) {
 		ConfigMapParamsConfigChangeTest(t)
 		ConfigMapEventHandlerTest(t)
 		ConfigMapConfigChangeTest(t)
-		log.Infof("#### END Running tests with secret ####")
+		csmlog.Infof("#### END Running tests with secret ####")
 	})
 
 	t.Run("TestConfigMapCase", func(t *testing.T) {
-		log.Infof("#### Running tests with configmap ####")
+		csmlog.Infof("#### Running tests with configmap ####")
 		InitializeSetup("configmap")
 		defer TearDownSetup()
 		os.Setenv(common.EnvReverseProxyUseSecret, "false")
@@ -497,14 +531,14 @@ func TestMultipleRuns(t *testing.T) {
 		ConfigMapParamsConfigChangeTest(t)
 		ConfigMapEventHandlerTest(t)
 		ConfigMapConfigChangeTest(t)
-		log.Infof("#### END Running tests with configmap ####")
+		csmlog.Infof("#### END Running tests with configmap ####")
 	})
 }
 
 func serverReady() error {
 	client := getHTTPClient()
 
-	url := getURL(server.Port, "/")
+	url := getURL(proxyServer.Port, "/")
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -554,12 +588,12 @@ func TestServerStart(t *testing.T) {
 // 3. call TearDownSetup at the end (or defer)
 
 func ServerSAEventHandlerTest(t *testing.T) {
-	log.Infof("Start ServerSAEventHandlerTest")
+	csmlog.Infof("Start ServerSAEventHandlerTest")
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
 		return
 	}
 
-	oldProxySecret := server.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	oldProxySecret := proxyServer.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	newSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      proxySecretName,
@@ -571,8 +605,8 @@ func ServerSAEventHandlerTest(t *testing.T) {
 		},
 		Type: "Generic",
 	}
-	server.EventHandler(k8sUtils, newSecret)
-	newProxySecret := server.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	proxyServer.EventHandler(k8sUtils, newSecret)
+	newProxySecret := proxyServer.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	if reflect.DeepEqual(oldProxySecret, newProxySecret) {
 		t.Errorf("cert file should change after update")
 	} else {
@@ -589,24 +623,24 @@ func ServerSAEventHandlerTest(t *testing.T) {
 		},
 		Type: "Generic",
 	}
-	server.EventHandler(k8sUtils, newSecret)
-	oldProxySecret = server.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
+	proxyServer.EventHandler(k8sUtils, newSecret)
+	oldProxySecret = proxyServer.Config().GetStorageArray(storageArrayID)[0].ProxyCredentialSecrets[proxySecretName]
 	if reflect.DeepEqual(oldProxySecret, newProxySecret) {
 		t.Errorf("cert file should change after update")
 	} else {
 		fmt.Println("Secret Reverted Successfully")
 	}
 
-	log.Infof("End ServerSAEventHandlerTest")
+	csmlog.Infof("End ServerSAEventHandlerTest")
 }
 
 // Tests the params configmap handler of reverseproxy, needs a running server
 func ConfigMapParamsConfigChangeTest(t *testing.T) {
-	log.Infof("Start ConfigMapParamsConfigChangeTest")
-	defer log.Infof("End ConfigMapParamsConfigChangeTest")
+	csmlog.Infof("Start ConfigMapParamsConfigChangeTest")
+	defer csmlog.Infof("End ConfigMapParamsConfigChangeTest")
 
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "false" {
-		log.Infof("ConfigMapParamsConfigChangeTest: Skipping test for config map case")
+		csmlog.Infof("ConfigMapParamsConfigChangeTest: Skipping test for config map case")
 		return
 	}
 	type tests struct {
@@ -643,7 +677,7 @@ func ConfigMapParamsConfigChangeTest(t *testing.T) {
 		},
 	}
 	for _, tt := range tc {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			tt.modifyFunc()
 		})
 	}
@@ -651,11 +685,11 @@ func ConfigMapParamsConfigChangeTest(t *testing.T) {
 
 // Tests the configmap config change, needs a running server
 func ConfigMapConfigChangeTest(t *testing.T) {
-	log.Infof("Start ConfigMapConfigChangeTest")
-	defer log.Infof("End ConfigMapConfigChangeTest")
+	csmlog.Infof("Start ConfigMapConfigChangeTest")
+	defer csmlog.Infof("End ConfigMapConfigChangeTest")
 
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
-		log.Infof("ConfigMapConfigChangeTest: Skipping test for secret case")
+		csmlog.Infof("ConfigMapConfigChangeTest: Skipping test for secret case")
 		return
 	}
 
@@ -671,7 +705,7 @@ func ConfigMapConfigChangeTest(t *testing.T) {
 		{
 			name:       "ConfigMapConfigChange-update credential secret with a new secret",
 			secretName: "new-proxy-secret-1",
-			modifyFunc: func(s tests) {
+			modifyFunc: func(s tests) { // revive:disable-line:unused-parameter
 				secret, err := k8sUtils.CreateNewCredentialSecret(s.secretName)
 				if err != nil {
 					t.Errorf("Failed to create new secret. (%s)", err.Error())
@@ -690,11 +724,11 @@ func ConfigMapConfigChangeTest(t *testing.T) {
 				if err != nil {
 					t.Errorf("Failed to update config map params file. (%s)", err.Error())
 				}
-				time.Sleep(2 * time.Second)
+				time.Sleep(5 * time.Second)
 			},
 			expectFunc: func() (string, error) {
 				t.Logf("Reading updated config map and returning results")
-				return server.Config().GetManagementServers()[0].CredentialSecret, nil
+				return proxyServer.Config().GetManagementServers()[0].CredentialSecret, nil
 			},
 			expectErr: false,
 			want:      "new-proxy-secret-1",
@@ -702,7 +736,7 @@ func ConfigMapConfigChangeTest(t *testing.T) {
 	}
 
 	for _, tt := range tc {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			tt.modifyFunc(tt)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -733,11 +767,11 @@ func ConfigMapConfigChangeTest(t *testing.T) {
 
 // Tests the secret on config change functionality, needs a running server
 func SecretConfigChangeTest(t *testing.T) {
-	log.Infof("Start SecretConfigChangeTest")
-	defer log.Infof("End SecretConfigChangeTest")
+	csmlog.Infof("Start SecretConfigChangeTest")
+	defer csmlog.Infof("End SecretConfigChangeTest")
 
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "false" {
-		log.Infof("SecretConfigChangeTest: Skipping test for config map case")
+		csmlog.Infof("SecretConfigChangeTest: Skipping test for config map case")
 		return
 	}
 
@@ -752,7 +786,7 @@ func SecretConfigChangeTest(t *testing.T) {
 	tc := []tests{
 		{
 			name: "SecretConfigChange-update management server with new username",
-			modifyFunc: func(s tests) {
+			modifyFunc: func(_ tests) {
 				configSecret, err := readYAMLSecret(tmpSAConfigFile, common.TempConfigDir)
 				if err != nil {
 					t.Error("Failed to read config")
@@ -783,7 +817,7 @@ func SecretConfigChangeTest(t *testing.T) {
 			},
 			expectFunc: func() (string, error) {
 				t.Logf("Reading updated config map and returning results")
-				return server.Config().GetManagementServers()[0].Username, nil
+				return proxyServer.Config().GetManagementServers()[0].Username, nil
 			},
 			expectErr: false,
 			want:      "mock-username",
@@ -791,7 +825,7 @@ func SecretConfigChangeTest(t *testing.T) {
 	}
 
 	for _, tt := range tc {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			tt.modifyFunc(tt)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -825,11 +859,11 @@ func SecretConfigChangeTest(t *testing.T) {
 // event handler does not return anything.ideal way to check is to fetch the config after,
 // and check if the config is updated.
 func ConfigMapEventHandlerTest(t *testing.T) {
-	log.Infof("Start ConfigMapEventHandlerTest")
-	defer log.Infof("End ConfigEventMapHandlerTest")
+	csmlog.Infof("Start ConfigMapEventHandlerTest")
+	defer csmlog.Infof("End ConfigEventMapHandlerTest")
 
 	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
-		log.Infof("ConfigMapEventHandlerTest: Skipping test for secret case")
+		csmlog.Infof("ConfigMapEventHandlerTest: Skipping test for secret case")
 		return
 	}
 
@@ -876,7 +910,7 @@ func ConfigMapEventHandlerTest(t *testing.T) {
 		{
 			name:       "ConfigMapEventHandler-set mounted secret to true",
 			secretName: "cert-secret-4",
-			getSecretFunc: func(s tests) *corev1.Secret {
+			getSecretFunc: func(_ tests) *corev1.Secret {
 				os.Setenv(common.EnvReverseProxyUseSecret, "true")
 				return nil
 			},
@@ -885,8 +919,8 @@ func ConfigMapEventHandlerTest(t *testing.T) {
 	}
 
 	for _, tt := range tc {
-		t.Run(tt.name, func(t *testing.T) {
-			server.EventHandler(k8sUtils, tt.getSecretFunc(tt))
+		t.Run(tt.name, func(_ *testing.T) {
+			proxyServer.EventHandler(k8sUtils, tt.getSecretFunc(tt))
 			tt.afterFunc()
 		})
 	}
@@ -894,20 +928,36 @@ func ConfigMapEventHandlerTest(t *testing.T) {
 
 // Tests the http request, needs a running server
 func SAHTTPRequestTest(t *testing.T) {
-	log.Infof("Start SAHTTPRequestTest")
-	defer log.Infof("End SAHTTPRequestTest")
+	csmlog.Infof("Start SAHTTPRequestTest")
+	defer csmlog.Infof("End SAHTTPRequestTest")
+
+	// Wait for server to be ready with retry mechanism
+	maxRetries := 10
+	retryInterval := 1 * time.Second
+
 	// make a request for version
 	path := utils.Prefix + "/version"
-	resp, err := doHTTPRequest(server.Port, path)
+	var resp string
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		resp, err = doHTTPRequest(proxyServer.Port, path)
+		if err == nil {
+			break
+		}
+		if i < maxRetries-1 {
+			csmlog.Infof("Retry %d/%d: waiting for server to be ready", i+1, maxRetries)
+			time.Sleep(retryInterval)
+		}
+	}
 	if err != nil {
-		t.Error(err.Error())
+		t.Errorf("Failed after %d retries: %s", maxRetries, err.Error())
 		return
 	}
 	fmt.Printf("RESPONSE_BODY: %s\n", resp)
 
 	// make a request for symmterix
 	path = utils.Prefix + "/91/system/symmetrix"
-	resp, err = doHTTPRequest(server.Port, path)
+	resp, err = doHTTPRequest(proxyServer.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -916,7 +966,7 @@ func SAHTTPRequestTest(t *testing.T) {
 
 	// make a request for capabilities
 	path = utils.Prefix + "/91/replication/capabilities/symmetrix"
-	resp, err = doHTTPRequest(server.Port, path)
+	resp, err = doHTTPRequest(proxyServer.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -925,7 +975,7 @@ func SAHTTPRequestTest(t *testing.T) {
 
 	// make a request to endpoint for ServeReverseProxy
 	path = utils.Prefix + "/91/sloprovisioning/symmetrix/" + storageArrayID
-	resp, err = doHTTPRequest(server.Port, path)
+	resp, err = doHTTPRequest(proxyServer.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -934,7 +984,7 @@ func SAHTTPRequestTest(t *testing.T) {
 
 	// make a request to ServeVolume
 	path = utils.Prefix + "/91/sloprovisioning/symmetrix/" + storageArrayID + "/volume"
-	resp, err = doHTTPRequest(server.Port, path)
+	resp, err = doHTTPRequest(proxyServer.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -944,7 +994,7 @@ func SAHTTPRequestTest(t *testing.T) {
 	// make a request to ServeIterator
 	id := "00000000-1111-2abc-def3-44gh55ij66kl_0"
 	path = utils.Prefix + "/common/Iterator/" + id + "/page"
-	resp, err = doHTTPRequest(server.Port, path)
+	resp, err = doHTTPRequest(proxyServer.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -953,7 +1003,7 @@ func SAHTTPRequestTest(t *testing.T) {
 
 	// make a request for performance
 	path = utils.Prefix + "/performance/Array/keys"
-	resp, err = doHTTPRequest(server.Port, path)
+	resp, err = doHTTPRequest(proxyServer.Port, path)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -961,13 +1011,71 @@ func SAHTTPRequestTest(t *testing.T) {
 	fmt.Printf("RESPONSE_BODY: %s\n", resp)
 
 	path = utils.PrivatePrefix + "/91/sloprovisioning/symmetrix/" + storageArrayID
-	resp, err = doHTTPRequest(server.Port, path)
-	log.Info("test info is there")
+	resp, err = doHTTPRequest(proxyServer.Port, path)
+	csmlog.Info("test info is there")
 	if err != nil {
 		t.Error(err.Error())
 		return
 	}
 	fmt.Printf("RESPONSE_BODY: %s\n", resp)
+}
+
+func TestGetServerOptsMetricsEnabled(t *testing.T) {
+	tests := []struct {
+		name           string
+		metricsEnabled string
+		expectEnabled  bool
+	}{
+		{
+			name:           "Metrics enabled via X_CSI_METRICS_ENABLED",
+			metricsEnabled: "true",
+			expectEnabled:  true,
+		},
+		{
+			name:           "Metrics disabled",
+			metricsEnabled: "false",
+			expectEnabled:  false,
+		},
+		{
+			name:           "Metrics not set",
+			metricsEnabled: "",
+			expectEnabled:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(_ *testing.T) {
+			t.Setenv(common.EnvMetricsEnabled, tt.metricsEnabled)
+
+			opts := getServerOpts()
+			assert.Equal(t, tt.expectEnabled, opts.MetricsEnabled)
+		})
+	}
+}
+
+func TestConfigChangeParamsConfigMap(t *testing.T) {
+	k8sUtils := k8smock.Init()
+	v := viper.New()
+	v.Set("logFormat", "json")
+	v.Set("logLevel", "debug")
+	v.Set("port", "8080")
+
+	proxyConfig := config.ProxyConfig{
+		Port: "8080",
+	}
+	proxy, err := proxy.NewProxy(proxyConfig)
+	if err != nil {
+		t.Fatalf("Failed to create proxy: %v", err)
+	}
+
+	server := &Server{
+		config: &proxyConfig,
+		Proxy:  proxy,
+	}
+	// This should not panic
+	assert.NotPanics(t, func() {
+		server.configChangeParamsConfigMap(k8sUtils, v)
+	})
 }
 
 func TestMainFunc(t *testing.T) {
@@ -995,7 +1103,7 @@ func TestMainFunc(t *testing.T) {
 			name: "execute main without leader election k8s init func failure",
 			setup: func() {
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
-				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+				k8sInitFunc = func(_ string, _ string, _ bool, _ time.Duration, _ *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
 					// must defer writing to the channel so all goroutines can finish running,
 					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
 					defer func() { runningCh <- "not running" }()
@@ -1013,13 +1121,13 @@ func TestMainFunc(t *testing.T) {
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "true")
 				t.Setenv(common.EnvWatchNameSpace, common.DefaultNameSpace)
 
-				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+				startServerFunc = func(_ k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
 					return &Server{
 						Opts: opts,
 					}, nil
 				}
 
-				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+				k8sInitFunc = func(_ string, _ string, _ bool, _ time.Duration, _ *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
 					return &k8sutils.K8sUtils{
 						KubernetesClient: k8sutils.KubernetesClient{
 							Clientset: fake.NewSimpleClientset(),
@@ -1045,7 +1153,7 @@ func TestMainFunc(t *testing.T) {
 					// leader election Run() panics on failure, catch the panic and return an error
 					defer func() {
 						if r := recover(); r != nil {
-							log.Errorf("Leader election panicked: %v", r)
+							csmlog.Errorf("Leader election panicked: %v", r)
 							err = fmt.Errorf("%v, leader election failed due to panic: %v", err, r)
 						}
 					}()
@@ -1069,13 +1177,13 @@ func TestMainFunc(t *testing.T) {
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "true")
 				t.Setenv(common.EnvWatchNameSpace, common.DefaultNameSpace)
 
-				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+				startServerFunc = func(_ k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
 					return &Server{
 						Opts: opts,
 					}, nil
 				}
 
-				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+				k8sInitFunc = func(_ string, _ string, _ bool, _ time.Duration, _ *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
 					// must defer writing to the channel so all goroutines can finish running,
 					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
 					defer func() { runningCh <- "not running" }()
@@ -1091,7 +1199,7 @@ func TestMainFunc(t *testing.T) {
 			name: "execute main() without leader election",
 			setup: func() {
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
-				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+				startServerFunc = func(_ k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
 					// must defer writing to the channel so all goroutines can finish running,
 					// avoiding data races triggered by resetting the default func vars in the afterEach() func.
 					defer func() { runningCh <- "running" }()
@@ -1100,7 +1208,7 @@ func TestMainFunc(t *testing.T) {
 						Opts: opts,
 					}, nil
 				}
-				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+				k8sInitFunc = func(_ string, _ string, _ bool, _ time.Duration, _ *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
 					return &k8sutils.K8sUtils{
 						KubernetesClient: k8sutils.KubernetesClient{
 							Clientset: fake.NewSimpleClientset(),
@@ -1121,13 +1229,13 @@ func TestMainFunc(t *testing.T) {
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "true")
 				t.Setenv(common.EnvWatchNameSpace, common.DefaultNameSpace)
 
-				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+				startServerFunc = func(_ k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
 					return &Server{
 						Opts: opts,
 					}, nil
 				}
 
-				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+				k8sInitFunc = func(_ string, _ string, _ bool, _ time.Duration, _ *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
 					return &k8sutils.K8sUtils{
 						KubernetesClient: k8sutils.KubernetesClient{
 							Clientset: fake.NewSimpleClientset(),
@@ -1140,7 +1248,7 @@ func TestMainFunc(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			defer afterEach()
 			tt.setup()
 
@@ -1194,12 +1302,12 @@ func TestRun(t *testing.T) {
 			name: "execute run sucess",
 			setup: func() {
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
-				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+				startServerFunc = func(_ k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
 					return &Server{
 						Opts: opts,
 					}, nil
 				}
-				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+				k8sInitFunc = func(_ string, _ string, _ bool, _ time.Duration, _ *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
 					return &k8sutils.K8sUtils{
 						KubernetesClient: k8sutils.KubernetesClient{
 							Clientset: fake.NewSimpleClientset(),
@@ -1218,14 +1326,14 @@ func TestRun(t *testing.T) {
 			name: "execute run start server failure",
 			setup: func() {
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
-				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+				k8sInitFunc = func(_ string, _ string, _ bool, _ time.Duration, _ *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
 					return &k8sutils.K8sUtils{
 						KubernetesClient: k8sutils.KubernetesClient{
 							Clientset: fake.NewSimpleClientset(),
 						},
 					}, nil
 				}
-				startServerFunc = func(k8sUtils k8sutils.UtilsInterface, opts ServerOpts) (*Server, error) {
+				startServerFunc = func(_ k8sutils.UtilsInterface, _ ServerOpts) (*Server, error) {
 					runningCh <- "should not be running"
 					return nil, errors.New("error, start server failed")
 				}
@@ -1238,7 +1346,7 @@ func TestRun(t *testing.T) {
 			name: "execute run k8s init failure",
 			setup: func() {
 				t.Setenv(common.EnvIsLeaderElectionEnabled, "false")
-				k8sInitFunc = func(namespace string, certDir string, isInCluster bool, resyncPeriod time.Duration, kubeClient *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
+				k8sInitFunc = func(_ string, _ string, _ bool, _ time.Duration, _ *k8sutils.KubernetesClient) (*k8sutils.K8sUtils, error) {
 					return nil, errors.New("error, k8s init failed")
 				}
 			},
@@ -1248,7 +1356,7 @@ func TestRun(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			defer afterEach()
 
 			tt.setup()
@@ -1284,19 +1392,15 @@ func TestUpdateRevProxyLogParams(t *testing.T) {
 		logLevel    string
 		expectLevel csmlog.Level
 	}{
-		{"Default values", "", "", csmlog.DebugLevel},
+		{"Default values", "", "", csmlog.InfoLevel},
 		{"Valid JSON format", "json", "info", csmlog.InfoLevel},
 		{"Valid Text format", "text", "warn", csmlog.WarnLevel},
 		{"Invalid format defaults to text", "xml", "error", csmlog.ErrorLevel},
-		{"Invalid log level defaults to debug", "json", "invalid", csmlog.DebugLevel},
+		{"Invalid log level defaults to info", "json", "invalid", csmlog.InfoLevel},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Capture log output
-			var logOutput strings.Builder
-			logrus.SetOutput(&logOutput)
-
+		t.Run(tt.name, func(_ *testing.T) {
 			updateRevProxyLogParams(tt.format, tt.logLevel)
 
 			// Validate log level
@@ -1317,7 +1421,7 @@ func TestK8sInitFunc(t *testing.T) {
 			kubeClient: &k8sutils.KubernetesClient{
 				Clientset:         fake.NewSimpleClientset(),
 				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
-				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+				NewForConfigFunc: func(_ *rest.Config) (kubernetes.Interface, error) {
 					return fake.NewSimpleClientset(), nil
 				},
 				GetPathFromEnvFunc: func() string { return "./" },
@@ -1330,7 +1434,7 @@ func TestK8sInitFunc(t *testing.T) {
 			kubeClient: &k8sutils.KubernetesClient{
 				Clientset:         fake.NewSimpleClientset(),
 				RestForConfigFunc: func() (*rest.Config, error) { return &rest.Config{}, nil },
-				NewForConfigFunc: func(config *rest.Config) (kubernetes.Interface, error) {
+				NewForConfigFunc: func(_ *rest.Config) (kubernetes.Interface, error) {
 					return nil, errors.New("error")
 				},
 				GetPathFromEnvFunc: func() string { return "./" },
@@ -1339,7 +1443,7 @@ func TestK8sInitFunc(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			resyncPeriod := 10 * time.Second
 			k8sUtils, err := k8sInitFunc("default", "/tmp/certs", true, resyncPeriod, tt.kubeClient)
 
@@ -1455,7 +1559,7 @@ func TestSetup(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			cleanup := tt.setupFunc()
 			defer cleanup()
 		})
@@ -1607,7 +1711,7 @@ func TestIsSidecarMode(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			cleanup := tt.setupFunc()
 			defer cleanup()
 			result := isSidecarMode()
@@ -1647,14 +1751,14 @@ func TestEventHandler(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			cleanup := tt.setupFunc()
 			defer cleanup()
 		})
 	}
 }
 
-func TestSignalHandler(t *testing.T) {
+func TestSignalHandler(_ *testing.T) {
 	server := &Server{
 		HTTPServer: &http.Server{},
 		SigChan:    make(chan os.Signal, 1),
