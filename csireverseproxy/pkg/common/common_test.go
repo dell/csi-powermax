@@ -146,7 +146,7 @@ type mockRoundTripper struct {
 	err  error
 }
 
-func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+func (m *mockRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) {
 	return m.resp, m.err
 }
 
@@ -208,7 +208,7 @@ func TestRoundTrip(t *testing.T) {
 
 // TestProxyHealthConcurrency verifies that concurrent ReportSuccess and ReportFailure calls
 // do not cause any data races or panics.
-func TestProxyHealthConcurrency(t *testing.T) {
+func TestProxyHealthConcurrency(_ *testing.T) {
 	h := NewProxyHealth()
 	var wg sync.WaitGroup
 

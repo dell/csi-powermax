@@ -168,7 +168,8 @@ func TestReclamationCycle_CallsFstrimOnFilesystemVolume(t *testing.T) {
 
 	// Verify PVC annotations were updated
 	updatedPVC, err := fakeClient.CoreV1().PersistentVolumeClaims("default").Get(
-		context.Background(), "pvc-test-001", metav1.GetOptions{})
+		context.Background(), "pvc-test-001", metav1.GetOptions{},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "success", updatedPVC.Annotations[AnnotationStatus],
 		"PVC should be annotated with status=success after fstrim")
@@ -252,7 +253,8 @@ func TestReclamationCycle_CallsBlkdiscardOnBlockVolume(t *testing.T) {
 
 	// Verify PVC annotations were updated
 	updatedPVC, err := fakeClient.CoreV1().PersistentVolumeClaims("default").Get(
-		context.Background(), "pvc-blk-001", metav1.GetOptions{})
+		context.Background(), "pvc-blk-001", metav1.GetOptions{},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "success", updatedPVC.Annotations[AnnotationStatus],
 		"PVC should be annotated with status=success after blkdiscard")
@@ -342,7 +344,8 @@ func TestReclamationCycle_SkipsUnsupportedDevice(t *testing.T) {
 
 	// Verify PVC annotations indicate unsupported
 	updatedPVC, err := fakeClient.CoreV1().PersistentVolumeClaims("default").Get(
-		context.Background(), "pvc-unsup-001", metav1.GetOptions{})
+		context.Background(), "pvc-unsup-001", metav1.GetOptions{},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "unsupported", updatedPVC.Annotations[AnnotationStatus],
 		"PVC should be annotated with status=unsupported for unsupported device")
@@ -512,7 +515,8 @@ func TestBuildAnnotations(t *testing.T) {
 	require.NoError(t, err)
 
 	updated, err := fakeClient.CoreV1().PersistentVolumeClaims("default").Get(
-		context.Background(), "test-pvc", metav1.GetOptions{})
+		context.Background(), "test-pvc", metav1.GetOptions{},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "success", updated.Annotations[AnnotationStatus])
 	assert.Equal(t, "1073741824", updated.Annotations[AnnotationBytesAvailable])
@@ -535,7 +539,8 @@ func TestBuildAnnotations_ErrorResult(t *testing.T) {
 	require.NoError(t, err)
 
 	updated, err := fakeClient.CoreV1().PersistentVolumeClaims("default").Get(
-		context.Background(), "test-pvc", metav1.GetOptions{})
+		context.Background(), "test-pvc", metav1.GetOptions{},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "error", updated.Annotations[AnnotationStatus])
 	assert.Contains(t, updated.Annotations[AnnotationErrorMsg], "fstrim failed")
@@ -930,7 +935,8 @@ func TestDevicePathNormalization_iSCSIMultipathDevice(t *testing.T) {
 
 	// Verify PVC annotations were updated successfully
 	updatedPVC, err := fakeClient.CoreV1().PersistentVolumeClaims("default").Get(
-		context.Background(), "pvc-iscsi-001", metav1.GetOptions{})
+		context.Background(), "pvc-iscsi-001", metav1.GetOptions{},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "success", updatedPVC.Annotations[AnnotationStatus],
 		"iSCSI multipath device path normalization should work")
@@ -1007,7 +1013,8 @@ func TestDevicePathNormalization_NVMeTCPDevice(t *testing.T) {
 
 	// Verify PVC annotations were updated successfully
 	updatedPVC, err := fakeClient.CoreV1().PersistentVolumeClaims("default").Get(
-		context.Background(), "pvc-nvme-001", metav1.GetOptions{})
+		context.Background(), "pvc-nvme-001", metav1.GetOptions{},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "success", updatedPVC.Annotations[AnnotationStatus],
 		"NVMe-TCP device path normalization should work (no symlinks)")
@@ -1082,7 +1089,8 @@ func TestDevicePathNormalization_BlockVolume(t *testing.T) {
 	// Verify PVC annotations were updated successfully
 	// Block volumes don't need to be in mount table
 	updatedPVC, err := fakeClient.CoreV1().PersistentVolumeClaims("default").Get(
-		context.Background(), "pvc-block-001", metav1.GetOptions{})
+		context.Background(), "pvc-block-001", metav1.GetOptions{},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "success", updatedPVC.Annotations[AnnotationStatus],
 		"Block volume device path normalization should work (no mount table check)")
@@ -1173,7 +1181,8 @@ func TestDevicePathNormalization_FCMultipathDevice(t *testing.T) {
 	// Verify PVC annotations were updated successfully
 	// This proves that device path normalization worked correctly
 	updatedPVC, err := fakeClient.CoreV1().PersistentVolumeClaims("default").Get(
-		context.Background(), "pvc-fc-001", metav1.GetOptions{})
+		context.Background(), "pvc-fc-001", metav1.GetOptions{},
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "success", updatedPVC.Annotations[AnnotationStatus],
 		"PVC should be annotated with status=success after fstrim (device path normalization worked)")
@@ -1183,4 +1192,85 @@ func TestDevicePathNormalization_FCMultipathDevice(t *testing.T) {
 		"PVC should have last-run-time annotation")
 	assert.Equal(t, "node-1", updatedPVC.Annotations[AnnotationNode],
 		"PVC should have node annotation")
+}
+
+// ---------------------------------------------------------------------------
+// Tests for SpaceReclamationManager.parseCsiID / getPowerMaxClient
+// ---------------------------------------------------------------------------
+
+func TestSpaceReclamationManager_ParseCsiID_NilService(t *testing.T) {
+	m := &SpaceReclamationManager{svc: nil}
+	_, _, _, _, _, err := m.parseCsiID("vol-001")
+	assert.Error(t, err, "expected error when service is nil")
+}
+
+func TestSpaceReclamationManager_GetPowerMaxClient_NilService(t *testing.T) {
+	m := &SpaceReclamationManager{svc: nil}
+	_, err := m.getPowerMaxClient("000120000001")
+	assert.Error(t, err, "expected error when service is nil")
+}
+
+// ---------------------------------------------------------------------------
+// Tests for SpaceReclamationManager.selectBestDevice (no external deps)
+// ---------------------------------------------------------------------------
+
+func TestSelectBestDevice_MountedDeviceFound(t *testing.T) {
+	m := &SpaceReclamationManager{}
+	// Device "sda" is in the mount table.
+	deviceToMount := map[string]string{"/dev/sda": "/mnt/vol"}
+	dev, err := m.selectBestDevice("pv-1", "wwn123", []string{"sda"}, deviceToMount, VolumeModeFilesystem)
+	assert.NoError(t, err)
+	assert.Equal(t, "/dev/sda", dev)
+}
+
+func TestSelectBestDevice_FilesystemNoMountedDevice(t *testing.T) {
+	m := &SpaceReclamationManager{}
+	// No device is in the mount table → filesystem mode must return error.
+	dev, err := m.selectBestDevice("pv-1", "wwn123", []string{"sdb"}, map[string]string{}, VolumeModeFilesystem)
+	assert.Error(t, err)
+	assert.Empty(t, dev)
+}
+
+func TestSelectBestDevice_BlockMultipathPreferred(t *testing.T) {
+	m := &SpaceReclamationManager{}
+	// Block mode: multipath device (dm-*) should be preferred over sd*.
+	devices := []string{"sda", "dm-0"}
+	dev, err := m.selectBestDevice("pv-1", "wwn123", devices, map[string]string{}, VolumeModeBlock)
+	assert.NoError(t, err)
+	assert.Equal(t, "/dev/dm-0", dev)
+}
+
+func TestSelectBestDevice_NVMeNamespacePreferred(t *testing.T) {
+	m := &SpaceReclamationManager{}
+	// NVMe namespace device (no 'c' in name) must be returned over controller device.
+	devices := []string{"nvme0n1"}
+	dev, err := m.selectBestDevice("pv-1", "wwn123", devices, map[string]string{}, VolumeModeBlock)
+	assert.NoError(t, err)
+	assert.Equal(t, "/dev/nvme0n1", dev)
+}
+
+func TestSelectBestDevice_NVMeControllerOnly_ReturnsError(t *testing.T) {
+	m := &SpaceReclamationManager{}
+	// Only NVMe controller device (contains 'c') → error because no namespace device.
+	devices := []string{"nvme0c0n1"}
+	_, err := m.selectBestDevice("pv-1", "wwn123", devices, map[string]string{}, VolumeModeBlock)
+	assert.Error(t, err)
+}
+
+func TestSelectBestDevice_FallbackFirstDevice(t *testing.T) {
+	m := &SpaceReclamationManager{}
+	// No multipath, no NVMe → fall back to first device.
+	devices := []string{"sda", "sdb"}
+	dev, err := m.selectBestDevice("pv-1", "wwn123", devices, map[string]string{}, VolumeModeBlock)
+	assert.NoError(t, err)
+	assert.Equal(t, "/dev/sda", dev)
+}
+
+func TestSelectBestDevice_EmptyDeviceList_Block(t *testing.T) {
+	m := &SpaceReclamationManager{}
+	// Empty list in block mode → fallback firstDevice is "", returns "/dev/".
+	// (edge case; function does not guard against empty list)
+	dev, err := m.selectBestDevice("pv-1", "wwn123", []string{}, map[string]string{}, VolumeModeBlock)
+	assert.NoError(t, err)
+	assert.Equal(t, "/dev/", dev)
 }

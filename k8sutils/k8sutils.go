@@ -19,20 +19,22 @@ package k8sutils
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metricsv1beta1api "k8s.io/metrics/pkg/apis/metrics/v1beta1"
+	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 
 	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
 
 	"github.com/dell/csmlog"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
-
-var log = csmlog.GetLogger()
 
 // UtilsInterface - interface which provides helper methods related to k8s
 type UtilsInterface interface {
@@ -40,6 +42,8 @@ type UtilsInterface interface {
 	GetNodeIPs(string) string
 	GetPVCForVolume(ctx context.Context, pvName string, volumeID string) (*corev1.PersistentVolumeClaim, error)
 	GetClient() kubernetes.Interface
+	GetMetricsClient() metricsv.Interface
+	GetPodMetrics(ctx context.Context, namespace, podName string) (*metricsv1beta1api.PodMetrics, error)
 }
 
 // K8sUtils stores the configuration of the k8s client, k8s client and the informer
@@ -51,7 +55,8 @@ var k8sUtils *K8sUtils
 
 // KubernetesClient - client connection
 type KubernetesClient struct {
-	ClientSet kubernetes.Interface
+	ClientSet     kubernetes.Interface
+	MetricsClient metricsv.Interface
 }
 
 // Init - Initializes the k8s client and creates the secret informer
@@ -61,19 +66,43 @@ func Init(kubeConfig string) (*K8sUtils, error) {
 	}
 	kubeClient, err := CreateKubeClientSet(kubeConfig)
 	if err != nil {
-		log.Errorf("failed to create kube client. error: %s", err.Error())
+		csmlog.Errorf("failed to create kube client. error: %s", err.Error())
 		return nil, err
 	}
+
+	// Initialize metrics client only if metrics is enabled
+	var metricsClient metricsv.Interface
+	metricsEnabled := strings.EqualFold(os.Getenv("X_CSI_METRICS_ENABLED"), "true")
+	if metricsEnabled {
+		config, err := getInClusterConfigFunc()
+		if kubeConfig != "" {
+			config, err = clientcmd.BuildConfigFromFlags("", kubeConfig)
+		}
+		if err == nil {
+			metricsClient, err = newMetricsForConfigFunc(config)
+			if err != nil {
+				csmlog.Warnf("failed to create metrics client: %s (CPU/memory metrics will not be available)", err.Error())
+				metricsClient = nil
+			}
+		} else {
+			csmlog.Warnf("failed to get config for metrics client: %s", err.Error())
+		}
+	}
+
 	k8sUtils = &K8sUtils{
 		KubernetesClient: &KubernetesClient{
-			ClientSet: kubeClient,
+			ClientSet:     kubeClient,
+			MetricsClient: metricsClient,
 		},
 	}
 	return k8sUtils, nil
 }
 
 // set this function as a var so that it can be mocked
-var getInClusterConfigFunc = rest.InClusterConfig
+var (
+	getInClusterConfigFunc  = rest.InClusterConfig
+	newMetricsForConfigFunc = metricsv.NewForConfig
+)
 
 // CreateKubeClientSet - Returns kubeClient set
 func CreateKubeClientSet(kubeConfig string) (*kubernetes.Clientset, error) {
@@ -100,6 +129,26 @@ func CreateKubeClientSet(kubeConfig string) (*kubernetes.Clientset, error) {
 	return clientSet, nil
 }
 
+// CreateDynamicClient creates a Kubernetes dynamic client from the given
+// kubeConfig path. Pass "" to use the in-cluster configuration.
+// The dynamic client is used by the CRD-backed VolumeJournal.
+func CreateDynamicClient(kubeConfig string) (dynamic.Interface, error) {
+	var config *rest.Config
+	var err error
+	if kubeConfig != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", kubeConfig)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		config, err = getInClusterConfigFunc()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return dynamic.NewForConfig(config)
+}
+
 // LeaderElection ...
 func LeaderElection(clientSet kubernetes.Interface, lockName string, namespace string, runFunc func(ctx context.Context)) error {
 	le := leaderelection.NewLeaderElection(clientSet, lockName, runFunc)
@@ -115,7 +164,7 @@ func (c *K8sUtils) GetNodeLabels(nodeFullName string) (map[string]string, error)
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Node %s details\n", node)
+	csmlog.Debugf("Node %s details\n", node)
 
 	return node.Labels, nil
 }
@@ -124,6 +173,14 @@ func (c *K8sUtils) GetNodeLabels(nodeFullName string) (map[string]string, error)
 func (c *K8sUtils) GetClient() kubernetes.Interface {
 	if c.KubernetesClient != nil {
 		return c.KubernetesClient.ClientSet
+	}
+	return nil
+}
+
+// GetMetricsClient returns the underlying metrics client.
+func (c *K8sUtils) GetMetricsClient() metricsv.Interface {
+	if c.KubernetesClient != nil {
+		return c.KubernetesClient.MetricsClient
 	}
 	return nil
 }
@@ -172,4 +229,13 @@ func (c *K8sUtils) GetPVCForVolume(ctx context.Context, pvName string, volumeID 
 	}
 
 	return pvc, nil
+}
+
+// GetPodMetrics retrieves metrics for the current pod
+func (c *K8sUtils) GetPodMetrics(ctx context.Context, namespace, podName string) (*metricsv1beta1api.PodMetrics, error) {
+	if c.KubernetesClient == nil || c.KubernetesClient.MetricsClient == nil {
+		return nil, fmt.Errorf("metrics client is uninitialized")
+	}
+
+	return c.KubernetesClient.MetricsClient.MetricsV1beta1().PodMetricses(namespace).Get(ctx, podName, metav1.GetOptions{})
 }

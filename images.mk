@@ -7,7 +7,7 @@
 include overrides.mk
 include helper.mk
 
-images: download-csm-common vendor generate
+images: copy-csm-common vendor generate
 	$(eval include csm-common.mk)
 	@echo "Base Images is set to: $(BASEIMAGE)"
 	@echo "Building: $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)"

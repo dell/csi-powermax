@@ -52,4 +52,14 @@ const (
 	EnvProxyAuthTokenFile = "X_CSI_REVPROXY_AUTH_TOKEN_FILE" // #nosec G101
 	// ProxyAuthTokenHeader is the HTTP header name used to carry the shared auth token
 	ProxyAuthTokenHeader = "X-Proxy-Auth-Token" // #nosec G101
+	// EnvMetricsEnabled enables the Prometheus metrics for the reverse proxy
+	EnvMetricsEnabled = "X_CSI_METRICS_ENABLED"
+	// EnvMetricsPort is the port on which the metrics server runs
+	EnvMetricsPort = "X_CSI_REVPROXY_METRICS_PORT"
+	// EnvMetricsTLSCertFile is the path to the TLS certificate file for the metrics server
+	EnvMetricsTLSCertFile = "X_CSI_REVPROXY_METRICS_TLS_CERT_FILE" // #nosec G101
+	// EnvMetricsTLSKeyFile is the path to the TLS key file for the metrics server
+	EnvMetricsTLSKeyFile = "X_CSI_REVPROXY_METRICS_TLS_KEY_FILE" // #nosec G101
+	// DefaultMetricsPort is the default port for the metrics server
+	DefaultMetricsPort = "2223"
 )

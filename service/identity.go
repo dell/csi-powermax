@@ -18,6 +18,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/dell/csmlog"
 
 	commonext "github.com/dell/dell-csi-extensions/common"
 
@@ -88,19 +91,29 @@ func (s *service) Probe(
 	_ *csi.ProbeRequest) (
 	*csi.ProbeResponse, error,
 ) {
-	log := log.WithContext(ctx)
-	log.Debug("Probe called")
+	start := time.Now()
+	defer func() {
+		csmlog.WithContext(ctx).WithFields(csmlog.Fields{
+			csmlog.FieldOperation: "Probe",
+			csmlog.FieldProtocol:  s.opts.TransportProtocol,
+		}).TrackDuration(start).Infof("Probe completed")
+	}()
+	csmlog.WithContext(ctx).WithFields(csmlog.Fields{
+		csmlog.FieldOperation: "Probe",
+		csmlog.FieldProtocol:  s.opts.TransportProtocol,
+	}).Info("Probe called")
+
 	if !strings.EqualFold(s.mode, "node") {
-		log.Debug("controllerProbe")
+		csmlog.WithContext(ctx).Debug("controllerProbe")
 		if err := s.controllerProbe(ctx); err != nil {
-			log.Errorf("error in controllerProbe: %s", err.Error())
+			csmlog.WithContext(ctx).Errorf("error in controllerProbe: %s", err.Error())
 			return nil, err
 		}
 	}
 	if !strings.EqualFold(s.mode, "controller") {
-		log.Debug("nodeProbe")
+		csmlog.WithContext(ctx).Debug("nodeProbe")
 		if err := s.nodeProbe(ctx); err != nil {
-			log.Errorf("error in nodeProbe: %s", err.Error())
+			csmlog.WithContext(ctx).Errorf("error in nodeProbe: %s", err.Error())
 			return nil, err
 		}
 		if !s.nodeIsInitialized {
@@ -111,7 +124,7 @@ func (s *service) Probe(
 			// Initialize the node
 			err := s.nodeStartup(ctx)
 			if err != nil {
-				log.Errorf("Failed to initialize node service: %v", err)
+				csmlog.WithContext(ctx).Errorf("Failed to initialize node service: %v", err)
 			}
 		}
 	}
@@ -119,7 +132,7 @@ func (s *service) Probe(
 	ready.Value = true
 	rep := new(csi.ProbeResponse)
 	rep.Ready = ready
-	log.Debug(fmt.Sprintf("Probe returning: %v", rep.Ready.GetValue()))
+	csmlog.WithContext(ctx).Debug(fmt.Sprintf("Probe returning: %v", rep.Ready.GetValue()))
 
 	return rep, nil
 }
@@ -128,11 +141,22 @@ func (s *service) ProbeController(ctx context.Context,
 	_ *commonext.ProbeControllerRequest) (
 	*commonext.ProbeControllerResponse, error,
 ) {
-	log := log.WithContext(ctx)
+	start := time.Now()
+	defer func() {
+		csmlog.WithContext(ctx).WithFields(csmlog.Fields{
+			csmlog.FieldOperation: "ProbeController",
+			csmlog.FieldProtocol:  s.opts.TransportProtocol,
+		}).TrackDuration(start).Infof("ProbeController completed")
+	}()
+	csmlog.WithContext(ctx).WithFields(csmlog.Fields{
+		csmlog.FieldOperation: "ProbeController",
+		csmlog.FieldProtocol:  s.opts.TransportProtocol,
+	}).Info("ProbeController called")
+
 	if !strings.EqualFold(s.mode, "node") {
-		log.Debug("controllerProbe")
+		csmlog.WithContext(ctx).Debug("controllerProbe")
 		if err := s.controllerProbe(ctx); err != nil {
-			log.Errorf("error in controllerProbe: %s", err.Error())
+			csmlog.WithContext(ctx).Errorf("error in controllerProbe: %s", err.Error())
 			return nil, err
 		}
 	}
@@ -145,7 +169,7 @@ func (s *service) ProbeController(ctx context.Context,
 	rep.VendorVersion = ManifestSemver
 	rep.Manifest = Manifest
 
-	log.Debug(fmt.Sprintf("ProbeController returning: %v", rep.Ready.GetValue()))
+	csmlog.WithContext(ctx).Debug(fmt.Sprintf("ProbeController returning: %v", rep.Ready.GetValue()))
 
 	return rep, nil
 }

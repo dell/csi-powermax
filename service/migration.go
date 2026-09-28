@@ -35,7 +35,11 @@ import (
 )
 
 func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRequest) (*csimgr.VolumeMigrateResponse, error) {
-	log := log.WithContext(ctx)
+	csmlog.WithContext(ctx).WithFields(csmlog.Fields{
+		csmlog.FieldOperation: "VolumeMigrate",
+		csmlog.FieldProtocol:  s.opts.TransportProtocol,
+	}).Info("VolumeMigrate called")
+
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -47,13 +51,13 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 	volID := req.GetVolumeHandle()
 	_, symID, _, _, _, err := s.parseCsiID(volID)
 	if err != nil {
-		log.Errorf("Invalid volumeid: %s", volID)
+		csmlog.WithContext(ctx).Errorf("Invalid volumeid: %s", volID)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid volume id: %s", volID)
 	}
 
 	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
-		log.Error(err.Error())
+		csmlog.WithContext(ctx).Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -73,7 +77,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 
 	symID, devID, vol, err := s.GetVolumeByID(ctx, volID, pmaxClient)
 	if err != nil {
-		log.Errorf("GetVolumeByID failed with (%s) for devID (%s)", err.Error(), devID)
+		csmlog.WithContext(ctx).Errorf("GetVolumeByID failed with (%s) for devID (%s)", err.Error(), devID)
 		return nil, err
 	}
 
@@ -85,7 +89,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 	storagePoolID := params[StoragePoolParam]
 	err = s.validateStoragePoolID(ctx, symID, storagePoolID, pmaxClient)
 	if err != nil {
-		log.Error(err.Error())
+		csmlog.WithContext(ctx).Error(err.Error())
 		return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
 	}
 
@@ -100,7 +104,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 			}
 		}
 		if !found {
-			log.Error("An invalid Service Level parameter was specified")
+			csmlog.WithContext(ctx).Error("An invalid Service Level parameter was specified")
 			return nil, status.Errorf(codes.InvalidArgument, "An invalid Service Level parameter was specified")
 		}
 	}
@@ -118,7 +122,7 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 		"VolID":       devID,
 		"Namespace":   params[CSIPVCNamespace],
 	}
-	log.WithFields(fields).Info("Executing VolumeMigrate with following fields")
+	csmlog.WithFields(fields).Info("Executing VolumeMigrate with following fields")
 
 	var migrationFunc func(context.Context, map[string]string, map[string]string, string, string, string, string, string, *service, *types.Volume) error
 
@@ -160,7 +164,6 @@ func (s *service) VolumeMigrate(ctx context.Context, req *csimgr.VolumeMigrateRe
 }
 
 func nonReplToRepl(ctx context.Context, params map[string]string, _ map[string]string, storageGroupName, applicationPrefix, serviceLevel, storagePoolID, symID string, s *service, vol *types.Volume) error {
-	log := log.WithContext(ctx)
 	var replicationEnabled string
 	var remoteSymID string
 	var localRDFGrpNo string
@@ -178,7 +181,7 @@ func nonReplToRepl(ctx context.Context, params map[string]string, _ map[string]s
 
 	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
-		log.Error(err.Error())
+		csmlog.WithContext(ctx).Error(err.Error())
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -195,14 +198,14 @@ func nonReplToRepl(ctx context.Context, params map[string]string, _ map[string]s
 			if err != nil {
 				return status.Errorf(codes.NotFound, "Received error get/create RDFG, err: %s", err.Error())
 			}
-			log.Debugf("found pre existing group for given array pair and RDF mode: local(%s), remote(%s)", localRDFGrpNo, remoteRDFGrpNo)
+			csmlog.WithContext(ctx).Debugf("found pre existing group for given array pair and RDF mode: local(%s), remote(%s)", localRDFGrpNo, remoteRDFGrpNo)
 		}
 		if repMode == Metro {
-			log.Errorf("Unsupported Replication Mode: (%s)", repMode)
+			csmlog.WithContext(ctx).Errorf("Unsupported Replication Mode: (%s)", repMode)
 			return status.Errorf(codes.InvalidArgument, "Unsupported Replication Mode: (%s)", repMode)
 		}
 		if repMode != Async && repMode != Sync {
-			log.Errorf("Unsupported Replication Mode: (%s)", repMode)
+			csmlog.WithContext(ctx).Errorf("Unsupported Replication Mode: (%s)", repMode)
 			return status.Errorf(codes.InvalidArgument, "Unsupported Replication Mode: (%s)", repMode)
 		}
 	}
@@ -241,36 +244,36 @@ func nonReplToRepl(ctx context.Context, params map[string]string, _ map[string]s
 				isSGUnprotected = true
 			}
 		}
-		log.Debugf("RDF: Found Rdf enabled")
+		csmlog.WithContext(ctx).Debugf("RDF: Found Rdf enabled")
 		// remote storage group name is kept same as local storage group name
 		// Check if volume is already added in SG, else add it
-		log.Debug("StorageGroupName: " + storageGroupName + " localSGID: " + localProtectionGroupID + " remoteSGID: " + remoteProtectionGroupID)
+		csmlog.WithContext(ctx).Debug("StorageGroupName: " + storageGroupName + " localSGID: " + localProtectionGroupID + " remoteSGID: " + remoteProtectionGroupID)
 		sg, err := pmaxClient.GetStorageGroup(ctx, symID, storageGroupName)
 		if err != nil || sg == nil {
-			log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
+			csmlog.WithContext(ctx).Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
 			thick := params[ThickVolumesParam]
 			_, err := pmaxClient.CreateStorageGroup(ctx, symID, storageGroupName, storagePoolID,
 				serviceLevel, thick == "true", nil)
 			if err != nil {
-				log.Error("Error creating storage group: " + err.Error())
+				csmlog.WithContext(ctx).Error("Error creating storage group: " + err.Error())
 				return status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
 			}
-			log.Debug("We created SG")
+			csmlog.WithContext(ctx).Debug("We created SG")
 		} else {
-			log.Debug("SG was found")
+			csmlog.WithContext(ctx).Debug("SG was found")
 		}
 		protectedSGID := s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
 		if protectedSGID == "" {
 			// Volume is not present in Protected Storage Group, Add
-			log.Info("ProtectedSG not found. Trying to create...")
+			csmlog.WithContext(ctx).Info("ProtectedSG not found. Trying to create...")
 			err := pmaxClient.AddVolumesToProtectedStorageGroup(ctx, symID, localProtectionGroupID, remoteSymID, remoteProtectionGroupID, true, vol.VolumeID)
 			if err != nil {
-				log.Error(fmt.Sprintf("Could not add volume to protected SG: %s: %s", localProtectionGroupID, err.Error()))
+				csmlog.WithContext(ctx).Error(fmt.Sprintf("Could not add volume to protected SG: %s: %s", localProtectionGroupID, err.Error()))
 				return status.Errorf(codes.Internal, "Could not add volume to protected SG: %s: %s", localProtectionGroupID, err.Error())
 			}
 		}
 
-		log.Info("Protected SG was created")
+		csmlog.WithContext(ctx).Info("Protected SG was created")
 		if isSGUnprotected {
 			// If the required SG is still unprotected, protect the local SG with RDF info
 			// If valid RDF group is supplied this will create a remote SG, a RDF pair and add the vol in respective SG created
@@ -285,10 +288,9 @@ func nonReplToRepl(ctx context.Context, params map[string]string, _ map[string]s
 }
 
 func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams map[string]string, _, _, _, _, symID string, s *service, vol *types.Volume) error {
-	log := log.WithContext(ctx)
 	pmaxClient, err := s.GetPowerMaxClient(symID)
 	if err != nil {
-		log.Error(err.Error())
+		csmlog.WithContext(ctx).Error(err.Error())
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -301,7 +303,7 @@ func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams
 		rdfInfo, err := pmaxClient.GetRDFGroupByID(ctx, symID, localRDFGrpNo)
 		if err != nil {
 			msg := fmt.Sprintf("Could not get local rdfG for %s: %s:", localRDFGrpNo, err.Error())
-			log.Error(msg)
+			csmlog.WithContext(ctx).Error(msg)
 			return status.Errorf(codes.Internal, "%s", msg)
 		}
 		remoteRDFGrpNo = strconv.Itoa(rdfInfo.RemoteRdfgNumber)
@@ -311,7 +313,7 @@ func replToNonRepl(ctx context.Context, params map[string]string, sourceScParams
 
 	_, err = pmaxClient.RemoveVolumesFromProtectedStorageGroup(ctx, symID, sgID, remoteSymID, remoteSGID, true, vol.VolumeID)
 	if err != nil {
-		log.Error(fmt.Sprintf("Could not remove volume from protected SG: %s: %s", sgID, err.Error()))
+		csmlog.WithContext(ctx).Error(fmt.Sprintf("Could not remove volume from protected SG: %s: %s", sgID, err.Error()))
 		return status.Errorf(codes.Internal, "Could not remove volume from protected SG: %s: %s", sgID, err.Error())
 	}
 
@@ -323,7 +325,11 @@ func versionUpgrade(_ context.Context, _ map[string]string, _ map[string]string,
 }
 
 func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequest) (*csimgr.ArrayMigrateResponse, error) {
-	log := log.WithContext(ctx)
+	csmlog.WithContext(ctx).WithFields(csmlog.Fields{
+		csmlog.FieldOperation: "ArrayMigrate",
+		csmlog.FieldProtocol:  s.opts.TransportProtocol,
+	}).Info("ArrayMigrate called")
+
 	var reqID string
 	headers, ok := metadata.FromIncomingContext(ctx)
 	if ok {
@@ -333,13 +339,13 @@ func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequ
 	}
 	params := req.GetParameters()
 	if len(params) <= 0 {
-		log.Error("Invalid Arguments")
+		csmlog.WithContext(ctx).Error("Invalid Arguments")
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid argument")
 	}
 	localSymID := params[SymmetrixIDParam]
 	remoteSymID := params[RemoteSymIDParam]
 	if localSymID == "" || remoteSymID == "" {
-		log.Error("A SYMID parameter is required")
+		csmlog.WithContext(ctx).Error("A SYMID parameter is required")
 		return nil, status.Errorf(codes.InvalidArgument, "A SYMID parameter is required")
 	}
 	action := req.GetAction()
@@ -349,11 +355,11 @@ func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequ
 		"RemoteSymID": remoteSymID,
 		"Action":      action,
 	}
-	log.WithFields(fields).Info("Executing ArrayMigration with following fields")
+	csmlog.WithFields(fields).Info("Executing ArrayMigration with following fields")
 
 	pmaxClient, err := s.GetPowerMaxClient(localSymID)
 	if err != nil {
-		log.Error(err.Error())
+		csmlog.WithContext(ctx).Error(err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -372,7 +378,7 @@ func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequ
 					Action: action,
 				},
 			}
-			log.Errorf("failed to create array migration environment for target array (%s) - Error (%s)", remoteSymID, err.Error())
+			csmlog.WithContext(ctx).Errorf("failed to create array migration environment for target array (%s) - Error (%s)", remoteSymID, err.Error())
 			return csiMgrResp, status.Errorf(codes.Internal, "failed to create array migration environment for target array (%s) - Error (%s)", remoteSymID, err.Error())
 		}
 		sgStatus, err := migration.StorageGroupMigration(ctx, localSymID, remoteSymID, clusterPrefix, pmaxClient)
@@ -420,7 +426,7 @@ func (s *service) ArrayMigrate(ctx context.Context, req *csimgr.ArrayMigrateRequ
 					Action: action,
 				},
 			}
-			log.Error(fmt.Sprintf("Failed to remove array migration environment for target array (%s) - Error (%s)", remoteSymID, err.Error()))
+			csmlog.WithContext(ctx).Error(fmt.Sprintf("Failed to remove array migration environment for target array (%s) - Error (%s)", remoteSymID, err.Error()))
 			return csiMgrResp, status.Errorf(codes.Internal, "to remove array migration environment for target array(%s) - Error (%s)", remoteSymID, err.Error())
 		}
 		migration.CacheReset = false

@@ -1121,8 +1121,13 @@ func TestRemoveVolumesFromStorageGroup(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			oldSyncInProgTime := waitTillSyncInProgTime
-			defer func() { waitTillSyncInProgTime = oldSyncInProgTime }()
+			oldDelay := APIPropagationDelay
+			defer func() {
+				waitTillSyncInProgTime = oldSyncInProgTime
+				APIPropagationDelay = oldDelay
+			}()
 			waitTillSyncInProgTime = 1 * time.Millisecond
+			APIPropagationDelay = 1 * time.Millisecond
 			result := tc.deletionQueue.removeVolumesFromStorageGroup(tc.pmaxClient)
 			assert.Equal(t, tc.expectedResult, result)
 		})
@@ -1177,12 +1182,14 @@ func TestRemoveVolumesFromSG_CascadePrevention(t *testing.T) {
 
 	// Batch removal fails with "does not contain" (simulating the cascade bug)
 	pmaxClient.EXPECT().RemoveVolumesFromStorageGroup(
-		gomock.Any(), "sym1", "sg-opt", true, "0012C", "0012B").
+		gomock.Any(), "sym1", "sg-opt", true, "0012C", "0012B",
+	).
 		Return(nil, errors.New("The Storage Group sg-opt does not contain volume 0012C"))
 
 	// Retry: batch with stale volume 0012C excluded, only 0012B remains
 	pmaxClient.EXPECT().RemoveVolumesFromStorageGroup(
-		gomock.Any(), "sym1", "sg-opt", true, "0012B").
+		gomock.Any(), "sym1", "sg-opt", true, "0012B",
+	).
 		Return(&types.StorageGroup{}, nil)
 
 	// Post-removal cache refresh: both now show empty SG list

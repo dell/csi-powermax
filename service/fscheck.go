@@ -21,6 +21,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dell/csmlog"
+
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -77,7 +79,7 @@ func (o *fsCheckPVCObserver) OnEvent(message string) {
 		o.sawTimeout = true
 	}
 
-	log.Infof("FS check event: %s on %s (%s)", message, o.devicePath, o.fsType)
+	csmlog.Infof("FS check event: %s on %s (%s)", message, o.devicePath, o.fsType)
 
 	// Post K8s event on PVC
 	if o.eventRecorder == nil || o.pvcName == "" || o.pvcNamespace == "" {
@@ -128,7 +130,7 @@ func initEventRecorder() record.EventRecorder {
 	eventRecorderOnce.Do(func() {
 		recorder, err := newEventRecorderFunc()
 		if err != nil {
-			log.Warnf("Failed to initialize FS check event recorder: %v - PVC events will not be posted", err)
+			csmlog.Warnf("Failed to initialize FS check event recorder: %v - PVC events will not be posted", err)
 			return
 		}
 		cachedEventRecorder = recorder
@@ -185,7 +187,7 @@ func performFSCheck(
 ) error {
 	// 1. Nil config means feature is completely unavailable
 	if fsCfg == nil {
-		log.Info("Skipping FS check: feature disabled")
+		csmlog.WithContext(ctx).Info("Skipping FS check: feature disabled")
 		return nil
 	}
 
@@ -196,44 +198,44 @@ func performFSCheck(
 
 	// 2. Skip for read-only or multi-node access modes (cheap)
 	if isAccessModeReadOnlyOrMulti(accMode) {
-		log.Info("Skipping FS check: read-only or multi-node access mode")
+		csmlog.WithContext(ctx).Info("Skipping FS check: read-only or multi-node access mode")
 		return nil
 	}
 
 	// 3. Check existing filesystem type (cheap)
 	existingFs, err := gofsutil.GetDiskFormat(ctx, sysDevice.FullPath)
 	if err != nil {
-		log.Warnf("Could not determine disk format for %s: %s. Skipping FS check.", sysDevice.FullPath, err)
+		csmlog.WithContext(ctx).Warnf("Could not determine disk format for %s: %s. Skipping FS check.", sysDevice.FullPath, err)
 		return nil
 	}
 
 	// 4. Skip if newly formatted
 	if existingFs == "" {
-		log.Info("Skipping FS check: newly formatted volume")
+		csmlog.WithContext(ctx).Info("Skipping FS check: newly formatted volume")
 		return nil
 	}
 
 	// 5. Skip if unsupported FS type (ext2, ext3, ext4, xfs supported)
 	if !isSupportedFSType(existingFs) {
-		log.Warnf("Skipping FS check: unsupported filesystem type %q", existingFs)
+		csmlog.WithContext(ctx).Warnf("Skipping FS check: unsupported filesystem type %q", existingFs)
 		return nil
 	}
 
 	// 6. Skip if device already has mounts on this node (FR-2)
 	devMnts, err := getDevMountsFunc(sysDevice)
 	if err != nil {
-		log.Warnf("Could not check mount status for %s: %s. Skipping FS check.", sysDevice.FullPath, err)
+		csmlog.WithContext(ctx).Warnf("Could not check mount status for %s: %s. Skipping FS check.", sysDevice.FullPath, err)
 		return nil
 	}
 	if len(devMnts) > 0 {
-		log.Infof("Skipping FS check: volume already mounted on this node at %s", devMnts[0].Path)
+		csmlog.WithContext(ctx).Infof("Skipping FS check: volume already mounted on this node at %s", devMnts[0].Path)
 		return nil
 	}
 
 	// 7. Lazy PVC label lookup (expensive - only runs after all cheap checks pass)
 	enabled, mode, pvcName, pvcNamespace := resolvePVCOverrides(ctx, fsCfg, volumeID, targetPath)
 	if !enabled {
-		log.Info("Skipping FS check: feature disabled (global or PVC override)")
+		csmlog.WithContext(ctx).Info("Skipping FS check: feature disabled (global or PVC override)")
 		return nil
 	}
 
@@ -258,18 +260,18 @@ func performFSCheck(
 
 	// 11. Run check
 	doRepair := mode == "checkAndRepair"
-	log.Infof("Starting file system check on %s (%s), repair=%v", sysDevice.FullPath, existingFs, doRepair)
+	csmlog.WithContext(ctx).Infof("Starting file system check on %s (%s), repair=%v", sysDevice.FullPath, existingFs, doRepair)
 
 	if err := checker.Check(ctx, doRepair); err != nil {
 		if observer.sawTimeout {
 			msg := fmt.Sprintf("File system check timed out on device %s (%s). The operation will be retried.", sysDevice.FullPath, existingFs)
-			log.Error(msg)
+			csmlog.WithContext(ctx).Error(msg)
 			return status.Error(codes.Aborted, msg)
 		}
 
 		msg := fmt.Sprintf("File system check failed on device %s (volume ID: %s, fs: %s): %s. Manual intervention required. Do not attempt to mount this volume until the file system has been repaired.",
 			sysDevice.FullPath, volumeID, existingFs, err.Error())
-		log.Error(msg)
+		csmlog.WithContext(ctx).Error(msg)
 
 		// Post extra PVC Warning event with actionable message (FR-4)
 		if eventRecorder != nil && pvcName != "" && pvcNamespace != "" {
@@ -285,7 +287,7 @@ func performFSCheck(
 		return status.Error(codes.Internal, msg)
 	}
 
-	log.Infof("FS check completed successfully on %s (%s)", sysDevice.FullPath, existingFs)
+	csmlog.WithContext(ctx).Infof("FS check completed successfully on %s (%s)", sysDevice.FullPath, existingFs)
 	return nil
 }
 
@@ -303,24 +305,24 @@ func resolvePVCOverrides(
 	// Parse PV name from target path
 	pvName := parsePVNameFromTargetPath(targetPath)
 	if pvName == "" {
-		log.Debugf("Could not extract PV name from target path %q; using global FS check config", targetPath)
+		csmlog.WithContext(ctx).Debugf("Could not extract PV name from target path %q; using global FS check config", targetPath)
 		return
 	}
 
 	// Check k8sUtils availability
 	if fsCfg.k8sUtils == nil {
-		log.Debug("k8sUtils not available; using global FS check config")
+		csmlog.WithContext(ctx).Debug("k8sUtils not available; using global FS check config")
 		return
 	}
 
 	// Look up the PVC via the PV
 	pvc, err := fsCfg.k8sUtils.GetPVCForVolume(ctx, pvName, volumeID)
 	if err != nil {
-		log.Warnf("Could not look up PVC for PV %s (volume %s): %s. Using global FS check config.", pvName, volumeID, err)
+		csmlog.WithContext(ctx).Warnf("Could not look up PVC for PV %s (volume %s): %s. Using global FS check config.", pvName, volumeID, err)
 		return
 	}
 	if pvc == nil {
-		log.Debugf("PVC not found for PV %s; using global FS check config", pvName)
+		csmlog.WithContext(ctx).Debugf("PVC not found for PV %s; using global FS check config", pvName)
 		return
 	}
 
@@ -337,7 +339,7 @@ func resolvePVCOverrides(
 			case "false":
 				enabled = false
 			default:
-				log.Warnf("Invalid value %q for PVC label %s on %s/%s; ignoring",
+				csmlog.WithContext(ctx).Warnf("Invalid value %q for PVC label %s on %s/%s; ignoring",
 					val, PVCLabelFSCheckEnabled, pvc.Namespace, pvc.Name)
 			}
 		}
@@ -350,14 +352,14 @@ func resolvePVCOverrides(
 				case "checkandrepair":
 					mode = "checkAndRepair"
 				default:
-					log.Warnf("Invalid value %q for PVC label %s on %s/%s; ignoring",
+					csmlog.WithContext(ctx).Warnf("Invalid value %q for PVC label %s on %s/%s; ignoring",
 						val, PVCLabelFSCheckMode, pvc.Namespace, pvc.Name)
 				}
 			}
 		}
 	}
 
-	log.Infof("Resolved FS check config for volume %s: enabled=%v, mode=%s, pvc=%s/%s",
+	csmlog.WithContext(ctx).Infof("Resolved FS check config for volume %s: enabled=%v, mode=%s, pvc=%s/%s",
 		volumeID, enabled, mode, pvcNamespace, pvcName)
 	return
 }

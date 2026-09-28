@@ -227,6 +227,17 @@ func GetPowerMax(symID string) (*PowerMax, error) {
 	return getPowerMax(symID)
 }
 
+// GetArrayClient returns the Pmax client for a single array, or nil if
+// the array is not configured. This is used by CheckMetroState to query
+// each array independently.
+func GetArrayClient(symID string) PmaxClient {
+	p, err := getPowerMax(symID)
+	if err != nil {
+		return nil
+	}
+	return p.getClient()
+}
+
 var getPowerMaxClientMux sync.Mutex
 
 // GetPowerMaxClient ...

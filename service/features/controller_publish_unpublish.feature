@@ -1,3 +1,15 @@
+# Copyright © 2026 Dell Inc. or its subsidiaries. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#      http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 Feature: PowerMax CSI interface
     As a consumer of the CSI interface
     I want to test controller publish / unpublish interfaces
@@ -66,9 +78,9 @@ Feature: PowerMax CSI interface
       And the error contains <errormsg>
       Examples:
        | access                      | induced        | errormsg                                |
-       | "single-writer"             | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
-       | "single-node-single-writer" | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
-       | "single-node-multi-writer"  | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
+       | "single-writer"             | "GetPortError" | "failed to fetch SCSI_FC ports for array" |
+       | "single-node-single-writer" | "GetPortError" | "failed to fetch SCSI_FC ports for array" |
+       | "single-node-multi-writer"  | "GetPortError" | "failed to fetch SCSI_FC ports for array" |
 
 @controllerPublish
 @v1.1.0
@@ -99,9 +111,9 @@ Feature: PowerMax CSI interface
       Then the error contains <errormsg>
       Examples:
        | access                      | induced        | errormsg                                |
-       | "single-writer"             | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
-       | "single-node-single-writer" | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
-       | "single-node-multi-writer"  | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
+       | "single-writer"             | "GetPortError" | "failed to fetch SCSI_FC ports for array" |
+       | "single-node-single-writer" | "GetPortError" | "failed to fetch SCSI_FC ports for array" |
+       | "single-node-multi-writer"  | "GetPortError" | "failed to fetch SCSI_FC ports for array" |
 
 @controllerPublish
 @v1.1.0
@@ -132,9 +144,9 @@ Feature: PowerMax CSI interface
       Then the error contains <errormsg>
       Examples:
        | access                      | induced        | errormsg                                |
-       | "single-writer"             | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
-       | "single-node-single-writer" | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
-       | "single-node-multi-writer"  | "GetPortError" | "Failed to fetch SCSI_FC port for array" |
+       | "single-writer"             | "GetPortError" | "failed to fetch SCSI_FC ports for array" |
+       | "single-node-single-writer" | "GetPortError" | "failed to fetch SCSI_FC ports for array" |
+       | "single-node-multi-writer"  | "GetPortError" | "failed to fetch SCSI_FC ports for array" |
 
 @controllerPublish
 @v1.0.0
@@ -186,7 +198,7 @@ Feature: PowerMax CSI interface
        | "CreateMaskingViewError"  | "Failed to create masking view"                  |
        | "UpdateStorageGroupError" | "Failed to add volume to storage group"          |
        | "GetStorageGroupError"    | "Failed to fetch SG details"                     |
-       | "GetPortError"            | "Failed to fetch SCSI_FC port for array"         |
+       | "GetPortError"            | "failed to fetch SCSI_FC ports for array"         |
 
 @controllerPublish
 @v1.0.0

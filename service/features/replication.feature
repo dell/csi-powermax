@@ -398,6 +398,23 @@ Feature: PowerMax CSI Interface
 
   @srdf
   @v2.9.0
+  Scenario: GetStorageProtectionGroupStatus returns lag and bandwidth metrics
+    Given a PowerMax service
+    When I call GetStorageProtectionGroupStatus with "ASYNC"
+    Then no error was received
+    And the protection group status has lag seconds greater than zero
+    And the protection group status has bandwidth bytes per sec greater than zero
+
+  @srdf
+  @v2.9.0
+  Scenario: GetStorageProtectionGroupStatus succeeds even when RDF group metrics are unavailable
+    Given a PowerMax service
+    And I induce error "GetRDFGroupMetricsError"
+    When I call GetStorageProtectionGroupStatus with "ASYNC"
+    Then no error was received
+
+  @srdf
+  @v2.9.0
   Scenario Outline: Call ExecuteAction with mixed RDF personalities
     Given a PowerMax service
     And I mix the RDF personalities

@@ -76,7 +76,22 @@ Feature: PowerMax CSI interface
 
   @delete
   @v1.0.0
-  Scenario Outline: Delete volume with various induced errors
+  Scenario Outline: Delete volume with various induced errors (idempotent)
+    Given a PowerMax service
+    And a valid volume
+    And I induce error <induced>
+    When I call Probe
+    And I call DeleteVolume with "single-writer"
+    Then no error was received
+
+    Examples:
+      | induced           |
+      | "NoVolumeID"      |
+      | "InvalidVolumeID" |
+
+  @delete
+  @v1.0.0
+  Scenario Outline: Delete volume with various induced errors (actual errors)
     Given a PowerMax service
     And a valid volume
     And I induce error <induced>
@@ -86,8 +101,6 @@ Feature: PowerMax CSI interface
 
     Examples:
       | induced                | errormsg                       |
-      | "NoVolumeID"           | "Could not parse CSI VolumeId" |
-      | "InvalidVolumeID"      | "Could not parse"              |
       | "UpdateVolumeError"    | "Failed to rename volume"      |
       | "GetStorageGroupError" | "Unable to find storage group" |
       | "GetVolumeError"       | "cannot be found"              |

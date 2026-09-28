@@ -45,6 +45,13 @@ func New() gocsi.StoragePluginProvider {
 	serverOptions[1] = keepaliveOpt
 
 	svc := service.New()
+
+	// Build interceptors list
+	var interceptors []grpc.UnaryServerInterceptor
+	if service.MetricsEnabled() {
+		interceptors = append(interceptors, service.NewOperationInterceptor(service.DriverMetricsRegistry(), service.DefaultMetricsArrayID()))
+	}
+
 	return &gocsi.StoragePlugin{
 		Controller:                svc,
 		GroupController:           svc,
@@ -52,6 +59,7 @@ func New() gocsi.StoragePluginProvider {
 		Node:                      svc,
 		BeforeServe:               svc.BeforeServe,
 		ServerOpts:                serverOptions,
+		Interceptors:              interceptors,
 		RegisterAdditionalServers: svc.RegisterAdditionalServers,
 
 		EnvVars: []string{

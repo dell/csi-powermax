@@ -18,6 +18,8 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+
+	"github.com/dell/csmlog"
 )
 
 // stringSlicesEqual returns true IFF two slices contain same members
@@ -40,7 +42,7 @@ func stringSliceRegexMatcher(slice []string, regexpPattern string) []string {
 	for _, str := range slice {
 		matched, err := regexp.MatchString(regexpPattern, str)
 		if err != nil {
-			log.Error("Regex: " + regexpPattern + " error: " + err.Error())
+			csmlog.Error("Regex: " + regexpPattern + " error: " + err.Error())
 			break
 		}
 		if matched {

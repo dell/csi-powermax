@@ -17,11 +17,9 @@ package main
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/dell/gocsi"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
@@ -244,31 +242,6 @@ func Test_driverRun(t *testing.T) {
 				}
 			case <-ctx.Done():
 				t.Errorf("driverRun() timed out")
-			}
-		})
-	}
-}
-
-func Test_setEnvs(t *testing.T) {
-	tests := []struct {
-		name string
-		want map[string]string
-	}{
-		{
-			name: "execute setEnvs()",
-			want: map[string]string{
-				gocsi.EnvVarDebug:      "false",
-				gocsi.EnvVarReqLogging: "true",
-				gocsi.EnvVarRepLogging: "true",
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			setEnvsFunc()
-
-			for envVar, expected := range tt.want {
-				assert.Equal(t, expected, os.Getenv(envVar))
 			}
 		})
 	}

@@ -24,6 +24,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dell/csmlog"
+
 	"github.com/dell/gofsutil"
 	pmax "github.com/dell/gopowermax/v2"
 	"github.com/robfig/cron/v3"
@@ -427,15 +429,15 @@ func (m *SpaceReclamationManager) Start() error {
 	m.cronSched = cron.New(cron.WithParser(cron.NewParser(
 		cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow,
 	)))
-	log.Info("SpaceReclamation: cron scheduler created")
+	csmlog.Info("SpaceReclamation: cron scheduler created")
 	_, err := m.cronSched.AddFunc(m.config.Schedule, m.RunOnce)
 	if err != nil {
-		log.Errorf("SpaceReclamation: failed to add cron job: %v", err)
+		csmlog.Errorf("SpaceReclamation: failed to add cron job: %v", err)
 		return fmt.Errorf("failed to add cron job: %w", err)
 	}
-	log.Info("SpaceReclamation: cron job added")
+	csmlog.Info("SpaceReclamation: cron job added")
 	m.cronSched.Start()
-	log.Infof("SpaceReclamation: scheduler running with schedule %q", m.config.Schedule)
+	csmlog.Infof("SpaceReclamation: scheduler running with schedule %q", m.config.Schedule)
 	return nil
 }
 
@@ -454,10 +456,10 @@ func (m *SpaceReclamationManager) Stop() {
 func (m *SpaceReclamationManager) buildDeviceToMountMap(ctx context.Context) (map[string]string, error) {
 	mounts, err := gofsutil.GetMounts(ctx)
 	if err != nil {
-		log.Errorf("SpaceReclamation: failed to get mounts: %v", err)
+		csmlog.WithContext(ctx).Errorf("SpaceReclamation: failed to get mounts: %v", err)
 		return nil, fmt.Errorf("failed to get mounts: %w", err)
 	}
-	log.Infof("SpaceReclamation: found %d total mounts", len(mounts))
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: found %d total mounts", len(mounts))
 
 	deviceToMount := make(map[string]string, len(mounts))
 	for _, mnt := range mounts {
@@ -471,7 +473,7 @@ func (m *SpaceReclamationManager) buildDeviceToMountMap(ctx context.Context) (ma
 			continue
 		}
 
-		log.Infof("SpaceReclamation: CSI mount - Device: %s, Path: %s", mnt.Device, mnt.Path)
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: CSI mount - Device: %s, Path: %s", mnt.Device, mnt.Path)
 
 		// Normalize device path by resolving symlinks (e.g., /dev/mapper/mpatha -> /dev/dm-1)
 		// This ensures consistent comparison with WWN-resolved device paths
@@ -524,27 +526,27 @@ func (m *SpaceReclamationManager) getVolumeWWN(ctx context.Context, pvName, volu
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to parse volumeHandle %s: %w", volumeHandle, err)
 	}
-	log.Infof("SpaceReclamation: PV %s parsed to symID=%s, devID=%s", pvName, symID, devID)
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: PV %s parsed to symID=%s, devID=%s", pvName, symID, devID)
 
 	// Get PowerMax client and retrieve volume details to get WWN
 	pmaxClient, err := m.getPowerMaxClient(symID)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to get PowerMax client for array %s: %w", symID, err)
 	}
-	log.Info("SpaceReclamation: PowerMax client successfully initialized")
+	csmlog.WithContext(ctx).Info("SpaceReclamation: PowerMax client successfully initialized")
 
 	// Retrieve volume from PowerMax to get EffectiveWWN
 	vol, err := pmaxClient.GetVolumeByID(ctx, symID, devID)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to get volume %s/%s from array: %w", symID, devID, err)
 	}
-	log.Infof("SpaceReclamation: Retrieved Volume Details: %v", vol)
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: Retrieved Volume Details: %v", vol)
 
 	wwn = vol.EffectiveWWN
 	if wwn == "" {
 		return "", "", "", fmt.Errorf("volume %s/%s has no EffectiveWWN", symID, devID)
 	}
-	log.Infof("SpaceReclamation: PV %s retrieved WWN %s from PowerMax", pvName, wwn)
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: PV %s retrieved WWN %s from PowerMax", pvName, wwn)
 	return symID, devID, wwn, nil
 }
 
@@ -557,7 +559,7 @@ func (m *SpaceReclamationManager) selectBestDevice(pvName, wwn string, devices [
 		// Normalize the candidate path to match the normalized keys in deviceToMount
 		normalizedCandidate := normalizeDevicePath(candidatePath)
 		if _, mounted := deviceToMount[normalizedCandidate]; mounted {
-			log.Infof("SpaceReclamation: PV %s resolved to device %s (found in mount table)", pvName, candidatePath)
+			csmlog.Infof("SpaceReclamation: PV %s resolved to device %s (found in mount table)", pvName, candidatePath)
 			return candidatePath, nil
 		}
 	}
@@ -602,7 +604,7 @@ func (m *SpaceReclamationManager) selectBestDevice(pvName, wwn string, devices [
 	if isNVMe {
 		if namespaceDevice != "" {
 			devicePath := "/dev/" + namespaceDevice
-			log.Infof("SpaceReclamation: PV %s resolved to device %s (NVMe namespace device)", pvName, devicePath)
+			csmlog.Infof("SpaceReclamation: PV %s resolved to device %s (NVMe namespace device)", pvName, devicePath)
 			return devicePath, nil
 		}
 		return "", fmt.Errorf("NVMe devices found but no namespace device (only controller devices)")
@@ -611,13 +613,13 @@ func (m *SpaceReclamationManager) selectBestDevice(pvName, wwn string, devices [
 	// For non-NVMe (FC/iSCSI), prefer multipath devices (dm-*) over single paths (sd*)
 	if multipathDevice != "" {
 		devicePath := "/dev/" + multipathDevice
-		log.Infof("SpaceReclamation: PV %s resolved to device %s (multipath device)", pvName, devicePath)
+		csmlog.Infof("SpaceReclamation: PV %s resolved to device %s (multipath device)", pvName, devicePath)
 		return devicePath, nil
 	}
 
 	// Fallback: use the first device
 	devicePath := "/dev/" + firstDevice
-	log.Infof("SpaceReclamation: PV %s resolved to device %s (first device)", pvName, devicePath)
+	csmlog.Infof("SpaceReclamation: PV %s resolved to device %s (first device)", pvName, devicePath)
 	return devicePath, nil
 }
 
@@ -626,22 +628,22 @@ func (m *SpaceReclamationManager) selectBestDevice(pvName, wwn string, devices [
 func (m *SpaceReclamationManager) resolveDevicePath(ctx context.Context, pvName, wwn string, deviceToMount map[string]string, volMode VolumeMode) (string, error) {
 	// Try WWNToDevicePath first
 	_, devicePath, err := wwnToDevicePathFunc(ctx, wwn)
-	log.Infof("SpaceReclamation: WWNToDevicePath result: devicePath=%s, err=%v", devicePath, err)
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: WWNToDevicePath result: devicePath=%s, err=%v", devicePath, err)
 
 	if err == nil && devicePath != "" {
-		log.Infof("SpaceReclamation: PV %s resolved to device %s via WWN %s", pvName, devicePath, wwn)
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: PV %s resolved to device %s via WWN %s", pvName, devicePath, wwn)
 		// Normalize the device path to handle symlinks (e.g., /dev/mapper/mpatha -> /dev/dm-1)
 		normalizedDevicePath := normalizeDevicePath(devicePath)
-		log.Infof("SpaceReclamation: PV %s normalized device path: %s -> %s", pvName, devicePath, normalizedDevicePath)
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: PV %s normalized device path: %s -> %s", pvName, devicePath, normalizedDevicePath)
 
 		// Verify the device is in mount table for filesystem mode
 		if volMode == VolumeModeFilesystem {
 			if mountPath, mounted := deviceToMount[normalizedDevicePath]; mounted {
-				log.Infof("SpaceReclamation: PV %s found in mount table at %s", pvName, mountPath)
+				csmlog.WithContext(ctx).Infof("SpaceReclamation: PV %s found in mount table at %s", pvName, mountPath)
 				// Return the original devicePath (not normalized) for consistency with other code
 				return devicePath, nil
 			}
-			log.Warnf("SpaceReclamation: PV %s normalized device %s not in mount table, trying fallback", pvName, normalizedDevicePath)
+			csmlog.WithContext(ctx).Warnf("SpaceReclamation: PV %s normalized device %s not in mount table, trying fallback", pvName, normalizedDevicePath)
 			// Fall through to GetSysBlockDevicesForVolumeWWN
 		} else {
 			// Block mode: accept the device even if not in mount table
@@ -650,9 +652,9 @@ func (m *SpaceReclamationManager) resolveDevicePath(ctx context.Context, pvName,
 	}
 
 	// Fallback: try GetSysBlockDevicesForVolumeWWN
-	log.Infof("SpaceReclamation: trying GetSysBlockDevicesForVolumeWWN for PV %s", pvName)
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: trying GetSysBlockDevicesForVolumeWWN for PV %s", pvName)
 	devices, err := gofsutil.GetSysBlockDevicesForVolumeWWN(ctx, wwn)
-	log.Infof("SpaceReclamation: GetSysBlockDevicesForVolumeWWN result: length(devices)=%d, err=%v", len(devices), err)
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: GetSysBlockDevicesForVolumeWWN result: length(devices)=%d, err=%v", len(devices), err)
 	if err != nil || len(devices) == 0 {
 		return "", fmt.Errorf("PV not on this node (WWN: %s)", wwn)
 	}
@@ -665,18 +667,18 @@ func (m *SpaceReclamationManager) resolveDevicePath(ctx context.Context, pvName,
 func (m *SpaceReclamationManager) processVolume(ctx context.Context, pv *corev1.PersistentVolume, deviceToMount map[string]string) (*VolumeInfo, error) {
 	// Check basic PV filters
 	if skip, reason := m.shouldSkipPV(pv); skip {
-		log.Infof("SpaceReclamation: skipping PV %s (%s)", pv.Name, reason)
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: skipping PV %s (%s)", pv.Name, reason)
 		return nil, nil
 	}
 
-	log.Infof("SpaceReclamation: processing PV %s with AccessModes: %v", pv.Name, pv.Spec.AccessModes)
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: processing PV %s with AccessModes: %v", pv.Name, pv.Spec.AccessModes)
 
 	pvcRef := pv.Spec.ClaimRef
 
 	// Get PVC and check eligibility
 	pvc, err := m.k8sClient.CoreV1().PersistentVolumeClaims(pvcRef.Namespace).Get(ctx, pvcRef.Name, metav1.GetOptions{})
 	if err != nil {
-		log.Errorf("SpaceReclamation: failed to get PVC: %v", err)
+		csmlog.WithContext(ctx).Errorf("SpaceReclamation: failed to get PVC: %v", err)
 		return nil, fmt.Errorf("failed to get PVC %s/%s: %w", pvcRef.Namespace, pvcRef.Name, err)
 	}
 
@@ -687,20 +689,20 @@ func (m *SpaceReclamationManager) processVolume(ctx context.Context, pv *corev1.
 		volMode = VolumeModeFilesystem
 	}
 
-	log.Infof("SpaceReclamation: PV %s has VolumeMode: %s, Labels: %v", pv.Name, volMode, pvc.Labels)
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: PV %s has VolumeMode: %s, Labels: %v", pv.Name, volMode, pvc.Labels)
 	eligible, reason := IsEligible(m.config.Enabled, pvc.Labels, volMode)
 	if !eligible {
-		log.Infof("SpaceReclamation: PV %s is not eligible for reclamation (reason: %s)", pv.Name, reason)
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: PV %s is not eligible for reclamation (reason: %s)", pv.Name, reason)
 		return nil, nil
 	}
-	log.Infof("SpaceReclamation: PV %s is eligible for reclamation", pv.Name)
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: PV %s is eligible for reclamation", pv.Name)
 
 	// Get volume handle
 	volumeHandle := pv.Spec.CSI.VolumeHandle
 	if volumeHandle == "" {
 		return nil, fmt.Errorf("PV %s missing VolumeHandle", pv.Name)
 	}
-	log.Infof("SpaceReclamation: PV %s has VolumeHandle: %s", pv.Name, volumeHandle)
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: PV %s has VolumeHandle: %s", pv.Name, volumeHandle)
 
 	// Get WWN from PowerMax (or test mock)
 	symID, devID, wwn, err := getVolumeWWNFunc(m, ctx, pv.Name, volumeHandle)
@@ -719,16 +721,16 @@ func (m *SpaceReclamationManager) processVolume(ctx context.Context, pv *corev1.
 	// Resolve staging path for filesystem mode
 	var stagingPath string
 	if volMode == VolumeModeFilesystem {
-		log.Info("Found Filesystem Mode")
+		csmlog.WithContext(ctx).Info("Found Filesystem Mode")
 		if mountPath, mounted := deviceToMount[devicePath]; mounted {
 			stagingPath = mountPath
-			log.Infof("SpaceReclamation: PV %s filesystem mode, staging path: %s", pv.Name, stagingPath)
+			csmlog.WithContext(ctx).Infof("SpaceReclamation: PV %s filesystem mode, staging path: %s", pv.Name, stagingPath)
 		} else {
 			return nil, fmt.Errorf("filesystem mode but no mount found for device %s", devicePath)
 		}
 	} else {
-		log.Info("Found Block Mode")
-		log.Infof("SpaceReclamation: PV %s block mode, device path: %s", pv.Name, devicePath)
+		csmlog.WithContext(ctx).Info("Found Block Mode")
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: PV %s block mode, device path: %s", pv.Name, devicePath)
 	}
 
 	volInfo := &VolumeInfo{
@@ -742,10 +744,10 @@ func (m *SpaceReclamationManager) processVolume(ctx context.Context, pv *corev1.
 	}
 
 	if volMode == VolumeModeFilesystem {
-		log.Infof("SpaceReclamation: submitting reclamation job for PV %s (VolumeID: %s, Device: %s, Path: %s, Mode: %s)",
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: submitting reclamation job for PV %s (VolumeID: %s, Device: %s, Path: %s, Mode: %s)",
 			pv.Name, volInfo.VolumeID, devicePath, stagingPath, volMode)
 	} else {
-		log.Infof("SpaceReclamation: submitting reclamation job for PV %s (VolumeID: %s, Device: %s, Mode: %s)",
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: submitting reclamation job for PV %s (VolumeID: %s, Device: %s, Mode: %s)",
 			pv.Name, volInfo.VolumeID, devicePath, volMode)
 	}
 
@@ -760,11 +762,11 @@ func (m *SpaceReclamationManager) processVolume(ctx context.Context, pv *corev1.
 //  3. Resolving the device path from WWN using gofsutil.WWNToDevicePathX.
 //  4. Resolving the mount path from gofsutil.GetMounts() to determine VolumeMode.
 func (m *SpaceReclamationManager) RunOnce() {
-	log.Info("SpaceReclamation: starting RunOnce cycle")
+	csmlog.Info("SpaceReclamation: starting RunOnce cycle")
 
 	// Prevent overlapping cycles
 	if !m.running.CompareAndSwap(false, true) {
-		log.Warn("SpaceReclamation: previous scheduled run is still in progress, skipping this cycle")
+		csmlog.Warn("SpaceReclamation: previous scheduled run is still in progress, skipping this cycle")
 		return
 	}
 	defer m.running.Store(false)
@@ -777,15 +779,15 @@ func (m *SpaceReclamationManager) RunOnce() {
 	// List all PVs in the cluster
 	pvList, err := m.k8sClient.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		log.Errorf("SpaceReclamation: failed to list PersistentVolumes: %v", err)
+		csmlog.Errorf("SpaceReclamation: failed to list PersistentVolumes: %v", err)
 		return
 	}
-	log.Infof("SpaceReclamation: found %d total PVs", len(pvList.Items))
+	csmlog.Infof("SpaceReclamation: found %d total PVs", len(pvList.Items))
 
 	// Build device-to-mount map for O(1) lookup
 	deviceToMount, err := m.buildDeviceToMountMap(ctx)
 	if err != nil {
-		log.Errorf("SpaceReclamation: %v", err)
+		csmlog.Errorf("SpaceReclamation: %v", err)
 		return
 	}
 
@@ -796,7 +798,7 @@ func (m *SpaceReclamationManager) RunOnce() {
 
 		volInfo, err := m.processVolume(ctx, pv, deviceToMount)
 		if err != nil {
-			log.Warnf("SpaceReclamation: PV %s error: %v", pv.Name, err)
+			csmlog.Warnf("SpaceReclamation: PV %s error: %v", pv.Name, err)
 			continue
 		}
 		if volInfo == nil {
@@ -812,12 +814,12 @@ func (m *SpaceReclamationManager) RunOnce() {
 		}(volInfo)
 	}
 	wg.Wait()
-	log.Info("SpaceReclamation: completed RunOnce cycle")
+	csmlog.Info("SpaceReclamation: completed RunOnce cycle")
 }
 
 // reclaimVolume performs space reclamation on a single volume.
 func (m *SpaceReclamationManager) reclaimVolume(ctx context.Context, vol *VolumeInfo) {
-	log.Infof("SpaceReclamation: starting reclamation for volume %s (PVC: %s/%s, Mode: %s, Device: %s, Path: %s)",
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: starting reclamation for volume %s (PVC: %s/%s, Mode: %s, Device: %s, Path: %s)",
 		vol.VolumeID, vol.PVCNamespace, vol.PVCName, vol.VolumeMode, vol.DevicePath, vol.StagingPath)
 
 	// Acquire semaphore for concurrency control
@@ -833,7 +835,7 @@ func (m *SpaceReclamationManager) reclaimVolume(ctx context.Context, vol *Volume
 	actual, _ := m.volumeLocks.LoadOrStore(vol.VolumeID, mu)
 	actualMu := actual.(*sync.Mutex)
 	if !actualMu.TryLock() {
-		log.Infof("SpaceReclamation: skipping duplicate job for volume %s (already in progress)", vol.VolumeID)
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: skipping duplicate job for volume %s (already in progress)", vol.VolumeID)
 		return // Another reclamation is already running for this volume
 	}
 	defer actualMu.Unlock()
@@ -842,9 +844,9 @@ func (m *SpaceReclamationManager) reclaimVolume(ctx context.Context, vol *Volume
 	var supported bool
 	var reason string
 	supported, _, reason = checkDiscardCapabilityFunc(m.ctx, vol.DevicePath)
-	log.Infof("SpaceReclamation: checked discard capability for device %s (supported: %v, reason: %s)", vol.DevicePath, supported, reason)
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: checked discard capability for device %s (supported: %v, reason: %s)", vol.DevicePath, supported, reason)
 	if !supported {
-		log.Infof("SpaceReclamation: volume %s does not support discard (device: %s, reason: %s)", vol.VolumeID, vol.DevicePath, reason)
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: volume %s does not support discard (device: %s, reason: %s)", vol.VolumeID, vol.DevicePath, reason)
 		// Annotate as unsupported
 		result := &ReclamationResult{
 			Status:       "unsupported",
@@ -873,14 +875,14 @@ func (m *SpaceReclamationManager) reclaimVolume(ctx context.Context, vol *Volume
 		if reclaimErr == nil && fstrimResult != nil {
 			bytesAvailable = fstrimResult.BytesTrimmed
 		}
-		log.Infof("SpaceReclamation: fstrim on %s - %d bytes available", vol.StagingPath, bytesAvailable)
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: fstrim on %s - %d bytes available", vol.StagingPath, bytesAvailable)
 	case VolumeModeBlock:
 		var blkResult *gofsutil.BlkdiscardResult
 		blkResult, reclaimErr = gofsutil.Blkdiscard(ctx, vol.DevicePath)
 		if reclaimErr == nil && blkResult != nil {
 			bytesAvailable = blkResult.BytesDiscarded
 		}
-		log.Infof("SpaceReclamation: blkdiscard on %s - %d bytes available", vol.DevicePath, bytesAvailable)
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: blkdiscard on %s - %d bytes available", vol.DevicePath, bytesAvailable)
 	}
 
 	duration := time.Since(start)
@@ -938,7 +940,7 @@ func (m *SpaceReclamationManager) reclaimVolume(ctx context.Context, vol *Volume
 		}
 	}
 
-	log.Infof("SpaceReclamation: completed reclamation for volume %s (PVC: %s/%s) - Status: %s, BytesAvailable: %d, Duration: %v",
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: completed reclamation for volume %s (PVC: %s/%s) - Status: %s, BytesAvailable: %d, Duration: %v",
 		vol.VolumeID, vol.PVCNamespace, vol.PVCName, result.Status, result.BytesAvailable, result.Duration)
 }
 
@@ -964,22 +966,22 @@ func (m *SpaceReclamationManager) getPowerMaxClient(symID string) (pmax.Pmax, er
 // The cfg.Enabled flag is used in the eligibility check (IsEligible) to determine which PVCs to process.
 func initSpaceReclamation(ctx context.Context, s *service, k8sClient kubernetes.Interface) {
 	cfg := ReadSpaceReclamationConfig()
-	log.Infof("SpaceReclamation: initializing with config: %v", cfg)
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: initializing with config: %v", cfg)
 
 	mgr, err := NewSpaceReclamationManager(ctx, cfg, k8sClient, cfg.NodeName, s)
 	if err != nil {
-		log.Errorf("Failed to create SpaceReclamationManager: %v", err)
+		csmlog.WithContext(ctx).Errorf("Failed to create SpaceReclamationManager: %v", err)
 		return
 	}
-	log.Infof("SpaceReclamation: created manager, starting...")
+	csmlog.WithContext(ctx).Infof("SpaceReclamation: created manager, starting...")
 	if err := mgr.Start(); err != nil {
-		log.Errorf("Failed to start SpaceReclamationManager: %v", err)
+		csmlog.WithContext(ctx).Errorf("Failed to start SpaceReclamationManager: %v", err)
 		return
 	}
 	if cfg.Enabled {
-		log.Infof("SpaceReclamation: started successfully (globally enabled)")
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: started successfully (globally enabled)")
 	} else {
-		log.Infof("SpaceReclamation: started successfully (globally disabled, per-PVC labels will be honored)")
+		csmlog.WithContext(ctx).Infof("SpaceReclamation: started successfully (globally disabled, per-PVC labels will be honored)")
 	}
 	s.spaceReclaimMgr = mgr
 }

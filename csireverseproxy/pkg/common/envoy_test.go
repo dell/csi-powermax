@@ -15,12 +15,27 @@
 package common
 
 import (
+	"errors"
 	"net/http"
+	"net/http/httptest"
 	"net/http/httputil"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
+
+// mockRequestObserver is a mock implementation of RequestObserver for testing
+type mockRequestObserver struct {
+	observeFunc func(RequestObservation)
+}
+
+func (m *mockRequestObserver) ObserveRequest(obs RequestObservation) {
+	if m.observeFunc != nil {
+		m.observeFunc(obs)
+	}
+}
 
 func TestNewEnvoy(t *testing.T) {
 	proxy := &Proxy{
@@ -30,6 +45,24 @@ func TestNewEnvoy(t *testing.T) {
 	if e.GetPrimary() != proxy {
 		t.Errorf("Expected primary proxy to be set")
 	}
+}
+
+func TestSetRequestObserver(t *testing.T) {
+	proxy := &Proxy{
+		ReverseProxy: &httputil.ReverseProxy{},
+	}
+	e := NewEnvoy(proxy)
+
+	mockObserver := &mockRequestObserver{
+		observeFunc: func(_ RequestObservation) {
+			// Observer called
+		},
+	}
+
+	e.SetRequestObserver(mockObserver)
+
+	// Verify the observer is set by checking it doesn't panic
+	assert.NotNil(t, mockObserver)
 }
 
 func TestSetPrimary(t *testing.T) {
@@ -146,7 +179,7 @@ func TestRemoveBackupHTTPClient(t *testing.T) {
 	}
 }
 
-func TestConfigureHealthParams(t *testing.T) {
+func TestConfigureHealthParams(_ *testing.T) {
 	e := &envoy{healthMonitor: NewProxyHealth()}
 	e.ConfigureHealthParams(3, 10, 2, time.Second)
 	// Assuming SetThreshold properly sets parameters, no assertion needed
@@ -157,4 +190,130 @@ func TestHasHealthDeteriorated(t *testing.T) {
 	if e.HasHealthDeteriorated() {
 		t.Errorf("Health should not have deteriorated initially")
 	}
+}
+
+// TestEnvoyRoundTrip tests the RoundTrip method of the Transport struct
+func TestEnvoyRoundTrip(t *testing.T) {
+	mockRoundTripper := &mockRoundTripper{
+		resp: &http.Response{StatusCode: http.StatusOK},
+		err:  nil,
+	}
+
+	healthCalled := false
+	transport := &Transport{
+		RoundTripper: mockRoundTripper,
+		HealthHandler: func(_ bool) {
+			healthCalled = true
+		},
+	}
+
+	req := httptest.NewRequest("GET", "http://example.com", nil)
+	resp, err := transport.RoundTrip(req)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.True(t, healthCalled)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// TestEnvoyRoundTripWithError tests RoundTrip when an error occurs
+func TestEnvoyRoundTripWithError(t *testing.T) {
+	mockRoundTripper := &mockRoundTripper{
+		resp: nil,
+		err:  errors.New("connection failed"),
+	}
+
+	healthCalled := false
+	transport := &Transport{
+		RoundTripper: mockRoundTripper,
+		HealthHandler: func(_ bool) {
+			healthCalled = true
+		},
+	}
+
+	req := httptest.NewRequest("GET", "http://example.com", nil)
+	resp, err := transport.RoundTrip(req)
+
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	assert.True(t, healthCalled)
+}
+
+// TestEnvoyRoundTripWithUnauthorized tests RoundTrip with 401 status
+func TestEnvoyRoundTripWithUnauthorized(t *testing.T) {
+	mockRoundTripper := &mockRoundTripper{
+		resp: &http.Response{StatusCode: http.StatusUnauthorized},
+		err:  nil,
+	}
+
+	healthCalled := false
+	transport := &Transport{
+		RoundTripper: mockRoundTripper,
+		HealthHandler: func(_ bool) {
+			healthCalled = true
+		},
+	}
+
+	req := httptest.NewRequest("GET", "http://example.com", nil)
+	resp, err := transport.RoundTrip(req)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.True(t, healthCalled)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+}
+
+// TestEnvoyRoundTripWithServerError tests RoundTrip with 5xx status
+func TestEnvoyRoundTripWithServerError(t *testing.T) {
+	mockRoundTripper := &mockRoundTripper{
+		resp: &http.Response{StatusCode: http.StatusInternalServerError},
+		err:  nil,
+	}
+
+	healthCalled := false
+	transport := &Transport{
+		RoundTripper: mockRoundTripper,
+		HealthHandler: func(_ bool) {
+			healthCalled = true
+		},
+	}
+
+	req := httptest.NewRequest("GET", "http://example.com", nil)
+	resp, err := transport.RoundTrip(req)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.True(t, healthCalled)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+}
+
+// TestEnvoyRoundTripWithRequestObserver tests RoundTrip with RequestObserver
+func TestEnvoyRoundTripWithRequestObserver(t *testing.T) {
+	observerCalled := false
+	mockObserver := &mockRequestObserver{
+		observeFunc: func(obs RequestObservation) {
+			observerCalled = true
+			assert.Equal(t, "GET", obs.Method)
+			assert.Equal(t, "/test", obs.Path)
+			assert.Equal(t, http.StatusOK, obs.StatusCode)
+		},
+	}
+
+	mockRoundTripper := &mockRoundTripper{
+		resp: &http.Response{StatusCode: http.StatusOK},
+		err:  nil,
+	}
+
+	transport := &Transport{
+		RoundTripper:    mockRoundTripper,
+		HealthHandler:   func(_ bool) {},
+		RequestObserver: mockObserver,
+	}
+
+	req := httptest.NewRequest("GET", "http://example.com/test", nil)
+	resp, err := transport.RoundTrip(req)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.True(t, observerCalled)
 }

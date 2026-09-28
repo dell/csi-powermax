@@ -19,6 +19,7 @@ import (
 	"sync"
 
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
+	"github.com/dell/csmlog"
 )
 
 const (
@@ -56,9 +57,9 @@ func (lockProp *LockProperties) Queue(request LockRequest) {
 	} else {
 		select {
 		case lockProp.WaitChannel <- request.WaitChannel:
-			log.Infof("Request queued: %s\n", request.ResourceID)
+			csmlog.Infof("Request queued: %s\n", request.ResourceID)
 		default:
-			log.Infof("Max number of outstanding requests already queued for: %s", request.ResourceID)
+			csmlog.Infof("Max number of outstanding requests already queued for: %s", request.ResourceID)
 			request.WaitChannel <- false
 		}
 	}
@@ -129,7 +130,7 @@ func InitializeLock() {
 func LockRequestHandler() {
 	fifoLocks := make(map[string]*LockProperties)
 	go func() {
-		log.Debug("Successfully started the lock request handler")
+		csmlog.Debug("Successfully started the lock request handler")
 		for {
 			select {
 			case request := <-lockRequestsQueue:
@@ -143,7 +144,7 @@ func LockRequestHandler() {
 				} else {
 					lockProps.Queue(request)
 				}
-				log.Infof("Lock: %s, %s", request.ResourceID, lockProps.String())
+				csmlog.Infof("Lock: %s, %s", request.ResourceID, lockProps.String())
 				lockMutex.Unlock()
 			}
 		}
@@ -178,7 +179,7 @@ func (l *Lock) Lock() error {
 	if !isLocked {
 		return fmt.Errorf("failed to obtain lock")
 	}
-	log.Infof("Request ID: %s - Obtained %s lock", l.RequestID, string(l.LockType))
+	csmlog.Infof("Request ID: %s - Obtained %s lock", l.RequestID, string(l.LockType))
 	return nil
 }
 

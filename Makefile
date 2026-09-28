@@ -36,6 +36,9 @@ clean:
 build: generate
 	GOOS=linux CGO_ENABLED=0 go build -mod=vendor -ldflags $(LDFLAGS)
 
+build-binary:
+	GOOS=linux CGO_ENABLED=0 go build -mod=vendor -ldflags $(LDFLAGS)
+
 # Run unit tests
 unit-test: go-code-tester
 	GITHUB_OUTPUT=/dev/null \

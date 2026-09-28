@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dell/csmlog"
 
 	"github.com/dell/csi-powermax/v2/pkg/file"
 
@@ -56,7 +59,6 @@ const (
 // ---------------------------------------------------------------------------
 
 func (c *u4p104VolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	log := log.WithContext(ctx)
 	var err error
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "create volume request cannot be nil")
@@ -82,7 +84,7 @@ func (c *u4p104VolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 	}
 	serviceLevel := c.s.resolveParameter(params, c.symmetrixID, ServiceLevelParam, "Optimized")
 	if !isValidSLO(serviceLevel) {
-		log.Error("An invalid Service Level parameter was specified")
+		csmlog.WithContext(ctx).Error("An invalid Service Level parameter was specified")
 		return nil, status.Errorf(codes.InvalidArgument, "An invalid Service Level parameter was specified")
 	}
 	storageGroupName := c.s.resolveParameter(params, c.symmetrixID, StorageGroupParam, "")
@@ -130,7 +132,11 @@ func (c *u4p104VolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 		}
 		// check snapshot is licensed
 		if licnErr := c.s.isSnapshotLicensed(ctx, c.symmetrixID, c.pmaxClient); licnErr != nil {
-			log.WithContext(ctx).Errorf("Snapshot license check failed on array %s: %v", c.symmetrixID, licnErr)
+			csmlog.WithContext(ctx).Errorf("Snapshot license check failed on array %s: %v", c.symmetrixID, licnErr)
+			// Return NotFound if the array is not being managed
+			if errors.Is(licnErr, ErrArrayNotManaged) {
+				return nil, status.Error(codes.NotFound, licnErr.Error())
+			}
 			return nil, status.Error(codes.Internal, licnErr.Error())
 		}
 	}
@@ -141,14 +147,14 @@ func (c *u4p104VolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 	if c.s.isDynamicSGEnabled() {
 		dynamicSGName, _, err := c.s.getDynamicSG(ctx, c.symmetrixID, storageGroupName)
 		if err != nil {
-			log.Errorf("Failed to get dynamic SG for array %s: %v", c.symmetrixID, err)
+			csmlog.WithContext(ctx).Errorf("Failed to get dynamic SG for array %s: %v", c.symmetrixID, err)
 			return nil, status.Errorf(codes.Internal, "failed to get dynamic storage group: %s", err.Error())
 		}
-		log.Infof("Dynamic SG enabled: selected storage group %s (base: %s) for array %s", dynamicSGName, storageGroupName, c.symmetrixID)
+		csmlog.WithContext(ctx).Infof("Dynamic SG enabled: selected storage group %s (base: %s) for array %s", dynamicSGName, storageGroupName, c.symmetrixID)
 		storageGroupName = dynamicSGName
 	}
 
-	log.Infof("Attempting 10.4 CreateVolume for volume %s (identifier: %s) on array %s, %d cylinders",
+	csmlog.WithContext(ctx).Infof("Attempting 10.4 CreateVolume for volume %s (identifier: %s) on array %s, %d cylinders",
 		volName, volumeIdentifier, c.symmetrixID, requiredCylinders)
 
 	// Single 10.4 API call: creates the volume, adds it to the SG (creating the SG if needed),
@@ -173,12 +179,12 @@ func (c *u4p104VolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 
 	gpmaxResp, err := c.pmaxClient104.CreateVolume(ctx, c.symmetrixID, *gpmaxReq, headerMetadata)
 	if err != nil {
-		log.Errorf("10.4 CreateVolume failed for volume %s on array %s: %v", volName, c.symmetrixID, err)
+		csmlog.WithContext(ctx).Errorf("10.4 CreateVolume failed for volume %s on array %s: %v", volName, c.symmetrixID, err)
 		return nil, classifyCreateVolumeError(err)
 	}
 
 	if gpmaxResp == nil || len(gpmaxResp.Results.Result) == 0 {
-		log.Errorf("10.4 CreateVolume response is empty for volume %s on array %s", volName, c.symmetrixID)
+		csmlog.WithContext(ctx).Errorf("10.4 CreateVolume response is empty for volume %s on array %s", volName, c.symmetrixID)
 		return nil, status.Error(codes.Internal, "create volume response is empty")
 	}
 
@@ -191,16 +197,16 @@ func (c *u4p104VolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 			storageGroupName = result.StorageGroup.ID
 		}
 		// Fall back to GetVolumesByIdentifier to obtain the device ID and size.
-		log.Infof("10.4 CreateVolume: fully idempotent for volume %s on array %s, performing lookup", volumeIdentifier, c.symmetrixID)
+		csmlog.WithContext(ctx).Infof("10.4 CreateVolume: fully idempotent for volume %s on array %s, performing lookup", volumeIdentifier, c.symmetrixID)
 		return c.handleIdempotentVolume(ctx, volumeIdentifier, storageGroupName, serviceLevel, storagePoolID, requiredCylinders, contentSourceValue, contentSource, accessibility)
 	}
 
 	devID := result.Volume.ID
 	if devID == "" {
-		log.Errorf("10.4 CreateVolume returned volume object with empty device ID for volume %s on array %s", volName, c.symmetrixID)
+		csmlog.WithContext(ctx).Errorf("10.4 CreateVolume returned volume object with empty device ID for volume %s on array %s", volName, c.symmetrixID)
 		return nil, status.Error(codes.Internal, "create volume response contains empty device ID")
 	}
-	log.Infof("10.4 CreateVolume succeeded for volume %s on array %s with device ID %s (status: %s)",
+	csmlog.WithContext(ctx).Infof("10.4 CreateVolume succeeded for volume %s on array %s with device ID %s (status: %s)",
 		volName, c.symmetrixID, devID, result.Status)
 
 	// Use the array-returned identifier for VolumeId (may include a tenant prefix).
@@ -493,13 +499,13 @@ func (c *u4p104VolumeCreator) handleSnapshotSource(ctx context.Context, cs *csi.
 	// Parse the CSI snapshot ID: format is <snapName>-<symID>-<devID>
 	parsedSnapID, symID, devID, _, _, parseErr := c.s.parseCsiID(srcSnapID)
 	if parseErr != nil {
-		log.WithContext(ctx).Errorf("Snapshot identifier not in supported format: %s", srcSnapID)
+		csmlog.WithContext(ctx).Errorf("Snapshot identifier not in supported format: %s", srcSnapID)
 		return "", "", "", status.Error(codes.InvalidArgument, "Snapshot identifier not in supported format")
 	}
 
 	// Validate the snapshot belongs to the target array
 	if symID != c.symmetrixID {
-		log.WithContext(ctx).WithFields(map[string]interface{}{
+		csmlog.WithContext(ctx).WithFields(map[string]interface{}{
 			"snapshot_array": symID,
 			"target_array":   c.symmetrixID,
 		}).Error("Snapshot is on different PowerMax array")
@@ -509,7 +515,7 @@ func (c *u4p104VolumeCreator) handleSnapshotSource(ctx context.Context, cs *csi.
 	// Fetch snapshot info to obtain snap_id for 10.4 API
 	snapInfo, snapErr := c.pmaxClient.GetSnapshotInfo(ctx, c.symmetrixID, devID, parsedSnapID)
 	if snapErr != nil {
-		log.WithContext(ctx).WithFields(map[string]interface{}{
+		csmlog.WithContext(ctx).WithFields(map[string]interface{}{
 			"snapshot_name": parsedSnapID,
 			"source_device": devID,
 			"array":         c.symmetrixID,
@@ -518,14 +524,14 @@ func (c *u4p104VolumeCreator) handleSnapshotSource(ctx context.Context, cs *csi.
 	}
 
 	if snapInfo == nil || len(snapInfo.VolumeSnapshotSource) == 0 {
-		log.WithContext(ctx).Errorf("Snapshot %s has no source generations on volume %s", parsedSnapID, devID)
+		csmlog.WithContext(ctx).Errorf("Snapshot %s has no source generations on volume %s", parsedSnapID, devID)
 		return "", "", "", status.Errorf(codes.InvalidArgument, "Snapshot %s has no source generations on volume %s", parsedSnapID, devID)
 	}
 
 	// Extract snap_id from the first generation for the 10.4 API's create_new_from_snapshot.snapshot.id field
 	snapID := snapInfo.VolumeSnapshotSource[0].SnapID
 	if snapID == 0 {
-		log.WithContext(ctx).Errorf("Snapshot %s has invalid snap_id on volume %s", parsedSnapID, devID)
+		csmlog.WithContext(ctx).Errorf("Snapshot %s has invalid snap_id on volume %s", parsedSnapID, devID)
 		return "", "", "", status.Errorf(codes.Internal, "Snapshot %s has invalid snap_id on volume %s", parsedSnapID, devID)
 	}
 
@@ -548,12 +554,12 @@ func (c *u4p104VolumeCreator) handleCloneSource(ctx context.Context, srcVolID st
 
 	_, srcSymID, parsedDevID, _, _, parseErr := c.s.parseCsiID(srcVolID)
 	if parseErr != nil {
-		log.WithContext(ctx).Errorf("Could not parse source CSI VolumeId: %s", srcVolID)
+		csmlog.WithContext(ctx).Errorf("Could not parse source CSI VolumeId: %s", srcVolID)
 		return "", "", status.Error(codes.InvalidArgument, "Source volume identifier not in supported format")
 	}
 
 	if srcSymID != c.symmetrixID {
-		log.WithContext(ctx).WithFields(map[string]interface{}{
+		csmlog.WithContext(ctx).WithFields(map[string]interface{}{
 			"source_array": srcSymID,
 			"target_array": c.symmetrixID,
 		}).Error("Source volume is on different PowerMax array")
@@ -601,15 +607,14 @@ func computeRequiredCylinders(cr *csi.CapacityRange) (int, error) {
 // SG membership and size validation are omitted: the array already enforces both (a size
 // mismatch returns 500 before reaching this path, and the SG was confirmed by the 200 response).
 func (c *u4p104VolumeCreator) handleIdempotentVolume(ctx context.Context, volumeIdentifier, storageGroupName, serviceLevel, storagePoolID string, requiredCylinders int, volContent string, contentSource *csi.VolumeContentSource, accessibility *csi.TopologyRequirement) (*csi.CreateVolumeResponse, error) {
-	log := log.WithContext(ctx)
 	volumeList, err := c.pmaxClient.GetVolumesByIdentifier(ctx, c.symmetrixID, volumeIdentifier)
 	if err != nil {
-		log.Errorf("10.4 idempotency lookup failed for volume %s on array %s: %v", volumeIdentifier, c.symmetrixID, err)
+		csmlog.WithContext(ctx).Errorf("10.4 idempotency lookup failed for volume %s on array %s: %v", volumeIdentifier, c.symmetrixID, err)
 		return nil, status.Errorf(codes.Internal, "idempotency check failed: %s", err.Error())
 	}
 
 	for _, eachVol := range volumeList.Volumes {
-		log.Infof("10.4 idempotent volume detected %s on array %s, returning success", eachVol.ID, c.symmetrixID)
+		csmlog.WithContext(ctx).Infof("10.4 idempotent volume detected %s on array %s, returning success", eachVol.ID, c.symmetrixID)
 
 		csiVolumeID := fmt.Sprintf("%s-%s-%s", eachVol.Identifier, c.symmetrixID, eachVol.ID)
 		volumeContext := buildVolumeContext(c.s.getReplicationContextPrefix(), c.symmetrixID, serviceLevel, storagePoolID, storageGroupName, eachVol.CapCyl, volContent)
@@ -644,8 +649,6 @@ func (c *u4p104VolumeCreator) handleIdempotentVolume(ctx context.Context, volume
 // ---------------------------------------------------------------------------
 
 func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	log := log.WithContext(ctx)
-
 	reqID := c.reqID
 	params := c.params
 	symmetrixID := c.symmetrixID
@@ -662,7 +665,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 	storagePoolID := c.s.resolveParameter(params, symmetrixID, StoragePoolParam, "")
 	err := c.s.validateStoragePoolID(ctx, symmetrixID, storagePoolID, pmaxClient)
 	if err != nil {
-		log.Error(err.Error())
+		csmlog.WithContext(ctx).Error(err.Error())
 		return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
 	}
 
@@ -688,7 +691,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 
 	// Dynamic SG check is available only from 10.1
 	if c.s.opts.dynamicSGEnabled && version < 101 {
-		log.Errorf("Dynamic SG is enabled, but not supported for array %s with version %d. Minimum expected array version is 10.1", symmetrixID, version)
+		csmlog.WithContext(ctx).Errorf("Dynamic SG is enabled, but not supported for array %s with version %d. Minimum expected array version is 10.1", symmetrixID, version)
 		return nil, status.Errorf(codes.Internal, "Dynamic SG is enabled, but not supported for array %s with version %d. Minimum expected array version is 10.1", symmetrixID, version)
 	}
 
@@ -746,7 +749,10 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 		repMode = params[path.Join(c.s.opts.ReplicationPrefix, ReplicationModeParam)]
 
 		if symmIDFoundInAZ && repMode == Metro {
-			return nil, status.Errorf(codes.InvalidArgument, "The use of Availability Zones with Metro volumes is not supported")
+			if !c.s.hasMetroSiteLabels(symmetrixID, remoteSymID) {
+				return nil, status.Errorf(codes.InvalidArgument,
+					"The use of Availability Zones with Metro volumes requires site labels on both arrays")
+			}
 		}
 
 		remoteServiceLevel = params[path.Join(c.s.opts.ReplicationPrefix, RemoteServiceLevelParam)]
@@ -764,13 +770,13 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 			if localRDFGrpNo == "" || remoteRDFGrpNo == "" {
 				return nil, status.Errorf(codes.Unavailable, "Can not fetch RDF Group for volume creation get/create RDFG")
 			}
-			log.Debugf("RDF group for given array pair and RDF mode: local(%s), remote(%s)", localRDFGrpNo, remoteRDFGrpNo)
+			csmlog.WithContext(ctx).Debugf("RDF group for given array pair and RDF mode: local(%s), remote(%s)", localRDFGrpNo, remoteRDFGrpNo)
 		}
 		if repMode == Metro {
 			return c.s.createMetroVolume(ctx, req, reqID, storagePoolID, symmetrixID, storageGroupName, serviceLevel, thick, remoteSymID, localRDFGrpNo, remoteRDFGrpNo, remoteServiceLevel, remoteSRPID, namespace, applicationPrefix, bias, hostLimitName, hostMBsec, hostIOsec, hostDynDistribution)
 		}
 		if repMode != Async && repMode != Sync {
-			log.Errorf("Unsupported Replication Mode: (%s)", repMode)
+			csmlog.WithContext(ctx).Errorf("Unsupported Replication Mode: (%s)", repMode)
 			return nil, status.Errorf(codes.InvalidArgument, "Unsupported Replication Mode: (%s)", repMode)
 		}
 	}
@@ -802,7 +808,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 				_, symID, SrcDevID, _, _, err = c.s.parseCsiID(srcVolID)
 				if err != nil {
 					// We couldn't comprehend the identifier.
-					log.Error("Could not parse CSI VolumeId: " + srcVolID)
+					csmlog.WithContext(ctx).Error("Could not parse CSI VolumeId: " + srcVolID)
 					return nil, status.Error(codes.InvalidArgument, "Source volume identifier not in supported format")
 				}
 				volContent = srcVolID
@@ -814,7 +820,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 				snapID, symID, SrcDevID, _, _, err = c.s.parseCsiID(srcSnapID)
 				if err != nil {
 					// We couldn't comprehend the identifier.
-					log.Error("Snapshot identifier not in supported format: " + srcSnapID)
+					csmlog.WithContext(ctx).Error("Snapshot identifier not in supported format: " + srcSnapID)
 					return nil, status.Error(codes.InvalidArgument, "Snapshot identifier not in supported format")
 				}
 				volContent = snapID
@@ -825,24 +831,28 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 		}
 		// check snapshot is licensed
 		if err := c.s.IsSnapshotLicensed(ctx, symID, pmaxClient); err != nil {
-			log.Error("Error - " + err.Error())
+			csmlog.WithContext(ctx).Error("Error - " + err.Error())
+			// Return NotFound if the array is not being managed
+			if errors.Is(err, ErrArrayNotManaged) {
+				return nil, status.Error(codes.NotFound, err.Error())
+			}
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	}
 
 	if SrcDevID != "" && symID != "" {
 		if symID != symmetrixID {
-			log.Error("The volume content source is in different PowerMax array")
+			csmlog.WithContext(ctx).Error("The volume content source is in different PowerMax array")
 			return nil, status.Errorf(codes.InvalidArgument, "The volume content source is in different PowerMax array")
 		}
 		srcVol, err = pmaxClient.GetVolumeByID(ctx, symmetrixID, SrcDevID)
 		if err != nil {
-			log.Error("Volume content source volume couldn't be found in the array: " + err.Error())
+			csmlog.WithContext(ctx).Error("Volume content source volume couldn't be found in the array: " + err.Error())
 			return nil, status.Errorf(codes.InvalidArgument, "Volume content source volume couldn't be found in the array: %s", err.Error())
 		}
 		// reset the volume size to match with source
 		if requiredCylinders < srcVol.CapacityCYL {
-			log.Error("Capacity specified is smaller than the source")
+			csmlog.WithContext(ctx).Error("Capacity specified is smaller than the source")
 			return nil, status.Error(codes.InvalidArgument, "Requested capacity is smaller than the source")
 		}
 	}
@@ -850,7 +860,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 	// Get the volume name
 	volumeName := req.GetName()
 	if volumeName == "" {
-		log.Error("Name cannot be empty")
+		csmlog.WithContext(ctx).Error("Name cannot be empty")
 		return nil, status.Error(codes.InvalidArgument,
 			"Name cannot be empty")
 	}
@@ -891,10 +901,10 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 	var needCreation bool
 	if c.s.opts.dynamicSGEnabled {
 		if dynamicSGName, needCreation, err = getDynamicSG(ctx, symmetrixID, storageGroupName, c.s); err != nil {
-			log.Error("failed to get dynamic SG: " + err.Error())
+			csmlog.WithContext(ctx).Error("failed to get dynamic SG: " + err.Error())
 			return nil, status.Error(codes.Internal, err.Error())
 		}
-		log.Infof("####### dynamic storage group name: %s, base SG name: %s, needCreation: %v", dynamicSGName, storageGroupName, needCreation)
+		csmlog.WithContext(ctx).Infof("####### dynamic storage group name: %s, base SG name: %s, needCreation: %v", dynamicSGName, storageGroupName, needCreation)
 		storageGroupName = dynamicSGName
 	}
 
@@ -934,7 +944,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 		HostIOLimitIOSec:                     hostIOsec,
 		DynamicDistribution:                  hostDynDistribution,
 	}
-	log.WithFields(fields).Info("Executing CreateVolume with following fields")
+	csmlog.WithFields(fields).Info("Executing CreateVolume with following fields")
 
 	// isSGUnprotected is set to true only if SG has a replica, eg if the SG is new
 	isSGUnprotected := false
@@ -959,7 +969,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 	if !c.s.opts.dynamicSGEnabled {
 		sg, err := pmaxClient.GetStorageGroup(ctx, symmetrixID, storageGroupName)
 		if err != nil || sg == nil {
-			log.Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
+			csmlog.WithContext(ctx).Debug(fmt.Sprintf("Unable to find storage group: %s", storageGroupName))
 			needCreation = true
 		}
 	}
@@ -978,7 +988,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 		_, err := pmaxClient.CreateStorageGroup(ctx, symmetrixID, storageGroupName, storagePoolID,
 			serviceLevel, thick == "true", optionalPayload)
 		if err != nil {
-			log.Error("Error creating storage group: " + err.Error())
+			csmlog.WithContext(ctx).Error("Error creating storage group: " + err.Error())
 			return nil, status.Errorf(codes.Internal, "Error creating storage group: %s", err.Error())
 		}
 	}
@@ -990,16 +1000,16 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 	isV4 := c.s.isV4OrAbove(ctx, symmetrixID, pmaxClient)
 
 	if version >= APIVersion103 && isV4 {
-		log.Debug("API version is greater than or equal to 103. Using enhanced API")
+		csmlog.WithContext(ctx).Debug("API version is greater than or equal to 103. Using enhanced API")
 		// Idempotency test. We will read the volume and check for:
 		// 1. Existence of a volume with matching volume name
 		// 2. Matching cylinderSize
 		// 3. Is a member of the storage group
 		// 4. Check if snapshot/volume target
-		log.Debug("Calling GetVolumeIDList for idempotency test")
+		csmlog.WithContext(ctx).Debug("Calling GetVolumeIDList for idempotency test")
 		volumeList, err = pmaxClient.GetVolumesByIdentifier(ctx, symmetrixID, volumeIdentifier)
 		if err != nil {
-			log.Error("Error getting the volumes for idempotence check: " + err.Error())
+			csmlog.WithContext(ctx).Error("Error getting the volumes for idempotence check: " + err.Error())
 			return nil, status.Errorf(codes.Internal, "Error  getting the volumes for idempotence check: %s", err.Error())
 		}
 
@@ -1009,7 +1019,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 		// We ignore any volume not in the desired storage group (even though they have the same name).
 		for _, eachVol := range volumeList.Volumes {
 			if len(eachVol.StorageGroups) < 1 {
-				log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + eachVol.ID)
+				csmlog.WithContext(ctx).Error("Idempotence check: StorageGroupIDList is empty for (%s): " + eachVol.ID)
 				return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s)", eachVol.ID)
 			}
 			matchesStorageGroup := false
@@ -1026,7 +1036,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 			if matchesStorageGroup && (eachVol.Identifier == volumeIdentifier || strings.Contains(eachVol.Identifier, volumeIdentifier)) {
 				// A volume with the same name exists and has the same size
 				if eachVol.CapCyl != float64(requiredCylinders) {
-					log.Error("A volume with the same name exists but has a different size than required.")
+					csmlog.WithContext(ctx).Error("A volume with the same name exists but has a different size than required.")
 					alreadyExists = true
 					continue
 				}
@@ -1040,7 +1050,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 						// Missing corresponding Remote Volume Name for existing local volume
 						// The SG is unprotected as Local volume and Local SG exists but missing corresponding SRDF info
 						// If the SG was protected, there must exist a corresponding remote replica volume
-						log.Debugf("Local Volume already exist, skipping creation (%s)", eachVol.ID)
+						csmlog.WithContext(ctx).Debugf("Local Volume already exist, skipping creation (%s)", eachVol.ID)
 						isLocalVolumePresent = true
 						vol = &types.Volume{}
 						vol.VolumeID = eachVol.ID
@@ -1116,7 +1126,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 					}
 				}
 
-				log.WithFields(fields).Info("Idempotent volume detected, returning success")
+				csmlog.WithFields(fields).Info("Idempotent volume detected, returning success")
 				eachVol.ID = fmt.Sprintf("%s-%s-%s", eachVol.Identifier, symmetrixID, eachVol.ID)
 				volResp := c.s.buildCSIVolume(&eachVol)
 				// Set the volume context
@@ -1150,11 +1160,11 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 		// 2. Matching cylinderSize
 		// 3. Is a member of the storage group
 		// 4. Check if snapshot/volume target
-		log.Debug("Calling GetVolumeIDList for idempotency test")
+		csmlog.WithContext(ctx).Debug("Calling GetVolumeIDList for idempotency test")
 		// For now an exact match
 		volumeIDList, err := pmaxClient.GetVolumeIDList(ctx, symmetrixID, volumeIdentifier, false)
 		if err != nil {
-			log.Error("Error looking up volume for idempotence check: " + err.Error())
+			csmlog.WithContext(ctx).Error("Error looking up volume for idempotence check: " + err.Error())
 			return nil, status.Errorf(codes.Internal, "Error looking up volume for idempotence check: %s", err.Error())
 		}
 		// isLocalVolumePresent restrict CreateVolumeInProtectedSG call if the volume is present in local SG but not in remote SG
@@ -1163,14 +1173,14 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 		// We ignore any volume not in the desired storage group (even though they have the same name).
 		for _, volumeID := range volumeIDList {
 			// Fetch the volume
-			log.WithFields(fields).Info("Calling GetVolumeByID for idempotence check")
+			csmlog.WithFields(fields).Info("Calling GetVolumeByID for idempotence check")
 			vol, err = pmaxClient.GetVolumeByID(ctx, symmetrixID, volumeID)
 			if err != nil {
-				log.Error("Error fetching volume for idempotence check: " + err.Error())
+				csmlog.WithContext(ctx).Error("Error fetching volume for idempotence check: " + err.Error())
 				return nil, status.Errorf(codes.Internal, "Error fetching volume for idempotence check: %s", err.Error())
 			}
 			if len(vol.StorageGroupIDList) < 1 {
-				log.Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
+				csmlog.WithContext(ctx).Error("Idempotence check: StorageGroupIDList is empty for (%s): " + volumeID)
 				return nil, status.Errorf(codes.Internal, "Idempotence check: StorageGroupIDList is empty for (%s)", volumeID)
 			}
 			matchesStorageGroup := false
@@ -1187,7 +1197,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 			if matchesStorageGroup && (vol.VolumeIdentifier == volumeIdentifier || strings.Contains(vol.VolumeIdentifier, volumeIdentifier)) {
 				// A volume with the same name exists and has the same size
 				if vol.CapacityCYL != requiredCylinders {
-					log.Error("A volume with the same name exists but has a different size than required.")
+					csmlog.WithContext(ctx).Error("A volume with the same name exists but has a different size than required.")
 					alreadyExists = true
 					continue
 				}
@@ -1201,7 +1211,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 						// Missing corresponding Remote Volume Name for existing local volume
 						// The SG is unprotected as Local volume and Local SG exists but missing corresponding SRDF info
 						// If the SG was protected, there must exist a corresponding remote replica volume
-						log.Debugf("Local Volume already exist, skipping creation (%s)", vol.VolumeID)
+						csmlog.WithContext(ctx).Debugf("Local Volume already exist, skipping creation (%s)", vol.VolumeID)
 						isLocalVolumePresent = true
 						continue
 					}
@@ -1265,7 +1275,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 					}
 				}
 
-				log.WithFields(fields).Info("Idempotent volume detected, returning success")
+				csmlog.WithFields(fields).Info("Idempotent volume detected, returning success")
 				vol.VolumeID = fmt.Sprintf("%s-%s-%s", vol.VolumeIdentifier, symmetrixID, vol.VolumeID)
 				volResp := c.s.getCSIVolume(vol)
 				// Set the volume context
@@ -1300,7 +1310,7 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 		}
 	}
 	if alreadyExists {
-		log.Error("A volume with the same name " + volumeName + "exists but has a different size than requested. Use a different name.")
+		csmlog.WithContext(ctx).Error("A volume with the same name " + volumeName + "exists but has a different size than requested. Use a different name.")
 		return nil, status.Errorf(codes.AlreadyExists, "A volume with the same name %s exists but has a different size than requested. Use a different name.", volumeName)
 	}
 
@@ -1311,13 +1321,13 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 	if !isLocalVolumePresent {
 		vol, err = pmaxClient.CreateVolumeInStorageGroupS(ctx, symmetrixID, storageGroupName, volumeIdentifier, requiredCylinders, nil, headerMetadata)
 		if err != nil {
-			log.Error(fmt.Sprintf("Could not create volume: %s: %s", volumeName, err.Error()))
+			csmlog.WithContext(ctx).Error(fmt.Sprintf("Could not create volume: %s: %s", volumeName, err.Error()))
 			return nil, status.Errorf(codes.Internal, "Could not create volume: %s: %s", volumeName, err.Error())
 		}
 	}
 
 	if replicationEnabled == "true" {
-		log.Debugf("RDF: Found Rdf enabled")
+		csmlog.WithContext(ctx).Debugf("RDF: Found Rdf enabled")
 		// remote storage group name is kept same as local storage group name
 		// Check if volume is already added in SG, else add it
 		protectedSGID := c.s.GetProtectedStorageGroupID(vol.StorageGroupIDList, localRDFGrpNo+"-"+repMode)
@@ -1334,12 +1344,12 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 			// Remote storage group name is kept same as local storage group name
 			err := c.s.ProtectStorageGroup(ctx, symmetrixID, remoteSymID, localProtectionGroupID, remoteProtectionGroupID, "", localRDFGrpNo, repMode, vol.VolumeID, reqID, false, pmaxClient)
 			if err != nil {
-				log.Errorf("Proceeding to remove volume from protected storage group as rollback")
+				csmlog.WithContext(ctx).Errorf("Proceeding to remove volume from protected storage group as rollback")
 				// Remove volume from protected storage group as a rollback
 				// The device could be just a TDEV and can make RDF unmanageable due to slow u4p response
 				_, er := pmaxClient.RemoveVolumesFromStorageGroup(ctx, symmetrixID, localProtectionGroupID, true, vol.VolumeID)
 				if er != nil {
-					log.Errorf("Error removing volume %s from protected SG %s with error: %s", vol.VolumeID, localProtectionGroupID, er.Error())
+					csmlog.WithContext(ctx).Errorf("Error removing volume %s from protected SG %s with error: %s", vol.VolumeID, localProtectionGroupID, er.Error())
 				}
 				return nil, err
 			}
@@ -1440,6 +1450,6 @@ func (c *legacyVolumeCreator) Create(ctx context.Context, req *csi.CreateVolumeR
 		Volume: volResp,
 	}
 	fields[storageGroupName] = storageGroupName
-	log.WithFields(fields).Infof("Created volume with ID: %s", volResp.VolumeId)
+	csmlog.WithFields(fields).Infof("Created volume with ID: %s", volResp.VolumeId)
 	return csiResp, nil
 }

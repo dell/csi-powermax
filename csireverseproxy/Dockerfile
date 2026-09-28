@@ -15,14 +15,15 @@
 ############################
 ARG GOIMAGE
 ARG BASEIMAGE
-ARG VERSION="2.16.1"
+ARG VERSION="2.17.0"
 
 FROM $GOIMAGE as builder
 
 # Install git + SSL ca certificates.
 # Git is required for fetching the dependencies.
 # Ca-certificates is required to call HTTPS endpoints.
-RUN apt-get update && apt-get -y install tzdata && update-ca-certificates
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get -y install --no-install-recommends tzdata && update-ca-certificates
 
 # Create revproxy
 ENV USER=revproxy
@@ -36,9 +37,8 @@ RUN adduser \
     --shell "/sbin/nologin" \
     --no-create-home \
     --uid "${UID}" \
-    "${USER}"
-
-RUN mkdir -p /go/src/csireverseproxy
+    "${USER}" \
+    && mkdir -p /go/src/csireverseproxy
 COPY . /go/src/csireverseproxy
 
 WORKDIR /go/src/csireverseproxy
@@ -55,7 +55,7 @@ LABEL vendor="Dell Technologies" \
     name="csipowermax-reverseproxy" \
     summary="CSI PowerMax Reverse Proxy" \
     description="CSI PowerMax Reverse Proxy which helps manage connections with Unisphere for PowerMax" \
-    release="1.17.0" \
+    release="1.18.0" \
     version=$VERSION \
     license="Apache-2.0"
 COPY licenses /licenses

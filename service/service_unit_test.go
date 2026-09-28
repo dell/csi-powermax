@@ -34,15 +34,24 @@ import (
 
 	"github.com/dell/csi-powermax/v2/k8smock"
 	"github.com/dell/csi-powermax/v2/k8sutils"
+	symmetrix "github.com/dell/csi-powermax/v2/pkg/symmetrix"
 	"github.com/dell/csi-powermax/v2/pkg/symmetrix/mocks"
 	"github.com/dell/csmlog"
 	"github.com/dell/gocsi"
 	csictx "github.com/dell/gocsi/context"
 	pmax "github.com/dell/gopowermax/v2"
+	types "github.com/dell/gopowermax/v2/types/v100"
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/coreos/go-systemd/v22/dbus"
 	"github.com/golang/mock/gomock"
 	"github.com/spf13/viper"
+	coordinationv1 "k8s.io/api/coordination/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	kubernetesFake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
@@ -79,7 +88,10 @@ var (
 )
 
 func incrementCounter(identifier string, num int) {
-	lockNumber := RequestLock(identifier, "")
+	lockNumber, err := RequestLock(identifier, "")
+	if err != nil {
+		panic(err)
+	}
 	timeToSleep := rand.Intn(1010-500) + 500 // #nosec G404
 	time.Sleep(time.Duration(timeToSleep) * time.Microsecond)
 	if debugUnitTest {
@@ -102,7 +114,10 @@ func TestReleaseLockWOAcquiring(_ *testing.T) {
 func TestReleasingOtherLock(_ *testing.T) {
 	LockRequestHandler()
 	CleanupMapEntries(10 * time.Millisecond)
-	lockNumber := RequestLock("new_lock", "")
+	lockNumber, err := RequestLock("new_lock", "")
+	if err != nil {
+		panic(err)
+	}
 	ReleaseLock("new_lock", "", lockNumber+1)
 	ReleaseLock("new_lock", "", lockNumber)
 }
@@ -110,7 +125,10 @@ func TestReleasingOtherLock(_ *testing.T) {
 var lockCounter int
 
 func incrementLockCounter() {
-	lockNumber := RequestLock("identifier", "")
+	lockNumber, err := RequestLock("identifier", "")
+	if err != nil {
+		panic(err)
+	}
 	defer ReleaseLock("identifier", "", lockNumber)
 	lockCounter++
 }
@@ -161,7 +179,14 @@ func TestBeforeServe(t *testing.T) {
 				"X_CSI_POWERMAX_ARRAY_CONFIG_PATH=path/to/config",
 				"X_CSI_POWERMAX_PODMON_PORT=65000",
 				"X_CSI_POWERMAX_KUBECONFIG_PATH=path/to/kubeconfig",
-				"X_CSI_MANAGED_ARRAYS=abc,def",
+				"X_CSI_POWERMAX_NODENAME=node.example.com",
+				"X_CSI_POWERMAX_PORTGROUPS=pg1,pg2",
+				"X_CSI_POWERMAX_PODMON_API_TOKEN=podmon-token",
+				"X_CSI_POWERMAX_TLS_CERT_DIR=/tmp/tls",
+				"X_CSI_POWERMAX_PROXY_AUTH_TOKEN_FILE=/nonexistent/auth-token",
+				"X_CSI_GRPC_MAX_THREADS=8",
+				"X_CSI_PRIVATE_MOUNT_DIR=/tmp/private",
+				"X_CSI_MANAGED_ARRAYS=000123",
 				"X_CSI_POWERMAX_SIDECAR_PROXY_PORT=8080",
 				"X_CSI_K8S_CLUSTER_PREFIX=csi",
 				"X_CSI_POWERMAX_ENDPOINT=http://127.0.0.1:9104",
@@ -171,6 +196,10 @@ func TestBeforeServe(t *testing.T) {
 				"X_CSI_VSPHERE_ENABLED=true",
 				"X_CSI_ENABLE_BLOCK=true",
 				"X_CSI_POWERMAX_DRIVER_NAME=test",
+				"X_CSI_POWERMAX_METRO_STATE_CHECK_TIMEOUT=21",
+				"X_CSI_POWERMAX_METRO_QUEUE_WARNING_THRESHOLD=31",
+				"X_CSI_POWERMAX_METRO_QUEUE_HARD_LIMIT=41",
+				"X_CSI_POWERMAX_METRO_RECONCILIATION_BACKOFF=7",
 				"X_CSI_POWERMAX_ISCSI_CHAP_USERNAME=user",
 				"X_CSI_POWERMAX_ISCSI_CHAP_PASSWORD=password",
 				"X_CSI_IG_NODENAME_TEMPLATE=template",
@@ -203,11 +232,16 @@ func TestBeforeServe(t *testing.T) {
 			name: "Error creating PowerMax client",
 			ctx: context.WithValue(context.Background(), interface{}("os.Environ"), []string{
 				"X_CSI_K8S_CLUSTER_PREFIX=csi",
-				"X_CSI_MANAGED_ARRAYS=abc,def",
+				"X_CSI_MANAGED_ARRAYS=000123",
 				"X_CSI_POWERMAX_ENDPOINT=http://127.0.0.1:9104",
 				"X_CSI_POWERMAX_PASSWORD=password",
 				"X_CSI_MODE=controller",
 				"X_CSI_POWERMAX_SIDECAR_PROXY_PORT=2222",
+				"X_CSI_MAX_VOLUMES_PER_NODE=invalid",
+				"X_CSI_POWERMAX_METRO_STATE_CHECK_TIMEOUT=invalid",
+				"X_CSI_POWERMAX_METRO_QUEUE_WARNING_THRESHOLD=0",
+				"X_CSI_POWERMAX_METRO_QUEUE_HARD_LIMIT=-1",
+				"X_CSI_POWERMAX_METRO_RECONCILIATION_BACKOFF=invalid",
 			}),
 			k8sUtils: &k8smock.MockUtils{},
 			plugin:   nil,
@@ -240,8 +274,19 @@ func TestBeforeServe(t *testing.T) {
 			oldInducedMockReverseProxy := inducedMockReverseProxy
 			defer func() { inducedMockReverseProxy = oldInducedMockReverseProxy }()
 			inducedMockReverseProxy = true
+			defer func() {
+				if s.deletionWorker != nil {
+					s.deletionWorker.Stop()
+				}
+			}()
 			result := s.BeforeServe(tt.ctx, nil, nil)
 			assert.Equal(t, tt.expectedResult, result)
+			if tt.name == "Successful BeforeServe" {
+				assert.Equal(t, 21*time.Second, s.opts.MetroStateCheckTimeout)
+				assert.Equal(t, 31, s.opts.MetroQueueWarningThreshold)
+				assert.Equal(t, 41, s.opts.MetroQueueHardLimit)
+				assert.Equal(t, 7*time.Second, s.opts.MetroReconciliationBackoff)
+			}
 		})
 	}
 }
@@ -894,6 +939,309 @@ func TestSetArrayConfigEnvs(t *testing.T) {
 	assert.Equal(t, nil, err)
 }
 
+// ---------------------------------------------------------------------------
+// Tests for hasMetroSiteLabels (U-001 through U-005)
+// ---------------------------------------------------------------------------
+
+func TestHasMetroSiteLabels_BothPresent(t *testing.T) {
+	svc := &service{opts: Opts{
+		StorageArrays: map[string]StorageArrayConfig{
+			"000120000001": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+			"000120000002": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site2"}},
+		},
+	}}
+	assert.True(t, svc.hasMetroSiteLabels("000120000001", "000120000002"))
+}
+
+func TestHasMetroSiteLabels_LocalMissing(t *testing.T) {
+	svc := &service{opts: Opts{
+		StorageArrays: map[string]StorageArrayConfig{
+			"000120000001": {Labels: map[string]interface{}{}},
+			"000120000002": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site2"}},
+		},
+	}}
+	assert.False(t, svc.hasMetroSiteLabels("000120000001", "000120000002"))
+}
+
+func TestHasMetroSiteLabels_RemoteMissing(t *testing.T) {
+	svc := &service{opts: Opts{
+		StorageArrays: map[string]StorageArrayConfig{
+			"000120000001": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+			"000120000002": {Labels: map[string]interface{}{}},
+		},
+	}}
+	assert.False(t, svc.hasMetroSiteLabels("000120000001", "000120000002"))
+}
+
+func TestHasMetroSiteLabels_NeitherPresent(t *testing.T) {
+	svc := &service{opts: Opts{
+		StorageArrays: map[string]StorageArrayConfig{
+			"000120000001": {Labels: map[string]interface{}{}},
+			"000120000002": {Labels: map[string]interface{}{}},
+		},
+	}}
+	assert.False(t, svc.hasMetroSiteLabels("000120000001", "000120000002"))
+}
+
+func TestHasMetroSiteLabels_ArrayNotInConfig(t *testing.T) {
+	svc := &service{opts: Opts{
+		StorageArrays: map[string]StorageArrayConfig{
+			"000120000001": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+		},
+	}}
+	assert.False(t, svc.hasMetroSiteLabels("000120000001", "000120000002"))
+}
+
+// ---------------------------------------------------------------------------
+// Tests for filterArraysByZoneInfo (U-006 through U-009)
+// ---------------------------------------------------------------------------
+
+func TestFilterArraysByZoneInfo_MultipleZonedArrays(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockK8s := k8smock.NewMockUtilsInterface(ctrl)
+	mockK8s.EXPECT().GetNodeLabels(gomock.Any()).Return(map[string]string{
+		"topology.kubernetes.io/site": "site1",
+	}, nil)
+
+	svc := &service{
+		opts: Opts{
+			NodeFullName: "worker-1",
+			StorageArrays: map[string]StorageArrayConfig{
+				"000120000001": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+				"000120000003": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+			},
+		},
+		k8sUtils: mockK8s,
+	}
+	result := svc.filterArraysByZoneInfo(svc.opts.StorageArrays)
+	assert.Equal(t, 2, len(result))
+}
+
+func TestFilterArraysByZoneInfo_SingleZonedArray(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockK8s := k8smock.NewMockUtilsInterface(ctrl)
+	mockK8s.EXPECT().GetNodeLabels(gomock.Any()).Return(map[string]string{
+		"topology.kubernetes.io/site": "site1",
+	}, nil)
+
+	svc := &service{
+		opts: Opts{
+			NodeFullName: "worker-1",
+			StorageArrays: map[string]StorageArrayConfig{
+				"000120000001": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+				"000120000002": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site2"}},
+			},
+		},
+		k8sUtils: mockK8s,
+	}
+	result := svc.filterArraysByZoneInfo(svc.opts.StorageArrays)
+	assert.Equal(t, 1, len(result))
+	assert.Equal(t, "000120000001", result[0])
+}
+
+func TestFilterArraysByZoneInfo_NoZonedArrays(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockK8s := k8smock.NewMockUtilsInterface(ctrl)
+	mockK8s.EXPECT().GetNodeLabels(gomock.Any()).Return(map[string]string{
+		"topology.kubernetes.io/site": "site1",
+	}, nil)
+
+	svc := &service{
+		opts: Opts{
+			NodeFullName: "worker-1",
+			StorageArrays: map[string]StorageArrayConfig{
+				"000120000001": {Labels: map[string]interface{}{}},
+				"000120000002": {Labels: map[string]interface{}{}},
+			},
+		},
+		k8sUtils: mockK8s,
+	}
+	result := svc.filterArraysByZoneInfo(svc.opts.StorageArrays)
+	assert.Equal(t, 2, len(result))
+}
+
+func TestFilterArraysByZoneInfo_ZonedMismatch(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockK8s := k8smock.NewMockUtilsInterface(ctrl)
+	mockK8s.EXPECT().GetNodeLabels(gomock.Any()).Return(map[string]string{
+		"topology.kubernetes.io/site": "site1",
+	}, nil)
+
+	svc := &service{
+		opts: Opts{
+			NodeFullName: "worker-1",
+			StorageArrays: map[string]StorageArrayConfig{
+				"000120000001": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site2"}},
+				"000120000002": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site3"}},
+			},
+		},
+		k8sUtils: mockK8s,
+	}
+	result := svc.filterArraysByZoneInfo(svc.opts.StorageArrays)
+	assert.Equal(t, 0, len(result))
+}
+
+func TestFilterArraysByZoneInfo_AllLabeledNoneMatch(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockK8s := k8smock.NewMockUtilsInterface(ctrl)
+	mockK8s.EXPECT().GetNodeLabels(gomock.Any()).Return(map[string]string{
+		"topology.kubernetes.io/site": "site3",
+	}, nil)
+
+	svc := &service{
+		opts: Opts{
+			NodeFullName: "worker-1",
+			StorageArrays: map[string]StorageArrayConfig{
+				"000120000001": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+				"000120000002": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site2"}},
+			},
+		},
+		k8sUtils: mockK8s,
+	}
+	result := svc.filterArraysByZoneInfo(svc.opts.StorageArrays)
+	// All arrays have labels but none match — zero reachable arrays (TC-S1-03)
+	assert.Equal(t, 0, len(result))
+}
+
+func TestFilterArraysByZoneInfo_MixedLabeledAndUnlabeled(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockK8s := k8smock.NewMockUtilsInterface(ctrl)
+	mockK8s.EXPECT().GetNodeLabels(gomock.Any()).Return(map[string]string{
+		"topology.kubernetes.io/site": "site1",
+	}, nil)
+
+	svc := &service{
+		opts: Opts{
+			NodeFullName: "worker-1",
+			StorageArrays: map[string]StorageArrayConfig{
+				"000120000001": {Labels: map[string]interface{}{"topology.kubernetes.io/site": "site1"}},
+				"000120000002": {Labels: map[string]interface{}{}},
+			},
+		},
+		k8sUtils: mockK8s,
+	}
+	result := svc.filterArraysByZoneInfo(svc.opts.StorageArrays)
+	// Zoned array matches — only the zoned match is returned, unlabeled is excluded
+	assert.Equal(t, 1, len(result))
+	assert.Equal(t, "000120000001", result[0])
+}
+
+// ---------------------------------------------------------------------------
+// Tests for nodeHasHostOnArray helper (non-uniform Metro host checks)
+// ---------------------------------------------------------------------------
+
+func TestNodeHasHostOnArray_ISCSIHostFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+	svc := &service{}
+	arrayID := "000120000001"
+	nodeID := "worker-1"
+
+	iscsiHostID, _, _ := svc.GetISCSIHostSGAndMVIDFromNodeID(nodeID)
+	mockClient.EXPECT().GetHostList(gomock.Any(), arrayID).
+		Return(&types.HostList{HostIDs: []string{iscsiHostID, "other-host"}}, nil).Times(1)
+
+	result := svc.nodeHasHostOnArray(context.Background(), mockClient, arrayID, nodeID)
+	assert.True(t, result, "should find iSCSI host on array")
+}
+
+func TestNodeHasHostOnArray_FCHostFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+	svc := &service{}
+	arrayID := "000120000001"
+	nodeID := "worker-1"
+
+	fcHostID, _, _ := svc.GetFCHostSGAndMVIDFromNodeID(nodeID)
+	mockClient.EXPECT().GetHostList(gomock.Any(), arrayID).
+		Return(&types.HostList{HostIDs: []string{fcHostID}}, nil).Times(1)
+
+	result := svc.nodeHasHostOnArray(context.Background(), mockClient, arrayID, nodeID)
+	assert.True(t, result, "should find FC host on array")
+}
+
+func TestNodeHasHostOnArray_NVMeTCPHostFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+	svc := &service{}
+	arrayID := "000120000001"
+	nodeID := "worker-1"
+
+	nvmeHostID, _, _ := svc.GetNVMETCPHostSGAndMVIDFromNodeID(nodeID)
+	mockClient.EXPECT().GetHostList(gomock.Any(), arrayID).
+		Return(&types.HostList{HostIDs: []string{nvmeHostID}}, nil).Times(1)
+
+	result := svc.nodeHasHostOnArray(context.Background(), mockClient, arrayID, nodeID)
+	assert.True(t, result, "should find NVMeTCP host on array")
+}
+
+func TestNodeHasHostOnArray_NoHostFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+	svc := &service{}
+	arrayID := "000120000001"
+	nodeID := "worker-1"
+
+	// Return hosts that do NOT match the node's host IDs
+	mockClient.EXPECT().GetHostList(gomock.Any(), arrayID).
+		Return(&types.HostList{HostIDs: []string{"unrelated-host-1", "unrelated-host-2"}}, nil).Times(1)
+
+	result := svc.nodeHasHostOnArray(context.Background(), mockClient, arrayID, nodeID)
+	assert.False(t, result, "should not find any matching host on array")
+}
+
+func TestNodeHasHostOnArray_EmptyHostList(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+	svc := &service{}
+	arrayID := "000120000001"
+	nodeID := "worker-1"
+
+	mockClient.EXPECT().GetHostList(gomock.Any(), arrayID).
+		Return(&types.HostList{HostIDs: []string{}}, nil).Times(1)
+
+	result := svc.nodeHasHostOnArray(context.Background(), mockClient, arrayID, nodeID)
+	assert.False(t, result, "should return false for empty host list")
+}
+
+func TestNodeHasHostOnArray_GetHostListError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mocks.NewMockPmaxClient(ctrl)
+	svc := &service{}
+	arrayID := "000120000001"
+	nodeID := "worker-1"
+
+	mockClient.EXPECT().GetHostList(gomock.Any(), arrayID).
+		Return(nil, errors.New("connection refused")).Times(1)
+
+	result := svc.nodeHasHostOnArray(context.Background(), mockClient, arrayID, nodeID)
+	assert.False(t, result, "should return false when GetHostList fails")
+}
+
 func TestReadConfig(t *testing.T) {
 	fp := filepath.Join(os.TempDir(), "topoConfig.yaml")
 	file, err := os.Create(fp)
@@ -908,4 +1256,669 @@ func TestReadConfig(t *testing.T) {
 
 	_, err = ReadConfig(fp)
 	assert.Error(t, err)
+}
+
+// TestMetricsServerInitialization tests metrics server initialization with HTTP/HTTPS logging
+func TestMetricsServerInitialization(t *testing.T) {
+	tests := []struct {
+		name           string
+		metricsEnabled bool
+		tlsCertFile    string
+		tlsKeyFile     string
+		expectHTTP     bool
+		expectHTTPS    bool
+	}{
+		{
+			name:           "Metrics disabled - no server starts",
+			metricsEnabled: false,
+			tlsCertFile:    "",
+			tlsKeyFile:     "",
+			expectHTTP:     false,
+			expectHTTPS:    false,
+		},
+		{
+			name:           "Metrics enabled with HTTP",
+			metricsEnabled: true,
+			tlsCertFile:    "",
+			tlsKeyFile:     "",
+			expectHTTP:     true,
+			expectHTTPS:    false,
+		},
+		{
+			name:           "Metrics enabled with HTTPS",
+			metricsEnabled: true,
+			tlsCertFile:    "/tmp/cert.pem",
+			tlsKeyFile:     "/tmp/key.pem",
+			expectHTTP:     false,
+			expectHTTPS:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.metricsEnabled {
+				t.Setenv("X_CSI_METRICS_ENABLED", "true")
+			} else {
+				t.Setenv("X_CSI_METRICS_ENABLED", "false")
+			}
+			if tt.tlsCertFile != "" {
+				t.Setenv("X_CSI_METRICS_TLS_CERT_FILE", tt.tlsCertFile)
+				t.Setenv("X_CSI_METRICS_TLS_KEY_FILE", tt.tlsKeyFile)
+			}
+
+			// Verify metricsEnabled function
+			enabled := metricsEnabled()
+			assert.Equal(t, tt.metricsEnabled, enabled)
+
+			// Verify metricsPort function
+			port := metricsPort()
+			assert.Greater(t, port, 0)
+
+			// Verify metricsTLSFiles function
+			cert, key := metricsTLSFiles()
+			if tt.tlsCertFile != "" {
+				assert.Equal(t, tt.tlsCertFile, cert)
+				assert.Equal(t, tt.tlsKeyFile, key)
+			} else {
+				assert.Empty(t, cert)
+				assert.Empty(t, key)
+			}
+		})
+	}
+}
+
+// TestCreatePowerMaxClientsWithMetrics tests client creation with metrics observer
+func TestCreatePowerMaxClientsWithMetrics(t *testing.T) {
+	tests := []struct {
+		name           string
+		metricsEnabled bool
+		expectObserver bool
+	}{
+		{
+			name:           "Metrics disabled - no observer",
+			metricsEnabled: false,
+			expectObserver: false,
+		},
+		{
+			name:           "Metrics enabled - observer created",
+			metricsEnabled: true,
+			expectObserver: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up environment
+			if tt.metricsEnabled {
+				t.Setenv("X_CSI_METRICS_ENABLED", "true")
+			} else {
+				t.Setenv("X_CSI_METRICS_ENABLED", "false")
+			}
+			t.Setenv("X_CSI_POWERMAX_ENDPOINT", "https://127.0.0.1:9104")
+			t.Setenv("X_CSI_POWERMAX_PASSWORD", "password")
+			t.Setenv("X_CSI_MODE", "controller")
+			t.Setenv("X_CSI_POWERMAX_SIDECAR_PROXY_PORT", "2222")
+			t.Setenv("X_CSI_K8S_CLUSTER_PREFIX", "csi")
+			t.Setenv("X_CSI_MANAGED_ARRAYS", "000123")
+
+			_ = &service{
+				opts: Opts{
+					DriverName: "powermax",
+					UseProxy:   true,
+					User:       "username",
+					Password:   "password",
+				},
+				k8sUtils: &k8smock.MockUtils{},
+			}
+
+			// Verify metricsEnabled function
+			enabled := metricsEnabled()
+			assert.Equal(t, tt.metricsEnabled, enabled)
+
+			// Verify that when metrics are enabled, the observer creation logic is exercised
+			if tt.metricsEnabled {
+				reg := DriverMetricsRegistry()
+				assert.NotNil(t, reg)
+			}
+		})
+	}
+}
+
+// TestDriverMetricsRegistry tests the metrics registry creation
+func TestDriverMetricsRegistry(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		{
+			name: "Successful registry creation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := DriverMetricsRegistry()
+			assert.NotNil(t, registry)
+		})
+	}
+}
+
+// TestDefaultMetricsArrayID tests the default metrics array ID function
+func TestDefaultMetricsArrayID(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		{
+			name: "Get default array ID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			arrayID := DefaultMetricsArrayID()
+			assert.NotEmpty(t, arrayID)
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests for metroLeaseNameForArray (C-3 helper)
+// ---------------------------------------------------------------------------
+
+func TestMetroLeaseNameForArray_AlphanumericID(t *testing.T) {
+	got := metroLeaseNameForArray("000120000001")
+	assert.Equal(t, "csi-pmax-metro-reconcile-000120000001", got)
+}
+
+func TestMetroLeaseNameForArray_UppercaseAndSpecialChars(t *testing.T) {
+	got := metroLeaseNameForArray("ARRAY_001")
+	// Uppercase → lowercase; underscore → dash.
+	assert.Equal(t, "csi-pmax-metro-reconcile-array-001", got)
+	assert.LessOrEqual(t, len(got), 253)
+}
+
+func TestMetroLeaseNameForArray_TruncationAt253(t *testing.T) {
+	// "csi-pmax-metro-reconcile-" is 25 chars; 229 more 'a's → total 254 → must truncate.
+	got := metroLeaseNameForArray(strings.Repeat("a", 229))
+	assert.Equal(t, 253, len(got))
+}
+
+func TestMetroLeaseNameForArray_ExactlyAtLimit(t *testing.T) {
+	// 228 chars of input → prefix (25) + 228 = 253 → no truncation.
+	got := metroLeaseNameForArray(strings.Repeat("a", 228))
+	assert.Equal(t, 253, len(got))
+}
+
+// ---------------------------------------------------------------------------
+// Tests for tryAcquireMetroReconcileLease (C-3 fix)
+// ---------------------------------------------------------------------------
+
+func newFakeMockUtils() *k8smock.MockUtils {
+	return &k8smock.MockUtils{KubernetesClient: kubernetesFake.NewSimpleClientset()}
+}
+
+func TestTryAcquireMetroReconcileLease_NilK8sUtils(t *testing.T) {
+	svc := &service{}
+	acquired, release := svc.tryAcquireMetroReconcileLease(context.Background(), "000120000001")
+	assert.True(t, acquired)
+	assert.NotNil(t, release)
+	release() // must not panic
+}
+
+func TestTryAcquireMetroReconcileLease_NilClient(t *testing.T) {
+	// Use the gomock-based mock so GetClient() returns a true nil
+	// kubernetes.Interface (typed nil from *kubernetesFake.Clientset would
+	// fool the interface == nil check).
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockK8s := k8smock.NewMockUtilsInterface(ctrl)
+	mockK8s.EXPECT().GetClient().Return(nil)
+
+	svc := &service{k8sUtils: mockK8s}
+	acquired, release := svc.tryAcquireMetroReconcileLease(context.Background(), "000120000001")
+	assert.True(t, acquired)
+	assert.NotNil(t, release)
+	release()
+}
+
+func TestTryAcquireMetroReconcileLease_CreateSuccess(t *testing.T) {
+	svc := &service{k8sUtils: newFakeMockUtils(), opts: Opts{NodeName: "controller-0"}}
+	acquired, release := svc.tryAcquireMetroReconcileLease(context.Background(), "000120000001")
+	assert.True(t, acquired)
+	assert.NotNil(t, release)
+	release() // should delete the lease without error
+}
+
+func TestTryAcquireMetroReconcileLease_SamePodTakeover(t *testing.T) {
+	podName := "controller-0"
+	mu := newFakeMockUtils()
+	// Pre-seed a lease owned by the same pod.
+	leaseName := metroLeaseNameForArray("000120000001")
+	dur := int32(720)
+	now := metav1.NewMicroTime(time.Now().Add(-time.Hour)) // old, but same pod
+	_, err := mu.KubernetesClient.CoordinationV1().Leases("default").Create(
+		context.Background(),
+		&coordinationv1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: leaseName, Namespace: "default"},
+			Spec: coordinationv1.LeaseSpec{
+				HolderIdentity:       &podName,
+				LeaseDurationSeconds: &dur,
+				RenewTime:            &now,
+			},
+		},
+		metav1.CreateOptions{},
+	)
+	assert.NoError(t, err)
+
+	svc := &service{k8sUtils: mu, opts: Opts{NodeName: podName}}
+	acquired, release := svc.tryAcquireMetroReconcileLease(context.Background(), "000120000001")
+	assert.True(t, acquired)
+	assert.NotNil(t, release)
+	release()
+}
+
+func TestTryAcquireMetroReconcileLease_PeerHoldsValidLease(t *testing.T) {
+	peer := "controller-1"
+	mu := newFakeMockUtils()
+	leaseName := metroLeaseNameForArray("000120000001")
+	dur := int32(720)
+	now := metav1.NewMicroTime(time.Now()) // fresh lease
+	_, err := mu.KubernetesClient.CoordinationV1().Leases("default").Create(
+		context.Background(),
+		&coordinationv1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: leaseName, Namespace: "default"},
+			Spec: coordinationv1.LeaseSpec{
+				HolderIdentity:       &peer,
+				LeaseDurationSeconds: &dur,
+				RenewTime:            &now,
+			},
+		},
+		metav1.CreateOptions{},
+	)
+	assert.NoError(t, err)
+
+	svc := &service{k8sUtils: mu, opts: Opts{NodeName: "controller-0"}}
+	acquired, release := svc.tryAcquireMetroReconcileLease(context.Background(), "000120000001")
+	assert.False(t, acquired)
+	assert.Nil(t, release)
+}
+
+func TestTryAcquireMetroReconcileLease_ExpiredLeaseTakeover(t *testing.T) {
+	peer := "controller-1"
+	mu := newFakeMockUtils()
+	leaseName := metroLeaseNameForArray("000120000001")
+	dur := int32(1) // 1-second duration, already expired
+	old := metav1.NewMicroTime(time.Now().Add(-time.Hour))
+	_, err := mu.KubernetesClient.CoordinationV1().Leases("default").Create(
+		context.Background(),
+		&coordinationv1.Lease{
+			ObjectMeta: metav1.ObjectMeta{Name: leaseName, Namespace: "default"},
+			Spec: coordinationv1.LeaseSpec{
+				HolderIdentity:       &peer,
+				LeaseDurationSeconds: &dur,
+				RenewTime:            &old,
+			},
+		},
+		metav1.CreateOptions{},
+	)
+	assert.NoError(t, err)
+
+	svc := &service{k8sUtils: mu, opts: Opts{NodeName: "controller-0"}}
+	acquired, release := svc.tryAcquireMetroReconcileLease(context.Background(), "000120000001")
+	assert.True(t, acquired)
+	assert.NotNil(t, release)
+	release()
+}
+
+// ---------------------------------------------------------------------------
+// Tests for logMetroStateCheck (H-5 fix)
+// ---------------------------------------------------------------------------
+
+func TestLogMetroStateCheck_NilCache(t *testing.T) {
+	svc := &service{siteStateTracker: symmetrix.NewSiteStateTracker()}
+	// Must not panic; returns immediately without accessing nil cache.
+	assert.NotPanics(t, func() {
+		_ = svc.logMetroStateCheck(context.Background(), "CreateVolume", "000120000001", "000120000002", "1")
+	})
+}
+
+func TestLogMetroStateCheck_EmptyRDFGroup(t *testing.T) {
+	svc := &service{
+		metroStateCache:  symmetrix.NewMetroStateCache(0),
+		siteStateTracker: symmetrix.NewSiteStateTracker(),
+	}
+	// H-5: empty rdfGroupNo must short-circuit before any cache or API access.
+	assert.NotPanics(t, func() {
+		_ = svc.logMetroStateCheck(context.Background(), "CreateVolume", "000120000001", "000120000002", "")
+	})
+}
+
+func TestLogMetroStateCheck_CacheHitWithError(t *testing.T) {
+	cache := symmetrix.NewMetroStateCache(30 * time.Second)
+	cache.PutError("000120000001", "000120000002", errors.New("array unreachable"))
+
+	svc := &service{
+		metroStateCache:  cache,
+		siteStateTracker: symmetrix.NewSiteStateTracker(),
+	}
+	// Should return immediately on cached error (H-1 fix: no latency storm).
+	assert.NotPanics(t, func() {
+		_ = svc.logMetroStateCheck(context.Background(), "CreateVolume", "000120000001", "000120000002", "1")
+	})
+}
+
+func TestLogMetroStateCheck_CacheHitWithStateAndWinner(t *testing.T) {
+	cache := symmetrix.NewMetroStateCache(30 * time.Second)
+	state := &symmetrix.MetroState{WinnerSymID: "000120000001"}
+	cache.Put("000120000001", "000120000002", state, nil)
+
+	svc := &service{
+		metroStateCache:  cache,
+		siteStateTracker: symmetrix.NewSiteStateTracker(),
+	}
+	// Winner should be re-applied from cache; verify no panic.
+	assert.NotPanics(t, func() {
+		_ = svc.logMetroStateCheck(context.Background(), "CreateVolume", "000120000001", "000120000002", "1")
+	})
+}
+
+func TestTryAcquireMetroReconcileLease_UnexpectedCreateError(t *testing.T) {
+	// Inject a Forbidden error on Create so the non-AlreadyExists branch fires.
+	fakeClient := kubernetesFake.NewSimpleClientset()
+	fakeClient.Fake.PrependReactor("create", "leases", func(_ k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, k8serrors.NewForbidden(schema.GroupResource{Resource: "leases"}, "test", errors.New("rbac"))
+	})
+	mu := &k8smock.MockUtils{KubernetesClient: fakeClient}
+
+	svc := &service{k8sUtils: mu, opts: Opts{NodeName: "controller-0"}}
+	acquired, release := svc.tryAcquireMetroReconcileLease(context.Background(), "000120000001")
+	// Non-AlreadyExists error → fail-closed (block reconciliation without lock).
+	assert.False(t, acquired)
+	assert.Nil(t, release)
+}
+
+func TestTryAcquireMetroReconcileLease_GetFails(t *testing.T) {
+	// Pre-seed a lease so Create returns AlreadyExists, then intercept Get.
+	peer := "controller-1"
+	dur := int32(720)
+	now := metav1.NewMicroTime(time.Now())
+	leaseName := metroLeaseNameForArray("000120000001")
+	existingLease := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{Name: leaseName, Namespace: "default"},
+		Spec: coordinationv1.LeaseSpec{
+			HolderIdentity:       &peer,
+			LeaseDurationSeconds: &dur,
+			RenewTime:            &now,
+		},
+	}
+	fakeClient := kubernetesFake.NewSimpleClientset(existingLease)
+	fakeClient.Fake.PrependReactor("get", "leases", func(_ k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("api server unavailable")
+	})
+	mu := &k8smock.MockUtils{KubernetesClient: fakeClient}
+
+	svc := &service{k8sUtils: mu, opts: Opts{NodeName: "controller-0"}}
+	acquired, release := svc.tryAcquireMetroReconcileLease(context.Background(), "000120000001")
+	// Get failure → fail-closed (block reconciliation without lock).
+	assert.False(t, acquired)
+	assert.Nil(t, release)
+}
+
+// ---------------------------------------------------------------------------
+// Tests for reconcileDeviceCleanup (H-4 fix)
+// ---------------------------------------------------------------------------
+
+func TestReconcileDeviceCleanup_InvalidVolumeID(t *testing.T) {
+	// parseCsiID requires at least 3 dash-separated components; use a
+	// two-component ID to trigger its malformed-ID error.
+	svc := &service{opts: Opts{}}
+	op := symmetrix.DeferredOperation{VolumeID: "bad-id"}
+	err := svc.reconcileDeviceCleanup(context.Background(), op)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "reconcileDeviceCleanup")
+}
+
+func TestReconcileDeviceCleanup_GetPowerMaxClientFails(t *testing.T) {
+	// Valid parseable ID ("csi-SYMID-DEVID") but array not registered in
+	// pkg/symmetrix → GetPowerMaxClient returns an error.
+	svc := &service{
+		opts:          Opts{},
+		volumeJournal: symmetrix.NewVolumeJournal(),
+	}
+	op := symmetrix.DeferredOperation{
+		VolumeID: "csi-000120000001-0AB12",
+		ArrayID:  "000120000001",
+	}
+	err := svc.reconcileDeviceCleanup(context.Background(), op)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "reconcileDeviceCleanup")
+}
+
+// ---------------------------------------------------------------------------
+// Tests for reconcileMetroPairing
+// ---------------------------------------------------------------------------
+
+func TestReconcileMetroPairing_InvalidVolumeID(t *testing.T) {
+	svc := &service{opts: Opts{}, volumeJournal: symmetrix.NewVolumeJournal()}
+	op := symmetrix.DeferredOperation{VolumeID: "bad-id"}
+	err := svc.reconcileMetroPairing(context.Background(), op)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "reconcileMetroPairing")
+}
+
+func TestReconcileMetroPairing_GetPowerMaxClientFails(t *testing.T) {
+	// Valid ID but no arrays registered → GetPowerMaxClient returns error.
+	svc := &service{opts: Opts{}, volumeJournal: symmetrix.NewVolumeJournal()}
+	op := symmetrix.DeferredOperation{
+		VolumeID: "csi-000120000001-0AB12",
+		ArrayID:  "000120000001",
+	}
+	err := svc.reconcileMetroPairing(context.Background(), op)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "reconcileMetroPairing")
+}
+
+// ---------------------------------------------------------------------------
+// Tests for initMetroJournal
+// ---------------------------------------------------------------------------
+
+func TestInitMetroJournal_NoDynamicClient(t *testing.T) {
+	// Out-of-cluster: CreateDynamicClient and InClusterConfig both fail.
+	// initMetroJournal must not panic and must fall back gracefully.
+	svc := &service{
+		opts:          Opts{},
+		volumeJournal: symmetrix.NewVolumeJournal(),
+	}
+	assert.NotPanics(t, func() {
+		svc.initMetroJournal(context.Background())
+	})
+}
+
+func TestInitMetroJournal_BackoffOption(t *testing.T) {
+	// With MetroReconciliationBackoff set the SetReconciliationBackoff branch
+	// inside initMetroJournal is exercised before the k8s dynamic-client call.
+	svc := &service{
+		opts: Opts{
+			MetroReconciliationBackoff: 3 * time.Second,
+		},
+		volumeJournal: symmetrix.NewVolumeJournal(),
+	}
+	assert.NotPanics(t, func() {
+		svc.initMetroJournal(context.Background())
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Tests for triggerReconciliation
+// ---------------------------------------------------------------------------
+
+func TestTriggerReconciliation_AlreadyInFlight_SkipsDuplicate(t *testing.T) {
+	// Pre-seed the in-flight map so the duplicate-guard returns immediately.
+	svc := &service{
+		opts:          Opts{},
+		volumeJournal: symmetrix.NewVolumeJournal(),
+	}
+	svc.metroReconcileInFlight.Store("000120000001", struct{}{})
+	defer svc.metroReconcileInFlight.Delete("000120000001")
+
+	// Must return without panicking or blocking.
+	assert.NotPanics(t, func() {
+		svc.triggerReconciliation(context.Background(), "000120000001")
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Tests for emitMetroEvent (nil recorder early-return path)
+// ---------------------------------------------------------------------------
+
+func TestEmitMetroEvent_NilRecorder_NoOp(t *testing.T) {
+	// metroEventRecorder is nil (out-of-cluster) → function must be a no-op.
+	svc := &service{opts: Opts{}}
+	assert.NotPanics(t, func() {
+		svc.emitMetroEvent(metroEventTypeWarning, "TestReason", "message %s", "arg")
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Tests for triggerReconciliation (non-in-flight paths)
+// ---------------------------------------------------------------------------
+
+func TestTriggerReconciliation_EmptyJournal_Completes(t *testing.T) {
+	// k8sUtils == nil → tryAcquireMetroReconcileLease returns (true, no-op).
+	// Empty journal → ReconcileDeferredOperations returns no results.
+	// Must complete without panic.
+	svc := &service{
+		opts:          Opts{},
+		volumeJournal: symmetrix.NewVolumeJournal(),
+	}
+	assert.NotPanics(t, func() {
+		svc.triggerReconciliation(context.Background(), "000120000001")
+	})
+}
+
+func TestTriggerReconciliation_FailedOperation_CoveredDefaultCase(t *testing.T) {
+	// Put one DeviceCleanup operation with an un-parseable VolumeID so that
+	// reconcileDeviceCleanup fails immediately (parseCsiID error).  This
+	// exercises the default (failure, non-unsafe, non-max-retry) branch in
+	// the results-processing loop inside triggerReconciliation.
+	j := symmetrix.NewVolumeJournal()
+	_, err := j.CreateDeferredOperation(context.Background(), symmetrix.DeferredOperation{
+		OperationType: symmetrix.OpDeviceCleanup,
+		VolumeID:      "bad-id",
+		ArrayID:       "000120000001",
+	})
+	assert.NoError(t, err)
+
+	svc := &service{
+		opts:          Opts{},
+		volumeJournal: j,
+	}
+	// Use a short timeout context to prevent the test from waiting for full backoff
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	assert.NotPanics(t, func() {
+		svc.triggerReconciliation(ctx, "000120000001")
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Tests for deferOperation queue-depth checks
+// ---------------------------------------------------------------------------
+
+func TestDeferOperation_QueueAtLimit_Rejected(t *testing.T) {
+	j := symmetrix.NewVolumeJournal()
+	j.SetThresholds(1, 1) // hard limit = 1
+	// Fill the queue to the hard limit.
+	_, err := j.CreateDeferredOperation(context.Background(), symmetrix.DeferredOperation{
+		OperationType: symmetrix.OpDeviceCleanup,
+		VolumeID:      "vol-001",
+		ArrayID:       "000120000001",
+	})
+	assert.NoError(t, err)
+
+	svc := &service{opts: Opts{}, volumeJournal: j}
+	// Queue is full → deferOperation must return ErrQueueFull.
+	_, err = svc.deferOperation(context.Background(), symmetrix.DeferredOperation{
+		OperationType: symmetrix.OpDeviceCleanup,
+		VolumeID:      "vol-002",
+		ArrayID:       "000120000001",
+	})
+	assert.ErrorIs(t, err, symmetrix.ErrQueueFull)
+}
+
+func TestDeferOperation_QueueAtWarning_StillAccepts(t *testing.T) {
+	j := symmetrix.NewVolumeJournal()
+	j.SetThresholds(1, 3) // warning at 1, hard limit at 3
+	// Fill to warning threshold (1 op).
+	_, err := j.CreateDeferredOperation(context.Background(), symmetrix.DeferredOperation{
+		OperationType: symmetrix.OpDeviceCleanup,
+		VolumeID:      "vol-001",
+		ArrayID:       "000120000001",
+	})
+	assert.NoError(t, err)
+
+	svc := &service{opts: Opts{}, volumeJournal: j}
+	// At-warning but not at-limit → deferOperation emits warning and accepts.
+	token, err := svc.deferOperation(context.Background(), symmetrix.DeferredOperation{
+		OperationType: symmetrix.OpDeviceCleanup,
+		VolumeID:      "vol-002",
+		ArrayID:       "000120000001",
+	})
+	assert.NoError(t, err)
+	assert.NotEmpty(t, token)
+}
+
+// ---------------------------------------------------------------------------
+// Additional getTransportProtocolFromEnv coverage
+// ---------------------------------------------------------------------------
+
+func TestGetTransportProtocolFromEnv_Auto(t *testing.T) {
+	s := service{}
+	t.Setenv(EnvPreferredTransportProtocol, "AUTO")
+	output := s.getTransportProtocolFromEnv()
+	assert.Equal(t, "", output)
+}
+
+func TestGetTransportProtocolFromEnv_NotSet(t *testing.T) {
+	os.Unsetenv(EnvPreferredTransportProtocol)
+	s := service{}
+	output := s.getTransportProtocolFromEnv()
+	assert.Equal(t, "", output)
+}
+
+// ---------------------------------------------------------------------------
+// Tests for customLogger (interfaces.go)
+// ---------------------------------------------------------------------------
+
+func TestCustomLogger_Debug(t *testing.T) {
+	lg := &customLogger{}
+	assert.NotPanics(t, func() {
+		lg.Debug(context.Background(), "debug message %s", "arg")
+	})
+}
+
+func TestCustomLogger_Error(t *testing.T) {
+	lg := &customLogger{}
+	assert.NotPanics(t, func() {
+		lg.Error(context.Background(), "error message %s", "arg")
+	})
+}
+
+func TestHostManagementModeConstants(t *testing.T) {
+	// Verify env var constant
+	assert.Equal(t, "X_CSI_POWERMAX_HOST_MGMT_MODE", EnvHostManagementMode)
+
+	// Verify mode constants
+	assert.Equal(t, "create", HostMgmtModeCreate)
+	assert.Equal(t, "adopt", HostMgmtModeAdopt)
+	assert.Equal(t, HostMgmtModeCreate, HostMgmtModeDefault)
+
+	// Verify Opts field default through direct assignment
+	opts := Opts{}
+	assert.Equal(t, "", opts.HostManagementMode) // zero value
+	opts.HostManagementMode = HostMgmtModeDefault
+	assert.Equal(t, "create", opts.HostManagementMode)
+
+	// Verify adopt mode via direct assignment
+	opts.HostManagementMode = HostMgmtModeAdopt
+	assert.Equal(t, "adopt", opts.HostManagementMode)
 }

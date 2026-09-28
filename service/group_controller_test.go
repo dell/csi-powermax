@@ -34,7 +34,8 @@ import (
 func setupGetStorageGroupAndSnapshot(c *mocks.MockPmaxClient, symID, sgName, snapName string) {
 	c.EXPECT().GetStorageGroup(gmock.Any(), symID, sgName).Times(1).Return(&types.StorageGroup{}, nil)
 	c.EXPECT().GetStorageGroupSnapshotSnapIDs(gmock.Any(), symID, sgName, snapName).Times(1).Return(
-		&types.SnapID{SnapIDs: []int64{12345}}, nil)
+		&types.SnapID{SnapIDs: []int64{12345}}, nil,
+	)
 	c.EXPECT().GetStorageGroupSnapshotSnap(gmock.Any(), symID, sgName, snapName, "12345").Times(1).Return(
 		&types.StorageGroupSnap{
 			Name: snapName,
@@ -42,7 +43,8 @@ func setupGetStorageGroupAndSnapshot(c *mocks.MockPmaxClient, symID, sgName, sna
 				{Name: "011AB", Capacity: 1000, CapacityGb: 1.0},
 				{Name: "011CD", Capacity: 2000, CapacityGb: 2.0},
 			},
-		}, nil)
+		}, nil,
+	)
 }
 
 func setupNotFoundErrorResponse() *types.Error {
@@ -292,7 +294,8 @@ func TestGroupControllerGetCapabilities(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Len(t, resp.Capabilities, 1)
-	assert.Equal(t,
+	assert.Equal(
+		t,
 		csi.GroupControllerServiceCapability_RPC_CREATE_DELETE_GET_VOLUME_GROUP_SNAPSHOT,
 		resp.Capabilities[0].GetRpc().GetType(),
 	)
@@ -396,7 +399,8 @@ func Test_service_CreateVolumeGroupSnapshot(t *testing.T) {
 						SymmetrixCapability: []types.SymmetrixCapability{
 							{SymmetrixID: sym1, SnapVxCapable: true},
 						},
-					}, nil)
+					}, nil,
+				)
 				c.EXPECT().GetVolumeByID(gmock.Any(), sym1, dev1).Times(1).Return(nil, errors.New("not found"))
 			},
 			wantErr:    true,
@@ -415,14 +419,16 @@ func Test_service_CreateVolumeGroupSnapshot(t *testing.T) {
 						SymmetrixCapability: []types.SymmetrixCapability{
 							{SymmetrixID: sym1, SnapVxCapable: true},
 						},
-					}, nil)
+					}, nil,
+				)
 				// Optimized: GetVolumeByID called only for first volume to discover SG
 				c.EXPECT().GetVolumeByID(gmock.Any(), sym1, dev1).Times(1).Return(
 					&types.Volume{
 						VolumeID:           dev1,
 						CapacityGB:         1.0,
 						StorageGroupIDList: []string{sgName},
-					}, nil)
+					}, nil,
+				)
 				// Optimized: GetVolumeIDListInStorageGroup called once to validate all volumes
 				c.EXPECT().GetVolumeIDListInStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return([]string{dev1, dev2}, nil)
 				// Idempotency check: snapshot does not exist yet
@@ -430,7 +436,8 @@ func Test_service_CreateVolumeGroupSnapshot(t *testing.T) {
 				c.EXPECT().CreateSnapshot(gmock.Any(), sym1, "csi-ABC-grp-snap1", gmock.Any(), int64(0)).Times(1).Return(nil)
 				// Optimized: GetStorageGroupSnapshotSnapIDs and GetStorageGroupSnapshotSnap called to get volume capacities
 				c.EXPECT().GetStorageGroupSnapshotSnapIDs(gmock.Any(), sym1, sgName, "csi-ABC-grp-snap1").Times(1).Return(
-					&types.SnapID{SnapIDs: []int64{12345}}, nil)
+					&types.SnapID{SnapIDs: []int64{12345}}, nil,
+				)
 				c.EXPECT().GetStorageGroupSnapshotSnap(gmock.Any(), sym1, sgName, "csi-ABC-grp-snap1", "12345").Times(1).Return(
 					&types.StorageGroupSnap{
 						Name: "csi-ABC-grp-snap1",
@@ -438,7 +445,8 @@ func Test_service_CreateVolumeGroupSnapshot(t *testing.T) {
 							{Name: dev1, Capacity: 1000, CapacityGb: 1.0},
 							{Name: dev2, Capacity: 2000, CapacityGb: 2.0},
 						},
-					}, nil)
+					}, nil,
+				)
 			},
 			wantErr: false,
 		},
@@ -455,19 +463,22 @@ func Test_service_CreateVolumeGroupSnapshot(t *testing.T) {
 						SymmetrixCapability: []types.SymmetrixCapability{
 							{SymmetrixID: sym1, SnapVxCapable: true},
 						},
-					}, nil)
+					}, nil,
+				)
 				// Optimized: GetVolumeByID called only for first volume to discover SG
 				c.EXPECT().GetVolumeByID(gmock.Any(), sym1, dev1).Times(1).Return(
 					&types.Volume{
 						VolumeID:           dev1,
 						CapacityGB:         1.0,
 						StorageGroupIDList: []string{sgName},
-					}, nil)
+					}, nil,
+				)
 				// Optimized: GetVolumeIDListInStorageGroup called once to validate all volumes
 				c.EXPECT().GetVolumeIDListInStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return([]string{dev1, dev2}, nil)
 				// Idempotency check: snapshot already exists on all volumes
 				c.EXPECT().GetStorageGroupSnapshotSnapIDs(gmock.Any(), sym1, sgName, "csi-ABC-grp-snap1").Times(1).Return(
-					&types.SnapID{SnapIDs: []int64{12345}}, nil)
+					&types.SnapID{SnapIDs: []int64{12345}}, nil,
+				)
 				c.EXPECT().GetStorageGroupSnapshotSnap(gmock.Any(), sym1, sgName, "csi-ABC-grp-snap1", "12345").Times(1).Return(
 					&types.StorageGroupSnap{
 						Name: "csi-ABC-grp-snap1",
@@ -475,7 +486,8 @@ func Test_service_CreateVolumeGroupSnapshot(t *testing.T) {
 							{Name: dev1, Capacity: 1000, CapacityGb: 1.0},
 							{Name: dev2, Capacity: 2000, CapacityGb: 2.0},
 						},
-					}, nil)
+					}, nil,
+				)
 				// CreateSnapshot should NOT be called
 			},
 			wantErr: false,
@@ -493,26 +505,30 @@ func Test_service_CreateVolumeGroupSnapshot(t *testing.T) {
 						SymmetrixCapability: []types.SymmetrixCapability{
 							{SymmetrixID: sym1, SnapVxCapable: true},
 						},
-					}, nil)
+					}, nil,
+				)
 				// Optimized: GetVolumeByID called only for first volume to discover SG
 				c.EXPECT().GetVolumeByID(gmock.Any(), sym1, dev1).Times(1).Return(
 					&types.Volume{
 						VolumeID:           dev1,
 						CapacityGB:         1.0,
 						StorageGroupIDList: []string{sgName},
-					}, nil)
+					}, nil,
+				)
 				// Optimized: GetVolumeIDListInStorageGroup called once to validate all volumes
 				c.EXPECT().GetVolumeIDListInStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return([]string{dev1, dev2}, nil)
 				// Snapshot exists but with fewer source volumes (partial match)
 				c.EXPECT().GetStorageGroupSnapshotSnapIDs(gmock.Any(), sym1, sgName, "csi-ABC-grp-snap1").Times(1).Return(
-					&types.SnapID{SnapIDs: []int64{12345}}, nil)
+					&types.SnapID{SnapIDs: []int64{12345}}, nil,
+				)
 				c.EXPECT().GetStorageGroupSnapshotSnap(gmock.Any(), sym1, sgName, "csi-ABC-grp-snap1", "12345").Times(1).Return(
 					&types.StorageGroupSnap{
 						Name: "csi-ABC-grp-snap1",
 						SourceVolume: []types.SourceVolume{
 							{Name: dev1, Capacity: 1000, CapacityGb: 1.0}, // Only one volume
 						},
-					}, nil)
+					}, nil,
+				)
 				// CreateSnapshot should NOT be called
 			},
 			wantErr:    true,
@@ -531,14 +547,16 @@ func Test_service_CreateVolumeGroupSnapshot(t *testing.T) {
 						SymmetrixCapability: []types.SymmetrixCapability{
 							{SymmetrixID: sym1, SnapVxCapable: true},
 						},
-					}, nil)
+					}, nil,
+				)
 				// Optimized: GetVolumeByID called only for first volume to discover SG
 				c.EXPECT().GetVolumeByID(gmock.Any(), sym1, dev1).Times(1).Return(
 					&types.Volume{
 						VolumeID:           dev1,
 						CapacityGB:         1.0,
 						StorageGroupIDList: []string{sgName},
-					}, nil)
+					}, nil,
+				)
 				// Optimized: GetVolumeIDListInStorageGroup called once to validate all volumes
 				c.EXPECT().GetVolumeIDListInStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return([]string{dev1}, nil)
 				// Idempotency check: snapshot does not exist yet
@@ -610,13 +628,12 @@ func Test_service_DeleteVolumeGroupSnapshot(t *testing.T) {
 			wantErrMsg: "required: GroupSnapshotId",
 		},
 		{
-			name: "invalid group snapshot ID format",
+			name: "invalid group snapshot ID format - returns OK for idempotency",
 			req: &csi.DeleteVolumeGroupSnapshotRequest{
 				GroupSnapshotId: "bad-format",
 			},
-			before:     func(_ *mocks.MockPmaxClient) {},
-			wantErr:    true,
-			wantErrMsg: "invalid group snapshot ID format",
+			before:  func(_ *mocks.MockPmaxClient) {},
+			wantErr: false,
 		},
 		{
 			name: "happy path - delete succeeds",
@@ -742,7 +759,8 @@ func Test_service_DeleteVolumeGroupSnapshot(t *testing.T) {
 			before: func(c *mocks.MockPmaxClient) {
 				c.EXPECT().GetStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return(&types.StorageGroup{}, nil)
 				c.EXPECT().GetStorageGroupSnapshotSnapIDs(gmock.Any(), sym1, sgName, snapName).Times(1).Return(
-					&types.SnapID{SnapIDs: []int64{12345}}, nil)
+					&types.SnapID{SnapIDs: []int64{12345}}, nil,
+				)
 				nf := &types.Error{Message: "Not Found", HTTPStatusCode: http.StatusNotFound}
 				c.EXPECT().GetStorageGroupSnapshotSnap(gmock.Any(), sym1, sgName, snapName, "12345").Times(1).Return(nil, nf)
 			},
@@ -756,7 +774,8 @@ func Test_service_DeleteVolumeGroupSnapshot(t *testing.T) {
 			before: func(c *mocks.MockPmaxClient) {
 				c.EXPECT().GetStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return(&types.StorageGroup{}, nil)
 				c.EXPECT().GetStorageGroupSnapshotSnapIDs(gmock.Any(), sym1, sgName, snapName).Times(1).Return(
-					&types.SnapID{SnapIDs: []int64{12345}}, nil)
+					&types.SnapID{SnapIDs: []int64{12345}}, nil,
+				)
 				c.EXPECT().GetStorageGroupSnapshotSnap(gmock.Any(), sym1, sgName, snapName, "12345").Times(1).Return(nil, errors.New("internal error"))
 			},
 			wantErr:    true,
@@ -770,7 +789,8 @@ func Test_service_DeleteVolumeGroupSnapshot(t *testing.T) {
 			before: func(c *mocks.MockPmaxClient) {
 				c.EXPECT().GetStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return(&types.StorageGroup{}, nil)
 				c.EXPECT().GetStorageGroupSnapshotSnapIDs(gmock.Any(), sym1, sgName, snapName).Times(1).Return(
-					&types.SnapID{SnapIDs: []int64{12345}}, nil)
+					&types.SnapID{SnapIDs: []int64{12345}}, nil,
+				)
 				c.EXPECT().GetStorageGroupSnapshotSnap(gmock.Any(), sym1, sgName, snapName, "12345").Times(1).Return(nil, nil)
 				c.EXPECT().DeleteSnapshotS(gmock.Any(), sym1, snapName, gmock.Any(), int64(0)).Times(1).Return(nil)
 			},
@@ -823,13 +843,13 @@ func Test_service_GetVolumeGroupSnapshot(t *testing.T) {
 			wantErrMsg: "required: GroupSnapshotId",
 		},
 		{
-			name: "invalid format",
+			name: "invalid format - returns NotFound",
 			req: &csi.GetVolumeGroupSnapshotRequest{
 				GroupSnapshotId: "invalid",
 			},
 			before:     func(_ *mocks.MockPmaxClient) {},
 			wantErr:    true,
-			wantErrMsg: "invalid group snapshot ID format",
+			wantErrMsg: "group snapshot invalid not found",
 		},
 		{
 			name: "snapshot not found",
@@ -840,7 +860,8 @@ func Test_service_GetVolumeGroupSnapshot(t *testing.T) {
 				c.EXPECT().GetStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return(&types.StorageGroup{}, nil)
 				c.EXPECT().GetVolumeIDListInStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return([]string{"011AB"}, nil)
 				c.EXPECT().GetStorageGroupSnapshotSnapIDs(gmock.Any(), sym1, sgName, snapName).Times(1).Return(
-					&types.SnapID{SnapIDs: []int64{}}, nil)
+					&types.SnapID{SnapIDs: []int64{}}, nil,
+				)
 			},
 			wantErr:    true,
 			wantErrMsg: "group snapshot",
@@ -854,7 +875,8 @@ func Test_service_GetVolumeGroupSnapshot(t *testing.T) {
 				c.EXPECT().GetStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return(&types.StorageGroup{}, nil)
 				c.EXPECT().GetVolumeIDListInStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return([]string{"011AB", "011CD"}, nil)
 				c.EXPECT().GetStorageGroupSnapshotSnapIDs(gmock.Any(), sym1, sgName, snapName).Times(1).Return(
-					&types.SnapID{SnapIDs: []int64{12345}}, nil)
+					&types.SnapID{SnapIDs: []int64{12345}}, nil,
+				)
 				c.EXPECT().GetStorageGroupSnapshotSnap(gmock.Any(), sym1, sgName, snapName, "12345").Times(1).Return(
 					&types.StorageGroupSnap{
 						Name: snapName,
@@ -862,7 +884,8 @@ func Test_service_GetVolumeGroupSnapshot(t *testing.T) {
 							{Name: "011AB", Capacity: 1000, CapacityGb: 1.0},
 							{Name: "011CD", Capacity: 2000, CapacityGb: 2.0},
 						},
-					}, nil)
+					}, nil,
+				)
 			},
 			wantErr:     false,
 			wantReady:   true,
@@ -877,7 +900,8 @@ func Test_service_GetVolumeGroupSnapshot(t *testing.T) {
 				c.EXPECT().GetStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return(&types.StorageGroup{}, nil)
 				c.EXPECT().GetVolumeIDListInStorageGroup(gmock.Any(), sym1, sgName).Times(1).Return([]string{"011AB", "011CD"}, nil)
 				c.EXPECT().GetStorageGroupSnapshotSnapIDs(gmock.Any(), sym1, sgName, snapName).Times(1).Return(
-					&types.SnapID{SnapIDs: []int64{12345}}, nil)
+					&types.SnapID{SnapIDs: []int64{12345}}, nil,
+				)
 				c.EXPECT().GetStorageGroupSnapshotSnap(gmock.Any(), sym1, sgName, snapName, "12345").Times(1).Return(
 					&types.StorageGroupSnap{
 						Name: snapName,
@@ -885,7 +909,8 @@ func Test_service_GetVolumeGroupSnapshot(t *testing.T) {
 							{Name: "011AB", Capacity: 1000, CapacityGb: 1.0},
 							// Note: 011CD is missing from SourceVolume, simulating partial snapshot
 						},
-					}, nil)
+					}, nil,
+				)
 			},
 			wantErr:     false,
 			wantReady:   false,

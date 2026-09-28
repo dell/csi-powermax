@@ -39,7 +39,6 @@ var ManifestSemver string
 
 // main is ignored when this package is built as a go plug-in
 func main() {
-	setEnvsFunc()
 	initFlagsFunc()
 
 	if ManifestSemver != "" {
@@ -88,14 +87,6 @@ var runWithLeaderElectionFunc = func(clientSet kubernetes.Interface, lockName st
 
 var getKubeClientSetFunc = func(kubeconfigFilepath string) (kubernetes.Interface, error) {
 	return k8sutils.CreateKubeClientSet(kubeconfigFilepath)
-}
-
-var setEnvsFunc = func() {
-	// Always set X_CSI_DEBUG to false irrespective of what user has specified
-	_ = os.Setenv(gocsi.EnvVarDebug, "false")
-	// We always want to enable Request and Response logging (no reason for users to control this)
-	_ = os.Setenv(gocsi.EnvVarReqLogging, "true")
-	_ = os.Setenv(gocsi.EnvVarRepLogging, "true")
 }
 
 var initFlagsFunc = func() {

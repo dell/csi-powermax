@@ -48,6 +48,12 @@ parameters:
   # secret will be used
   # Optional: false
   # Example: "000000000001"
+  #
+  # Multi-Array Zone Support:
+  # For multi-array zone configurations, you can optionally specify arrayID
+  # to pin to a specific array instead of capacity-based selection.
+  # Example:
+  # SYMID: "000000000001"
   SYMID: <SYMID>
   # Name of Service Level on PowerMax array that should be used for provisioning
   # If not provided, the values specified in the secret will be used

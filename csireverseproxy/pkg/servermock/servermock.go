@@ -39,7 +39,8 @@ func GetHandler() http.Handler {
 			} else {
 				getRouter().ServeHTTP(w, r)
 			}
-		})
+		},
+	)
 	return handler
 }
 
@@ -58,22 +59,22 @@ func getRouter() http.Handler {
 	return router
 }
 
-func handleVolume(w http.ResponseWriter, r *http.Request) {
+func handleVolume(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{ "id": "00000000-1111-2abc-def3-44gh55ij66kl_0" }`))
 }
 
-func handleSymmCapabilities(w http.ResponseWriter, r *http.Request) {
+func handleSymmCapabilities(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("{\"symmetrixCapability\":[{\"symmetrixId\":\"000000000000\",\"snapVxCapable\":true,\"rdfCapable\":true,\"virtualWitnessCapable\":false}]}"))
 }
 
-func handleVersion(w http.ResponseWriter, r *http.Request) {
+func handleVersion(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{ "version": "V9.1.0.2" }`))
 }
 
-func handleSymm(w http.ResponseWriter, r *http.Request) {
+func handleSymm(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	data := `{"symmetrixId": [ "000197802104", "000197900046", "000197900047" ]}`
 	_, _ = w.Write([]byte(data))

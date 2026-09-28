@@ -27,6 +27,7 @@ import (
 	mock_config "github.com/dell/csi-powermax/csireverseproxy/v2/pkg/config/mocks"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8smock"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
+	"github.com/dell/csmlog"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -51,7 +52,7 @@ func TestMain(m *testing.M) {
 	}
 	err := utils.RemoveTempFiles()
 	if err != nil {
-		log.Fatalf("Failed to cleanup temp files. (%s)", err.Error())
+		csmlog.Fatalf("Failed to cleanup temp files. (%s)", err.Error())
 		status = 1
 	}
 	os.Exit(status)
@@ -779,7 +780,9 @@ func TestProxyConfig_ParseConfigFromSecret(t *testing.T) {
 					},
 				},
 			},
-			expectedErrorMessage: "primary endpoint not configured for array: test-symm-id",
+			// The sole configured array is skipped (its specific error is
+			// logged, not returned), leaving zero usable arrays.
+			expectedErrorMessage: "no valid storage arrays configured: all 1 configured array(s) failed validation",
 		},
 		{
 			name: "Invalid config with primary endpoint not among management servers",
@@ -799,7 +802,9 @@ func TestProxyConfig_ParseConfigFromSecret(t *testing.T) {
 					},
 				},
 			},
-			expectedErrorMessage: fmt.Sprintf("primary endpoint: %s for array: %s not present among management endpoint addresses", "https://example.com", "test-symm-id"),
+			// Same reasoning: the sole configured array is skipped, leaving
+			// zero usable arrays.
+			expectedErrorMessage: "no valid storage arrays configured: all 1 configured array(s) failed validation",
 		},
 		{
 			name: "Valid config with multiple arrays and multiple management servers",
@@ -937,7 +942,12 @@ func TestProxyConfig_GetAuthorizedArraysFromSecret(t *testing.T) {
 					},
 				},
 			},
-			expectedError: fmt.Errorf("primary endpoint not configured for array: test-symm-id"),
+			// A single malformed array with no other valid arrays in the
+			// config results in zero usable arrays (Requirement 1:
+			// the malformed array itself is skipped with a logged error
+			// rather than aborting parsing, but if it was the only array
+			// configured, there is nothing left to serve).
+			expectedError: fmt.Errorf("no valid storage arrays configured: all %d configured array(s) failed validation", 1),
 		},
 		{
 			name:     "Invalid config with primary endpoint not among management servers",
@@ -959,7 +969,9 @@ func TestProxyConfig_GetAuthorizedArraysFromSecret(t *testing.T) {
 					},
 				},
 			},
-			expectedError: fmt.Errorf("primary endpoint: %s for array: %s not present among management endpoint addresses", "https://example.com", "test-symm-id"),
+			// Same reasoning as above: the sole configured array is skipped,
+			// leaving zero usable arrays.
+			expectedError: fmt.Errorf("no valid storage arrays configured: all %d configured array(s) failed validation", 1),
 		},
 		{
 			name:     "Valid config with multiple arrays and multiple management servers",
@@ -1050,9 +1062,9 @@ func TestManagementServer_DeepCopy(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			copy := tc.managementServer.DeepCopy()
-			if !reflect.DeepEqual(tc.expectedCopy, *copy) {
-				t.Errorf("Expected copy: %+v, but got: %+v", tc.expectedCopy, *copy)
+			copied := tc.managementServer.DeepCopy()
+			if !reflect.DeepEqual(tc.expectedCopy, *copied) {
+				t.Errorf("Expected copy: %+v, but got: %+v", tc.expectedCopy, *copied)
 			}
 		})
 	}
@@ -1132,7 +1144,7 @@ func TestProxyConfig_GetManagementServerCredentials(t *testing.T) {
 func TestReadParamsConfigMapFromPath(t *testing.T) {
 	type args struct {
 		configFilePath string
-		vcp            ConfigManager
+		vcp            Manager
 	}
 	tests := []struct {
 		name    string
@@ -1153,8 +1165,8 @@ func TestReadParamsConfigMapFromPath(t *testing.T) {
 			name: "valid config file path",
 			args: args{
 				configFilePath: "./testing",
-				vcp: func() ConfigManager {
-					m := mock_config.NewMockConfigManager(gomock.NewController(t))
+				vcp: func() Manager {
+					m := mock_config.NewMockManager(gomock.NewController(t))
 					m.EXPECT().SetConfigName("testing").Times(1)
 					m.EXPECT().SetConfigType("yaml").Times(1)
 					m.EXPECT().AddConfigPath(".").Times(1)

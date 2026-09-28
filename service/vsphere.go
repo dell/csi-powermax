@@ -26,6 +26,8 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/dell/csmlog"
+
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/mo"
@@ -133,12 +135,12 @@ func (vmh *VMHost) findVM(targetMACAddress string) (vm *object.VirtualMachine, e
 		for _, vm := range allVMs {
 			VMMac, err := vmh.getMACAddressOfVM(vm)
 			if err != nil {
-				log.Debugf("Could not get MAC Address of VM (%v), datacenter (%v)", vm, datacenter)
+				csmlog.Debugf("Could not get MAC Address of VM (%v), datacenter (%v)", vm, datacenter)
 			}
 
 			VMMac = strings.ToUpper(VMMac)
 			if VMMac == targetMACAddress && err == nil {
-				log.Debugf("Found VM: %v , mac(%s)", vm, VMMac)
+				csmlog.Debugf("Found VM: %v , mac(%s)", vm, VMMac)
 				return vm, nil
 			}
 		}

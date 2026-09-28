@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -15,9 +15,13 @@
 package service
 
 import (
-	"math/rand"
+	crand "crypto/rand"
+	"math"
+	"math/big"
 	"sync"
 	"time"
+
+	"github.com/dell/csmlog"
 )
 
 type lockWorkers struct{}
@@ -56,7 +60,7 @@ var lockRequestsQueue = make(chan LockRequest, 1000)
 // LockRequestHandler - goroutine which listens for any lock/unlock requests
 func LockRequestHandler() {
 	go func() {
-		log.Info("Successfully started the lock request handler")
+		csmlog.Info("Successfully started the lock request handler")
 		for {
 			select {
 			case request := <-lockRequestsQueue:
@@ -66,7 +70,7 @@ func LockRequestHandler() {
 					// ResourceID not present in fifolocks map
 					if request.Unlock {
 						// Invalid unlock request as there is no entry for the resource ID in the fifolocks map
-						log.Warn("There is no lock to be released!")
+						csmlog.Warn("There is no lock to be released!")
 					} else {
 						// Create an entry in the fifolocks map as this is the first call for this resource id
 						waitChannels := make(chan LockRequestInfo, 100)
@@ -103,13 +107,13 @@ func LockRequestHandler() {
 						} else {
 							// This is a request to lock
 							// Invalid lock request as a lock is already held for the same resource id and request id
-							log.Warn("Invalid request. There is a lock held with the same request")
+							csmlog.Warn("Invalid request. There is a lock held with the same request")
 						}
 					} else {
 						// RequestID doesn't match with the CurrentRequestID for the resourceID
 						if request.Unlock {
 							// Attempt to release a lock not held by the caller
-							log.Warn("You don't hold the lock")
+							csmlog.Warn("You don't hold the lock")
 						} else {
 							if len(lockInfo.LockRequests) == 0 && (lockInfo.CurrentLockNumber == -1) {
 								// Entry for resource ID already present in fifolocks
@@ -139,7 +143,7 @@ func LockRequestHandler() {
 func CleanupMapEntries(duration time.Duration) {
 	ticker := time.NewTicker(duration)
 	go func() {
-		log.Infof("CleanupMapEntries: Successfully started the cleanup worker. This will wake up every %.2f minutes to clean up stale entries",
+		csmlog.Infof("CleanupMapEntries: Successfully started the cleanup worker. This will wake up every %.2f minutes to clean up stale entries",
 			duration.Minutes())
 		for {
 			select {
@@ -149,11 +153,11 @@ func CleanupMapEntries(duration time.Duration) {
 				now := time.Now()
 				for resourceID, lockInfo := range fifolocks {
 					if time.Since(now) > 20*time.Millisecond {
-						log.Debugf("CleanupMapEntries: Held the lock mutex for 20 milliseconds. Releasing it now")
+						csmlog.Debugf("CleanupMapEntries: Held the lock mutex for 20 milliseconds. Releasing it now")
 						break
 					}
 					if lockInfo.CurrentLockNumber == -1 {
-						log.Debugf("CleanupMapEntries: Removing stale entry from the lockmap for: %s", resourceID)
+						csmlog.Debugf("CleanupMapEntries: Removing stale entry from the lockmap for: %s", resourceID)
 						delete(fifolocks, resourceID)
 					}
 				}
@@ -165,20 +169,24 @@ func CleanupMapEntries(duration time.Duration) {
 
 // RequestLock - Request for lock for a given resource ID
 // requestID is optional
-// returns a lock number which is used later to release the lock
-func RequestLock(resourceID string, requestID string) int {
+// returns a lock number which is used later to release the lock and any error encountered
+func RequestLock(resourceID string, requestID string) (int, error) {
 	if requestID != "" {
-		log.Debugf("Requesting a lock for %s with requestID: %s at: %v", resourceID, requestID, time.Now())
+		csmlog.Debugf("Requesting a lock for %s with requestID: %s at: %v", resourceID, requestID, time.Now())
 	}
-	// Get a random number between 1,000,000 and 10,000,000
-	lockNum := rand.Intn(10000000-1000000) + 1000000 // #nosec G404
+	// Generate a cryptographically secure lock number over the full positive int range
+	n, err := crand.Int(crand.Reader, big.NewInt(int64(math.MaxInt)))
+	if err != nil {
+		return 0, err
+	}
+	lockNum := int(n.Int64())
 	ch := make(chan int, 1)
 	lockReq := LockRequest{ResourceID: resourceID, WaitChannel: ch, LockNumber: lockNum, Unlock: false}
 	lockRequestsQueue <- lockReq
 	<-ch
-	log.Debugf("Acquired - Lock Number:%d, requestID: %s, resourceID: %s at: %v",
+	csmlog.Debugf("Acquired - Lock Number:%d, requestID: %s, resourceID: %s at: %v",
 		lockNum, requestID, resourceID, time.Now())
-	return lockNum
+	return lockNum, nil
 }
 
 // ReleaseLock - Release a held lock for resourceID
@@ -186,7 +194,7 @@ func RequestLock(resourceID string, requestID string) int {
 func ReleaseLock(resourceID string, requestID string, lockNum int) {
 	lockReleaseRequest := LockRequest{ResourceID: resourceID, LockNumber: lockNum, Unlock: true}
 	lockRequestsQueue <- lockReleaseRequest
-	log.Debugf("Released - Lock Number: %d, requestID: %s, resourceID: %s",
+	csmlog.Debugf("Released - Lock Number: %d, requestID: %s, resourceID: %s",
 		lockNum, requestID, resourceID)
 }
 

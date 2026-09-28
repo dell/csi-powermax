@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -133,6 +133,10 @@ const (
 	// EnvHealthMonitorEnabled is an env variable which indicated if volume health monitor is enabled
 	EnvHealthMonitorEnabled = "X_CSI_HEALTH_MONITOR_ENABLED"
 
+	// EnvCSIAddonsReplicationEnabled is an env variable which indicates if CSI-Addons
+	// replication and volume group servers should be registered. Default: false.
+	EnvCSIAddonsReplicationEnabled = "X_CSI_CSIADDONS_REPLICATION_ENABLED"
+
 	// EnvTopoConfigFilePath is an env variable which contains the full path for topology config file
 	EnvTopoConfigFilePath = "X_CSI_POWERMAX_TOPOLOGY_CONFIG_PATH"
 
@@ -165,6 +169,13 @@ const (
 
 	// EnvPodmonArrayConnectivityPollRate indicates the polling frequency to check array connectivity
 	EnvPodmonArrayConnectivityPollRate = "X_CSI_PODMON_ARRAY_CONNECTIVITY_POLL_RATE"
+
+	// EnvPodmonAPIToken is the shared secret token used to authenticate requests
+	// between the CSI controller and node podmon API endpoints.
+	// When set, both the node HTTP server and the controller HTTP client
+	// will use Bearer token authentication. If unset, authentication is skipped
+	// for backward compatibility.
+	EnvPodmonAPIToken = "X_CSI_PODMON_API_TOKEN" // #nosec G101
 
 	// EnvTLSCertDirName is an env variable that contains the path of reverseproxy tls certificate
 	EnvTLSCertDirName = "X_CSI_REVPROXY_TLS_CERT_DIR"
@@ -202,4 +213,100 @@ const (
 	// used for authenticating requests between the CSI driver and the reverse proxy.
 	// Both driver and proxy must mount the same K8s Secret.
 	EnvProxyAuthTokenFile = "X_CSI_REVPROXY_AUTH_TOKEN_FILE" // #nosec G101
+
+	// EnvMetricsEnabled controls whether the driver metrics endpoint is active
+	EnvMetricsEnabled = "X_CSI_METRICS_ENABLED"
+
+	// EnvMetricsPort is the TCP port on which the metrics HTTP(S) server listens
+	EnvMetricsPort = "X_CSI_METRICS_PORT"
+
+	// EnvMetricsTLSCertFile is the path to the TLS certificate file for the metrics server
+	EnvMetricsTLSCertFile = "X_CSI_METRICS_TLS_CERT_FILE" // #nosec G101
+
+	// EnvMetricsTLSKeyFile is the path to the TLS private key file for the metrics server
+	EnvMetricsTLSKeyFile = "X_CSI_METRICS_TLS_KEY_FILE" // #nosec G101
+
+	// EnvMetricsArrayCBThreshold is the circuit breaker failure threshold for PowerMax API calls
+	EnvMetricsArrayCBThreshold = "X_CSI_METRICS_ARRAY_CB_THRESHOLD"
+
+	// EnvMetricsArrayCBResetTimeout is the circuit breaker reset timeout for PowerMax API calls
+	EnvMetricsArrayCBResetTimeout = "X_CSI_METRICS_ARRAY_CB_RESET_TIMEOUT"
+
+	// EnvMetricsArrayTimeout is the timeout for PowerMax metrics API calls
+	EnvMetricsArrayTimeout = "X_CSI_METRICS_ARRAY_TIMEOUT"
+
+	// EnvMetricsArrayRateLimit is the rate limit for metrics API calls
+	EnvMetricsArrayRateLimit = "X_CSI_METRICS_ARRAY_RATE_LIMIT"
+
+	// EnvMetricsCollectionInterval is the collection interval for metrics collection
+	EnvMetricsCollectionInterval = "X_CSI_METRICS_COLLECTION_INTERVAL"
+
+	// EnvMetricsCollectionCacheTTL is the cache TTL for metrics results
+	EnvMetricsCollectionCacheTTL = "X_CSI_METRICS_COLLECTION_CACHE_TTL"
+
+	// EnvHostManagementMode controls how the driver manages host objects on
+	// PowerMax arrays. Valid values: "create" (default) creates new hosts,
+	// "adopt" discovers and adopts pre-existing BFS hosts by WWPN match.
+	EnvHostManagementMode = "X_CSI_POWERMAX_HOST_MGMT_MODE"
+
+	// EnvNVMeTCPConnMode selects who owns NVMe/TCP fabric sessions. Valid values:
+	// "driver" (default) has the driver discover targets and connect, "host" has
+	// the driver use sessions the host established and never create its own.
+	// The value applies to every array in X_CSI_MANAGED_ARRAYS.
+	EnvNVMeTCPConnMode = "X_CSI_POWERMAX_NVMETCP_CONN_MODE"
+
+	// EnvHostAdoptionMinOverlapRatio controls the minimum overlap ratio for
+	// host adoption validation. Valid values: 0.0 to 1.0. Default is 0.5 for
+	// directional relaxation with strict majority. For 2-WWPN systems, this
+	// is treated as 1.0 (100% coverage required). Regulated environments
+	// can set to 1.0 for strict match enforcement.
+	EnvHostAdoptionMinOverlapRatio = "X_CSI_POWERMAX_HOST_ADOPTION_MIN_OVERLAP_RATIO"
+
+	// EnvMetroSiteFailureHandlingEnabled enables SRDF/Metro site-failure
+	// handling: automatic winner/loser detection, degraded-mode I/O routing,
+	// deferred operation queuing, and reconciliation after site recovery.
+	EnvMetroSiteFailureHandlingEnabled = "X_CSI_POWERMAX_METRO_SITE_FAILURE_HANDLING_ENABLED"
+
+	// EnvMetroStateCheckTimeout is the timeout in seconds for the Metro
+	// state detection API call to each array (default: 15).
+	EnvMetroStateCheckTimeout = "X_CSI_POWERMAX_METRO_STATE_CHECK_TIMEOUT"
+
+	// EnvMetroQueueWarningThreshold overrides the default deferred operation
+	// queue depth at which a warning event is emitted (default: 75).
+	EnvMetroQueueWarningThreshold = "X_CSI_POWERMAX_METRO_QUEUE_WARNING_THRESHOLD"
+
+	// EnvMetroQueueHardLimit overrides the default deferred operation queue
+	// depth at which new deferrals are rejected (default: 100).
+	EnvMetroQueueHardLimit = "X_CSI_POWERMAX_METRO_QUEUE_HARD_LIMIT"
+
+	// EnvMetroReconciliationBackoff is the base backoff duration in seconds
+	// for reconciliation retry attempts (default: 5).
+	EnvMetroReconciliationBackoff = "X_CSI_POWERMAX_METRO_RECONCILIATION_BACKOFF"
+
+	// EnvCapacityPollInterval is the interval at which the background capacity
+	// poller refreshes per-array free-capacity utilization and health for
+	// multi-array zones. Accepts a Go duration string (e.g. "5m"). Default: 5m.
+	EnvCapacityPollInterval = "X_CSI_CAPACITY_POLL_INTERVAL"
+
+	// EnvCapacityThresholdFull is the capacity utilization percentage (0-100)
+	// at which an array is considered full for warning-event purposes.
+	// A warning event is emitted when utilization crosses (threshold - 10)
+	// percent. Default: 100.
+	EnvCapacityThresholdFull = "X_CSI_CAPACITY_THRESHOLD_FULL"
+
+	// EnvPodName is the name of the controller pod, injected via the Kubernetes
+	// downward API (fieldRef: metadata.name). Used by Metro site-failure handling
+	// to scope Kubernetes events and Lease objects to the running pod.
+	EnvPodName = "POD_NAME"
+
+	// EnvDriverNamespace is the namespace in which the controller pod runs,
+	// injected via the Kubernetes downward API (fieldRef: metadata.namespace).
+	// Used by Metro site-failure handling to create namespace-scoped Lease
+	// objects and to emit events visible via `kubectl get events -n <namespace>`.
+	EnvDriverNamespace = "X_CSI_DRIVER_NAMESPACE"
+
+	// EnvDriverInstanceUID is the unique identifier of the CSM instance,
+	// injected via the Kubernetes downward API (fieldRef: metadata.uid).
+	// Used by Metro site-failure handling for ownership isolation of VolumeJournal CRD resources.
+	EnvDriverInstanceUID = "X_CSI_DRIVER_INSTANCE_UID"
 )

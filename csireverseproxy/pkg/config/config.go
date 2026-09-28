@@ -26,20 +26,18 @@ import (
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/common"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/k8sutils"
 	"github.com/dell/csi-powermax/csireverseproxy/v2/pkg/utils"
-
 	"github.com/dell/csmlog"
+
 	"github.com/mitchellh/mapstructure"
 
 	"github.com/spf13/viper"
 	corev1 "k8s.io/api/core/v1"
 )
 
-var log = csmlog.GetLogger()
-
-// ConfigManager is an interface used for testing, satisfied by viper.Viper.
+// Manager is an interface used for testing, satisfied by viper.Viper.
 //
 //go:generate mockgen -source=config.go -destination=mocks/config-manager.go
-type ConfigManager interface {
+type Manager interface {
 	// SetConfigFile designates the name of the file containing the configuration
 	SetConfigName(string)
 
@@ -115,7 +113,7 @@ func (sa *StorageArray) DeepCopy() *StorageArray {
 // ManagementServerConfig - represents a management server configuration for the management server
 type ManagementServerConfig struct {
 	Endpoint                  string        `yaml:"endpoint"`
-	ArrayCredentialSecret     string        `yaml:"arrayCredentialSecret,omitempty"`
+	ArrayCredentialSecret     string        `yaml:"arrayCredentialSecret,omitempty" mapstructure:"arraycredentialsecret"`
 	SkipCertificateValidation bool          `yaml:"skipCertificateValidation,omitempty"`
 	CertSecret                string        `yaml:"certSecret,omitempty"`
 	Limits                    common.Limits `yaml:"limits,omitempty" mapstructure:"limits"`
@@ -212,26 +210,26 @@ func (pc *ProxyConfig) DeepCopy() *ProxyConfig {
 
 // Log - logs the Proxy Config
 func (pc *ProxyConfig) Log() {
-	log.Infof("---------------------")
-	log.Infof("port ::: %+s", pc.Port)
-	log.Infof("---------------------")
-	log.Infof("managedArrays")
+	csmlog.Infof("---------------------")
+	csmlog.Infof("port ::: %+s", pc.Port)
+	csmlog.Infof("---------------------")
+	csmlog.Infof("managedArrays")
 	for key, val := range pc.managedArrays {
-		log.Infof("%s ::: %+v", key, val)
+		csmlog.Infof("%s ::: %+v", key, val)
 	}
-	log.Infof("---------------------")
-	log.Infof("---------------------")
-	log.Infof("managementServers")
+	csmlog.Infof("---------------------")
+	csmlog.Infof("---------------------")
+	csmlog.Infof("managementServers")
 	for key, val := range pc.managementServers {
-		log.Infof("%v ::: %+v", key, val)
+		csmlog.Infof("%v ::: %+v", key, val)
 	}
-	log.Infof("---------------------")
-	log.Infof("---------------------")
-	log.Infof("proxyCredentials")
+	csmlog.Infof("---------------------")
+	csmlog.Infof("---------------------")
+	csmlog.Infof("proxyCredentials")
 	for key, val := range pc.proxyCredentials {
-		log.Infof("%s ::: %+v", key, val)
+		csmlog.Infof("%s ::: %+v", key, val)
 	}
-	log.Infof("---------------------")
+	csmlog.Infof("---------------------")
 }
 
 func (pc *ProxyConfig) updateProxyCredentials(creds common.Credentials, storageArrayIdentifier string) {
@@ -239,7 +237,8 @@ func (pc *ProxyConfig) updateProxyCredentials(creds common.Credentials, storageA
 		if subtle.ConstantTimeCompare([]byte(creds.Password), []byte(proxyUser.ProxyCredential.Password)) == 1 {
 			// Credentials already exist in map
 			proxyUser.StorageArrayIdentifiers = utils.AppendIfMissingStringSlice(
-				proxyUser.StorageArrayIdentifiers, storageArrayIdentifier)
+				proxyUser.StorageArrayIdentifiers, storageArrayIdentifier,
+			)
 		}
 	} else {
 		proxyUser := ProxyUser{
@@ -255,7 +254,8 @@ func (pc *ProxyConfig) updateProxyCredentialsFromSecret(username, password, stor
 		if subtle.ConstantTimeCompare([]byte(password), []byte(proxyUser.ProxyCredential.Password)) == 1 {
 			// Credentials already exist in map
 			proxyUser.StorageArrayIdentifiers = utils.AppendIfMissingStringSlice(
-				proxyUser.StorageArrayIdentifiers, storageArrayIdentifier)
+				proxyUser.StorageArrayIdentifiers, storageArrayIdentifier,
+			)
 		}
 	} else {
 		creds := &common.Credentials{
@@ -290,10 +290,10 @@ func (pc *ProxyConfig) GetManagedArraysAndServers() map[string]StorageArrayServe
 			)
 			if arrayServer, ok = arrayServers[arrayID]; !ok {
 				arrayServer = StorageArrayServer{}
-				arrayServer.Array = *(pc.managedArrays[arrayID])
+				arrayServer.Array = *pc.managedArrays[arrayID]
 			}
 			if server.Endpoint == arrayServer.Array.PrimaryEndpoint {
-				arrayServer.PrimaryServer = *(server)
+				arrayServer.PrimaryServer = *server
 			} else if server.Endpoint == arrayServer.Array.SecondaryEndpoint {
 				arrayServer.BackupServer = server
 			}
@@ -308,7 +308,7 @@ func (pc *ProxyConfig) IsSecretConfiguredForCerts(secretName string) bool {
 	found := false
 	for _, server := range pc.managementServers {
 		if server.CertSecret == secretName {
-			log.Infof("Found secret configured %s", server.CertSecret)
+			csmlog.Infof("Found secret configured %s", server.CertSecret)
 			found = true
 			break
 		}
@@ -319,7 +319,7 @@ func (pc *ProxyConfig) IsSecretConfiguredForCerts(secretName string) bool {
 // IsSecretConfiguredForArrays - returns true if a given secret name has been configured
 // as credential secret for a storage array
 func (pc *ProxyConfig) IsSecretConfiguredForArrays(secretName string) bool {
-	log.Infof("Checking secret : %s", secretName)
+	csmlog.Infof("Checking secret : %s", secretName)
 	if getEnv(common.EnvReverseProxyUseSecret, "false") == "true" {
 		// if using secrets, return false. updates for the username password happens in UpdateCreds
 		return false
@@ -469,7 +469,7 @@ func (pc *ProxyConfig) UpdateManagementServers(config *ProxyConfig) ([]Managemen
 // UpdateManagedArrays - updates the set of managed arrays
 func (pc *ProxyConfig) UpdateManagedArrays(config *ProxyConfig) {
 	if !reflect.DeepEqual(pc.managedArrays, config.managedArrays) {
-		log.Info("Detected changes, updating managed array config")
+		csmlog.Info("Detected changes, updating managed array config")
 		pc.managedArrays = config.managedArrays
 		pc.proxyCredentials = config.proxyCredentials
 	}
@@ -489,7 +489,7 @@ func (pc *ProxyConfig) GetAuthorizedArrays(username, password string) []string {
 			}
 
 			if err != nil {
-				log.Errorf("error : (%s)", err.Error())
+				csmlog.Errorf("error : (%s)", err.Error())
 			}
 			if isAuth {
 				authorizedArrays = append(authorizedArrays, array.StorageArrayIdentifier)
@@ -565,6 +565,69 @@ func (pu *ProxyUser) DeepClone() *ProxyUser {
 	return &cloned
 }
 
+// validateStorageArrayConfig validates the endpoint configuration for a
+// StorageArrayConfig entry. It returns a StorageArray containing just the
+// identifier and parsed endpoint URLs. Backup endpoint presence in the
+// management server list is only a warning.
+func validateStorageArrayConfig(array StorageArrayConfig, ipAddresses []string) (*StorageArray, error) {
+	if array.PrimaryEndpoint == "" {
+		return nil, fmt.Errorf("primary endpoint not configured for array: %s", array.StorageArrayID)
+	}
+	if !utils.IsStringInSlice(ipAddresses, array.PrimaryEndpoint) {
+		return nil, fmt.Errorf("primary endpoint: %s for array: %s not present among management server addresses",
+			array.PrimaryEndpoint, array.StorageArrayID)
+	}
+	if array.BackupEndpoint != "" {
+		if !utils.IsStringInSlice(ipAddresses, array.BackupEndpoint) {
+			csmlog.Warnf("backup endpoint: %s for array: %s not present among management server addresses",
+				array.BackupEndpoint, array.StorageArrayID)
+		}
+	}
+	primaryURL, err := url.Parse(array.PrimaryEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid primary endpoint for array %s: %w", array.StorageArrayID, err)
+	}
+	backupURL := &url.URL{}
+	if array.BackupEndpoint != "" {
+		backupURL, err = url.Parse(array.BackupEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid backup endpoint for array %s: %w", array.StorageArrayID, err)
+		}
+	}
+	return &StorageArray{
+		StorageArrayIdentifier: array.StorageArrayID,
+		PrimaryEndpoint:        *primaryURL,
+		SecondaryEndpoint:      *backupURL,
+	}, nil
+}
+
+// buildStorageArray validates a StorageArrayConfig entry (from a Secret)
+// and constructs the corresponding StorageArray. It returns a descriptive
+// error, rather than mutating shared state, so the caller can log a clear
+// per-array message and skip just this array (Requirement 1:
+// "Invalid configuration still rejected" -- only the invalid array is
+// rejected, other valid arrays in the same zone remain operational).
+func buildStorageArray(array StorageArrayConfig, ipAddresses []string, k8sUtils k8sutils.UtilsInterface) (*StorageArray, error) {
+	sa, err := validateStorageArrayConfig(array, ipAddresses)
+	if err != nil {
+		return nil, err
+	}
+	if len(array.ProxyCredentialSecrets) > 0 {
+		sa.ProxyCredentialSecrets = make(map[string]ProxyCredentialSecret)
+		for _, secret := range array.ProxyCredentialSecrets {
+			proxyCredentials, err := k8sUtils.GetCredentialsFromSecretName(secret)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read credential secret %s for array %s: %w", secret, array.StorageArrayID, err)
+			}
+			sa.ProxyCredentialSecrets[secret] = ProxyCredentialSecret{
+				Credentials:      *proxyCredentials,
+				CredentialSecret: secret,
+			}
+		}
+	}
+	return sa, nil
+}
+
 // ParseConfig - Parses a given proxy config map
 func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sutils.UtilsInterface) error {
 	pc.Port = proxyConfigMap.Port
@@ -595,57 +658,27 @@ func (pc *ProxyConfig) ParseConfig(proxyConfigMap ProxyConfigMap, k8sUtils k8sut
 	}
 
 	for _, array := range config.StorageArrayConfig {
-		if array.PrimaryEndpoint == "" {
-			return fmt.Errorf("primary endpoint not configured for array: %s", array.StorageArrayID)
-		}
-		if !utils.IsStringInSlice(ipAddresses, array.PrimaryEndpoint) {
-			return fmt.Errorf("primary endpoint: %s for array: %s not present among management URL addresses",
-				array.PrimaryEndpoint, array)
-		}
-		if array.BackupEndpoint != "" {
-			if !utils.IsStringInSlice(ipAddresses, array.BackupEndpoint) {
-				log.Warnf("backup endpoint: %s for array: %s not present among management URL addresses",
-					array.BackupEndpoint, array)
-			}
-		}
-		primaryURL, err := url.Parse(array.PrimaryEndpoint)
+		sa, err := buildStorageArray(array, ipAddresses, k8sUtils)
 		if err != nil {
-			return err
+			// Requirement 1 ("Invalid configuration still rejected"):
+			// a single array with missing/malformed configuration or
+			// credentials must not take down the whole zone. Log a clear,
+			// per-array error identifying the array and skip it; other
+			// validly configured arrays in the same zone remain operational.
+			csmlog.Errorf("Skipping array %s: %v (array will be unavailable for provisioning until its configuration is corrected)", array.StorageArrayID, err)
+			continue
 		}
-		backupURL := &url.URL{}
-		if array.BackupEndpoint != "" {
-			backupURL, err = url.Parse(array.BackupEndpoint)
-			if err != nil {
-				return err
-			}
-		}
-		pc.managedArrays[array.StorageArrayID] = &StorageArray{
-			StorageArrayIdentifier: array.StorageArrayID,
-			PrimaryEndpoint:        *primaryURL,
-			SecondaryEndpoint:      *backupURL,
-		}
+		pc.managedArrays[array.StorageArrayID] = sa
 		// adding Primary and Backup URl to storageArrayIdentifier, later to be used in management server
-		storageArrayIdentifiers[*primaryURL] = append(storageArrayIdentifiers[*primaryURL], array.StorageArrayID)
-		storageArrayIdentifiers[*backupURL] = append(storageArrayIdentifiers[*backupURL], array.StorageArrayID)
-
-		// Reading proxy credentials for the array
-		if len(array.ProxyCredentialSecrets) > 0 {
-			pc.managedArrays[array.StorageArrayID].ProxyCredentialSecrets = make(map[string]ProxyCredentialSecret)
-			for _, secret := range array.ProxyCredentialSecrets {
-				proxyCredentials, err := k8sUtils.GetCredentialsFromSecretName(secret)
-				if err != nil {
-					return err
-				}
-
-				proxyCredentialSecret := &ProxyCredentialSecret{
-					Credentials:      *proxyCredentials,
-					CredentialSecret: secret,
-				}
-
-				pc.managedArrays[array.StorageArrayID].ProxyCredentialSecrets[secret] = *proxyCredentialSecret
-				pc.updateProxyCredentials(*proxyCredentials, array.StorageArrayID)
-			}
+		storageArrayIdentifiers[sa.PrimaryEndpoint] = append(storageArrayIdentifiers[sa.PrimaryEndpoint], array.StorageArrayID)
+		storageArrayIdentifiers[sa.SecondaryEndpoint] = append(storageArrayIdentifiers[sa.SecondaryEndpoint], array.StorageArrayID)
+		for _, proxyCredentialSecret := range sa.ProxyCredentialSecrets {
+			pc.updateProxyCredentials(proxyCredentialSecret.Credentials, array.StorageArrayID)
 		}
+	}
+
+	if len(pc.managedArrays) == 0 && len(config.StorageArrayConfig) > 0 {
+		return fmt.Errorf("no valid storage arrays configured: all %d configured array(s) failed validation", len(config.StorageArrayConfig))
 	}
 	for _, managementServer := range config.ManagementServerConfig {
 		var arrayCredentials common.Credentials
@@ -697,38 +730,21 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 		ipAddresses = append(ipAddresses, mgmtServer.Endpoint)
 	}
 	for _, array := range proxySecret.StorageArrayConfig {
-		if array.PrimaryEndpoint == "" {
-			return fmt.Errorf("primary endpoint not configured for array: %s", array.StorageArrayID)
-		}
-		if !utils.IsStringInSlice(ipAddresses, array.PrimaryEndpoint) {
-			return fmt.Errorf("primary endpoint: %s for array: %s not present among management endpoint addresses",
-				array.PrimaryEndpoint, array.StorageArrayID)
-		}
-		if array.BackupEndpoint != "" {
-			if !utils.IsStringInSlice(ipAddresses, array.BackupEndpoint) {
-				log.Warnf("backup endpoint: %s for array: %s not present among management endpoint addresses",
-					array.BackupEndpoint, array.StorageArrayID)
-			}
-		}
-		primaryEndpoint, err := url.Parse(array.PrimaryEndpoint)
+		sa, err := validateStorageArrayConfig(array, ipAddresses)
 		if err != nil {
-			return err
+			// Requirement 1 ("Invalid configuration still
+			// rejected"): a single array with missing/malformed
+			// configuration must not take down the whole zone. Log a
+			// clear, per-array error identifying the array and skip it;
+			// other validly configured arrays in the same zone remain
+			// operational.
+			csmlog.Errorf("Skipping array %s: %v (array will be unavailable for provisioning until its configuration is corrected)", array.StorageArrayID, err)
+			continue
 		}
-		backupEndpoint := &url.URL{}
-		if array.BackupEndpoint != "" {
-			backupEndpoint, err = url.Parse(array.BackupEndpoint)
-			if err != nil {
-				return err
-			}
-		}
-		pc.managedArrays[array.StorageArrayID] = &StorageArray{
-			StorageArrayIdentifier: array.StorageArrayID,
-			PrimaryEndpoint:        *primaryEndpoint,
-			SecondaryEndpoint:      *backupEndpoint,
-		}
+		pc.managedArrays[array.StorageArrayID] = sa
 		// adding Primary and Backup URl to storageArrayIdentifier, later to be used in management server
-		storageArrayIdentifiers[*primaryEndpoint] = append(storageArrayIdentifiers[*primaryEndpoint], array.StorageArrayID)
-		storageArrayIdentifiers[*backupEndpoint] = append(storageArrayIdentifiers[*backupEndpoint], array.StorageArrayID)
+		storageArrayIdentifiers[sa.PrimaryEndpoint] = append(storageArrayIdentifiers[sa.PrimaryEndpoint], array.StorageArrayID)
+		storageArrayIdentifiers[sa.SecondaryEndpoint] = append(storageArrayIdentifiers[sa.SecondaryEndpoint], array.StorageArrayID)
 
 		// Reading proxy credentials for the array
 		if len(array.ProxyCredentialSecrets) > 0 {
@@ -746,6 +762,10 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 		if array.Parameters != nil {
 			pc.managedArrays[array.StorageArrayID].Parameters = array.Parameters
 		}
+	}
+
+	if len(pc.managedArrays) == 0 && len(proxySecret.StorageArrayConfig) > 0 {
+		return fmt.Errorf("no valid storage arrays configured: all %d configured array(s) failed validation", len(proxySecret.StorageArrayConfig))
 	}
 	for _, managementServer := range proxySecret.ManagementServerConfig {
 		mgmtEndpoint, err := url.Parse(managementServer.Endpoint)
@@ -785,7 +805,7 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 			primaryPassword = primaryServer.Password
 			pc.updateProxyCredentialsFromSecret(primaryUsername, primaryPassword, array.StorageArrayIdentifier)
 		} else {
-			log.Errorf("primary endpoint not configured for %s", array.StorageArrayIdentifier)
+			csmlog.Errorf("primary endpoint not configured for %s", array.StorageArrayIdentifier)
 		}
 
 		if backupServer, ok := pc.managementServers[backupEndpoint]; ok {
@@ -793,7 +813,7 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 			backupPassword = backupServer.Password
 			pc.updateProxyCredentialsFromSecret(backupUsername, backupPassword, array.StorageArrayIdentifier)
 		} else {
-			log.Warnf("backup endpoint not configured for %s", array.StorageArrayIdentifier)
+			csmlog.Warnf("backup endpoint not configured for %s", array.StorageArrayIdentifier)
 		}
 	}
 	return nil
@@ -819,12 +839,11 @@ func NewProxyConfig(configMap *ProxyConfigMap, k8sUtils k8sutils.UtilsInterface)
 */
 func (c *ProxyConfigMap) CustomUnmarshal(vcm *viper.Viper) error {
 	settings := vcm.AllSettings()
-
 	// Retrieve all settings as a map
 	// Custom handling for URL fields before unmarshaling
 	for i, managementServer := range vcm.Get("config.managementservers").([]interface{}) {
 		serverMap := managementServer.(map[string]interface{})
-		log.Infof("serverMap:")
+		csmlog.Infof("serverMap:")
 		// Check if the "url" field exists and is a string
 		if urlStr, ok := serverMap["url"].(string); ok {
 			parsedURL, err := url.Parse(urlStr)
@@ -879,7 +898,25 @@ func (c *ProxyConfigMap) CustomUnmarshal(vcm *viper.Viper) error {
 	}
 
 	// Unmarshal the updated settings into the config struct
-	return decoder.Decode(settings)
+	err = decoder.Decode(settings)
+	if err != nil {
+		return err
+	}
+
+	// Manually handle arrayCredentialSecret field after decode
+	// This is needed because mapstructure might not properly handle this field
+	managementServers := vcm.Get("config.managementservers")
+	if managementServers != nil {
+		for i, managementServer := range managementServers.([]interface{}) {
+			serverMap := managementServer.(map[string]interface{})
+			// Viper returns keys in lowercase, so check for "arraycredentialsecret"
+			if arrayCredentialSecret, ok := serverMap["arraycredentialsecret"].(string); ok {
+				c.Config.ManagementServerConfig[i].ArrayCredentialSecret = arrayCredentialSecret
+			}
+		}
+	}
+
+	return nil
 }
 
 // ReadConfig - uses viper to read the config from the config map
@@ -920,7 +957,7 @@ func ReadConfigFromSecret(vs *viper.Viper) (*ProxySecret, error) {
 	secretFilePath := getEnv(common.EnvSecretFilePath, common.DefaultSecretPath)
 	secretFileName := filepath.Base(secretFilePath)
 	secretFileDir := filepath.Dir(secretFilePath)
-	log.Infof("Reading secret: %s from path: %s ", secretFileName, secretFileDir)
+	csmlog.Infof("Reading secret: %s from path: %s ", secretFileName, secretFileDir)
 	vs.SetConfigName(secretFileName)
 	vs.SetConfigType("yaml")
 	vs.AddConfigPath(secretFileDir)
@@ -937,8 +974,8 @@ func ReadConfigFromSecret(vs *viper.Viper) (*ProxySecret, error) {
 }
 
 // ReadParamsConfigMapFromPath - read config map for params
-func ReadParamsConfigMapFromPath(configFilePath string, vcp ConfigManager) (*ParamsConfigMap, error) {
-	log.Infof("Reading params config map: %s from path: %s", filepath.Base(configFilePath), filepath.Dir(configFilePath))
+func ReadParamsConfigMapFromPath(configFilePath string, vcp Manager) (*ParamsConfigMap, error) {
+	csmlog.Infof("Reading params config map: %s from path: %s", filepath.Base(configFilePath), filepath.Dir(configFilePath))
 
 	vcp.SetConfigName(filepath.Base(configFilePath))
 	vcp.SetConfigType("yaml")

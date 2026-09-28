@@ -21,6 +21,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dell/csmlog"
+
 	pmax "github.com/dell/gopowermax/v2"
 	types "github.com/dell/gopowermax/v2/types/v100"
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
@@ -59,7 +61,10 @@ func (s *service) CreateVolumeGroupSnapshot(
 	ctx context.Context,
 	req *csi.CreateVolumeGroupSnapshotRequest,
 ) (*csi.CreateVolumeGroupSnapshotResponse, error) {
-	log := log.WithContext(ctx)
+	csmlog.WithContext(ctx).WithFields(csmlog.Fields{
+		csmlog.FieldOperation: "CreateVolumeGroupSnapshot",
+		csmlog.FieldProtocol:  s.opts.TransportProtocol,
+	}).Info("CreateVolumeGroupSnapshot called")
 
 	// Validate name
 	reqName := req.GetName()
@@ -104,12 +109,13 @@ func (s *service) CreateVolumeGroupSnapshot(
 	// Idempotency: if this snapshot already exists on all requested volumes,
 	// return the existing group snapshot instead of creating a duplicate.
 	existingResp, err := s.checkGroupSnapshotIdempotency(
-		ctx, pmaxClient, commonSymID, snapName, groupSnapshotID, sgName, volDetails, devIDToCSIVolID)
+		ctx, pmaxClient, commonSymID, snapName, groupSnapshotID, sgName, volDetails, devIDToCSIVolID,
+	)
 	if err != nil {
 		return nil, err
 	}
 	if existingResp != nil {
-		log.Infof("CreateVolumeGroupSnapshot idempotent: groupSnapshotId=%s already exists, returning existing snapshot",
+		csmlog.WithContext(ctx).Infof("CreateVolumeGroupSnapshot idempotent: groupSnapshotId=%s already exists, returning existing snapshot",
 			groupSnapshotID)
 		return existingResp, nil
 	}
@@ -130,7 +136,7 @@ func (s *service) CreateVolumeGroupSnapshot(
 			"failed to create multi-volume snapshot: %s", err.Error())
 	}
 
-	log.Infof("Created VolumeGroupSnapshot: groupSnapshotId=%s, members=%d, readyToUse=true",
+	csmlog.WithContext(ctx).Infof("Created VolumeGroupSnapshot: groupSnapshotId=%s, members=%d, readyToUse=true",
 		groupSnapshotID, len(memberSnapshots))
 
 	return &csi.CreateVolumeGroupSnapshotResponse{
@@ -148,7 +154,10 @@ func (s *service) DeleteVolumeGroupSnapshot(
 	ctx context.Context,
 	req *csi.DeleteVolumeGroupSnapshotRequest,
 ) (*csi.DeleteVolumeGroupSnapshotResponse, error) {
-	log := log.WithContext(ctx)
+	csmlog.WithContext(ctx).WithFields(csmlog.Fields{
+		csmlog.FieldOperation: "DeleteVolumeGroupSnapshot",
+		csmlog.FieldProtocol:  s.opts.TransportProtocol,
+	}).Info("DeleteVolumeGroupSnapshot called")
 
 	groupSnapshotID := req.GetGroupSnapshotId()
 	if groupSnapshotID == "" {
@@ -157,8 +166,10 @@ func (s *service) DeleteVolumeGroupSnapshot(
 
 	symID, sgName, snapName, err := parseGroupSnapshotID(groupSnapshotID)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"invalid group snapshot ID format: %s", err.Error())
+		// CSI spec v1.12: DeleteVolumeGroupSnapshot MUST be idempotent
+		// Invalid or non-existent ID MUST return OK
+		csmlog.WithContext(ctx).Infof("DeleteVolumeGroupSnapshot: invalid ID format %s, returning OK for idempotency", groupSnapshotID)
+		return &csi.DeleteVolumeGroupSnapshotResponse{}, nil
 	}
 
 	pmaxClient, err := s.GetPowerMaxClient(symID)
@@ -172,7 +183,7 @@ func (s *service) DeleteVolumeGroupSnapshot(
 	if err != nil {
 		// If SG not found, Snapshots associated with it would already be deleted.
 		if types.IsNotFoundError(err) {
-			log.Infof("StorageGroup %s not found, assuming group snapshot %s is already deleted", sgName, groupSnapshotID)
+			csmlog.WithContext(ctx).Infof("StorageGroup %s not found, assuming group snapshot %s is already deleted", sgName, groupSnapshotID)
 			return &csi.DeleteVolumeGroupSnapshotResponse{}, nil
 		}
 
@@ -185,7 +196,7 @@ func (s *service) DeleteVolumeGroupSnapshot(
 	if err != nil {
 		if types.IsNotFoundError(err) {
 			// Snapshot doesn't exist
-			log.Infof("Storage group snapshot %s not found, assuming it's already deleted", snapName)
+			csmlog.WithContext(ctx).Infof("Storage group snapshot %s not found, assuming it's already deleted", snapName)
 			return &csi.DeleteVolumeGroupSnapshotResponse{}, nil
 		}
 
@@ -196,7 +207,7 @@ func (s *service) DeleteVolumeGroupSnapshot(
 
 	// If no snapshot IDs exist, snapshot doesn't exist
 	if len(sgSnapIDs.SnapIDs) == 0 {
-		log.Infof("No snapshot IDs found for %s, snapshot does not exist", snapName)
+		csmlog.WithContext(ctx).Infof("No snapshot IDs found for %s, snapshot does not exist", snapName)
 		return &csi.DeleteVolumeGroupSnapshotResponse{}, nil
 	}
 
@@ -206,7 +217,7 @@ func (s *service) DeleteVolumeGroupSnapshot(
 	if err != nil {
 		if types.IsNotFoundError(err) {
 			// Snapshot details don't exist, assume snapshot doesn't exist
-			log.Infof("Storage group snapshot details %s not found, assuming snapshot doesn't exist", snapName)
+			csmlog.WithContext(ctx).Infof("Storage group snapshot details %s not found, assuming snapshot doesn't exist", snapName)
 			return &csi.DeleteVolumeGroupSnapshotResponse{}, nil
 		}
 		// For non-NotFound errors, fail fast - these could be server errors, permissions, etc.
@@ -237,7 +248,7 @@ func (s *service) DeleteVolumeGroupSnapshot(
 			}
 			devID := strings.TrimPrefix(sid, expectedPrefix)
 			if !foundDevIDs[devID] {
-				log.Warnf("snapshot ID %s references device %s which was not found with snapshot %s", sid, devID, snapName)
+				csmlog.WithContext(ctx).Warnf("snapshot ID %s references device %s which was not found with snapshot %s", sid, devID, snapName)
 			}
 		}
 	}
@@ -249,14 +260,14 @@ func (s *service) DeleteVolumeGroupSnapshot(
 	if err != nil {
 		// Treat not-found as success (idempotent)
 		if types.IsNotFoundError(err) {
-			log.Infof("Group snapshot %s already deleted (not found), returning success", groupSnapshotID)
+			csmlog.WithContext(ctx).Infof("Group snapshot %s already deleted (not found), returning success", groupSnapshotID)
 		} else {
 			return nil, status.Errorf(codes.Internal,
 				"failed to delete multi-volume snapshot: %s", err.Error())
 		}
 	}
 
-	log.Infof("Deleted VolumeGroupSnapshot: groupSnapshotId=%s", groupSnapshotID)
+	csmlog.WithContext(ctx).Infof("Deleted VolumeGroupSnapshot: groupSnapshotId=%s", groupSnapshotID)
 	return &csi.DeleteVolumeGroupSnapshotResponse{}, nil
 }
 
@@ -265,7 +276,10 @@ func (s *service) GetVolumeGroupSnapshot(
 	ctx context.Context,
 	req *csi.GetVolumeGroupSnapshotRequest,
 ) (*csi.GetVolumeGroupSnapshotResponse, error) {
-	log := log.WithContext(ctx)
+	csmlog.WithContext(ctx).WithFields(csmlog.Fields{
+		csmlog.FieldOperation: "GetVolumeGroupSnapshot",
+		csmlog.FieldProtocol:  s.opts.TransportProtocol,
+	}).Info("GetVolumeGroupSnapshot called")
 
 	groupSnapshotID := req.GetGroupSnapshotId()
 	if groupSnapshotID == "" {
@@ -274,8 +288,9 @@ func (s *service) GetVolumeGroupSnapshot(
 
 	symID, sgName, snapName, err := parseGroupSnapshotID(groupSnapshotID)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"invalid group snapshot ID format: %s", err.Error())
+		// CSI spec v1.12: GetVolumeGroupSnapshot with non-existent ID MUST return NotFound
+		return nil, status.Errorf(codes.NotFound,
+			"group snapshot %s not found: %s", groupSnapshotID, err.Error())
 	}
 
 	pmaxClient, err := s.GetPowerMaxClient(symID)
@@ -349,7 +364,7 @@ func (s *service) GetVolumeGroupSnapshot(
 			"group snapshot %s not found on array %s", snapName, symID)
 	}
 
-	log.Infof("GetVolumeGroupSnapshot: groupSnapshotId=%s, members=%d, readyToUse=%t",
+	csmlog.WithContext(ctx).Infof("GetVolumeGroupSnapshot: groupSnapshotId=%s, members=%d, readyToUse=%t",
 		groupSnapshotID, len(memberSnapshots), groupReady)
 
 	return &csi.GetVolumeGroupSnapshotResponse{
@@ -365,8 +380,6 @@ func (s *service) GetVolumeGroupSnapshot(
 // CreateMultiVolumeSnapshot creates snapshots for multiple volumes in a single API call
 // This creates a consistency/storage group snapshot of all volumes using the CreateSnapshot API
 func (s *service) CreateMultiVolumeSnapshot(ctx context.Context, symID, snapName, sgName string, volDetails []*types.Volume, devIDToCSIVolID map[string]string, pmaxClient pmax.Pmax, creationTime *timestamppb.Timestamp) ([]*csi.Snapshot, error) {
-	log := log.WithContext(ctx)
-
 	// Build the source list with all volumes
 	sourceList := make([]types.VolumeList, 0, len(volDetails))
 	for _, vol := range volDetails {
@@ -416,7 +429,7 @@ func (s *service) CreateMultiVolumeSnapshot(ctx context.Context, symID, snapName
 		})
 	}
 
-	log.Infof("Created group (multi-volume) snapshot: snapName=%s, volumes=%d", snapName, len(volDetails))
+	csmlog.WithContext(ctx).Infof("Created group (multi-volume) snapshot: snapName=%s, volumes=%d", snapName, len(volDetails))
 	return memberSnapshots, nil
 }
 
