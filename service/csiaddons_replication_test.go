@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	types "github.com/dell/gopowermax/v2/types/v100"
 	csiaddonsreplication "github.com/csi-addons/spec/lib/go/replication"
@@ -236,6 +237,88 @@ func TestEnableVolumeReplication_EmptyRDFGroup_Rejected(t *testing.T) {
 // It satisfies the 10.1 bulk identifier lookup threshold, so the bulk GET endpoint is used.
 func api103Version() *types.VersionDetails {
 	return &types.VersionDetails{Version: "10.3.0.2", APIVersion: "103"}
+}
+
+func TestSyncRemoteVolumeIdentifier_RenamesMismatchedR2(t *testing.T) {
+	svc, pmaxClient, cleanup := newCSIAddonsTestService(t)
+	defer cleanup()
+
+	pmaxClient.EXPECT().
+		GetVolumeByID(gomock.Any(), symIDRemote, validRemoteDeviceID).
+		Return(&types.Volume{VolumeID: validRemoteDeviceID, VolumeIdentifier: ""}, nil)
+	pmaxClient.EXPECT().
+		RenameVolume(gomock.Any(), symIDRemote, validRemoteDeviceID, localVolumeName).
+		Return(&types.Volume{VolumeID: validRemoteDeviceID, VolumeIdentifier: localVolumeName}, nil)
+
+	err := svc.syncRemoteVolumeIdentifier(
+		context.Background(), symIDRemote, validRemoteDeviceID, localVolumeName, pmaxClient)
+	assert.NoError(t, err)
+}
+
+func TestSyncRemoteVolumeIdentifierWithRetry_RetriesTransientLookup(t *testing.T) {
+	svc, pmaxClient, cleanup := newCSIAddonsTestService(t)
+	defer cleanup()
+
+	originalWait := remoteIdentifierRetryWait
+	remoteIdentifierRetryWait = func(context.Context, time.Duration) error { return nil }
+	defer func() { remoteIdentifierRetryWait = originalWait }()
+
+	pmaxClient.EXPECT().
+		GetVolumeByID(gomock.Any(), symIDRemote, validRemoteDeviceID).
+		Return(nil, errors.New("csm-authorization: getting volume by ID")).
+		Times(2)
+	pmaxClient.EXPECT().
+		GetVolumeByID(gomock.Any(), symIDRemote, validRemoteDeviceID).
+		Return(&types.Volume{VolumeID: validRemoteDeviceID, VolumeIdentifier: ""}, nil)
+	pmaxClient.EXPECT().
+		RenameVolume(gomock.Any(), symIDRemote, validRemoteDeviceID, localVolumeName).
+		Return(&types.Volume{VolumeID: validRemoteDeviceID, VolumeIdentifier: localVolumeName}, nil)
+
+	err := svc.syncRemoteVolumeIdentifierWithRetry(
+		context.Background(), symIDRemote, validRemoteDeviceID, localVolumeName, pmaxClient)
+	assert.NoError(t, err)
+}
+
+func TestSyncRemoteVolumeIdentifierWithRetry_DoesNotRetryPermanentRenameError(t *testing.T) {
+	svc, pmaxClient, cleanup := newCSIAddonsTestService(t)
+	defer cleanup()
+
+	originalWait := remoteIdentifierRetryWait
+	remoteIdentifierRetryWait = func(context.Context, time.Duration) error {
+		t.Fatal("permanent errors must not be retried")
+		return nil
+	}
+	defer func() { remoteIdentifierRetryWait = originalWait }()
+
+	pmaxClient.EXPECT().
+		GetVolumeByID(gomock.Any(), symIDRemote, validRemoteDeviceID).
+		Return(&types.Volume{VolumeID: validRemoteDeviceID, VolumeIdentifier: ""}, nil)
+	pmaxClient.EXPECT().
+		RenameVolume(gomock.Any(), symIDRemote, validRemoteDeviceID, localVolumeName).
+		Return(nil, errors.New("permission denied"))
+
+	err := svc.syncRemoteVolumeIdentifierWithRetry(
+		context.Background(), symIDRemote, validRemoteDeviceID, localVolumeName, pmaxClient)
+	assert.Error(t, err)
+}
+
+func TestSyncRemoteVolumeIdentifierWithRetryFromVolume_RenamesMismatchedR2(t *testing.T) {
+	svc, pmaxClient, cleanup := newCSIAddonsTestService(t)
+	defer cleanup()
+
+	pmaxClient.EXPECT().
+		RenameVolume(gomock.Any(), symIDRemote, validRemoteDeviceID, localVolumeName).
+		Return(&types.Volume{VolumeID: validRemoteDeviceID, VolumeIdentifier: localVolumeName}, nil)
+
+	err := svc.syncRemoteVolumeIdentifierWithRetryFromVolume(
+		context.Background(),
+		symIDRemote,
+		validRemoteDeviceID,
+		localVolumeName,
+		&types.Volume{VolumeID: validRemoteDeviceID, VolumeIdentifier: ""},
+		pmaxClient,
+	)
+	assert.NoError(t, err)
 }
 
 func TestSyncRemoteVolumeIdentifiers_EmptySG_NoOp(t *testing.T) {

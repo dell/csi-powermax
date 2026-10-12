@@ -843,7 +843,7 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 				storageGroupName = sgid
 			}
 		}
-		if matchesStorageGroup && vol.VolumeIdentifier == volumeIdentifier {
+		if matchesStorageGroup && volumeIdentifiersMatch(volumeIdentifier, vol.VolumeIdentifier) {
 			if vol.CapacityCYL != requiredCylinders {
 				csmlog.WithContext(ctx).Error("A volume with the same name exists but has a different size than required.")
 				alreadyExists = true
@@ -867,6 +867,12 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 			if err != nil {
 				csmlog.WithContext(ctx).Error("Error fetching remote volume for idempotence check: " + err.Error())
 				return nil, status.Errorf(codes.Internal, "Error fetching remote volume for idempotence check: %s", err.Error())
+			}
+			if err := s.syncRemoteVolumeIdentifierWithRetryFromVolume(
+				ctx, remoteSymID, remoteVolumeID, vol.VolumeIdentifier, remoteVol, pmaxClient,
+			); err != nil {
+				csmlog.WithContext(ctx).Errorf("Failed to synchronize remote volume identifier during idempotent CreateVolume: %s", err.Error())
+				return nil, err
 			}
 			if len(remoteVol.StorageGroupIDList) < 2 {
 				// remote volume is not added to default storage group on R2 and local volume is present
@@ -1112,6 +1118,10 @@ func (s *service) createMetroVolume(ctx context.Context, req *csi.CreateVolumeRe
 	if err != nil {
 		csmlog.WithContext(ctx).Error(fmt.Sprintf("Could not add volume in SG on R2: %s: %s", remoteVolumeID, err.Error()))
 		return nil, status.Errorf(codes.Internal, "Could not add volume in SG on R2: %s: %s", remoteVolumeID, err.Error())
+	}
+	if err := s.syncRemoteVolumeIdentifierWithRetry(ctx, remoteSymID, remoteVolumeID, vol.VolumeIdentifier, pmaxClient); err != nil {
+		csmlog.WithContext(ctx).Errorf("Failed to synchronize remote volume identifier during Metro volume creation: %s", err.Error())
+		return nil, err
 	}
 
 	// If volume content source is specified, initiate no_copy to newly created volume
@@ -1778,7 +1788,7 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 		return status.Errorf(codes.Internal, "Could not retrieve volume: (%s)", err.Error())
 	}
 
-	if vol.VolumeIdentifier != volName {
+	if !volumeIdentifiersMatch(volName, vol.VolumeIdentifier) {
 		// Check if the volume was previously renamed with the deletion prefix
 		// but failed to be queued for actual deletion (e.g., due to a transient error).
 		// In that case, re-attempt queuing instead of assuming it's already deleted.
@@ -1786,7 +1796,8 @@ func (s *service) deleteVolume(ctx context.Context, reqID, symID, volName, devID
 		if len(expectedDelName) > MaxVolIdentifierLength {
 			expectedDelName = expectedDelName[:MaxVolIdentifierLength]
 		}
-		if vol.VolumeIdentifier == expectedDelName {
+		if deletionMarkedVolumeMatches(volName, vol.VolumeIdentifier) ||
+			vol.VolumeIdentifier == expectedDelName || strings.HasSuffix(vol.VolumeIdentifier, "-"+expectedDelName) {
 			csmlog.WithContext(ctx).Info(fmt.Sprintf("DeleteVolume: VolumeIdentifier %s indicates volume %s was renamed for deletion but not yet queued. Re-attempting deletion.",
 				vol.VolumeIdentifier, volName))
 			err = s.deletionWorker.QueueDeviceForDeletion(vol.VolumeID, vol.VolumeIdentifier, symID)
@@ -2274,6 +2285,27 @@ func (s *service) IsNodeISCSI(ctx context.Context, symID, nodeID string, pmaxCli
 // GetVolumeByID - Takes a CSI volume ID and checks for its existence on array
 // along with matching with the volume identifier. Returns back the volume name
 // on array, device ID, volume structure
+func volumeIdentifiersMatch(expected, actual string) bool {
+	if expected == "" || actual == expected {
+		return expected != ""
+	}
+
+	suffix := "-" + expected
+	if !strings.HasSuffix(actual, suffix) {
+		return false
+	}
+
+	tenantPrefix := strings.TrimSuffix(actual, suffix)
+	return len(tenantPrefix) <= MaxClusterPrefixLength
+}
+
+func deletionMarkedVolumeMatches(expected, actual string) bool {
+	if !strings.HasPrefix(actual, DeletionPrefix) {
+		return false
+	}
+	return volumeIdentifiersMatch(expected, strings.TrimPrefix(actual, DeletionPrefix))
+}
+
 func (s *service) GetVolumeByID(ctx context.Context,
 	volID string, pmaxClient pmax.Pmax,
 ) (string, string, *types.Volume, error) {
@@ -2295,7 +2327,7 @@ func (s *service) GetVolumeByID(ctx context.Context,
 			"failure checking volume (Array: %s, Volume: %s)status %s",
 			symID, devID, err.Error())
 	}
-	if volName != vol.VolumeIdentifier {
+	if !volumeIdentifiersMatch(volName, vol.VolumeIdentifier) {
 		return "", "", nil, status.Errorf(codes.FailedPrecondition,
 			failedToValidateVolumeNameAndID)
 	}
@@ -2715,7 +2747,7 @@ func (s *service) ValidateVolumeCapabilities(
 			symID, devID, err.Error())
 	}
 
-	if volName != vol.VolumeIdentifier {
+	if !volumeIdentifiersMatch(volName, vol.VolumeIdentifier) {
 		csmlog.WithContext(ctx).Error("Failed to validate combination of Volume Name and Volume ID")
 		return nil, status.Errorf(codes.NotFound,
 			"Failed to validate combination of Volume Name and Volume ID")
