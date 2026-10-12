@@ -18,8 +18,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dell/csmlog"
 	csictx "github.com/dell/gocsi/context"
@@ -409,6 +411,157 @@ func csiAddonsSGLockHandle(sgName, symID string) string {
 type pendingRename struct {
 	remoteDevID string // R2 device ID on the remote array
 	identifier  string // desired VolumeIdentifier (copied from R1)
+}
+
+var remoteIdentifierRetryDelays = []time.Duration{
+	time.Second,
+	2 * time.Second,
+	4 * time.Second,
+	8 * time.Second,
+}
+
+var remoteIdentifierRetryWait = func(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// syncRemoteVolumeIdentifier ensures that one remote (R2) volume has the same
+// VolumeIdentifier as its local (R1) volume.
+func (s *service) syncRemoteVolumeIdentifier(ctx context.Context, remoteSymID, remoteVolumeID, localIdentifier string, pmaxClient pmax.Pmax) error {
+	if err := validateRemoteVolumeIdentifier(localIdentifier); err != nil {
+		return err
+	}
+
+	remoteVolume, err := pmaxClient.GetVolumeByID(ctx, remoteSymID, remoteVolumeID)
+	if err != nil {
+		return wrapRemoteIdentifierError(
+			fmt.Sprintf("failed to get remote volume %s on %s", remoteVolumeID, remoteSymID), err)
+	}
+	return s.syncRemoteVolumeIdentifierValue(ctx, remoteSymID, remoteVolumeID, localIdentifier, remoteVolume, pmaxClient)
+}
+
+func (s *service) syncRemoteVolumeIdentifierValue(
+	ctx context.Context,
+	remoteSymID, remoteVolumeID, localIdentifier string,
+	remoteVolume *types.Volume,
+	pmaxClient pmax.Pmax,
+) error {
+	if err := validateRemoteVolumeIdentifier(localIdentifier); err != nil {
+		return err
+	}
+	if remoteVolume.VolumeIdentifier == localIdentifier {
+		return nil
+	}
+
+	if _, err := pmaxClient.RenameVolume(ctx, remoteSymID, remoteVolumeID, localIdentifier); err != nil {
+		return wrapRemoteIdentifierError(
+			fmt.Sprintf("failed to rename remote volume %s on %s", remoteVolumeID, remoteSymID), err)
+	}
+	return nil
+}
+
+func (s *service) syncRemoteVolumeIdentifierWithRetryFromVolume(
+	ctx context.Context,
+	remoteSymID, remoteVolumeID, localIdentifier string,
+	remoteVolume *types.Volume,
+	pmaxClient pmax.Pmax,
+) error {
+	if err := validateRemoteVolumeIdentifier(localIdentifier); err != nil {
+		return err
+	}
+	err := s.syncRemoteVolumeIdentifierValue(
+		ctx, remoteSymID, remoteVolumeID, localIdentifier, remoteVolume, pmaxClient)
+	if err == nil || !isTransientRemoteIdentifierError(err) {
+		return err
+	}
+	return s.syncRemoteVolumeIdentifierWithRetry(ctx, remoteSymID, remoteVolumeID, localIdentifier, pmaxClient)
+}
+
+func (s *service) syncRemoteVolumeIdentifierWithRetry(
+	ctx context.Context,
+	remoteSymID, remoteVolumeID, localIdentifier string,
+	pmaxClient pmax.Pmax,
+) error {
+	var err error
+	for attempt := 0; attempt <= len(remoteIdentifierRetryDelays); attempt++ {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		err = s.syncRemoteVolumeIdentifier(ctx, remoteSymID, remoteVolumeID, localIdentifier, pmaxClient)
+		if err == nil || !isTransientRemoteIdentifierError(err) || attempt == len(remoteIdentifierRetryDelays) {
+			return err
+		}
+		if waitErr := remoteIdentifierRetryWait(ctx, remoteIdentifierRetryDelays[attempt]); waitErr != nil {
+			return waitErr
+		}
+	}
+	return err
+}
+
+func validateRemoteVolumeIdentifier(localIdentifier string) error {
+	if localIdentifier == "" {
+		return status.Error(codes.InvalidArgument, "local volume identifier cannot be empty")
+	}
+	return nil
+}
+
+func wrapRemoteIdentifierError(message string, err error) error {
+	code := remoteIdentifierErrorCode(err)
+	return status.Errorf(code, "%s: %v", message, err)
+}
+
+func remoteIdentifierErrorCode(err error) codes.Code {
+	if errors.Is(err, context.Canceled) {
+		return codes.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return codes.DeadlineExceeded
+	}
+
+	if code := status.Code(err); code != codes.Unknown {
+		return code
+	}
+
+	switch remoteIdentifierHTTPStatus(err) {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return codes.Unavailable
+	default:
+		return codes.Internal
+	}
+}
+
+func remoteIdentifierHTTPStatus(err error) int {
+	var apiErr *types.Error
+	if errors.As(err, &apiErr) {
+		return apiErr.HTTPStatusCode
+	}
+	return types.GetHTTPStatus(err)
+}
+
+func isTransientRemoteIdentifierError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if status.Code(err) == codes.Unavailable {
+		return true
+	}
+	switch remoteIdentifierHTTPStatus(err) {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+
+	message := strings.ToLower(err.Error())
+	return strings.HasSuffix(message, "csm-authorization: no storage pool found") ||
+		strings.HasSuffix(message, "csm-authorization: getting volume by id") ||
+		strings.Contains(message, "connection refused") ||
+		strings.Contains(message, "temporarily unavailable")
 }
 
 // syncRemoteVolumeIdentifiers ensures that each remote (R2) volume in the SRDF

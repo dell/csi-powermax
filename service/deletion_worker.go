@@ -1,5 +1,5 @@
 /*
- Copyright © 2021 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2021-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -125,20 +125,57 @@ func (worker *deletionWorker) Stop() {
 	}
 }
 
-func (req *deletionRequest) isValid(clusterPrefix string) error {
+func isDeletionVolumeForCluster(volumeIdentifier, clusterPrefix string) bool {
+	if !strings.HasPrefix(volumeIdentifier, DeletionPrefix) {
+		return false
+	}
+
+	identifier := strings.TrimPrefix(volumeIdentifier, DeletionPrefix)
+	canonicalPrefix := CSIPrefix + "-" + clusterPrefix
+	if strings.HasPrefix(identifier, canonicalPrefix) {
+		return true
+	}
+
+	tenantPrefix := "-" + canonicalPrefix
+	markerIndex := strings.Index(identifier, tenantPrefix)
+	return markerIndex > 0 && markerIndex <= MaxClusterPrefixLength
+}
+
+func (req *deletionRequest) isValid() error {
 	if req.DeviceID == "" {
 		return fmt.Errorf("device id can't be empty")
 	}
 	if req.SymID == "" {
 		return fmt.Errorf("sym id can't be empty")
 	}
-	if !strings.Contains(req.VolumeHandle, clusterPrefix) {
-		return fmt.Errorf("device id doesn't contain the cluster prefix")
+	// Deletion requests must use the canonical deletion-marked CSI format:
+	//
+	// _DELcsi-<cluster-prefix>-<volume-data>
+	//
+	// Do not require the handle's cluster prefix to match the local cluster.
+	// An SRDF target volume can retain the source cluster prefix, such as OV1,
+	// while the target driver is configured with a different prefix, such as
+	// OV2.
+	// (ECSDF-57 / CSME-308)
+	expectedPrefix := DeletionPrefix + CSIPrefix + "-"
+	if strings.HasPrefix(req.VolumeHandle, expectedPrefix) {
+		return nil
 	}
-	if !strings.Contains(req.VolumeHandle, "_DEL") {
-		return fmt.Errorf("device has not been marked for deletion")
+
+	// Authorization may prepend the tenant prefix to the CSI volume name.
+	// Accept the resulting _DEL<tenant>-csi-... form as well, but never accept
+	// an unmarked volume handle.
+	if !strings.HasPrefix(req.VolumeHandle, DeletionPrefix) {
+		return fmt.Errorf("volume handle must begin with CSI deletion prefix %q", expectedPrefix)
 	}
-	return nil
+
+	rest := strings.TrimPrefix(req.VolumeHandle, DeletionPrefix)
+	const csiMarker = "-" + CSIPrefix + "-"
+	if markerIndex := strings.Index(rest, csiMarker); markerIndex > 0 && markerIndex <= 3 {
+		return nil
+	}
+
+	return fmt.Errorf("volume handle must begin with CSI deletion prefix %q", expectedPrefix)
 }
 
 func (vol *symVolumeCache) getOrUpdateVolume(symID, volumeID string, pmaxClient pmax.Pmax, forceUpdate bool) (*types.Volume, error) {
@@ -822,7 +859,7 @@ func (worker *deletionWorker) deletionRequestHandler() {
 				req.errChan <- err
 				continue
 			}
-			err = req.isValid(worker.ClusterPrefix)
+			err = req.isValid()
 			if err != nil {
 				req.errChan <- err
 				continue
@@ -931,7 +968,7 @@ func (worker *deletionWorker) populateDeletionQueue() {
 		version := 0
 		checkVolByVol := true
 		csmlog.Infof("Processing symmetrix %s for volumes to be deleted with cluster prefix: %s", symID, worker.ClusterPrefix)
-		volDeletePrefix := DeletionPrefix + CSIPrefix + "-" + worker.ClusterPrefix
+		volDeletePrefix := DeletionPrefix
 		csmlog.Infof("Deletion Prefix: %s", volDeletePrefix)
 		pmaxClient, err := symmetrix.GetPowerMaxClient(symID)
 		if err != nil {
@@ -957,7 +994,6 @@ func (worker *deletionWorker) populateDeletionQueue() {
 
 		// Usebulk Volume get if api is greater than or 101
 		if version >= APIVersion101 {
-			volDeletePrefix := DeletionPrefix + CSIPrefix + "-" + worker.ClusterPrefix
 			volumev1, err := pmaxClient.GetVolumesByIdentifierMatch(ctx, symID, volDeletePrefix)
 			if err != nil {
 				csmlog.Errorf("error getting volumes by identifier prefix: %s", err.Error())
@@ -965,6 +1001,9 @@ func (worker *deletionWorker) populateDeletionQueue() {
 			} else {
 				csmlog.Infof("Total number of volumes found in bulk which have been tagged for deletion: %d", len(volumev1.Volumes))
 				for _, volume := range volumev1.Volumes {
+					if !isDeletionVolumeForCluster(volume.Identifier, worker.ClusterPrefix) {
+						continue
+					}
 					// Put volume on the queue if appropriate
 					go func() {
 						err := worker.QueueDeviceForDeletion(volume.ID, volume.Identifier, symID)
@@ -996,7 +1035,7 @@ func (worker *deletionWorker) populateDeletionQueue() {
 					continue
 				}
 				// Put volume on the queue if appropriate
-				if strings.HasPrefix(volume.VolumeIdentifier, volDeletePrefix) {
+				if isDeletionVolumeForCluster(volume.VolumeIdentifier, worker.ClusterPrefix) {
 					go func() {
 						err := worker.QueueDeviceForDeletion(id, volume.VolumeIdentifier, symID)
 						if err != nil {

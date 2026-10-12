@@ -1010,6 +1010,11 @@ func Test_service_createMetroVolume(t *testing.T) {
 					VolumeID:           "033EF",
 					StorageGroupIDList: []string{"SG1", "SG2"},
 				}, nil)
+				pmaxClient.EXPECT().RenameVolume(gomock.Any(), symIDRemote, "033EF", "csi-CSM-csivol-01234abcde-default").Times(1).
+					Return(&types.Volume{
+						VolumeID:         "033EF",
+						VolumeIdentifier: "csi-CSM-csivol-01234abcde-default",
+					}, nil)
 				// V4 check - return V4 microcode
 				pmaxClient.EXPECT().GetSymmetrixByID(gomock.Any(), symIDLocal).Times(1).Return(&types.Symmetrix{
 					SymmetrixID: symIDLocal,
@@ -1111,6 +1116,11 @@ func Test_service_createMetroVolume(t *testing.T) {
 					VolumeID:           "033EF",
 					StorageGroupIDList: []string{"SG1", "SG2"},
 				}, nil)
+				pmaxClient.EXPECT().RenameVolume(gomock.Any(), symIDRemote, "033EF", "csi-CSM-csivol-01234abcde-default").Times(1).
+					Return(&types.Volume{
+						VolumeID:         "033EF",
+						VolumeIdentifier: "csi-CSM-csivol-01234abcde-default",
+					}, nil)
 				// V3 check - return V3 microcode
 				pmaxClient.EXPECT().GetSymmetrixByID(gomock.Any(), symIDLocal).Times(1).Return(&types.Symmetrix{
 					SymmetrixID: symIDLocal,
@@ -4600,6 +4610,88 @@ func Test_service_isV4OrAbove(t *testing.T) {
 			assert.Equal(t, tt.wantV4, got)
 		})
 	}
+}
+
+func TestVolumeIdentifiersMatch(t *testing.T) {
+	tests := []struct {
+		name     string
+		expected string
+		actual   string
+		matches  bool
+	}{
+		{
+			name:     "exact match",
+			expected: "csi-CSM-csivol-test-powermax",
+			actual:   "csi-CSM-csivol-test-powermax",
+			matches:  true,
+		},
+		{
+			name:     "authorization tenant prefix",
+			expected: "csi-CSM-csivol-test-powermax",
+			actual:   "csm-csi-CSM-csivol-test-powermax",
+			matches:  true,
+		},
+		{
+			name:     "different volume",
+			expected: "csi-CSM-csivol-test-powermax",
+			actual:   "csm-csi-CSM-csivol-other-powermax",
+			matches:  false,
+		},
+		{
+			name:     "overlong tenant prefix",
+			expected: "csi-CSM-csivol-test-powermax",
+			actual:   "tenant-csi-CSM-csivol-test-powermax",
+			matches:  false,
+		},
+		{
+			name:     "tenant prefix containing a dash",
+			expected: "csi-CSM-csivol-test-powermax",
+			actual:   "a-b-csi-CSM-csivol-test-powermax",
+			matches:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.matches, volumeIdentifiersMatch(tt.expected, tt.actual))
+		})
+	}
+}
+
+func TestGetVolumeByIDAcceptsAuthorizationTenantPrefix(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	client := mocks.NewMockPmaxClient(ctrl)
+	client.EXPECT().GetVolumeByID(gomock.Any(), "000120001965", "001B6").Return(&types.Volume{
+		VolumeID:         "001B6",
+		VolumeIdentifier: "csm-csi-CSM-csivol-test-powermax",
+	}, nil)
+
+	svc := &service{}
+	_, _, volume, err := svc.GetVolumeByID(
+		context.Background(),
+		"csi-CSM-csivol-test-powermax-000120001965-001B6",
+		client,
+	)
+
+	if assert.NoError(t, err) {
+		assert.Equal(t, "001B6", volume.VolumeID)
+	}
+}
+
+func TestVolumeIdentifiersMatchAcceptsDashContainingTenantPrefix(t *testing.T) {
+	assert.True(t, volumeIdentifiersMatch(
+		"csi-CSM-csivol-test-powermax",
+		"a-b-csi-CSM-csivol-test-powermax",
+	))
+}
+
+func TestDeletionMarkedVolumeMatchesAuthorizationPrefixedIdentifier(t *testing.T) {
+	assert.True(t, deletionMarkedVolumeMatches(
+		"csi-CSM-csivol-test-powermax",
+		"_DELcsm-csi-CSM-csivol-test-powermax",
+	))
 }
 
 func TestDeleteVolumeWithDeletionPrefix(t *testing.T) {

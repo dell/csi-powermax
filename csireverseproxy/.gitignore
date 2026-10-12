@@ -4,3 +4,4 @@ certs/*
 !certs/.gitkeep
 c.out
 csireverseproxy
+test-config/tmp/

@@ -1,5 +1,5 @@
 /*
- Copyright © 2024 Dell Inc. or its subsidiaries. All Rights Reserved.
+ Copyright © 2024-2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -359,8 +359,26 @@ func TestIsValid(t *testing.T) {
 			name: "Valid request",
 			req: deletionRequest{
 				DeviceID:     "123",
-				VolumeHandle: "_VOL_DEL_123",
+				VolumeHandle: "_DELcsi-ABC-vol123",
 				SymID:        "456",
+			},
+			expected: nil,
+		},
+		{
+			name: "Valid request - Authorization tenant prefix",
+			req: deletionRequest{
+				DeviceID:     "0026B",
+				VolumeHandle: "_DELcsm-csi-CSM-csivol-test-powermax",
+				SymID:        "000120001965",
+			},
+			expected: nil,
+		},
+		{
+			name: "Valid request - replicated volume with different cluster prefix",
+			req: deletionRequest{
+				DeviceID:     "001F7",
+				VolumeHandle: "_DELcsi-OV1-csivol-df855b74ee-test1",
+				SymID:        "000120001334",
 			},
 			expected: nil,
 		},
@@ -368,7 +386,7 @@ func TestIsValid(t *testing.T) {
 			name: "Invalid request - empty device ID",
 			req: deletionRequest{
 				DeviceID:     "",
-				VolumeHandle: "_VOL_123",
+				VolumeHandle: "_DELcsi-ABC-vol123",
 				SymID:        "456",
 			},
 			expected: fmt.Errorf("device id can't be empty"),
@@ -377,37 +395,116 @@ func TestIsValid(t *testing.T) {
 			name: "Invalid request - empty sym ID",
 			req: deletionRequest{
 				DeviceID:     "123",
-				VolumeHandle: "_VOL_123",
+				VolumeHandle: "_DELcsi-ABC-vol123",
 				SymID:        "",
 			},
 			expected: fmt.Errorf("sym id can't be empty"),
 		},
 		{
-			name: "Invalid request - device ID without prefix",
+			name: "Invalid request - volume handle without CSI prefix",
 			req: deletionRequest{
 				DeviceID:     "123",
-				VolumeHandle: "_INV_123",
+				VolumeHandle: "_DEL_unknown_vol_123",
 				SymID:        "456",
 			},
-			expected: fmt.Errorf("device id doesn't contain the cluster prefix"),
+			expected: fmt.Errorf("volume handle must begin with CSI deletion prefix \"_DELcsi-\""),
 		},
 		{
-			name: "Invalid request - device ID not marked for deletion",
+			name: "Invalid request - CSI text is not the deletion prefix",
 			req: deletionRequest{
 				DeviceID:     "123",
-				VolumeHandle: "_VOL_123",
+				VolumeHandle: "_DELforeign-csi-OV1-vol123",
 				SymID:        "456",
 			},
-			expected: fmt.Errorf("device has not been marked for deletion"),
+			expected: fmt.Errorf("volume handle must begin with CSI deletion prefix \"_DELcsi-\""),
+		},
+		{
+			name: "Invalid request - device not marked for deletion",
+			req: deletionRequest{
+				DeviceID:     "123",
+				VolumeHandle: "csi-ABC-vol123",
+				SymID:        "456",
+			},
+			expected: fmt.Errorf("volume handle must begin with CSI deletion prefix \"_DELcsi-\""),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.req.isValid("_VOL")
+			err := tt.req.isValid()
 			if (err == nil && tt.expected != nil) || (err != nil && tt.expected == nil) || (err != nil && tt.expected != nil && err.Error() != tt.expected.Error()) {
 				t.Errorf("%s: expected error '%v', got '%v'", tt.name, tt.expected, err)
 			}
+		})
+	}
+}
+
+func TestIsValidRejectsUnmarkedAuthorizationHandle(t *testing.T) {
+	req := deletionRequest{
+		DeviceID:     "0026B",
+		VolumeHandle: "csm-csi-CSM-csivol-test-powermax",
+		SymID:        "000120001965",
+	}
+
+	if err := req.isValid(); err == nil {
+		t.Fatal("expected an unmarked authorization volume handle to be rejected")
+	}
+}
+
+func TestIsDeletionVolumeForCluster(t *testing.T) {
+	tests := []struct {
+		name       string
+		identifier string
+		cluster    string
+		want       bool
+	}{
+		{
+			name:       "canonical deletion marker",
+			identifier: "_DELcsi-CSM-csivol-test-powermax",
+			cluster:    "CSM",
+			want:       true,
+		},
+		{
+			name:       "legacy deletion marker without separator",
+			identifier: "_DELcsi-CSM0000",
+			cluster:    "CSM",
+			want:       true,
+		},
+		{
+			name:       "authorization tenant prefix with legacy identifier",
+			identifier: "_DELcsm-csi-CSM0000",
+			cluster:    "CSM",
+			want:       true,
+		},
+		{
+			name:       "authorization tenant prefix",
+			identifier: "_DELcsm-csi-CSM-csivol-test-powermax",
+			cluster:    "CSM",
+			want:       true,
+		},
+		{
+			name:       "authorization tenant prefix containing dash",
+			identifier: "_DELa-b-csi-CSM-csivol-test-powermax",
+			cluster:    "CSM",
+			want:       true,
+		},
+		{
+			name:       "different cluster",
+			identifier: "_DELcsm-csi-OTHER-csivol-test-powermax",
+			cluster:    "CSM",
+			want:       false,
+		},
+		{
+			name:       "unmarked volume",
+			identifier: "csm-csi-CSM-csivol-test-powermax",
+			cluster:    "CSM",
+			want:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isDeletionVolumeForCluster(tt.identifier, tt.cluster))
 		})
 	}
 }
@@ -1243,7 +1340,7 @@ func TestDeletionRequestHandler(t *testing.T) {
 			},
 			deletionRequest: deletionRequest{
 				DeviceID:     "123",
-				VolumeHandle: "vol1_DEL",
+				VolumeHandle: "_DELcsi-OV2-vol1",
 				SymID:        "sym1",
 				errChan:      make(chan error, 1),
 			},
@@ -1275,7 +1372,7 @@ func TestDeletionRequestHandler(t *testing.T) {
 			},
 			deletionRequest: deletionRequest{
 				DeviceID:     "123",
-				VolumeHandle: "vol1_DEL",
+				VolumeHandle: "_DELcsi-OV2-vol1",
 				SymID:        "sym1",
 				errChan:      make(chan error, 1),
 			},
@@ -1307,7 +1404,7 @@ func TestDeletionRequestHandler(t *testing.T) {
 			},
 			deletionRequest: deletionRequest{
 				DeviceID:     "123",
-				VolumeHandle: "vol1_DEL",
+				VolumeHandle: "_DELcsi-OV2-vol1",
 				SymID:        "sym1",
 				errChan:      make(chan error, 1),
 			},
@@ -1386,7 +1483,7 @@ func TestDeletionRequestHandler(t *testing.T) {
 			},
 			deletionRequest: deletionRequest{
 				DeviceID:     "123",
-				VolumeHandle: "vol1",
+				VolumeHandle: "csi-OV2-vol1",
 				SymID:        "sym1",
 				errChan:      make(chan error, 1),
 			},
@@ -1399,7 +1496,7 @@ func TestDeletionRequestHandler(t *testing.T) {
 				pmaxClient.EXPECT().WithSymmetrixID(gomock.Any()).AnyTimes().Return(pmaxClient)
 				return pmaxClient
 			}(),
-			expectedError: errors.New("device has not been marked for deletion"),
+			expectedError: errors.New("volume handle must begin with CSI deletion prefix \"_DELcsi-\""),
 		},
 		{
 			name: "Not a valid device id",
@@ -1408,7 +1505,7 @@ func TestDeletionRequestHandler(t *testing.T) {
 			},
 			deletionRequest: deletionRequest{
 				DeviceID:     "abc-def",
-				VolumeHandle: "vol1_DEL",
+				VolumeHandle: "_DELcsi-OV2-vol1",
 				SymID:        "sym1",
 				errChan:      make(chan error, 1),
 			},
