@@ -30,6 +30,7 @@ import (
 	"github.com/dell/csmlog"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"gopkg.in/yaml.v2"
 )
@@ -1296,6 +1297,104 @@ func TestProxyUser_DeepClone(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsCredentialValidForAnyServer_SecretReload(t *testing.T) {
+	t.Setenv(common.EnvReverseProxyUseSecret, "true")
+
+	secret := func(passA string) ProxySecret {
+		return ProxySecret{
+			StorageArrayConfig: []StorageArrayConfig{
+				{StorageArrayID: "array-A", PrimaryEndpoint: "https://unisphere-a:8443"},
+				{StorageArrayID: "array-B", PrimaryEndpoint: "https://unisphere-b:8443"},
+			},
+			ManagementServerConfig: []ManagementServerConfig{
+				{Endpoint: "https://unisphere-a:8443", Username: "smc", Password: passA, SkipCertificateValidation: true},
+				{Endpoint: "https://unisphere-b:8443", Username: "smc", Password: "passB", SkipCertificateValidation: true},
+			},
+		}
+	}
+
+	var pc ProxyConfig
+	require.NoError(t, pc.ParseConfigFromSecret(secret("passA"), nil))
+	assert.True(t, pc.IsCredentialValidForAnyServer("smc", "passA"))
+
+	// Mounted-secret reload: re-parse with only unisphere-a's password changed
+	var reloaded ProxyConfig
+	require.NoError(t, reloaded.ParseConfigFromSecret(secret("passA-rotated"), nil))
+	assert.True(t, reloaded.IsCredentialValidForAnyServer("smc", "passA-rotated"), "new passA accepted")
+	assert.False(t, reloaded.IsCredentialValidForAnyServer("smc", "passA"), "old passA rejected")
+	assert.True(t, reloaded.IsCredentialValidForAnyServer("smc", "passB"), "passB still accepted")
+}
+
+func TestIsCredentialValidForAnyServer_BlankCredentialServer(t *testing.T) {
+	t.Setenv(common.EnvReverseProxyUseSecret, "true")
+
+	var pc ProxyConfig
+	require.NoError(t, pc.ParseConfigFromSecret(ProxySecret{
+		StorageArrayConfig: []StorageArrayConfig{
+			{StorageArrayID: "array-A", PrimaryEndpoint: "https://unisphere-a:8443"},
+			{StorageArrayID: "array-C", PrimaryEndpoint: "https://unisphere-c:8443"},
+		},
+		ManagementServerConfig: []ManagementServerConfig{
+			{Endpoint: "https://unisphere-a:8443", Username: "smc", Password: "passA", SkipCertificateValidation: true},
+			{Endpoint: "https://unisphere-c:8443", SkipCertificateValidation: true},
+		},
+	}, nil))
+
+	assert.False(t, pc.IsCredentialValidForAnyServer("", ""))
+	assert.False(t, pc.IsCredentialValidForAnyServer("smc", ""))
+	assert.False(t, pc.IsCredentialValidForAnyServer("", "passA"))
+	assert.True(t, pc.IsCredentialValidForAnyServer("smc", "passA"))
+}
+
+func TestIsCredentialValidForAnyServer(t *testing.T) {
+	t.Setenv(common.EnvReverseProxyUseSecret, "true")
+
+	var pc ProxyConfig
+	err := pc.ParseConfigFromSecret(ProxySecret{
+		StorageArrayConfig: []StorageArrayConfig{
+			{
+				StorageArrayID:  "array-A",
+				PrimaryEndpoint: "https://unisphere-a:8443",
+			},
+			{
+				StorageArrayID:  "array-B",
+				PrimaryEndpoint: "https://unisphere-b:8443",
+			},
+		},
+		ManagementServerConfig: []ManagementServerConfig{
+			{
+				Endpoint:                  "https://unisphere-a:8443",
+				Username:                  "smc",
+				Password:                  "passA",
+				SkipCertificateValidation: true,
+			},
+			{
+				Endpoint:                  "https://unisphere-b:8443",
+				Username:                  "smc",
+				Password:                  "passB",
+				SkipCertificateValidation: true,
+			},
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	// passA matches unisphere-a
+	assert.True(t, pc.IsCredentialValidForAnyServer("smc", "passA"),
+		"passA should match unisphere-a server credentials")
+
+	// passB matches unisphere-b
+	assert.True(t, pc.IsCredentialValidForAnyServer("smc", "passB"),
+		"passB should match unisphere-b server credentials")
+
+	// wrong password matches nothing
+	assert.False(t, pc.IsCredentialValidForAnyServer("smc", "wrongPass"),
+		"wrong password should not match any server")
+
+	// wrong username matches nothing
+	assert.False(t, pc.IsCredentialValidForAnyServer("unknown", "passA"),
+		"wrong username should not match any server")
 }
 
 func TestProxyConfig_UpdateCreds_ConfigMap(t *testing.T) {

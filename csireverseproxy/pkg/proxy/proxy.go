@@ -171,6 +171,27 @@ func (revProxy *Proxy) getProxyBySymmID(storageArrayID string) (common.Proxy, er
 }
 
 func (revProxy *Proxy) getAuthorisedArrays(res http.ResponseWriter, req *http.Request) ([]string, error) {
+	// In secret mode, validate Basic Auth against any management server's
+	// credentials, then return all managed arrays. This avoids the
+	// proxyCredentials map which is keyed by username only and silently
+	// drops arrays when the same username has different passwords.
+	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
+		if err := revProxy.authenticateSecretMode(res, req); err != nil {
+			return nil, err
+		}
+		allArrays := revProxy.config.GetStorageArray("")
+		ids := make([]string, 0, len(allArrays))
+		for _, a := range allArrays {
+			ids = append(ids, a.StorageArrayIdentifier)
+		}
+		if len(ids) == 0 {
+			utils.WriteHTTPError(res, "no managed arrays configured", utils.StatusUnAuthorized)
+			return nil, fmt.Errorf("no managed arrays configured")
+		}
+		csmlog.Infof("Authorized arrays (secret mode) - %s", ids)
+		return ids, nil
+	}
+	// ConfigMap mode: existing behavior
 	username, password, ok := req.BasicAuth()
 	if !ok {
 		utils.WriteHTTPError(res, "no authorization provided", utils.StatusUnAuthorized)
@@ -544,7 +565,40 @@ func (revProxy *Proxy) symIDMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// authenticateSecretMode validates the request's Basic Auth against the
+// configured management server credentials, writing a 401 on failure.
+func (revProxy *Proxy) authenticateSecretMode(res http.ResponseWriter, req *http.Request) error {
+	username, password, ok := req.BasicAuth()
+	if !ok {
+		utils.WriteHTTPError(res, "no authorization provided", utils.StatusUnAuthorized)
+		return fmt.Errorf("no authorization provided")
+	}
+	if !revProxy.config.IsCredentialValidForAnyServer(username, password) {
+		utils.WriteHTTPError(res, "invalid credentials", utils.StatusUnAuthorized)
+		return fmt.Errorf("invalid credentials")
+	}
+	return nil
+}
+
 func (revProxy *Proxy) isAuthorized(res http.ResponseWriter, req *http.Request, storageArrayID string) error {
+	// In secret mode the proxyCredentials map is keyed by username only, so
+	// the same username with different passwords across Unisphere instances
+	// silently drops arrays. Instead, validate Basic Auth against any
+	// configured management server's credentials, then verify the array
+	// exists. This keeps authentication while supporting per-Unisphere
+	// passwords.
+	if os.Getenv(common.EnvReverseProxyUseSecret) == "true" {
+		if err := revProxy.authenticateSecretMode(res, req); err != nil {
+			return err
+		}
+		arrays := revProxy.config.GetStorageArray(storageArrayID)
+		if len(arrays) == 0 {
+			utils.WriteHTTPError(res, "unknown storage array", utils.StatusUnAuthorized)
+			return fmt.Errorf("unknown storage array: %s", storageArrayID)
+		}
+		return nil
+	}
+	// ConfigMap mode: existing behavior
 	username, password, ok := req.BasicAuth()
 	if !ok {
 		utils.WriteHTTPError(res, "no authorization provided", utils.StatusUnAuthorized)
