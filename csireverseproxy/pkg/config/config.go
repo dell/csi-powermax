@@ -516,6 +516,38 @@ func (pc *ProxyConfig) GetManagementServerCredentials(mgmtEndpoint url.URL) (com
 	return common.Credentials{}, fmt.Errorf("endpoint not configured")
 }
 
+// IsCredentialValidForAnyServer checks whether the given username and password
+// match any configured management server's credentials using constant-time
+// comparison (no early return, bitwise combination of both comparisons). This
+// is used in secret mode where the proxyCredentials map (keyed by username
+// only) cannot represent the same username with different passwords across
+// Unisphere instances.
+//
+// Trust boundary: in secret mode, a credential belonging to ANY management
+// server authenticates the caller for ALL managed arrays. The per-array
+// boundary enforced in ConfigMap mode is intentionally not applied here; the
+// driver is trusted for every array in the zone, and since the proxy
+// substitutes the per-endpoint credential before forwarding, the effective
+// privilege is that of the target Unisphere's configured user.
+//
+// This reads managementServers without locking and must only be called on a
+// config that is swapped copy-on-write (DeepCopy + SetConfig), never on one
+// mutated in place.
+func (pc *ProxyConfig) IsCredentialValidForAnyServer(username, password string) bool {
+	if username == "" || password == "" {
+		return false
+	}
+	valid := 0
+	for _, server := range pc.managementServers {
+		if server.Username == "" || server.Password == "" {
+			continue
+		}
+		valid |= subtle.ConstantTimeCompare([]byte(server.Username), []byte(username)) &
+			subtle.ConstantTimeCompare([]byte(server.Password), []byte(password))
+	}
+	return valid == 1
+}
+
 // IsUserAuthorized - Returns if a given user is authorized to access a specific storage array
 func (pc *ProxyConfig) IsUserAuthorized(username, password, storageArrayID string) (bool, error) {
 	if creds, ok := pc.proxyCredentials[username]; ok {
@@ -780,6 +812,9 @@ func (pc *ProxyConfig) ParseConfigFromSecret(proxySecret ProxySecret, k8sUtils k
 			if err != nil {
 				return err
 			}
+		}
+		if managementServer.Username == "" || managementServer.Password == "" {
+			csmlog.Warnf("Management server %s has missing username or password; it will not be usable for authentication", managementServer.Endpoint)
 		}
 		pc.managementServers[*mgmtEndpoint] = &ManagementServer{
 			Endpoint:                  *mgmtEndpoint,

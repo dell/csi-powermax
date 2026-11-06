@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,6 +33,7 @@ import (
 	types "github.com/dell/gopowermax/v2/types/v100"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/gorilla/mux"
 )
@@ -2148,6 +2150,22 @@ func createValidProxyConfig(_ *testing.T, server *httptest.Server) (*Proxy, erro
 	return proxy, nil
 }
 
+func createSecretModeProxy(t *testing.T, server *httptest.Server, username, password string) *Proxy {
+	var proxyConfig config.ProxyConfig
+	err := proxyConfig.ParseConfigFromSecret(config.ProxySecret{
+		StorageArrayConfig: []config.StorageArrayConfig{
+			{StorageArrayID: "000000000001", PrimaryEndpoint: server.URL},
+		},
+		ManagementServerConfig: []config.ManagementServerConfig{
+			{Endpoint: server.URL, Username: username, Password: password, SkipCertificateValidation: true},
+		},
+	}, nil)
+	require.NoError(t, err)
+	proxy, err := NewProxy(proxyConfig)
+	require.NoError(t, err)
+	return proxy
+}
+
 func fakeServer(t *testing.T, h http.Handler) *httptest.Server {
 	s := httptest.NewServer(h)
 	t.Cleanup(func() {
@@ -2364,6 +2382,265 @@ func TestGetRouter_GetPortGroups(t *testing.T) {
 			t.Logf("Router: %v", router)
 		})
 	}
+}
+
+// TestIsAuthorized_SecretMode_ValidatesAgainstServerCreds verifies that in
+// secret mode the proxy validates Basic Auth against management server
+// credentials (not the broken proxyCredentials map) and checks array existence.
+func TestIsAuthorized_SecretMode_ValidatesAgainstServerCreds(t *testing.T) {
+	t.Setenv(common.EnvReverseProxyUseSecret, "true")
+	utils.InitializeLock()
+
+	server := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	proxy := createSecretModeProxy(t, server, "smc", "correctPass")
+	var err error
+
+	// Valid credentials + valid array → pass
+	req, _ := http.NewRequest("GET", "/test", nil)
+	req.SetBasicAuth("smc", "correctPass")
+	vars := map[string]string{"symid": "000000000001"}
+	req = mux.SetURLVars(req, vars)
+	rec := httptest.NewRecorder()
+
+	err = proxy.isAuthorized(rec, req, "000000000001")
+	assert.NoError(t, err, "valid credentials and valid array should pass")
+
+	// Wrong credentials + valid array → rejected
+	req2, _ := http.NewRequest("GET", "/test", nil)
+	req2.SetBasicAuth("wrong-user", "wrong-password")
+	req2 = mux.SetURLVars(req2, vars)
+	rec2 := httptest.NewRecorder()
+
+	err = proxy.isAuthorized(rec2, req2, "000000000001")
+	assert.Error(t, err, "invalid credentials should be rejected in secret mode")
+	assert.Contains(t, err.Error(), "invalid credentials")
+
+	// Valid credentials + unknown array → rejected
+	req3, _ := http.NewRequest("GET", "/test", nil)
+	req3.SetBasicAuth("smc", "correctPass")
+	rec3 := httptest.NewRecorder()
+
+	err = proxy.isAuthorized(rec3, req3, "999999999999")
+	assert.Error(t, err, "unknown array should be rejected even with valid credentials")
+	assert.Contains(t, err.Error(), "unknown storage array")
+
+	// No credentials at all → rejected
+	req4, _ := http.NewRequest("GET", "/test", nil)
+	rec4 := httptest.NewRecorder()
+
+	err = proxy.isAuthorized(rec4, req4, "000000000001")
+	assert.Error(t, err, "missing credentials should be rejected in secret mode")
+	assert.Contains(t, err.Error(), "no authorization provided")
+}
+
+// TestGetAuthorisedArrays_SecretMode_ValidatesCredsReturnsAll verifies that in
+// secret mode getAuthorisedArrays validates Basic Auth against management
+// server credentials and returns all managed arrays on success.
+func TestGetAuthorisedArrays_SecretMode_ValidatesCredsReturnsAll(t *testing.T) {
+	t.Setenv(common.EnvReverseProxyUseSecret, "true")
+	utils.InitializeLock()
+
+	server := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	proxy := createSecretModeProxy(t, server, "smc", "correctPass")
+	var err error
+
+	// Valid credentials → returns all managed arrays
+	req, _ := http.NewRequest("GET", "/test", nil)
+	req.SetBasicAuth("smc", "correctPass")
+	rec := httptest.NewRecorder()
+
+	arrays, err := proxy.getAuthorisedArrays(rec, req)
+	assert.NoError(t, err)
+	assert.Contains(t, arrays, "000000000001", "should return the configured array")
+
+	// Wrong credentials → rejected
+	req2, _ := http.NewRequest("GET", "/test", nil)
+	req2.SetBasicAuth("smc", "wrongPass")
+	rec2 := httptest.NewRecorder()
+
+	_, err = proxy.getAuthorisedArrays(rec2, req2)
+	assert.Error(t, err, "invalid credentials should be rejected")
+	assert.Contains(t, err.Error(), "invalid credentials")
+
+	// No credentials → rejected
+	req3, _ := http.NewRequest("GET", "/test", nil)
+	rec3 := httptest.NewRecorder()
+
+	_, err = proxy.getAuthorisedArrays(rec3, req3)
+	assert.Error(t, err, "missing credentials should be rejected")
+	assert.Contains(t, err.Error(), "no authorization provided")
+}
+
+// TestIsAuthorized_ConfigMapMode_StillChecksCredentials verifies that when
+// secret mode is off, the existing credential check is preserved.
+func TestIsAuthorized_ConfigMapMode_StillChecksCredentials(t *testing.T) {
+	t.Setenv(common.EnvReverseProxyUseSecret, "false")
+	utils.InitializeLock()
+
+	server := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	proxy, err := createValidProxyConfig(t, server)
+	require.NoError(t, err)
+
+	// Wrong credentials should be rejected in ConfigMap mode
+	req, _ := http.NewRequest("GET", "/test", nil)
+	req.SetBasicAuth("wrong-user", "wrong-password")
+	rec := httptest.NewRecorder()
+
+	err = proxy.isAuthorized(rec, req, "000000000001")
+	assert.Error(t, err, "wrong credentials should be rejected in ConfigMap mode")
+	assert.Contains(t, err.Error(), "unknown credentials")
+	assert.Equal(t, http.StatusUnauthorized, rec.Code, "should return 401")
+}
+
+// TestSecretMode_UnauthenticatedRequest_Rejected verifies that requests with
+// no Basic Auth header are rejected in secret mode with a 401 status code.
+func TestSecretMode_UnauthenticatedRequest_Rejected(t *testing.T) {
+	t.Setenv(common.EnvReverseProxyUseSecret, "true")
+	utils.InitializeLock()
+
+	server := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	proxy := createSecretModeProxy(t, server, "smc", "correctPass")
+	var err error
+
+	// isAuthorized: no Basic Auth header at all
+	req, _ := http.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+	err = proxy.isAuthorized(rec, req, "000000000001")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no authorization provided")
+	assert.Equal(t, http.StatusUnauthorized, rec.Code, "should return 401 for missing credentials")
+
+	// getAuthorisedArrays: no Basic Auth header at all
+	req2, _ := http.NewRequest("GET", "/test", nil)
+	rec2 := httptest.NewRecorder()
+	_, err = proxy.getAuthorisedArrays(rec2, req2)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no authorization provided")
+	assert.Equal(t, http.StatusUnauthorized, rec2.Code, "should return 401 for missing credentials")
+}
+
+// TestSecretMode_TwoUnisphere_PerEndpointCredentialSubstitution verifies the
+// end-to-end flow with two Unisphere instances: the proxy routes each array to
+// its own server and substitutes the correct per-endpoint credentials, even
+// though the driver sends the same password for all arrays.
+func TestSecretMode_TwoUnisphere_PerEndpointCredentialSubstitution(t *testing.T) {
+	t.Setenv(common.EnvReverseProxyUseSecret, "true")
+	utils.InitializeLock()
+
+	serverA := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	serverB := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// Build a secret-mode config with two arrays on two Unispheres
+	var proxyConfig config.ProxyConfig
+	err := proxyConfig.ParseConfigFromSecret(config.ProxySecret{
+		StorageArrayConfig: []config.StorageArrayConfig{
+			{StorageArrayID: "000000000001", PrimaryEndpoint: serverA.URL},
+			{StorageArrayID: "000000000002", PrimaryEndpoint: serverB.URL},
+		},
+		ManagementServerConfig: []config.ManagementServerConfig{
+			{Endpoint: serverA.URL, Username: "smc", Password: "passA", SkipCertificateValidation: true},
+			{Endpoint: serverB.URL, Username: "smc", Password: "passB", SkipCertificateValidation: true},
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	proxy, err := NewProxy(proxyConfig)
+	require.NoError(t, err)
+
+	// --- isAuthorized accepts passA (matches serverA) for both arrays ---
+	reqAuth, _ := http.NewRequest("GET", "/test", nil)
+	reqAuth.SetBasicAuth("smc", "passA")
+	recAuth := httptest.NewRecorder()
+	err = proxy.isAuthorized(recAuth, reqAuth, "000000000001")
+	assert.NoError(t, err, "passA should be accepted for array-A")
+
+	reqAuth2, _ := http.NewRequest("GET", "/test", nil)
+	reqAuth2.SetBasicAuth("smc", "passA")
+	recAuth2 := httptest.NewRecorder()
+	err = proxy.isAuthorized(recAuth2, reqAuth2, "000000000002")
+	assert.NoError(t, err, "passA should be accepted for array-B (matches serverA)")
+
+	// --- getProxyBySymmID routes to the correct server ---
+	proxyA, err := proxy.getProxyBySymmID("000000000001")
+	require.NoError(t, err)
+	serverAURL, _ := url.Parse(serverA.URL)
+	assert.Equal(t, serverAURL.Host, proxyA.URL.Host, "array-A should route to serverA")
+
+	proxyB, err := proxy.getProxyBySymmID("000000000002")
+	require.NoError(t, err)
+	serverBURL, _ := url.Parse(serverB.URL)
+	assert.Equal(t, serverBURL.Host, proxyB.URL.Host, "array-B should route to serverB")
+
+	// --- modifyHTTPRequest substitutes per-endpoint credentials ---
+	// Array-A: driver sends passA, proxy should forward passA (serverA's creds)
+	reqA, _ := http.NewRequest("GET", "/test", nil)
+	reqA.SetBasicAuth("smc", "passA")
+	recA := httptest.NewRecorder()
+	proxy.modifyHTTPRequest(recA, reqA, proxyA.URL)
+	expectedA := utils.BasicAuth(common.Credentials{UserName: "smc", Password: "passA"})
+	assert.Equal(t, expectedA, reqA.Header.Get("Authorization"),
+		"request forwarded to serverA should carry passA")
+
+	// Array-B: driver sends passA, proxy should REPLACE with passB (serverB's creds)
+	reqB, _ := http.NewRequest("GET", "/test", nil)
+	reqB.SetBasicAuth("smc", "passA") // driver always sends managementServers[0] creds
+	recB := httptest.NewRecorder()
+	proxy.modifyHTTPRequest(recB, reqB, proxyB.URL)
+	expectedB := utils.BasicAuth(common.Credentials{UserName: "smc", Password: "passB"})
+	assert.Equal(t, expectedB, reqB.Header.Get("Authorization"),
+		"request forwarded to serverB should carry passB, not passA")
+}
+
+// TestSecretMode_BlankCredentialServer_EmptyAuthRejected verifies that empty
+// Basic Auth is rejected even when a management server has blank credentials.
+func TestSecretMode_BlankCredentialServer_EmptyAuthRejected(t *testing.T) {
+	t.Setenv(common.EnvReverseProxyUseSecret, "true")
+	utils.InitializeLock()
+
+	serverA := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	serverC := fakeServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+
+	var proxyConfig config.ProxyConfig
+	require.NoError(t, proxyConfig.ParseConfigFromSecret(config.ProxySecret{
+		StorageArrayConfig: []config.StorageArrayConfig{
+			{StorageArrayID: "000000000001", PrimaryEndpoint: serverA.URL},
+		},
+		ManagementServerConfig: []config.ManagementServerConfig{
+			{Endpoint: serverA.URL, Username: "smc", Password: "passA", SkipCertificateValidation: true},
+			{Endpoint: serverC.URL, SkipCertificateValidation: true},
+		},
+	}, nil))
+	proxy, err := NewProxy(proxyConfig)
+	require.NoError(t, err)
+
+	req, _ := http.NewRequest("GET", "/test", nil)
+	req.SetBasicAuth("", "")
+	rec := httptest.NewRecorder()
+	assert.Error(t, proxy.isAuthorized(rec, req, "000000000001"))
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+
+	req2, _ := http.NewRequest("GET", "/test", nil)
+	req2.SetBasicAuth("", "")
+	rec2 := httptest.NewRecorder()
+	_, err = proxy.getAuthorisedArrays(rec2, req2)
+	assert.Error(t, err)
+	assert.Equal(t, http.StatusUnauthorized, rec2.Code)
 }
 
 // TestURLSchemeValidation_Simple tests the SSRF protection by validating URL schemes directly
